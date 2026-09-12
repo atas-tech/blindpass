@@ -69,6 +69,7 @@ Detailed documentation and planning can be found in the `docs/` folder:
     - [Phase 3D: Autonomous Payments & Crypto Billing](docs/architecture/Phase%203D%20-%20Autonomous%20Payments%20%26%20Crypto%20Billing.md)
     - [Phase 3E: Hosted Hardening, Ecosystem & Launch](docs/architecture/Phase%203E%20-%20Hosted%20Hardening,%20Ecosystem%20%26%20Launch.md)
 - **Maintenance**: [Dashboard Maintainability](docs/architecture/dashboard-maintainability.md)
+- **Product Review (Sept 2026)**: [Review Index](docs/product/README.md) | [Product Review](docs/product/Product%20Review%202026-09.md) | [Repo State Findings](docs/product/Repo%20State%20Findings%202026-09.md) | [Roadmap Reset](docs/product/Roadmap%20Reset%202026-09.md)
 
 ## Licensing
 
