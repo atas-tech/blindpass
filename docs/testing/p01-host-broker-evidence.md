@@ -47,7 +47,9 @@ still needed for the full repository report.
   claimed before the unlock/recovery and TPM review.
 - Native unit files define root ownership, socket modes, systemd hardening, a
   registered workload probe, and a separate `LoadCredentialEncrypted=`
-  comparison baseline.
+  comparison baseline. The guest harness provisions an explicit systemd
+  host-key profile and exercises initial delivery plus controlled rotation;
+  TPM protection is not claimed.
 
 ## VM and W0 status
 
@@ -61,7 +63,7 @@ still needed for the full repository report.
 | P01-I06 | Wipe-on-drop and metadata-only debug behavior are tested; TPM/temp/argv/journal inspection is not run | Not run; VM gate open |
 | P01-I07 | Rust format/lint/test checks pass; the manual runner and cleanup traps are implemented | CI pass; named guest runner missing |
 | P01-E01 | Native unit definitions, consumer validation and controlled rotation are implemented in the guest harness | Not accepted until VM execution |
-| P01-E02 | `LoadCredentialEncrypted=` comparison unit is present | Not run; no comparison claim |
+| P01-E02 | Guest harness provisions the explicit host-key `LoadCredentialEncrypted=` profile and exercises initial delivery plus controlled rotation | Not run; no comparison claim |
 
 The real VM scenarios are **not run** in this environment. The development
 host now has QEMU 11.1.1 and `qemu-img` 11.1.1, but `cloud-localds` is

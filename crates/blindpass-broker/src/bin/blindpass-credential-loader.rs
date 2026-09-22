@@ -74,11 +74,22 @@ fn run(args: Vec<String>) -> Result<(), String> {
         .mode(0o600)
         .open(&temp)
         .map_err(|error| error.to_string())?;
-    file.write_all(response.as_bytes())
-        .map_err(|error| error.to_string())?;
-    file.sync_all().map_err(|error| error.to_string())?;
+    if let Err(error) = file.write_all(response.as_bytes()) {
+        drop(file);
+        let _ = fs::remove_file(&temp);
+        return Err(error.to_string());
+    }
+    if let Err(error) = file.sync_all() {
+        drop(file);
+        let _ = fs::remove_file(&temp);
+        return Err(error.to_string());
+    }
     drop(file);
-    fs::rename(temp, output).map_err(|error| error.to_string())
+    if let Err(error) = fs::rename(&temp, output) {
+        let _ = fs::remove_file(&temp);
+        return Err(error.to_string());
+    }
+    Ok(())
 }
 
 fn next(args: &[String], index: &mut usize) -> Result<String, String> {

@@ -156,6 +156,14 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
             "blindpass-broker must run as root",
         ));
     }
+    if config.socket_directory_mode != 0o750
+        || config.loader_socket_mode != 0o600
+        || config.workload_socket_mode != 0o660
+    {
+        return Err(BrokerError::Configuration(
+            "broker socket modes must be directory 0750, loader 0600 and workload 0660",
+        ));
+    }
     let loader_listener = bind_socket(
         &config.loader_socket,
         config.socket_directory_mode,
