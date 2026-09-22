@@ -169,7 +169,9 @@ impl RecipientKeyPair {
             wipe(&mut private_key);
             return Err(CryptoError::OpenSsl("RAND_bytes failed"));
         }
-        Self::from_private_key(&private_key)
+        let key_pair = Self::from_private_key(&private_key);
+        wipe(&mut private_key);
+        key_pair
     }
 
     pub fn from_private_key(private_key: &[u8]) -> Result<Self, CryptoError> {

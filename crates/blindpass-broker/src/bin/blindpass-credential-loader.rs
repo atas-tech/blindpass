@@ -6,6 +6,7 @@ use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
+use std::time::Duration;
 
 fn main() {
     if let Err(error) = run(std::env::args().skip(1).collect()) {
@@ -40,6 +41,12 @@ fn run(args: Vec<String>) -> Result<(), String> {
     let credential = credential.ok_or("--credential is required")?;
     let output = output.ok_or("--output is required")?;
     let mut stream = UnixStream::connect(socket).map_err(|error| error.to_string())?;
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .map_err(|error| error.to_string())?;
+    stream
+        .set_write_timeout(Some(Duration::from_secs(2)))
+        .map_err(|error| error.to_string())?;
     stream
         .write_all(format!("LOAD {unit} {credential}\n").as_bytes())
         .map_err(|error| error.to_string())?;

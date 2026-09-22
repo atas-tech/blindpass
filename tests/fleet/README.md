@@ -32,10 +32,13 @@ infrastructure block, not a passing or skipped P01 gate.
 The guest exercises the portable loader/workload path, consumer rejection for
 empty/partial/malformed/oversized files, unauthorized unit routing, a
 registered non-root workload, and controlled credential rotation. The
+mandatory native `LoadCredentialEncrypted=` comparison runs with an explicit
+systemd host-key profile and records initial delivery and controlled rotation;
+it does not claim TPM protection. The
 pidfd-to-unit restart race, API-removal profile, TPM modes, cancellation
-teardown, and the native encrypted-credential comparison remain separately
-recorded as VM scenarios; this harness must not turn their absence into a
-pass.
+teardown, and deeper custody recovery remain separately recorded VM scenarios
+where they require additional fault injection; this harness must not turn
+their absence into a pass.
 
 The development host snapshot on 2026-09-23 has QEMU 11.1.1 and `qemu-img`
 11.1.1 installed, but `cloud-localds` is unavailable and `/dev/kvm` is

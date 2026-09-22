@@ -9,13 +9,14 @@ set -Eeuo pipefail
 }
 command -v systemctl >/dev/null 2>&1 || { printf 'P01-UNSUPPORTED systemctl missing\n' >&2; exit 78; }
 
-install -d -m 0755 /usr/local/libexec /etc/blindpass /etc/systemd/system
-install -m 0755 /tmp/blindpass-broker /usr/local/libexec/blindpass-broker
-install -m 0755 /tmp/blindpass-consumer /usr/local/libexec/blindpass-consumer
-install -m 0755 /tmp/blindpass-credential-loader /usr/local/libexec/blindpass-credential-loader
-install -m 0755 /tmp/blindpass-workload-client /usr/local/libexec/blindpass-workload-client
+install -d -m 0755 /usr/libexec /etc/blindpass /etc/systemd/system
+install -m 0755 /tmp/blindpass-broker /usr/libexec/blindpass-broker
+install -m 0755 /tmp/blindpass-consumer /usr/libexec/blindpass-consumer
+install -m 0755 /tmp/blindpass-credential-loader /usr/libexec/blindpass-credential-loader
+install -m 0755 /tmp/blindpass-workload-client /usr/libexec/blindpass-workload-client
 install -m 0644 /tmp/blindpass-broker.service /etc/systemd/system/blindpass-broker.service
 install -m 0644 /tmp/blindpass-consumer.service /etc/systemd/system/blindpass-consumer.service
+install -m 0644 /tmp/blindpass-consumer-native.service /etc/systemd/system/blindpass-consumer-native.service
 install -m 0644 /tmp/blindpass-workload.service /etc/systemd/system/blindpass-workload.service
 
 getent group blindpass-workload >/dev/null || groupadd --system blindpass-workload
@@ -43,7 +44,7 @@ workload_uid=$(id -u blindpass-agent)
 [[ -n "$workload_uid" ]] || { printf 'P01-FAIL workload uid unavailable\n' >&2; exit 1; }
 
 install -d -m 0755 /etc/systemd/system/blindpass-broker.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/local/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:workload-a:blindpass-workload.service:%s:%s\n' \
+printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:workload-a:blindpass-workload.service:%s:%s\n' \
     "$workload_uid" "$invocation" >/etc/systemd/system/blindpass-broker.service.d/p01-workload.conf
 systemctl daemon-reload
 systemctl start blindpass-broker.service
@@ -62,6 +63,39 @@ systemctl start blindpass-consumer.service
 systemctl is-active --quiet blindpass-consumer.service || { printf 'P01-FAIL consumer did not activate\n' >&2; exit 1; }
 printf 'P01-E01 initial native consumer: PASS\n'
 
+command -v systemd-creds >/dev/null 2>&1 || {
+    printf 'P01-UNSUPPORTED systemd-creds is unavailable for the mandatory native credential comparison\n' >&2
+    exit 78
+}
+systemd-creds setup >/dev/null 2>&1 || {
+    printf 'P01-UNSUPPORTED systemd host credential key setup failed\n' >&2
+    exit 78
+}
+native_credential=/etc/blindpass/api-key.cred
+native_credential_next=/etc/blindpass/api-key.cred.next
+systemd-creds --with-key=host --name=api-key encrypt /etc/blindpass/api-key "$native_credential_next" >/dev/null
+install -m 0600 "$native_credential_next" "$native_credential"
+rm -f "$native_credential_next"
+systemctl daemon-reload
+systemctl start blindpass-consumer-native.service
+systemctl is-active --quiet blindpass-consumer-native.service || {
+    printf 'P01-FAIL native encrypted credential consumer did not activate\n' >&2
+    exit 1
+}
+printf 'P01-E02 native encrypted credstore initial delivery: PASS (host-key profile)\n'
+systemctl stop blindpass-consumer-native.service
+printf '%s' 'P01-ROTATED-CANARY' >/etc/blindpass/api-key
+chmod 0600 /etc/blindpass/api-key
+systemd-creds --with-key=host --name=api-key encrypt /etc/blindpass/api-key "$native_credential_next" >/dev/null
+install -m 0600 "$native_credential_next" "$native_credential"
+rm -f "$native_credential_next"
+systemctl start blindpass-consumer-native.service
+systemctl is-active --quiet blindpass-consumer-native.service || {
+    printf 'P01-FAIL native encrypted credential rotation did not activate\n' >&2
+    exit 1
+}
+printf 'P01-E02 native encrypted credstore controlled rotation: PASS\n'
+
 cat >/etc/systemd/system/blindpass-unauthorized.service <<'UNIT'
 [Unit]
 Description=BlindPass P01 forged unit probe
@@ -69,7 +103,7 @@ After=blindpass-broker.service
 [Service]
 Type=oneshot
 User=root
-ExecStart=/usr/local/libexec/blindpass-credential-loader --socket /run/blindpass/loader.sock --unit blindpass-consumer.service --credential api-key --output /run/blindpass-unauthorized.key
+ExecStart=/usr/libexec/blindpass-credential-loader --socket /run/blindpass/loader.sock --unit blindpass-consumer.service --credential api-key --output /run/blindpass-unauthorized.key
 UNIT
 systemctl daemon-reload
 if systemctl start blindpass-unauthorized.service >/dev/null 2>&1; then
@@ -86,7 +120,7 @@ After=blindpass-broker.service
 Type=oneshot
 User=blindpass-agent
 Group=blindpass-workload
-ExecStart=/usr/local/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload unregistered --unit blindpass-unregistered.service --operation health
+ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload unregistered --unit blindpass-unregistered.service --operation health
 UNIT
 systemctl daemon-reload
 if systemctl start blindpass-unregistered.service >/dev/null 2>&1; then
@@ -104,7 +138,7 @@ for case_name in empty partial malformed oversized; do
         oversized) dd if=/dev/zero of="/run/blindpass-faults/$case_name" bs=65537 count=1 status=none ;;
     esac
     chmod 0600 "/run/blindpass-faults/$case_name"
-    if /usr/local/libexec/blindpass-consumer --credential-file "/run/blindpass-faults/$case_name" --prefix P01- >/dev/null 2>&1; then
+    if /usr/libexec/blindpass-consumer --credential-file "/run/blindpass-faults/$case_name" --prefix P01- >/dev/null 2>&1; then
         printf 'P01-FAIL consumer accepted %s material\n' "$case_name" >&2
         exit 1
     fi
@@ -122,9 +156,8 @@ printf 'P01-I01 pidfd restart race: NOT_CLAIMED (requires repeated VM fault inje
 printf 'P01-I03 API-removal fail-closed: NOT_CLAIMED (requires boot-profile mutation)\n'
 printf 'P01-I05 HPKE restart/absent-key VM path: NOT_CLAIMED (portable vector covered separately)\n'
 printf 'P01-I06 TPM/temp/argv/journal inspection: NOT_CLAIMED\n'
-printf 'P01-E02 native encrypted credstore comparison: NOT_RUN\n'
 printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key\n'
 
-systemctl stop blindpass-unregistered.service blindpass-unauthorized.service blindpass-consumer.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
+systemctl stop blindpass-unregistered.service blindpass-unauthorized.service blindpass-consumer.service blindpass-consumer-native.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
 rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
 printf 'P01-GUEST-CLEANUP sockets_stopped=yes protected_material_retained=yes\n'

@@ -261,11 +261,15 @@ fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, BrokerError> {
             break;
         }
         frame.push(byte[0]);
-        if byte[0] == b'\n' {
-            break;
-        }
         if frame.len() > MAX_FRAME_BYTES {
             return Err(BrokerError::Protocol(ProtocolError::TooLarge));
+        }
+        if byte[0] == b'\n' {
+            let mut trailing = [0; 1];
+            if stream.read(&mut trailing)? != 0 {
+                return Err(BrokerError::Protocol(ProtocolError::InvalidFrame));
+            }
+            break;
         }
     }
     if frame.is_empty() {
@@ -436,7 +440,14 @@ mod tests {
 
         let (mut writer, mut reader) = UnixStream::pair().unwrap();
         writer.write_all(b"LOAD unit credential\n").unwrap();
+        writer.shutdown(std::net::Shutdown::Write).unwrap();
         assert_eq!(read_frame(&mut reader).unwrap(), b"LOAD unit credential\n");
+
+        let (mut writer, mut reader) = UnixStream::pair().unwrap();
+        writer.write_all(b"LOAD unit credential\ntrailing").unwrap();
+        writer.shutdown(std::net::Shutdown::Write).unwrap();
+        let error = read_frame(&mut reader).unwrap_err();
+        assert!(error.to_string().contains("invalid_frame"));
 
         let (mut writer, mut reader) = UnixStream::pair().unwrap();
         writer
