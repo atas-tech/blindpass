@@ -1,6 +1,6 @@
 # OpenClaw integration and current MCP limits
 
-**Source inspection:** 2026-09-22. This replaces the April capability brainstorm as the current integration reference. The [original design](../archive/plugins/OpenClaw%20Capability%20Design%202026-04.md) and [historical test plan](../archive/testing/OpenClaw%20Capability%20Extension.md) retain their original context. Release availability and compatibility require their own evidence.
+**Source inspection:** 2026-09-22. This replaces the April capability brainstorm as the current integration reference. The original design and historical test plan retain their original context in the Obsidian vault. Release availability and compatibility require their own evidence.
 
 ## Components and tools
 

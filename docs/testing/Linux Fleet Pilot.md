@@ -6,9 +6,11 @@
 
 **Design:** [Specification](../product/Specification.md) · [Roadmap](../product/Roadmap.md).
 
+The P00–P10 implementation phases and paired acceptance plans in the Obsidian vault assign delivery ownership without renumbering this catalog. They add phase-specific integration/E2E cases and evidence records; this document remains the canonical definition of fleet/browser milestone scenarios.
+
 This single plan merges the native fleet and browser pilot scenarios, incorporates the round-two corrections, and covers roadmap milestones W0–W6. Fleet E/I/C/O/D identifiers retain their original meanings; browser identifiers gain a `B-` prefix to avoid collisions. Deferred browser IDs remain deferred, not passed. All scenarios, including new corrections below, require implementation and execution evidence.
 
-This plan accompanies the proposed milestones under the [repository phase testing rule](../../AGENTS.md). Scenario implementations are required alongside feature code. Existing repo tests do not establish the OS or fleet guarantees described here.
+This plan accompanies the proposed milestones under the [repository phase testing rule](../../AGENTS.md). Scenario implementations are required alongside feature code. Existing repo tests do not establish the OS or fleet guarantees described here. The [Controller Contract Suite](Controller%20Contract%20Suite.md) holds the CT, CV and CC scenarios that gate the Rust controller port under [Decision 0002](../product/decisions/0002-rust-controller-and-broker.md); it covers API compatibility only, not the guarantees in this plan.
 
 ## Test environment and evidence
 
@@ -226,7 +228,7 @@ S-series cases apply to active W5 pilot paths. A/X cases are deferred W4/W6 requ
 
 | ID | Milestone and scenario | Required result |
 |---|---|---|
-| S01 | W5: Generate and verify confirmation codes, rate-limit guessing, test collision/expiry/replay and confirm invalid codes cannot provision a request. | Cryptographic generator and declared adequate entropy; no accepted expired/replayed code or sensitive diagnostics. |
+| S01 | W5: Review confirmation-code generation, entropy/collisions and human matching; exercise signed-link authorization, rate limits, expiry and replay independently. | Code role is explicit: the current code is human correlation text, not a server-validated bearer credential. A code alone cannot authorize provisioning. Any new code-verification contract needs separate acceptance cases; expired/wrong-scope/replayed authorization and sensitive diagnostics remain rejected. |
 | S02 | W5: Exercise verification-token issuance, storage, expiry, use and replay for active authentication paths. | Only protected/hashed verifier state at rest, bounded expiry, intended one-time semantics, and safe errors. |
 | S03 | W5: Perform operator login/refresh/logout through the real dashboard/API; inspect cookies, browser storage, source and documentation. | Actual token custody and expiration match the authoritative auth/security docs; resolve F-8 with evidence, not copied status text. |
 | S04 | W5: Test production CSP/connect-src, baseline headers, allowed API/challenge calls, and forbidden exfiltration destinations in the selected deployment. | Intended app works under explicit production origins; no development localhost/wildcard schemes; HSTS enabled only with verified HTTPS readiness for its scope. |

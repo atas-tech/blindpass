@@ -7,10 +7,8 @@ The [current threat model](blindpass-threat-model.md) owns the present interpret
 | [Current threat model](blindpass-threat-model.md) | Actual auth/storage behavior, plaintext boundaries, residual risks and proposed fleet threats |
 | [Product finding register](../product/Specification.md#repository-findings) | F-1–F-13 with historical provenance and selected current corrections |
 | [Pilot security tests](../testing/Linux%20Fleet%20Pilot.md) | Required future OS, browser, deployment and release evidence |
-| [Audit v2, March 24](../archive/security/Security%20Audit%20v2.md) | Original 24 findings and remediation snapshot; not a current open/closed ledger |
-| [Audit v1, March 4](../archive/security/Security%20Audit%20v1%20%282026-03-04%29.md) | Earlier baseline |
-| [March supplement](../archive/security/security_best_practices_report.md) | Origin-injection and logging history |
-| [Earlier threat model](../archive/security/Threat%20Model%202026-03.md) | Original assumptions/ranking for hosted and paid/guest surfaces |
+| [Dependency baseline](../product/decisions/0003-dependency-baseline-2026-09.md) | 2026-09-22 `npm audit` snapshot, upgrade tiers and Socket review status; no manifest changed yet |
+| Historical audits and threat model | Maintained in the Obsidian vault; they are evidence, not a current open/closed ledger |
 
 Key corrections from source inspection: hosted cookies exist, but both frontends still support `localStorage` body-token paths; verification/reset tokens are hashed with expiry/one-use checks; the implemented HPKE AEAD is ChaCha20-Poly1305; production nginx configuration exists for both frontends but still has permissive connection policies. Historical audit claims to the contrary must not be copied as current state.
 

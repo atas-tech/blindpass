@@ -1,6 +1,6 @@
 # Current code architecture
 
-**Source inspection:** 2026-09-22. This page describes the existing repository, not a deployment certification. Forward design lives in the [product specification](../product/Specification.md); historical phases are in the [archive](../archive/README.md).
+**Source inspection:** 2026-09-22. This page describes the existing repository, not a deployment certification. Forward design lives in the [product specification](../product/Specification.md); historical phases are in the Obsidian vault.
 
 ## Components
 

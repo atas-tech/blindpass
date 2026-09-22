@@ -1,6 +1,6 @@
 # BlindPass threat model
 
-**Aligned to source:** 2026-09-22. This replaces the [March threat-model snapshot](../archive/security/Threat%20Model%202026-03.md) as the current interpretation. Existing TM-001–TM-007 identifiers are retained. The update inspects selected code paths; it does not rerun the original audits, public deployment probes or proposed fleet tests.
+**Aligned to source:** 2026-09-22. This replaces the March threat-model snapshot in the Obsidian vault as the current interpretation. Existing TM-001–TM-007 identifiers are retained. The update inspects selected code paths; it does not rerun the original audits, public deployment probes or proposed fleet tests.
 
 ## Scope and trusted endpoints
 

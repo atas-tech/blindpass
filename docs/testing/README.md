@@ -1,8 +1,12 @@
 # Repository test setup
 
-This is the current command reference. The [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the [archive](../archive/README.md). A passing workspace suite does not establish the new broker, browser or deployment guarantees.
+This is the current command reference. The [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the Obsidian vault. A passing workspace suite does not establish the new broker, browser or deployment guarantees.
 
-The proposed landing-aligned dashboard refresh has a separate [Dashboard Redesign acceptance plan](Dashboard%20Redesign.md), covering existing UI routes, roles, credential-handling boundaries and visual regression gates.
+The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. Their proposed Rust/VM/controller runners must be added alongside their feature code; the commands below describe the current repository only.
+
+The proposed landing-aligned dashboard rebuild and secret-input acceptance plans are maintained in the Obsidian vault. The proposed Rust controller port is gated by the [Controller Contract Suite](Controller%20Contract%20Suite.md), an HTTP-level compatibility suite run against both servers; it is not implemented.
+
+The secret-input redesign plan covers the companion input-page mockup's proposed SI scenarios and keeps prototype inspection separate from product E2E evidence in the vault.
 
 ## Environment
 
@@ -59,6 +63,10 @@ npm exec --workspace=packages/dashboard -- playwright install chromium
 ```
 
 The [Playwright config](../../packages/dashboard/playwright.config.ts) starts SPS, dashboard and input-page servers and has a preflight setup project. Outside CI it may reuse existing servers, so stop incompatible dev instances first. Global setup checks PostgreSQL; the full setup/config determines additional readiness and fixture requirements. E2E enables test seed routes and body refresh tokens: keep this configuration isolated from real deployments.
+
+## Planned CI ownership
+
+The current workflows build images and check/deploy the landing page; they do not run workspace or Rust suites. The P00.4/P01.1/P02.1 CI ownership and runner plan is maintained in the Obsidian vault. These are planned deliverables, not existing automated coverage.
 
 ## Evidence and troubleshooting
 

@@ -1,6 +1,6 @@
 # Dashboard maintenance
 
-The existing dashboard is a React/Vite application using Tailwind and CSS custom properties. Theme and localization expansion follow the [roadmap freeze](../product/Roadmap.md#freeze-register); maintaining existing screens and translations remains part of normal changes.
+The existing dashboard is a React/Vite application using Tailwind and CSS custom properties. Theme and localization expansion follow the [roadmap freeze](../product/Roadmap.md#freeze-register); maintaining existing screens and translations remains part of normal changes. The replacement is specified in [Decision 0001](../product/decisions/0001-dashboard-ui-stack.md); until it lands, this application receives the security-driven dependency updates in [Decision 0003](../product/decisions/0003-dependency-baseline-2026-09.md) and no feature work.
 
 ## Styles
 
@@ -20,4 +20,4 @@ Update existing locales when changing user-visible strings. Do not add locales o
 
 Do not copy token-storage assumptions from old phase plans. [Current auth storage](../security/blindpass-threat-model.md#authentication-storage) documents hosted cookies and remaining `localStorage` paths. Keep secret values and bootstrap credentials out of screenshots, component snapshots and ordinary diagnostics.
 
-Use component tests for screen behavior and [dashboard Playwright E2E](../testing/README.md#test-matrix) for backend-connected flows. [Historical phase tests](../archive/README.md) retain original scenarios without implying present-day execution.
+Use component tests for screen behavior and [dashboard Playwright E2E](../testing/README.md#test-matrix) for backend-connected flows. Historical phase tests retain original scenarios in the Obsidian vault without implying present-day execution.

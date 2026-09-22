@@ -6,6 +6,8 @@
 
 **Companions:** [Roadmap](Roadmap.md) · [E2E and integration test plan](../testing/Linux%20Fleet%20Pilot.md)
 
+The implementation phases in the Obsidian vault translate this contract into P00–P10 work packages and paired acceptance plans. They do not change the trust boundaries or establish implementation. Package locations are accepted in Decisions 0001/0002; new API contracts still require their named phase review; W0–W6 and existing test IDs remain stable.
+
 ## Scope and status
 
 The pilot joins human approval, encrypted provisioning, and completed credential use across a small Linux fleet. One controller governs two enrolled hosts. Omarchy is the first operator interface; headless workers and a separate controller host must work. Both native-service and container controller packaging are required. Host brokers remain native services.
@@ -257,7 +259,7 @@ These preserve the original F identifiers from the September 10 review of commit
 | F-12 | September 12 framing probe: newline-delimited initialize returned 0 bytes, `Content-Length` returned 169 bytes; not a stock-client E2E | W1 standard framing, stdout hygiene, real client tests |
 | F-13 | Plugin-local secret map does not bridge credentials into a stock client's shell/unrelated tools | W1 authenticated operation and explicit consumer contract |
 
-The product review carried the March audit status forward. [Audit v2](../archive/security/Security%20Audit%20v2.md) is now a historical snapshot; the [current threat model](../security/blindpass-threat-model.md) owns the September 22 interpretation and explicitly identifies source checks:
+The product review carried the March audit status forward. Audit v2 is now a historical snapshot in the Obsidian vault; the [current threat model](../security/blindpass-threat-model.md) owns the September 22 interpretation and explicitly identifies source checks:
 
 | Audit IDs | Recorded item | Handling |
 |---|---|---|
@@ -277,8 +279,8 @@ Older phase status snapshots and forward brainstorms describe their original imp
 |---|---|
 | Select browser session handoff as W1 operation; choose real staging app, UI task, browser integration and restricted accounts | Before application-specific W1 implementation |
 | Select backup service/destination, custody mode, unlock and recovery procedure | Before service-flow implementation and unattended-use claims |
-| Broker language, privilege split, minimum kernel/systemd matrix and invocation lookup mechanism | W0 spike; real system-scope evidence required |
-| Supported controller database topologies, stable endpoint/trust transition and stale-backup reconciliation | W2 lifecycle implementation |
+| Broker language, privilege split, minimum kernel/systemd matrix and invocation lookup mechanism | Rust direction accepted in [Decision 0002](decisions/0002-rust-controller-and-broker.md); P01 in the Obsidian vault must prove the remaining privilege/matrix/invocation details on real system-scope VMs before P03 start and P02.6 cutover; the P02 port runs independently after P00 |
+| Supported controller database topologies, stable endpoint/trust transition and stale-backup reconciliation | P02 in the Obsidian vault implements SQLite/PostgreSQL adapters without Redis; P06 reviews/tests deployment profiles and migration scope. Cross-database conversion is separate from native/container migration |
 | Exact supported MCP/client versions and safe fallback path | W1 client gate, before release claims |
 | Numeric operation/startup timeouts, grant TTLs, reconnect/backoff, revocation bounds, audit buffering and approval-frequency ceiling | Measured and recorded before W3 recruitment; no unspecified bound counts as a pass |
 | Component licensing and self-hosted/hosted pricing | Separate commercial decision after evidence; current licenses remain in force |

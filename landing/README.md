@@ -50,3 +50,5 @@ Run `npm run test:landing` from the repository root. [deploy-landing-pages.yml](
 Verification on 2026-09-22: all seven demo scenarios passed, along with JavaScript syntax, local asset/link/HTML-reference checks and `git diff --check`. Workspace build/tests were attempted but did not pass: build/test tooling is not installed, and the unchanged browser-UI auth-storage suite also reported a session-storage assertion failure. Browser visual checks and backend integration/E2E were not run for this landing-content update.
 
 Updated on 2026-09-22 for the analytics, metadata and content revision: seven demo scenarios and `node --check` passed after adding a terminal-step assertion. Social/canonical metadata, the `role="img"` diagram label and the GA4 snippet are unverified in a browser; no rendering, tag-firing, crawler or Lighthouse check was run.
+
+The P07.5/P07.6 landing-promotion gate is maintained in the Obsidian vault. It owns the GA4 removal or consent-gated disposition and the six GitHub-bound CTA destinations. Browser network and click evidence are required before broad promotion; removal of hosted dashboard analytics does not resolve this landing tag.

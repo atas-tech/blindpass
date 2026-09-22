@@ -3,7 +3,7 @@
 ## Scope and sources of truth
 
 - Read [docs/README.md](docs/README.md) for documentation ownership and current implementation limits.
-- Forward work follows [Roadmap](docs/product/Roadmap.md), [Specification](docs/product/Specification.md), and [Linux Fleet Pilot](docs/testing/Linux%20Fleet%20Pilot.md). The host broker, browser session handoff, and native/container fleet parity are proposed, not shipped.
+- Forward work follows [Roadmap](docs/product/Roadmap.md), [Specification](docs/product/Specification.md), and [Linux Fleet Pilot](docs/testing/Linux%20Fleet%20Pilot.md). The host broker, browser session handoff, and native/container fleet parity are proposed, not shipped. [Decision records](docs/product/decisions/README.md) fix the rebuilt dashboard stack, the Rust broker/controller direction and the dependency baseline.
 - Files under [docs/archive](docs/archive/README.md) are historical records. Their checkboxes, deadlines, and proposed work do not override the current roadmap or reactivate frozen features.
 - Use source and executed tests to establish behavior. Do not turn a plan, source inspection, or skipped suite into a claim that a feature works.
 
