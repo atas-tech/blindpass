@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0b0e0d">
+    <meta name="description" content="BlindPass is building secure access for autonomous agents and Linux workloads. Explore encrypted provisioning today and the next chapter in approval-bound access.">
+    <title>BlindPass — Autonomy, with boundaries.</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="preload" href="assets/inter.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="styles.css">
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+      <symbol id="i-external" viewBox="0 0 24 24"><path d="M7 17 17 7M7 7h10v10"/></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 4-5 8-8 9-3-1-8-5-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+      <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+      <symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="4"/><path d="M12 3v4M8 12v2m8-2v2m-6 3h4M1 11v5m22-5v5"/></symbol>
+      <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6"/></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="8" r="5"/><path d="m12 12 9 9m-6-6 3-3m0 6 3-3"/></symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m5 6 6 6-6 6m8 0h6"/></symbol>
+    </svg>
+
+    <header class="site-header">
+      <div class="container header-inner">
+        <a class="brand" href="#" aria-label="BlindPass home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>blindpass<span class="brand-period">.</span></a>
+        <nav class="desktop-nav" aria-label="Main navigation">
+          <a href="#approach">Why BlindPass</a><a href="#workflow">How it works</a><a href="#roadmap">Roadmap</a>
+        </nav>
+        <a class="header-cta" href="https://github.com/atas-tech/blindpass">View on GitHub <svg class="icon"><use href="#i-external"/></svg></a>
+        <button class="menu-toggle" aria-label="Open navigation" aria-expanded="false" aria-controls="mobile-nav"><span></span><span></span></button>
+      </div>
+      <nav id="mobile-nav" class="mobile-nav" aria-label="Mobile navigation" hidden><a href="#approach">Why BlindPass</a><a href="#workflow">How it works</a><a href="#roadmap">Roadmap</a><a href="https://github.com/atas-tech/blindpass">View on GitHub ↗</a></nav>
+    </header>
+
+    <main id="main">
+      <section class="hero container" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <a class="eyebrow release-note" href="#roadmap"><span class="tiny-cross" aria-hidden="true">+</span> A NEW BOUNDARY FOR AGENT ACCESS <svg class="icon"><use href="#i-arrow"/></svg></a>
+          <h1 id="hero-title">Autonomy.<br><span>Under control.</span></h1>
+          <p class="hero-description">Let agents do the work.<br>Keep access on your terms.</p>
+          <p class="hero-detail">Encrypted credential handoffs today. Purpose-bound access for autonomous agents and Linux workloads next.</p>
+          <div class="hero-actions"><a class="button button-primary" href="#workflow">Explore the workflow <svg class="icon"><use href="#i-arrow"/></svg></a><a class="text-link" href="https://github.com/atas-tech/blindpass#readme">Read the docs <svg class="icon"><use href="#i-external"/></svg></a></div>
+          <div class="hero-footnote"><span class="small-rule"></span> Open source foundations. A Linux-first future.</div>
+        </div>
+
+        <div class="access-diagram" aria-label="Proposed workflow: an agent requests access, BlindPass verifies policy and operator approval, then the workload receives bounded access.">
+          <div class="diagram-heading"><span class="eyebrow">THE ACCESS BOUNDARY</span><span class="preview-label">PILOT CONCEPT</span></div>
+          <div class="diagram-map">
+            <svg class="map-lines" viewBox="0 0 520 350" fill="none" aria-hidden="true">
+              <circle class="outer-orbit" cx="260" cy="173" r="146"/><circle class="inner-orbit" cx="260" cy="173" r="105"/>
+              <path class="connection" d="M85 173H211M309 173h126"/><path class="connection vertical" d="M260 55v69m0 98v64"/>
+              <path class="moving-line" d="M85 173H211M309 173h126"/>
+              <circle class="junction" cx="114" cy="173" r="3"/><circle class="junction" cx="406" cy="173" r="3"/>
+            </svg>
+            <span class="orbit-label orbit-label-top">POLICY + OPERATOR APPROVAL</span>
+            <div class="diagram-node agent-node"><svg class="icon"><use href="#i-agent"/></svg><span>Agent</span><small>requests a task</small></div>
+            <div class="broker-node"><span class="node-corner corner-tl"></span><span class="node-corner corner-br"></span><svg class="icon"><use href="#i-shield"/></svg><span>blindpass</span></div>
+            <div class="diagram-node resource-node"><svg class="icon"><use href="#i-server"/></svg><span>Resource</span><small>scoped access</small></div>
+            <div class="approval-chip"><svg class="icon"><use href="#i-check"/></svg> You set the boundary</div>
+            <span class="diagram-caption">REQUEST <span>→</span> VERIFY <span>→</span> ALLOW</span>
+          </div>
+          <div class="diagram-log"><div><span class="log-number">01</span><span class="log-label">workload</span><code>agent.browser</code></div><div><span class="log-number">02</span><span class="log-label">operation</span><code>staging.read_report</code></div><div><span class="log-number">03</span><span class="log-label">authority</span><code class="lime-text">one approved task</code></div></div>
+          <div class="diagram-bottom"><svg class="icon"><use href="#i-lock"/></svg><span>Source password stays in the trusted login flow.</span></div>
+        </div>
+      </section>
+
+      <section class="principles container" aria-label="Product principles">
+        <div><svg class="icon"><use href="#i-lock"/></svg><span>Encrypted at the source</span></div><div><svg class="icon"><use href="#i-shield"/></svg><span>Explicit approval. Defined scope.</span></div><div><svg class="icon"><use href="#i-terminal"/></svg><span>Built toward your Linux fleet</span></div>
+      </section>
+
+      <section id="approach" class="approach section container" aria-labelledby="approach-title">
+        <div class="section-intro"><p class="eyebrow section-kicker">01 / THE PRINCIPLE</p><h2 id="approach-title">More capability.<br><span class="muted">Less standing access.</span></h2><p>Autonomous work needs a clear answer to three questions: who is asking, what can they do, and when does access end?</p><a class="text-link" href="#workflow">A boundary for every task <svg class="icon"><use href="#i-arrow"/></svg></a></div>
+        <div class="principle-list">
+          <article class="principle-row"><span class="row-number">01</span><div><h3>Protect the handoff.</h3><p>Credentials are encrypted in the operator’s browser. The provisioning service coordinates ciphertext delivery to the recipient runtime.</p><span class="capability-tag">EXISTING FOUNDATION</span></div><svg class="icon"><use href="#i-key"/></svg></article>
+          <article class="principle-row"><span class="row-number">02</span><div><h3>Approve the work.</h3><p>The Linux pilot is designed to bind approval to a verified workload, a specific resource, and the operation it needs to complete.</p><span class="capability-tag proposed">PILOT DIRECTION</span></div><svg class="icon"><use href="#i-shield"/></svg></article>
+          <article class="principle-row"><span class="row-number">03</span><div><h3>Give access an ending.</h3><p>Bounded browser sessions, explicit revocation, and an audit trail are release requirements for the proposed workflow.</p><span class="capability-tag proposed">PILOT DIRECTION</span></div><svg class="icon"><use href="#i-terminal"/></svg></article>
+        </div>
+      </section>
+
+      <section id="workflow" class="workflow-section" aria-labelledby="workflow-title">
+        <div class="container section">
+          <div class="section-heading"><div><p class="eyebrow section-kicker">02 / THE WORKFLOW</p><h2 id="workflow-title">One task.<br>Just enough access.</h2></div><p>Explore the proposed browser flow.<br>You make the access decision.<br><span class="demo-disclaimer">Interactive illustration · no real credentials</span></p></div>
+          <div class="workflow-shell">
+            <div class="workflow-sidebar"><p class="eyebrow">BROWSER SESSION HANDOFF</p><ol class="workflow-steps"><li class="is-current" data-step="request"><span>1</span><div><strong>Request</strong><small>An agent needs a resource.</small></div></li><li data-step="approve"><span>2</span><div><strong>Approve</strong><small>You authorize the task.</small></div></li><li data-step="active"><span>3</span><div><strong>Work</strong><small>A bounded session is handed off.</small></div></li><li data-step="ended"><span>4</span><div><strong>End access</strong><small>Revoke the website session.</small></div></li></ol><div class="workflow-boundary"><svg class="icon"><use href="#i-lock"/></svg><p>The agent receives a session it can inspect. The source password stays with the trusted login helper.</p></div></div>
+            <div class="workflow-stage">
+              <div class="stage-toolbar"><span class="terminal-dots" aria-hidden="true"><i></i><i></i><i></i></span><span>access-request / example-001</span><span class="stage-mode">SIMULATION</span></div>
+              <div class="request-content"><div class="request-title-row"><div class="request-icon"><svg class="icon"><use href="#i-agent"/></svg></div><span id="request-status" class="status-badge">Ready to request</span></div><h3 id="request-title">A report. Not the keys.</h3><p id="request-description">A registered agent needs to read a report from your staging app. Start an example access request.</p><dl class="request-details"><div><dt>Workload</dt><dd>agent.browser</dd></div><div><dt>Resource</dt><dd>staging / reports</dd></div><div><dt>Scope</dt><dd>Read one report</dd></div><div><dt>Session limit</dt><dd>5 minutes <span class="example-value">example</span></dd></div></dl><div class="demo-action-row"><button id="demo-primary" class="button button-primary" type="button"><span>Request access</span><svg class="icon"><use href="#i-arrow"/></svg></button><button id="demo-secondary" class="button button-quiet" type="button" hidden>Decline</button></div><div id="demo-feedback" class="demo-feedback" role="status" aria-live="polite">A local illustration of the proposed pilot.</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="roadmap" class="roadmap section container" aria-labelledby="roadmap-title">
+        <div class="section-heading"><div><p class="eyebrow section-kicker">03 / BUILT WITH INTENT</p><h2 id="roadmap-title">A focused path forward.</h2></div><p>Start with the security boundary.<br>Prove the workflow. Then expand.</p></div>
+        <div class="roadmap-grid"><article><div class="roadmap-card-top"><span class="eyebrow">THE FOUNDATION</span><span class="roadmap-status">In the repository</span></div><h3>Encrypted provisioning.</h3><p>Browser-side encryption, policy-controlled agent exchange, approvals, and metadata audit.</p><div class="roadmap-card-bottom"><span>HPKE · Policy · Audit</span><svg class="icon"><use href="#i-lock"/></svg></div></article><article class="roadmap-featured"><div class="roadmap-card-top"><span class="eyebrow">THE NEXT CHAPTER</span><span class="roadmap-status">Proposed pilot</span></div><h3>Autonomous work.<br>Accountable access.</h3><p>One controller. Two Linux hosts. An approved browser task and a native service job.</p><div class="roadmap-card-bottom"><span>Identity → Workflow → Fleet</span><svg class="icon"><use href="#i-arrow"/></svg></div></article><article><div class="roadmap-card-top"><span class="eyebrow">THE RELEASE BAR</span><span class="roadmap-status">Evidence required</span></div><h3>Prove it in practice.</h3><p>Real workload identity, session revocation, recovery, and stock-client tests before release.</p><div class="roadmap-card-bottom"><span>Test · Verify · Repeat</span><svg class="icon"><use href="#i-check"/></svg></div></article></div>
+        <p class="roadmap-note">The host broker, browser session handoff, and native/container fleet parity are planned work. Existing encrypted delivery does not make a consuming runtime blind to a secret.</p>
+      </section>
+
+      <section class="closing container" aria-labelledby="closing-title"><div><p class="eyebrow">AUTONOMY, WITH BOUNDARIES.</p><h2 id="closing-title">Let them work.<br><span>Keep control.</span></h2></div><div class="closing-action"><a class="button button-primary" href="https://github.com/atas-tech/blindpass">Explore BlindPass <svg class="icon"><use href="#i-external"/></svg></a><p>Follow the work. Inspect the foundations.</p></div><span class="closing-cross" aria-hidden="true">+</span></section>
+    </main>
+
+    <footer class="container site-footer"><a class="brand" href="#" aria-label="BlindPass home"><span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>blindpass<span class="brand-period">.</span></a><span class="footer-caption">Secure access. Deliberate autonomy.</span><nav aria-label="Footer navigation"><a href="https://github.com/atas-tech/blindpass">GitHub ↗</a><a href="https://github.com/atas-tech/blindpass/blob/main/docs/security/blindpass-threat-model.md">Security</a><a href="#roadmap">Roadmap</a></nav></footer>
+  </body>
+</html>

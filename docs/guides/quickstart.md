@@ -1,46 +1,45 @@
-# Quick Start
+# Quick start from source
 
-This guide gets a local BlindPass stack to the point where you can register a workspace, enroll agents, and run a first secret-exchange demo from a clean machine.
+This starts the existing SPS, dashboard and encrypted secret-input page on an isolated development machine. It does not install the proposed Linux host broker or browser session-handoff pilot. See the [roadmap](../product/Roadmap.md) for that work.
 
 ## Prerequisites
 
-- Node.js 22+
-- npm 10+
-- Docker Engine with Compose
+- Node.js 22+ and npm compatible with the committed lockfile.
+- Docker Engine with Compose for the supplied PostgreSQL/Redis harness, or equivalent services configured separately.
+- Run the commands below from the repository root. Use dummy credentials and a development database.
 
-## 1. Install dependencies
+## Install and configure
 
 ```bash
-npm install
+npm ci
+cp .env.example .env
 ```
 
-## 2. Prepare local configuration
+Review `.env` before loading it. The example has development signing values, database credentials, mock billing and x402 enabled. For a core provisioning/exchange exercise, set `SPS_X402_ENABLED=0`; leave payment credentials empty. Replace signing values before using anything beyond isolated dummy-data development.
+
+Load your reviewed root environment in **each** application/migration terminal:
 
 ```bash
-cp .env.example .env
 set -a
 source .env
 set +a
 ```
 
-The defaults target:
+npm workspace scripts run from the package directory. SPS imports dotenv there, while the migration entry point relies on environment variables; copying a root `.env` alone does not configure every command. Exporting the reviewed environment avoids that ambiguity. Do not assume `.env.test` is loaded automatically.
 
-- SPS API at `http://127.0.0.1:3100`
-- Dashboard at `http://127.0.0.1:5173`
-- Browser UI at `http://127.0.0.1:5175`
-- PostgreSQL at `127.0.0.1:5433`
-- Redis at `127.0.0.1:6380`
-
-## 3. Start local infrastructure
+## Start infrastructure and build
 
 ```bash
-make up
+docker compose -f docker-compose.test.yml up -d --wait
 make migrate
+npm run build
 ```
 
-## 4. Start the apps
+`make up` starts the same development stack without waiting for readiness. `npm run redis:up` starts **only Redis**. The root build includes plugin bundling; check its tooling prerequisites if the bundle step cannot run.
 
-Run these in separate terminals with the same environment loaded:
+## Start applications
+
+In separate terminals with the environment loaded:
 
 ```bash
 make dev-sps
@@ -54,65 +53,34 @@ make dev-dashboard
 make dev-browser
 ```
 
-## 5. Create a workspace in the dashboard
+| Service | Default local address |
+|---|---|
+| SPS | `http://127.0.0.1:3100` |
+| Dashboard | `http://127.0.0.1:5173` |
+| Secret input | `http://127.0.0.1:5175` |
+| PostgreSQL | `127.0.0.1:5433` |
+| Redis | `127.0.0.1:6380` |
 
-Open `http://127.0.0.1:5173`.
+Use `127.0.0.1` consistently for the frontends and API. Cookies/storage distinguish it from `localhost`. Confirm `/healthz` and `/readyz`; inspect readiness check details rather than relying on HTTP 200 alone when services can be skipped.
 
-1. Register a new workspace admin account.
-2. Use a unique workspace slug.
-3. Complete email verification if you enabled production-like verification behavior.
+## Exercise a workflow
 
-For fast local development, the default non-production setup logs verification guidance instead of requiring a real mail system.
-
-## 6. Enroll agents
-
-In the dashboard:
-
-1. Open the Agents page.
-2. Enroll your requester and fulfiller agents.
-3. Copy the returned `bootstrap_api_key` values.
-
-Those API keys are exchanged for short-lived SPS agent bearer tokens through `POST /api/v2/agents/token`.
-
-## 7. Run the first end-to-end exchange demo
-
-Build the packages once so the demo scripts can import the compiled workspace packages:
-
-```bash
-npm run build
-```
-
-Then run the automated local A2A demo:
+For a disposable automated provisioning/exchange smoke exercise:
 
 ```bash
 node scripts/demo-a2a.mjs auto
 ```
 
-What the demo does:
+The helper creates or reuses its own demo workspace/agents, directly verifies database records, rotates existing demo agent keys and prints dummy credentials/results. It is test tooling, not a secure operator onboarding path or a demonstration of model blindness. It needs an exchange policy allowing its demo secret; use the [demo instructions](../testing/Manual%20Demos.md) to seed policy and handle an existing workspace.
 
-- provisions its own demo workspace and demo agents for a reproducible smoke test
-- registers or logs into a local workspace
-- verifies the local owner record for demo purposes
-- enrolls `agent-a` and `agent-b`
-- submits a secret to `agent-a`
-- requests an exchange from `agent-b`
-- fulfills and retrieves the secret through SPS
+For normal application use, register a workspace in the dashboard, complete configured email verification, and enroll agents through the Agents page. Registration does not automatically verify an account. With no mail provider, delivery can be skipped; verification URL logging is off by default. Use configured email delivery, or the explicitly opted-in `SPS_LOG_VERIFICATION_URLS=1` development path only with dummy accounts in a trusted local terminal. Keep returned bootstrap API keys out of chat; configure the consuming integration through its protected runtime inputs.
 
-If you want a manual human-in-the-loop browser submission instead, use:
+The legacy `e2e:human` helper has known API-origin/port mismatches and is not a working quickstart step; see [demo limitations](../testing/Manual%20Demos.md#legacy-helper-limitations). Dashboard Playwright coverage is described in [test setup](../testing/README.md).
 
-```bash
-npm run e2e:human
-```
-
-## 8. Useful follow-ups
-
-- Policy editing guide: [policy.md](../../docs/guides/policy.md)
-- Self-hosting guide: [self-hosting.md](../../docs/guides/self-hosting.md)
-- API reference: [docs/api/README.md](../../docs/api/README.md)
-- Unraid deployment: [Unraid.md](../../docs/deployment/Unraid.md)
-
-## Shutdown
+## Stop
 
 ```bash
 make down
 ```
+
+This stops the test-stack containers without deleting the PostgreSQL volume. Other application terminals must be stopped separately. See [self-hosting](self-hosting.md), [policy](policy.md) and the [API reference](../api/README.md) for further configuration.

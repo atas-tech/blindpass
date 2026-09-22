@@ -1,224 +1,69 @@
-# BlindPass Threat Model
+# BlindPass threat model
 
-### Related Documents
+**Aligned to source:** 2026-09-22. This replaces the [March threat-model snapshot](../archive/security/Threat%20Model%202026-03.md) as the current interpretation. Existing TM-001–TM-007 identifiers are retained. The update inspects selected code paths; it does not rerun the original audits, public deployment probes or proposed fleet tests.
 
-- [Security Audit v2](../../docs/security/Security%20Audit%20v2.md) — canonical audit report with 24 findings and prioritized remediation plan
-- [Security Best Practices Supplement](../../docs/security/security_best_practices_report.md) — delta findings on `api_url` injection (TM-002/TM-003) and log leak (TM-004)
+## Scope and trusted endpoints
 
-Assumptions used for this review because no deployment-specific clarifications were provided:
+Existing SPS, browser input, dashboard, gateway, agent runtime and OpenClaw paths are in scope. Hosted-style and local deployments have different exposure/configuration. Billing and guest code remains a maintenance surface despite frozen expansion. The new controller, host broker and browser operation are proposed boundaries, not implemented controls.
 
-- Risk ranking assumes the hosted, internet-facing deployment described in `README.md` is in scope, not just local development.
-- `packages/sps-server`, `packages/browser-ui`, `packages/dashboard`, `packages/gateway`, `packages/agent-skill`, and `packages/openclaw-plugin` are in scope.
-- Redis/Postgres/Stripe/x402 infrastructure is treated as normal managed dependencies; infra-specific ACLs and edge headers are not visible in this repo.
-- The most sensitive assets are user credentials, agent credentials, signing secrets, one-time fulfillment links/tokens, and plaintext secrets at browser/agent endpoints.
-- Repo-visible browser hardening now exists:
-  - browser-ui has CSP and security headers in nginx plus Vite dev/preview config
-  - dashboard has CSP meta fallback plus Vite dev/preview headers
-  - dashboard production edge headers are still not visible in repo
+Protect source credentials, access/refresh tokens, bootstrap API keys, signing keys, secure-input links, recipient-key integrity, workspace policy and authorization/audit state. The browser handling input and the recipient decrypting it are plaintext endpoints. HPKE protects the relay path only when endpoint code and recipient-key binding are trustworthy.
 
-Open questions that would materially change ranking:
+An authorized process receiving a credential can read/copy it. The proposed browser mode intentionally hands session authority to the agent. A short SPS retrieval TTL or broker grant does not shorten a static provider key's lifetime or revoke a website session. See [mode/revocation contracts](../product/Specification.md#consumption-modes).
 
-- Are `SPS_USER_JWT_SECRET`, `SPS_AGENT_JWT_SECRET`, and `SPS_HMAC_SECRET` guaranteed by deployment and rotated after the fail-closed secret change?
-- Are dashboard production security headers enforced at the actual hosting edge?
-- Are log sinks for the SPS server and OpenClaw plugin accessible to support staff, customers, or shared observability platforms?
+## Authentication storage
 
-## Executive summary
+Source: [SPS auth routes](../../packages/sps-server/src/routes/auth.ts), [dashboard AuthContext](../../packages/dashboard/src/auth/AuthContext.tsx), [browser auth storage](../../packages/browser-ui/src/auth-storage.js), [browser requests](../../packages/browser-ui/src/app.js).
 
-The initial highest-risk themes were auth material misuse and official-origin phishing. The direct exploit paths for missing runtime signing secrets, query-controlled browser-ui API origin, live-link stdout leakage, arbitrary-origin CORS reflection, and the guest-payment settlement race have since been mitigated in code. The highest remaining themes are browser-session theft through any future frontend compromise, facilitator/payment trust, and incomplete production header coverage on all surfaces.
+| Mode/path | Actual behavior |
+|---|---|
+| Hosted mode, non-test | Auth responses set `sps_refresh_token` in an `HttpOnly`, `SameSite=Lax` cookie at `/api/v2/auth` and omit the raw refresh token from JSON |
+| Cookie flags | `Secure` is set for production or detected HTTPS; a configured domain override is optional. Deployments still need correctly configured TLS/proxy trust |
+| Hosted `NODE_ENV=test` | Also returns `refresh_token` in JSON for test fixtures; must remain isolated from public use |
+| Non-hosted mode | Returns the refresh token in JSON |
+| Refresh request parsing | A supplied body token takes precedence over the cookie, including in hosted mode; this is not cookie-only enforcement |
+| Dashboard | Access token in React memory/ref. A returned body refresh token is written to `localStorage`; refresh prefers that stored token with credentials omitted, otherwise uses cookies |
+| Browser input | The storage helper uses `localStorage`, and its refresh path supports a body token plus cookie credentials |
+| Cleanup gap | Dashboard `clearAuth()` clears memory but does not remove the stored refresh token; changing to hosted cookie responses does not itself clear existing browser storage |
 
-## Status update since initial model
+The earlier claim that refresh tokens were uniformly in `sessionStorage` is incorrect for this checkout. Hosted cookies reduce direct JavaScript token readability on their intended path, but legacy/test body-token storage remains readable. XSS can also exercise an authenticated user's authority even without reading an HttpOnly cookie. Browser-session/CSRF-origin behavior and storage migration/cleanup need explicit testing; do not claim frontend compromise is contained by cookies alone.
 
-- TM-001: materially reduced. SPS startup and token helpers now fail closed on missing HMAC/user/agent signing secrets.
-- TM-002: resolved for the reviewed code paths. Browser-ui no longer honors query-supplied `api_url`.
-- TM-003: reduced, not eliminated. Refresh tokens moved from `localStorage` to `sessionStorage`, and the `api_url` exfiltration path was removed, but tokens remain JS-readable.
-- TM-004: direct sensitive-stdout leak path resolved. Live secret URLs and verbose audit/verification logs are removed or gated behind explicit opt-in flags.
-- TM-006: reduced. CSP, clickjacking protections, and inline-handler removal improve frontend posture, but production dashboard edge headers are still not confirmed and refresh tokens are not yet cookie-backed.
+## Selected controls checked in source
 
-## Scope and assumptions
+| Area | Source observation | Evidence/limit |
+|---|---|---|
+| HPKE | X25519, HKDF-SHA256, ChaCha20-Poly1305 in browser and agent | [Key manager](../../packages/agent-skill/src/key-manager.ts), [browser crypto](../../packages/browser-ui/src/crypto.js); corrects the old AES-256-GCM design row |
+| Email verification/reset tokens | SHA-256 token hashes in `user_tokens`; expiry and atomic consumed-at checks; verification TTL one day, reset TTL one hour | [User service](../../packages/sps-server/src/services/user.ts); supersedes v2 M-2/M-3's March status, without claiming a new test pass |
+| Frontend headers | Both production nginx configs include CSP/frame and related headers; dashboard permits broad connection schemes, input page includes loopback and broad HTTPS connections; neither config adds HSTS | [Dashboard nginx](../../packages/dashboard/nginx.conf), [input nginx](../../packages/browser-ui/nginx.conf); actual deployed edge remains unverified in this pass |
+| Input origin | Request context ignores query-controlled `api_url`; frontend uses its configured API origin | [Parser](../../packages/browser-ui/src/request-context.js), [regression cases](../../packages/browser-ui/tests/request-context.test.mjs) |
+| Confirmation codes | SPS has 8×8×100 = 6,400 combinations using random bytes with modulo mapping; gateway has 4×4×100 = 1,600 combinations using `Math.random()` | [SPS generator](../../packages/sps-server/src/services/crypto.ts), [gateway generator](../../packages/gateway/src/code-generator.ts); entropy/generation remediation remains open |
+| Runtime custody | `SecretStore.get()` returns a plaintext copy and has no built-in expiry/use count; resolver intentionally returns plaintext | [Store](../../packages/agent-skill/src/secret-store.ts), [resolver](../../packages/openclaw-plugin/blindpass-resolver.mjs); handoff TTL is not local plaintext expiry |
+| Packaging | Current SPS Dockerfile has no explicit non-root `USER`; development Redis configuration disables persistence | [Dockerfile](../../packages/sps-server/Dockerfile), [Compose](../../docker-compose.test.yml); these files do not meet the proposed W2 contract by themselves |
 
-- In-scope paths:
-  - `packages/sps-server`
-  - `packages/browser-ui`
-  - `packages/dashboard`
-  - `packages/gateway`
-  - `packages/agent-skill`
-  - `packages/openclaw-plugin`
-- Out of scope:
-  - External SaaS control planes, DNS/TLS/CDN settings, runtime Kubernetes/container security, and actual Stripe/x402 account configuration.
-  - CI/CD hardening beyond what is directly visible in repo files.
-- Explicit assumptions:
-  - Hosted SPS APIs and static frontends are reachable from the internet.
-  - Operators rely on the browser UI and dashboard for real credential exchange.
-  - Agent plugins may run in semi-trusted environments where stdout/stderr is collected centrally.
-- Open questions:
-  - Whether production injects strict browser security headers at the edge.
-  - Whether OpenClaw plugin logs are considered trusted-only.
-  - Whether self-hosted/internal-only deployments are a primary target instead of hosted multi-workspace service.
+Other controls reported in historical audits—fail-closed signing configuration, scoped signing domains, constant-time comparisons, CORS allowlists, hashed sessions/API keys, and atomic exchange transitions—remain supported by their referenced code/tests. This limited alignment pass does not newly certify every path or mark every historical finding resolved.
 
-## System model
+## Threat register
 
-### Primary components
+| ID | Abuse path and impact | Current control/boundary | Remaining work or evidence |
+|---|---|---|---|
+| TM-001 | Signing-key compromise or configuration regression permits forged user/agent/fulfillment authority | Required-secret checks and token scope/workspace validation in SPS | Protect/recover/rotate deployed keys; retain fail-closed regressions. A compromised controller remains an authorization risk |
+| TM-002 | An official input link redirects credential submission through attacker-controlled API/key metadata | Query-controlled API origin removed | Keep origin/key-substitution regressions; trusted input code and recipient-key binding remain necessary |
+| TM-003 | Frontend compromise steals a body/legacy refresh token or exercises authenticated authority | Hosted non-test cookie delivery exists; access token is in memory | `localStorage` compatibility, body-token precedence and cleanup gaps remain; test migration, logout and origin/session behavior |
+| TM-004 | Logs/artifacts disclose secure links, codes, tokens or credential values | Runtime logging redaction/opt-in controls were reported in March | Demos intentionally print dummy values and cannot prove runtime secrecy; inspect actual client/log/artifact paths and restrict sensitive evidence |
+| TM-005 | Public guest requests or repeated approvals exhaust quotas, queues or operator attention | Existing rate limits and policy/approval checks | Maintain public-surface protections while expansion is frozen; pilot must measure approval fatigue and preserve bounded grant scope |
+| TM-006 | Same-origin script compromise abuses input/dashboard sessions, worsened by permissive CSP | Repo-visible nginx CSP and frame protections | Tighten production connection policies, validate actual deployed headers, and retain session authority/XSS limits; cookies do not stop all authenticated actions |
+| TM-007 | Compromised facilitator/payment trust causes fraudulent acceptance | Historical atomic settlement ownership reduces local duplicate-settlement races | Facilitator trust/reconciliation remains on the frozen payment-surface backlog; no new payment audit in this pass |
+| TM-008 | A local process spoofs a systemd routing name or reuses a PID/invocation to obtain another workload's credential | Proposed root-only loader socket plus pidfd-based unit/invocation authentication | W0 real-systemd tests, including known forged-name regression; user-manager/shared-UID delivery excluded |
+| TM-009 | Controller/key substitution or copied grants redirect provisioning across nodes/workloads | Proposed verified recipient binding, enrollment lifecycle, local ceiling and scoped grants | Fleet E/I/C scenarios; ciphertext-only storage is not proof against controller compromise |
+| TM-010 | Agent accesses private login state or receives more cookies/storage than approved | Proposed account/process separation and fresh-context cookie allowlist | Browser B-I14/B-I15; no general confinement claim for unrestricted browser tools |
+| TM-011 | Handed-off session creates lasting account authority or survives cancellation | Proposed restricted application role, non-extendable lifetime and server revocation | B-E12/B-E15/B-E16/B-E17; reject applications that cannot enforce these prerequisites |
+| TM-012 | Broker/socket failure starts a service with missing/partial credentials; copied provider key survives grant expiry | Proposed explicit consumer validation and separate provider-revocation status | C04/C12/C13; service delivery trusts the consumer and cannot recall copies |
+| TM-013 | Controller partition, stale restore or competing restored instance revives revoked/consumed authority | Proposed expiry/reconciliation, protected key backups and single-controller fencing | E07, O-series and D-series in both deployment profiles |
+| TM-014 | Browser login page or deployed application itself captures the source password | The credential receiver is a trusted endpoint | B-E14 boundary demonstration; do not let agent-controlled code modify the approved login endpoint |
 
-- SPS API server: Fastify app that exposes auth, secret request/retrieval, exchange, billing, audit, public offers, and guest intent routes. Evidence: `packages/sps-server/src/index.ts`, `packages/sps-server/src/routes/*.ts`.
-- Browser UI: Static Vite app that reads signed request context from the URL, fetches metadata, encrypts secrets client-side, and submits ciphertext. Evidence: `packages/browser-ui/src/app.js`, `packages/browser-ui/src/request-context.js`.
-- Dashboard: React SPA for workspace auth, agent/member management, billing, policy, audit, and public offers. Evidence: `packages/dashboard/src/auth/AuthContext.tsx`, `packages/dashboard/src/pages/*.tsx`.
-- Agent/gateway runtime: Agent-side secret store plus gateway/plugin clients that mint/request tokens, create requests, fulfill exchanges, and deliver secure links. Evidence: `packages/agent-skill/src/*.ts`, `packages/gateway/src/*.ts`, `packages/openclaw-plugin/*.mjs`.
-- Data stores: Redis or in-memory request/exchange store and Postgres for hosted data, users, billing, offers, audit, and agents. Evidence: `packages/sps-server/src/index.ts`, `packages/sps-server/src/services/redis.ts`, `packages/sps-server/src/db/migrations/*.sql`.
-- Billing/x402 integrations: Stripe checkout/webhooks and x402 quote/payment verification. Evidence: `packages/sps-server/src/routes/billing.ts`, `packages/sps-server/src/services/billing.ts`, `packages/sps-server/src/services/x402.ts`.
+## Evidence and follow-up
 
-### Data flows and trust boundaries
+The [pilot test catalog](../testing/Linux%20Fleet%20Pilot.md) owns scenario detail. S-series covers W5 regressions; B-series covers mode-1 browser handoff; fleet E/I/C/O/D covers identity, service delivery and deployment. Existing repository test locations and flags are in [testing setup](../testing/README.md).
 
-- Internet user/operator -> Dashboard or Browser UI
-  - Data: credentials, refresh tokens, secret plaintext, one-time links, query parameters.
-  - Channel: browser HTTPS to static frontend.
-  - Guarantees: browser-ui now has repo-visible CSP/security headers; dashboard has repo-visible CSP meta fallback and dev/preview headers, but production edge enforcement is still not confirmed.
-  - Validation: frontend form checks; server-side schemas on API side.
-- Dashboard/Browser UI -> SPS API
-  - Data: user bearer tokens, refresh tokens, signed request IDs, ciphertext payloads, public-offer tokens.
-  - Channel: HTTP fetch.
-  - Guarantees: bearer-token auth or signed query parameters; no cookie-based CSRF visible.
-  - Validation: Fastify schemas on most routes, JWT verification, HMAC verification, route-specific authz.
-- Agent runtime/plugin/gateway -> SPS API
-  - Data: agent JWTs, agent API keys, HPKE public keys, fulfillment tokens, ciphertext, payment headers.
-  - Channel: HTTP fetch.
-  - Guarantees: workload JWT verification or API-key exchange, workspace checks in hosted mode, rate limits on some entry points.
-  - Validation: schema validation, workspace matching, policy/approval checks, one-time retrieval semantics.
-- SPS API -> Redis/Postgres
-  - Data: ciphertext, exchange lifecycle state, API key hashes, refresh-token hashes, audit records, billing records.
-  - Channel: Redis/Postgres client connections.
-  - Guarantees: app-level object matching and hashed persistence for refresh/API keys.
-  - Validation: SQL constraints, Redis Lua scripts, service-layer checks.
-- SPS API -> Stripe/x402 providers
-  - Data: billing identifiers, webhook payloads, quote/payment verification payloads.
-  - Channel: HTTPS and signed webhook POSTs.
-  - Guarantees: provider-specific signature validation for webhooks; x402 quote/payment verification.
-  - Validation: provider SDK verification and request-hash matching.
-- Plugin -> external chat transport
-  - Data: secret URLs and confirmation codes.
-  - Channel: chat API / runtime / CLI / Telegram fallback.
-  - Guarantees: transport-specific only; no BlindPass-side confidentiality once message is emitted.
-  - Validation: minimal routing validation on channel parameters.
+Resolve audit items by identifier and evidence date. This update corrects F-7/F-8 documentation and v2 M-2/M-3's current interpretation; code/test/deployment follow-up remains explicit. Confirmation codes, storage cleanup, client timeouts, origin restrictions, deployment hygiene and active-path exposure risks stay in W5. Frozen guest/payment risks remain tracked rather than disappearing with the old roadmap.
 
-#### Diagram
-
-```mermaid
-flowchart TD
-  User["User or Operator"] --> Frontend["Dashboard or Browser UI"]
-  Frontend --> SPS["SPS API Server"]
-  Agent["Agent Runtime or Plugin"] --> SPS
-  SPS --> Redis["Redis or In-Memory Store"]
-  SPS --> Postgres["Postgres"]
-  SPS --> Billing["Stripe or x402"]
-  Plugin["Plugin Chat Delivery"] --> User
-  Agent --> Plugin
-```
-
-## Assets and security objectives
-
-| Asset | Why it matters | Security objective (C/I/A) |
-| --- | --- | --- |
-| Plaintext secrets at browser/agent edge | Core product promise is that secrets never leak to the wrong party | C |
-| User access and refresh tokens | Control dashboard, billing, agents, policy, audit, and offers | C/I |
-| Agent access tokens and API keys | Control secret request/retrieval and exchange fulfillment | C/I |
-| SPS signing secrets (`SPS_USER_JWT_SECRET`, `SPS_AGENT_JWT_SECRET`, `SPS_HMAC_SECRET`) | Root of trust for user auth, agent auth, request signatures, and fulfillment tokens | C/I |
-| One-time secret URLs, guest access tokens, fulfillment tokens | Grant short-lived access to request metadata and exchange flows | C/I |
-| Workspace policy and authorization state | Governs who can request or fulfill which secrets | I |
-| Audit logs and operational metadata | Needed for investigation; also reveal sensitive workflow details | C/I |
-| Billing and quota state | Enforces commercial limits and payment-backed flows | I/A |
-| Redis/Postgres availability | Secret exchange and hosted management depend on these stores | A |
-
-## Attacker model
-
-### Capabilities
-
-- Remote attacker can reach public HTTP endpoints and static frontends.
-- Attacker can craft arbitrary URLs and send convincing links to users/operators.
-- Attacker can read repo source and learn built-in fallback secret values.
-- Attacker can sign up as a guest requester through public offers if they obtain an offer token.
-- Attacker may gain access to centralized logs or support tooling in realistic insider or observability-compromise scenarios.
-
-### Non-capabilities
-
-- Attacker does not break HPKE primitives or TLS by default.
-- Attacker does not automatically have agent runtime memory or local browser storage on BlindPass origins without another bug or social-engineering step.
-- Attacker does not automatically control Stripe/x402 providers or Postgres/Redis infrastructure.
-
-## Entry points and attack surfaces
-
-| Surface | How reached | Trust boundary | Notes | Evidence (repo path / symbol) |
-| --- | --- | --- | --- | --- |
-| User auth API | Browser or script -> `/api/v2/auth/*` | Internet -> SPS API | Returns bearer and refresh tokens | `packages/sps-server/src/routes/auth.ts` |
-| Agent token exchange | Agent API key -> `/api/v2/agents/token` | Agent/plugin -> SPS API | Mints SPS agent bearer tokens | `packages/sps-server/src/routes/agents.ts` |
-| Secret request/retrieve API | Agent bearer token -> `/api/v2/secret/*` | Agent/plugin -> SPS API | Core secret handoff path | `packages/sps-server/src/routes/secrets.ts` |
-| Exchange API | Agent bearer token + fulfillment tokens | Agent/plugin -> SPS API | Agent-to-agent handoff with approval/payment hooks | `packages/sps-server/src/routes/exchange.ts` |
-| Public intent API | Anonymous guest -> `/api/v2/public/intents` | Internet -> SPS API | Guest request/pay/activate flows | `packages/sps-server/src/routes/public-intents.ts` |
-| Browser UI query params | Official secret page URL | Internet -> Browser UI | Parses only signed request identifiers plus preview flags | `packages/browser-ui/src/request-context.js` |
-| Dashboard session persistence | First-party SPA storage/refresh | Browser -> Dashboard/API | Refresh token kept in `sessionStorage` pending cookie migration | `packages/dashboard/src/auth/AuthContext.tsx` |
-| Plugin chat delivery | Runtime -> chat channel | Agent/plugin -> external channel | Delivers one-time links to humans | `packages/openclaw-plugin/index.mjs` |
-| Billing webhook | Provider -> `/api/v2/webhook/stripe` | Stripe -> SPS API | Signature-verified raw payload handling | `packages/sps-server/src/routes/billing.ts` |
-
-## Top abuse paths
-
-1. Attacker lands XSS or same-origin script execution on a BlindPass frontend origin, reads JS-accessible refresh tokens from `sessionStorage`, and mints new access tokens.
-2. Attacker compromises an allowed first-party frontend origin and uses its existing API reach together with JS-readable refresh tokens to persist access.
-3. Attacker or insider with log access attempts to recover sensitive workflow data; current code now redacts/gates the main stdout leak paths, reducing but not eliminating the sensitivity of log sinks.
-4. Attacker abuses public offer tokens to create high-volume guest intents, spamming operator approval queues or exhausting rate limits/quotas even if secret disclosure is blocked.
-5. Attacker exploits facilitator trust weaknesses to obtain fraudulent payment acceptance even though duplicate guest settlement races are now blocked locally.
-
-## Threat model table
-
-| Threat ID | Threat source | Prerequisites | Threat action | Impact | Impacted assets | Existing controls (evidence) | Gaps | Recommended mitigations | Detection ideas | Likelihood | Impact severity | Priority |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| TM-001 | Remote attacker | Deployment omits or misconfigures signing env vars | Abuse missing signing material to forge user, agent, guest, or fulfillment tokens | Full workspace takeover, agent impersonation, forged secret/exchange actions | User tokens, agent tokens, signing secrets, policies, billing, secrets | Startup and token helpers now fail closed on required secrets: `packages/sps-server/src/index.ts`, `packages/sps-server/src/utils/crypto.ts`, `packages/sps-server/src/services/agent.ts` | Residual risk is mostly deployment regression or reuse of weak configured secrets | Keep fail-closed startup checks, add minimum-entropy validation, rotate any legacy secrets | Alert on startup with unset/weak secrets; monitor auth anomalies across many workspaces | Low | High | medium |
-| TM-002 | Remote attacker using social engineering | User opens crafted official-origin browser-ui link | Attempt to override API origin and receive encrypted secret | Historical direct disclosure of plaintext-equivalent secrets entered by the user | Plaintext secrets, user trust, one-time handoff integrity | Browser UI no longer accepts query-supplied API origins: `packages/browser-ui/src/request-context.js`, `packages/browser-ui/src/app.js` | Residual risk would require regression or a different origin-confusion bug | Keep regression tests; if multiple official origins are introduced, bind/sign them explicitly | Alert on unexpected API origin changes in browser telemetry if added later | Low | High | low |
-| TM-003 | Remote attacker or same-origin script compromise | Victim has refresh token stored for same origin | Read JS-accessible refresh token and replay it for new access tokens | Session hijack and durable dashboard/browser-ui access | Refresh tokens, user account access | `api_url` exfiltration path removed and refresh tokens moved to `sessionStorage` | Refresh tokens remain JS-readable because they are not yet `HttpOnly` cookies | Move refresh tokens to cookies; keep origin pinning and browser hardening | Detect anomalous refresh patterns and repeated token rotation from new networks | Medium | High | high |
-| TM-004 | Insider or attacker with log access | Access to container/stdout/observability logs | Read sensitive workflow metadata from logs | Leak operational metadata or live sessions during TTL windows | Secret URLs, audit data, request/exchange metadata | Plugin URL logging removed; audit/verification logs redacted or opt-in: `packages/openclaw-plugin/index.mjs`, `packages/sps-server/src/services/audit.ts`, `packages/sps-server/src/services/user.ts` | Log sinks still contain some operational metadata and remain sensitive | Keep redaction tests; restrict retention/access; monitor for token-shaped strings in logs | Medium | Medium | low |
-| TM-005 | Anonymous guest or botnet | Valid public offer token or repeated access to public endpoints | Flood public intent creation and approval/payment workflows | Operator fatigue, quota exhaustion, availability degradation | Quotas, approval workflow, operational availability | Per-IP and per-offer rate limits plus payment/approval states: `packages/sps-server/src/routes/public-intents.ts`, `packages/sps-server/src/middleware/rate-limit.ts` | Limits are simple counters; no CAPTCHA or stronger abuse screening visible | Add stronger abuse controls for public offers, anomaly detection, optional CAPTCHA or proof-of-work for guest flows | Monitor spikes per offer/workspace/IP; alert on repeated throttling | Medium | Medium | medium |
-| TM-006 | XSS or third-party script compromise on first-party origin | A future frontend injection bug, compromised dependency, or extension on BlindPass origin | Read JS-accessible refresh token and replay it | Account takeover after any frontend compromise | Refresh tokens, user sessions | CSP and frame protections were added; inline browser-ui handler removed; obvious raw HTML sinks were not found | Refresh tokens are still JS-readable and dashboard production edge headers are not yet verified | Move refresh tokens to cookies; enforce dashboard production headers at the edge; consider CSP reporting | Monitor token refreshes after frontend errors or CSP violations | Low | High | medium |
-| TM-007 | Remote attacker or compromised facilitator path | Valid public offer token and payment capability, plus ability to spoof or subvert facilitator trust | Trick SPS into accepting or settling a payment that was not actually valid | Fraudulent guest activation or payment accounting errors | Payment integrity, billing state, facilitator trust | Guest payment processing now gates provider calls on the winner of an atomic pending-row insert in `packages/sps-server/src/services/guest-payment.ts`; duplicate local settlement races are blocked | Facilitator authenticity still depends on transport trust and provider behavior; no independent cryptographic attestation is visible in repo | Add stronger facilitator authentication/integrity controls, keep duplicate-settlement monitoring, and verify settlement state independently where possible | Monitor mismatches between facilitator responses and on-chain/provider reconciliation; alert on repeated facilitator-side anomalies | Medium | Medium | medium |
-
-## Criticality calibration
-
-- `critical`
-  - Full workspace takeover through forged user JWTs.
-  - Agent impersonation or forged fulfillment that breaks secret isolation.
-  - Official-origin phishing that causes plaintext secret disclosure.
-- `high`
-  - Refresh-token theft leading to durable session takeover.
-  - Cross-workspace authorization bypass if workspace matching or signing material fails.
-  - Exposure of live fulfillment tokens during active exchanges.
-- `medium`
-  - Approval queue or guest-offer abuse that degrades operations.
-  - Leakage of secret names, payment IDs, or approval refs through logs.
-  - Frontend hardening gaps that materially worsen any future XSS.
-- `low`
-  - Fingerprinting or low-sensitivity info leaks without auth bypass.
-  - Noisy DoS that is already throttled by existing limits.
-  - Dev-only behavior that cannot reach hosted/runtime paths.
-
-## Focus paths for security review
-
-| Path | Why it matters | Related Threat IDs |
-| --- | --- | --- |
-| `packages/sps-server/src/utils/crypto.ts` | User JWT root of trust now fails closed; still central to auth assurance | TM-001 |
-| `packages/sps-server/src/middleware/auth.ts` | Central workload and user token verification, hosted-mode branching | TM-001 |
-| `packages/sps-server/src/index.ts` | App bootstrap, CORS, HMAC secret selection, store/runtime wiring | TM-001, TM-005 |
-| `packages/sps-server/src/services/agent.ts` | Agent API key exchange and agent bearer token minting | TM-001 |
-| `packages/browser-ui/src/request-context.js` | Parses signed request context after removal of query-controlled API origin | TM-002, TM-003 |
-| `packages/browser-ui/src/app.js` | Uses configured API origin, frame guard, and CSP-aware browser flow | TM-003, TM-006 |
-| `packages/dashboard/src/auth/AuthContext.tsx` | Stores refresh tokens in `sessionStorage` and refreshes sessions | TM-003, TM-006 |
-| `packages/openclaw-plugin/index.mjs` | Delivers secure links; sensitive URL logging removed | TM-004 |
-| `packages/sps-server/src/services/audit.ts` | Redacted/opt-in stdout audit summary plus DB-backed audit path | TM-004 |
-| `packages/sps-server/src/routes/public-intents.ts` | Highest-volume anonymous surface; approval/payment state machine | TM-005 |
-| `packages/sps-server/src/routes/exchange.ts` | Fulfillment-token verification and exchange lifecycle | TM-001 |
-| `packages/sps-server/src/services/guest-payment.ts` | Guest payment verify/settle TOCTOU race | TM-007 |
-| `packages/sps-server/src/services/redis.ts` | One-time retrieval and exchange reservation integrity | TM-001, TM-004 |
-
-## Quality check
-
-- All major entry points discovered in runtime code are covered.
-- Each major trust boundary appears at least once in the abuse paths or threat table.
-- Runtime behavior was separated from test/demo/tooling code.
-- No user clarification was available, so assumptions are explicit.
-- Risk ranking is conditional on hosted internet exposure and deployment secret hygiene.
-- TM-007 now tracks residual facilitator/payment-integrity risk after the guest payment TOCTOU issue was remediated, cross-referenced with [H-6 in Security Audit v2](../../docs/security/Security%20Audit%20v2.md) and [M-4 in Security Audit v2](../../docs/security/Security%20Audit%20v2.md).
+Actual host isolation, MCP-client handling, server-side website revocation and deployment parity have not been executed here. Local scans and documentation review cannot establish those guarantees. See [security references](README.md) for the dated reports.

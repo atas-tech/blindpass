@@ -1,51 +1,56 @@
-# Repository Guidelines
+# Repository instructions
 
-## Project Structure & Module Organization
-This repo is a Node.js workspace monorepo. Core code lives in `packages/`:
-- `packages/sps-server`: Fastify Secret Provisioning Service (API routes, crypto, Redis/in-memory store).
-- `packages/gateway`: request interception and secure link delivery logic.
-- `packages/agent-skill`: agent-side key management and in-memory secret store.
-- `packages/openclaw-plugin`: OpenClaw integration and runtime transport handling.
-- `packages/browser-ui`: Vite-based browser page for client-side encryption.
+## Scope and sources of truth
 
-Planning and security docs are in `docs/`, and executable demos/integration helpers are in `scripts/`.
+- Read [docs/README.md](docs/README.md) for documentation ownership and current implementation limits.
+- Forward work follows [Roadmap](docs/product/Roadmap.md), [Specification](docs/product/Specification.md), and [Linux Fleet Pilot](docs/testing/Linux%20Fleet%20Pilot.md). The host broker, browser session handoff, and native/container fleet parity are proposed, not shipped.
+- Files under [docs/archive](docs/archive/README.md) are historical records. Their checkboxes, deadlines, and proposed work do not override the current roadmap or reactivate frozen features.
+- Use source and executed tests to establish behavior. Do not turn a plan, source inspection, or skipped suite into a claim that a feature works.
 
-## Build, Test, and Development Commands
-- `npm install`: install workspace dependencies.
-- `npm run build`: build all packages (`tsc` + Vite build where defined).
-- `npm test`: run all workspace tests.
-- `npm run test:e2e --workspace=packages/sps-server`: run PostgreSQL-backed E2E tests (requires `DATABASE_URL` and `SPS_PG_INTEGRATION=1`).
-- `npm run dev --workspace=packages/sps-server`: run SPS server in watch mode (defaults to `.env`). Use `DOTENV_CONFIG_PATH=.env.test` to override.
-- `npm run dev --workspace=packages/browser-ui`: start browser UI locally.
-- `npm run test:integration`: run Redis integration test for SPS server.
-- `npm run redis:up` / `npm run redis:down`: start/stop local Redis via Docker Compose.
+## Workspace
 
-## Coding Style & Naming Conventions
-TypeScript uses `strict` mode with ESM (`NodeNext`). Follow existing file style:
-- Keep imports explicit (including `.js` extension in TS local imports).
-- Use `camelCase` for variables/functions, `PascalCase` for types/interfaces, `UPPER_SNAKE_CASE` for env vars.
-- Prefer descriptive, kebab-case file names (for example `secret-store.ts`, `egress-filter.ts`).
-- Match surrounding indentation and quote style instead of reformatting unrelated lines.
-- **Documentation Paths**: Always use relative paths (e.g., `../packages/..`) in documentation files. Never use absolute paths (e.g., `/home/hvo/Projects/blindpass/..`) which are environment-specific.
+This is an npm workspace monorepo. Packages are:
 
-No dedicated lint script is currently enforced; use `npm run build` and `npm test` as the quality gate.
+| Package | Responsibility |
+|---|---|
+| `packages/sps-server` | Fastify API, authentication, exchange policy, Redis state and PostgreSQL management data |
+| `packages/gateway` | Interception, secure-link routing and agent identity helpers |
+| `packages/agent-skill` | HPKE, SPS clients, runtime memory and exchange helpers |
+| `packages/openclaw-plugin` | OpenClaw integration, encrypted store, resolver and MCP entry point |
+| `packages/browser-ui` | Vite secret-input page and client-side encryption |
+| `packages/dashboard` | React/Vite workspace administration |
+| `packages/i18n` | Shared locale resources and validation |
 
-## Testing Guidelines
-Most packages use Vitest with tests under each package `tests/` folder (`*.test.ts`). The OpenClaw plugin uses a Node test script (`tests/index.test.mjs`). Add or update tests with each behavior change, especially around secret handling, transport fallback, and TTL/one-time retrieval logic.
+Scripts and packaging live in `scripts/`; service templates live in `deploy/`. Read [LICENSES.md](LICENSES.md) before changing package boundaries.
 
-**Phase Testing Rule:** When planning or implementing a new phase or milestone, always define comprehensive End-to-End (E2E) and integration test scenarios in the corresponding test plan document within the `docs/testing/` directory (e.g., `docs/testing/Phase 3A.md`). These scenarios must be implemented alongside the feature code to ensure thorough verification.
+## Working conventions
 
-## Commit & Pull Request Guidelines
-Recent history follows Conventional Commits, e.g. `feat(browser-ui): ...`, `fix(openclaw-plugin): ...`, `docs: ...`. Keep subject lines imperative and scoped by package when relevant.
+- Follow surrounding TypeScript/JavaScript style; TypeScript is strict ESM/NodeNext. Keep `.js` suffixes on local TypeScript imports.
+- Use descriptive kebab-case filenames, camelCase values/functions, PascalCase types and UPPER_SNAKE_CASE environment variables. Avoid unrelated reformatting.
+- Use relative links and paths in documentation, never machine-specific checkout paths. Update inbound links when moving or deleting documents.
+- Keep credentials, `.env` files, private keys, live links and bearer tokens out of commits, chat, logs and test evidence. Use generated dummy canaries for exposure checks.
+- Identify the plaintext consumer honestly. Runtime memory, encrypted-at-rest storage, service delivery and a browser session have different exposure and lifetime limits.
+- For adding, upgrading, removing or reviewing software dependencies, **use the global `dependency-guard` skill before changing manifests or lockfiles** and evaluate its Socket risk signals. Stop for unresolved risk as the skill requires.
 
-PRs should include:
-- clear summary of behavior changes,
-- affected package(s),
-- commands run (`npm test`, targeted integration tests),
-- screenshots or message samples for UI/chat-delivery changes.
+## Commands and validation
 
-## Security & Configuration Tips
-Never commit plaintext secrets or `.env` files. Use environment variables (for example `SPS_HMAC_SECRET`, `SPS_BASE_URL`) for local config, and avoid logging sensitive values at any layer.
+Run commands from the repository root. [Testing setup](docs/testing/README.md) covers prerequisites and environment loading; npm workspace scripts execute in their package directories, so do not assume they load the root `.env`.
 
-## Agent Instructions
-When tasked with adding, upgrading, removing, or reviewing software dependencies, agents MUST utilize the global `dependency-guard` skill. Stop to apply the Socket-based supply-chain guardrail and evaluate the risk signals before applying changes to manifests or lockfiles.
+| Command | Purpose |
+|---|---|
+| `npm ci` | Install the committed workspace dependency set |
+| `npm run build` | Build all packages and the plugin bundle |
+| `npm test` | Workspace unit/component suites; database-gated suites may skip |
+| `npm run test:integration` | Redis integration; requires configured Redis |
+| `npm run test:e2e --workspace=packages/sps-server` | PostgreSQL SPS E2E; script sets `SPS_PG_INTEGRATION=1` |
+| `SPS_PG_INTEGRATION=1 npm test --workspace=packages/sps-server` | Include the wider PostgreSQL-gated SPS suites |
+| `npm run test:e2e` | Dashboard Playwright E2E, not the SPS-only suite |
+| `npm run test:release-metadata` | Distribution metadata/staging regression |
+| `make up` / `make down` | Start/stop the local PostgreSQL and Redis test stack |
+| `npm run redis:up` | Start Redis only; does not start PostgreSQL |
+
+For implementation changes, run the workspace build/tests and relevant integration/E2E gates. Add meaningful regression coverage for behavior changes, especially authorization, secret handling, transport fallback, TTL and one-use retrieval. For documentation-only edits, check links, command accuracy and `git diff --check`; report which runtime checks were not run.
+
+**Phase testing rule:** When planning or implementing a phase/milestone, define comprehensive E2E and integration scenarios in the corresponding plan under `docs/testing/`, and implement them alongside feature code. Preserve scenario IDs and record actual execution evidence. The Linux pilot requires real systemd VM and stock-client tests; mocks cannot establish those guarantees.
+
+Use Conventional Commit subjects. PRs should state the behavior change, affected packages, checks run and material limits; include screenshots or message samples for visible UI/chat changes. Do not include secret values in review artifacts.

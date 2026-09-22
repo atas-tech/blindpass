@@ -3,13 +3,12 @@ info:
   title: BlindPass SPS API
   version: 0.1.0
   description: |
-    Maintained OpenAPI snapshot for the stable BlindPass hosted and local-development API surfaces.
+    Manual snapshot of existing BlindPass hosted-style and local-development API surfaces.
     This document is derived from the route schemas in `packages/sps-server/src/routes`.
+    It is not the proposed Linux fleet controller API or a deployment-readiness declaration.
 servers:
   - url: http://127.0.0.1:3100
     description: Local development
-  - url: https://sps.atas.tech
-    description: Hosted production
 tags:
   - name: Health
   - name: Auth
@@ -145,7 +144,7 @@ paths:
     post:
       tags: [Auth]
       summary: Rotate the dashboard session
-      description: Uses the hosted refresh cookie in hosted mode, or `refresh_token` in the request body for local and legacy flows.
+      description: Accepts refresh_token in the request body before checking the sps_refresh_token cookie, including in hosted mode. Hosted non-test responses set an HttpOnly cookie and omit the body token; hosted test responses also return the token in JSON. Non-hosted responses use JSON tokens.
       requestBody:
         required: false
         content:
@@ -978,6 +977,7 @@ components:
           type: integer
         refresh_token:
           type: string
+          description: Returned in non-hosted mode and in hosted NODE_ENV=test responses; omitted from hosted non-test responses that use the refresh cookie.
         refresh_token_expires_at:
           type: integer
         user:

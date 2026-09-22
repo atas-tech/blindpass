@@ -1,63 +1,23 @@
-# Dashboard Maintainability Notes
+# Dashboard maintenance
 
-The dashboard's UI is built on top of Tailwind CSS and custom properties (CSS variables). The latest updates align the theme to the landing page, but how do we scale this for multiple themes or internationalization (i18n)?
+The existing dashboard is a React/Vite application using Tailwind and CSS custom properties. Theme and localization expansion follow the [roadmap freeze](../product/Roadmap.md#freeze-register); maintaining existing screens and translations remains part of normal changes.
 
-## 1. Multiple Themes (Theming)
+## Styles
 
-Currently, all the design tokens are declared in the `:root` block of `packages/dashboard/src/styles/index.css`:
+Use the tokens in [index.css](../../packages/dashboard/src/styles/index.css) and surrounding component conventions. Avoid duplicating raw color values when an existing token expresses the intent. A second theme requires an explicit design/change with visual checks; the presence of CSS variables alone does not establish theme support.
 
-```css
-:root {
-  --bg: #060a14;
-  --bg-elevated: #0c1222;
-  --text: #f0f4ff;
-  --primary: #00f5d4;
-  /* ... */
-}
-```
+## Shared translations
 
-**How to add a Light Theme (or other themes):**
-To make the app support multiple themes easily, avoid hardcoding `rgba(12, 18, 34)` and instead map all values to variables.
+- Locale JSON resources live in [packages/i18n/locales](../../packages/i18n/locales).
+- [supported.ts](../../packages/i18n/src/supported.ts) declares supported locales.
+- [dashboard configuration](../../packages/dashboard/src/i18n/config.ts) wires `react-i18next` and locale preferences.
+- Components use namespace keys through `useTranslation()`; the browser-input and email code share the locale package.
+- `npm run validate --workspace=packages/i18n` checks key parity and suspicious untranslated copies.
 
-1. Extract hex colors into RGB format so they can be injected into Tailwind's `rgb()` / `rgba()` natively:
-```css
-:root {
-  --primary-rgb: 0, 245, 212;
-  --bg-rgb: 6, 10, 20;
-}
+Update existing locales when changing user-visible strings. Do not add locales or redesign theme architecture merely to complete a small screen change.
 
-[data-theme='light'] {
-  --primary-rgb: 91, 43, 238; /* Old purple scale */
-  --bg-rgb: 255, 255, 255; 
-}
-```
+## Auth and verification
 
-2. Inside your Tailwind config (`packages/dashboard/src/styles/index.css` depending on v4 format) or throughout `.css` files, use elements like `background: rgba(var(--bg-rgb), 0.8)`. 
+Do not copy token-storage assumptions from old phase plans. [Current auth storage](../security/blindpass-threat-model.md#authentication-storage) documents hosted cookies and remaining `localStorage` paths. Keep secret values and bootstrap credentials out of screenshots, component snapshots and ordinary diagnostics.
 
-This will automatically re-skin the entire CSS without needing to modify the React components at all when `document.documentElement.setAttribute('data-theme', 'light')` is toggled.
-
-## 2. Localization and i18n
-The dashboard is a client-side React application, and the repo now uses a shared i18n package instead of inline dashboard-only locale files.
-
-**Current pattern in this repo:**
-1. Shared locale JSON files live in `packages/i18n/locales/{locale}/*.json`.
-2. The dashboard wires `react-i18next` through `packages/dashboard/src/i18n/config.ts`.
-3. Components consume translated copy with `useTranslation()` and namespace keys.
-4. Locale support is declared centrally in `packages/i18n/src/supported.ts`.
-5. `npm run validate --workspace=packages/i18n` enforces key parity and flags suspicious untranslated locale copies before release.
-
-```tsx
-import { useTranslation } from "react-i18next";
-
-export function LoginPage() {
-  const { t } = useTranslation(["auth"]);
-  return (
-    <div>
-      <label>{t("auth:login.emailLabel")}</label>
-      {/* ... */}
-    </div>
-  );
-}
-```
-
-This keeps dashboard copy, browser-ui copy, and email copy aligned under one shared source of truth instead of drifting across packages.
+Use component tests for screen behavior and [dashboard Playwright E2E](../testing/README.md#test-matrix) for backend-connected flows. [Historical phase tests](../archive/README.md) retain original scenarios without implying present-day execution.

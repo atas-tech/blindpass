@@ -8,6 +8,7 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | :--- | :--- | :--- |
 | `packages/sps-server` | `AGPL-3.0-only` | Secret Provisioning Service / trust anchor |
 | `packages/dashboard` | `AGPL-3.0-only` | Hosted control plane UI |
+| `packages/i18n` | `AGPL-3.0-only` | Declared in package metadata; no standalone package LICENSE file currently present |
 | `packages/agent-skill` | `MIT` | Agent-side SDK / skill logic |
 | `packages/browser-ui` | `MIT` | Client-side encryption sandbox |
 | `packages/gateway` | `MIT` | Interception / delivery middleware |
@@ -16,8 +17,8 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 ## Repository Notes
 
 - The root workspace package is marked `private` and uses `SEE LICENSE IN LICENSES.md` because the repository contains packages under more than one license.
-- Each package includes its own `LICENSE` file and `package.json` license field.
-- Source and documentation describing the package split live in `docs/architecture/Licensing_Proposal.md`.
+- The six original application/integration packages include `LICENSE` files. The shared i18n package currently declares its license in `package.json` only; this documentation update does not add or change licensing terms.
+- The [original licensing proposal](docs/archive/Licensing_Proposal.md) is historical rationale; the package metadata/license files and this matrix describe the current repository.
 
 ## Boundary Expectations
 

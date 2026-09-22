@@ -126,7 +126,6 @@ async function testReleaseMetadataSyncAndStagedNpmContract() {
             "dist",
             "SKILL.md",
             "AGENTS.md",
-            "CLAUDE.md",
             "agents",
             "openclaw.plugin.json",
             "scripts",
@@ -134,9 +133,8 @@ async function testReleaseMetadataSyncAndStagedNpmContract() {
             "README.md",
         ];
 
-        for (const required of expectedFiles) {
-            assert.ok(stagePackage.files.includes(required), `dist package.json files is missing '${required}'`);
-        }
+        assert.deepEqual(stagePackage.files, expectedFiles, "dist package.json must list only the supported artifacts");
+        await assert.rejects(readFile(path.join(stageDir, "CLAUDE.md")), { code: "ENOENT" });
     } finally {
         await rm(stageDir, { recursive: true, force: true });
     }

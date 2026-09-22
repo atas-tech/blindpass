@@ -1,5 +1,7 @@
 # Licensing Strategy Proposal: BlindPass
 
+> Historical record, archived during the 2026-09-22 documentation alignment. Dates, checkboxes, commands, and proposed decisions below describe their original review period; they do not establish current support or authorize new work. See the [current documentation](../README.md) and [roadmap](../product/Roadmap.md).
+
 This document proposes a default licensing strategy for the BlindPass monorepo. It is intended as a product and engineering recommendation, not legal advice. Final adoption should be reviewed by counsel before public release.
 
 ---

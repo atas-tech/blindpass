@@ -1,106 +1,55 @@
-# BlindPass (Agent Secrets)
+# BlindPass
 
-BlindPass is a secure, zero-knowledge secret provisioning system designed to let humans and AI agents exchange sensitive credentials through one coordinating SPS server without exposing plaintext to the LLM or the server.
+BlindPass provides encrypted human-to-agent credential provisioning and policy-controlled agent-to-agent exchange. The operator's browser encrypts a submitted secret with HPKE; SPS coordinates ciphertext delivery, and the recipient runtime decrypts it. Plaintext exists at the input and consumer endpoints, and encrypted delivery alone does not isolate a runtime from the secret it receives.
 
-This repository contains the architecture, implementation plans, and source code for the Secret Provisioning System (SPS), including gateway-level anti-phishing, in-memory-only secret storage, and HPKE (Hybrid Public Key Encryption) encryption.
+The next product direction is an Omarchy-first Linux access pilot: one controller, two hosts, a brokered browser task, and a native service job. Host workload authentication, browser session handoff, and native/container fleet-controller parity remain proposed. See the [roadmap](docs/product/Roadmap.md) and [specification](docs/product/Specification.md).
 
-## Table of Contents
-- [Overview](#overview)
-- [Hosted Services](#hosted-services)
-- [Architecture](#architecture)
-- [Directory Structure](#directory-structure)
-- [Documentation](#documentation)
-- [Features](#features)
-- [Getting Started](#getting-started)
+## Start here
 
-## Overview
+- [Documentation index](docs/README.md): current guides, architecture, security status and historical records.
+- [Landing page](landing/README.md): standalone HTML presentation and interactive illustration of the proposed access workflow.
+- [Quick start](docs/guides/quickstart.md): run the existing source-based development stack.
+- [Self-hosting](docs/guides/self-hosting.md): configuration and operational limits of the current SPS stack.
+- [Testing](docs/testing/README.md): unit, Redis, PostgreSQL and dashboard E2E commands.
+- [Linux fleet pilot test plan](docs/testing/Linux%20Fleet%20Pilot.md): proposed acceptance gates, distinct from existing tests.
 
-When an AI Agent needs a secret to complete a task (e.g., "Deploy my website to AWS"), it should **never ask for the secret in plain text over chat**, nor should the secret ever be visible to the LLM.
+## Current implementation
 
-BlindPass solves this by using SPS as the trust anchor and coordinator. For Human -> Agent flow, the gateway generates a secure, single-use, out-of-band link for the user. The user encrypts the secret in their browser, and only the agent's constrained execution environment can decrypt and hold it in memory. For Agent -> Agent flow, SPS coordinates a pull-based exchange between stable agent identities, enforcing policy, approvals, and one-time retrieval without requiring Kubernetes or a cluster control plane.
+| Area | In this repository |
+|---|---|
+| Provisioning | Signed browser-input links, X25519/HKDF-SHA256/ChaCha20-Poly1305 HPKE and one-use ciphertext retrieval |
+| Exchange | Authenticated requester/fulfiller flows, workspace policy, approvals, reservation/retrieval lifecycle and metadata audit |
+| Administration | Dashboard authentication, agent/member management, policy, audit and existing billing/guest surfaces |
+| Runtime integration | OpenClaw transport adapters, optional SOPS storage and an exec resolver |
+| MCP | An entry point exists, but its framing, input transport and stock-client consumption gaps remain W1 work; do not assume clean-client compatibility |
+| Deployment | Source configuration, application Dockerfiles and Unraid templates; release availability and deployment validation are separate from files existing in the repo |
 
-## Hosted Services
+Default plugin URLs must be overridden with the intended `SPS_BASE_URL` until the endpoint/distribution gate is completed. Previously documented `atas.tech` hosts are deployment history, not a service-availability guarantee. Billing, x402, guest intake and integration expansion follow the [freeze register](docs/product/Roadmap.md#freeze-register).
 
-Access the live BlindPass platform:
-- **Landing Page**: [blindpass.atas.tech](https://blindpass.atas.tech/)
-- **Operator Dashboard**: [app.atas.tech](https://app.atas.tech/)
-- **SPS API Server**: [sps.atas.tech](https://sps.atas.tech/)
-- **Secure Secret Input**: [secret.atas.tech](https://secret.atas.tech/)
-
-## Architecture
-
-The system consists of 5 main components:
-1. **SPS Server:** A Fastify backend with Redis-backed storage for handling encrypted payload submission and retrieval. All data has a strict TTL.
-2. **Operator Dashboard:** A Vite + React application providing a persistent human-facing interface for workspace management, audit logging, and agent enrollment.
-3. **Browser UI:** A zero-dependency, static HTML/JS page served to the user. It handles client-side HPKE encryption so the plaintext secret never traverses the network.
-4. **Agent Skill:** A package that gives agents the `request_secret` tool, handles keypair generation, and securely manages the in-memory `SecretStore`.
-5. **Gateway Middleware / Runtime Integration:** Intercepts LLM tool calls, replaces them with secure out-of-band links, enforces outbound URL filtering, and can mint or forward SPS-trusted agent tokens for coordinated agent-to-agent exchange.
-
-## Directory Structure
+## Repository layout
 
 ```text
-blindpass/
-├── docs/                 # System architecture, security audits, and test plans
-│   ├── architecture/     # Implementation plans and system design docs
-│   ├── security/         # Security audit documentation
-│   └── testing/          # E2E and component test plans
-├── packages/             # Monorepo packages (TypeScript)
-│   ├── agent-skill/      # Agent-side secret management skill
-│   ├── browser-ui/       # Secure client-side encryption interface
-│   ├── dashboard/        # Operator Dashboard (Vite + React SPA)
-│   ├── gateway/          # Gateway security middleware
-│   ├── openclaw-plugin/  # OpenClaw specific integration
-│   └── sps-server/       # Secret Provisioning Service backend
-└── scripts/              # Integration tests and E2E demonstration scripts
+docs/
+  product/       Roadmap and proposed specification
+  architecture/  Current code architecture
+  guides/        Source setup, self-hosting and exchange policy
+  security/      Current threat model and dated evidence
+  testing/       Current test setup and proposed fleet gates
+  archive/       Historical plans, audits and research
+packages/
+  sps-server/    Fastify API and persistence
+  gateway/       Interception, link routing and identity helpers
+  agent-skill/   HPKE and runtime/exchange clients
+  openclaw-plugin/  Integration, encrypted store, resolver and MCP
+  browser-ui/    Vite secret-input page
+  dashboard/     React/Vite administration
+  i18n/          Shared translations
+scripts/         Tests, demos and packaging
+deploy/          Platform templates
 ```
 
-## Documentation
+## Development and licensing
 
-Detailed documentation and planning can be found in the `docs/` folder:
-- **Core Strategy**: [Implementation Plan](docs/architecture/Implementation%20Plan.md) | [Security Audit](docs/security/Security%20Audit%20v2.md) | [Licensing Proposal](docs/archive/Licensing_Proposal.md)
-- **Getting Started**: [Quick Start](docs/guides/quickstart.md) | [Self-Hosting](docs/guides/self-hosting.md) | [API Reference](docs/api/README.md) | [Policy Guide](docs/guides/policy.md) | [Unraid Deployment](docs/deployment/Unraid.md)
-- **Roadmap & Phases**:
-    - [Phase 1: Core MVP](docs/architecture/Phase%201%20-%20Core%20MVP.md)
-    - [Phase 2A: Agent to Agent Exchange](docs/architecture/Phase%202A%20-%20Agent%20to%20Agent%20Exchange.md)
-    - [Phase 2B: Production A2A](docs/architecture/Phase%202B%20-%20Production%20A2A.md)
-    - [Phase 3A: Hosted Platform](docs/architecture/Phase%203A%20-%20Hosted%20Platform.md)
-    - [Phase 3B: UI & Operations](docs/architecture/Phase%203B%20-%20UI%20&%20Operations.md)
-    - [Phase 3C: Paid Guest Secret Exchange](docs/architecture/Phase%203C%20-%20Paid%20Guest%20Secret%20Exchange.md)
-    - [Phase 3D: Autonomous Payments & Crypto Billing](docs/architecture/Phase%203D%20-%20Autonomous%20Payments%20%26%20Crypto%20Billing.md)
-    - [Phase 3E: Hosted Hardening, Ecosystem & Launch](docs/architecture/Phase%203E%20-%20Hosted%20Hardening,%20Ecosystem%20%26%20Launch.md)
-- **Maintenance**: [Dashboard Maintainability](docs/architecture/dashboard-maintainability.md)
-- **Product Review (Sept 2026)**: [Review Index](docs/product/README.md) | [Product Review](docs/product/Product%20Review%202026-09.md) | [Repo State Findings](docs/product/Repo%20State%20Findings%202026-09.md) | [Roadmap Reset](docs/product/Roadmap%20Reset%202026-09.md)
+Use Node.js 22+ and the committed npm lockfile. Follow the [quick start](docs/guides/quickstart.md) for environment setup before starting workspace scripts. `npm run build` builds the workspaces; `npm test` runs their default suites. Integration suites have additional service and environment prerequisites.
 
-## Licensing
-
-This repository uses a mixed-license model:
-- `packages/sps-server` and `packages/dashboard` are licensed under `AGPL-3.0-only`.
-- `packages/agent-skill`, `packages/browser-ui`, `packages/gateway`, and `packages/openclaw-plugin` are licensed under `MIT`.
-
-See `LICENSES.md` for the package licensing matrix and rollout notes.
-
-## Features
-
-- **Zero-Knowledge Encryption:** Secrets are encrypted in the user's browser using HPKE before transmission. The server only sees ciphertext.
-- **Short-Lived Keys:** Agent keypairs and encrypted payloads are ephemeral and strictly TTL-bound.
-- **Phishing Prevention:** Gateway egress filtering redacts unexpected URLs, and requests are protected by cryptographically secure confirmation codes.
-- **Atomic Single-Use Retrieval:** Secrets are retrieved and deleted atomically via Redis Lua scripts, ensuring they can only be read once.
-- **No LLM Exposure:** The LLM orchestration layer never comes in contact with plaintext secrets.
-- **Single Coordinator Model:** One SPS server can coordinate secret exchange across multiple agents and hosts using stable agent IDs and SPS-trusted JWT/JWKS validation.
-
-## Auth Modes
-
-- **Hosted / local plugin default:** Prefer agent API keys. Enrolled agents exchange `BLINDPASS_API_KEY` / `SPS_AGENT_API_KEY` for short-lived SPS bearer tokens, so plugin users do not need to manage JWKS files.
-- **Self-hosted / workload identity:** Use `SPS_AGENT_AUTH_PROVIDERS_JSON` to trust external workload JWT issuers via `jwks_url` or `jwks_file`.
-- **Legacy note:** `SPS_GATEWAY_JWKS_FILE` and `SPS_GATEWAY_JWKS_URL` are no longer direct SPS server config. If you keep a local `jwks.json`, reference it from `SPS_AGENT_AUTH_PROVIDERS_JSON`.
-
-## Getting Started
-
-Start with [docs/guides/quickstart.md](docs/guides/quickstart.md) for a local source-based run, or [docs/guides/self-hosting.md](docs/guides/self-hosting.md) for the supported self-hosted setup. The packaged Unraid path is documented in [docs/deployment/Unraid.md](docs/deployment/Unraid.md).
-
-The local developer baseline now includes:
-
-- [`.env.example`](.env.example) for source-based local and self-hosted configuration
-- [`docker-compose.test.yml`](docker-compose.test.yml) for PostgreSQL and Redis
-- [`Makefile`](Makefile) for `up`, `down`, `logs`, `migrate`, and dev workflows
-- [docs/api/openapi.yaml](docs/api/openapi.yaml) as the maintained OpenAPI snapshot for the stable hosted/dev API surface
+[AGENTS.md](AGENTS.md) contains repository contribution instructions. [LICENSES.md](LICENSES.md) records package licensing; the roadmap does not change licenses or establish a commercial entitlement.

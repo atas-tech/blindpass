@@ -240,7 +240,6 @@ generate_dist_package_json() {
         "dist",
         "SKILL.md",
         "AGENTS.md",
-        "CLAUDE.md",
         "agents",
         "openclaw.plugin.json",
         "scripts",
@@ -271,7 +270,6 @@ prepare_stage_layout() {
 
   # Optional agent-specific instructions/configs are copied when present.
   copy_if_exists "$ROOT_DIR/AGENTS.md" "$stage/AGENTS.md"
-  copy_if_exists "$ROOT_DIR/CLAUDE.md" "$stage/CLAUDE.md"
   copy_if_exists "$ROOT_DIR/agents" "$stage/agents"
   copy_if_exists "$ROOT_DIR/README.md" "$stage/README.md"
 

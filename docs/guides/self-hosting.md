@@ -1,148 +1,61 @@
-# Self-Hosting
+# Self-hosting the current SPS stack
 
-This guide covers the supported self-hosted path for BlindPass from source. For the packaged Unraid deployment path, use [Unraid.md](../../docs/deployment/Unraid.md).
+This guide covers the repository's existing source and application-container configuration. It does not establish production readiness, image availability, or the proposed native/container fleet-controller support. Those release requirements are in [W2/W3](../product/Roadmap.md#sequence-and-gates).
 
-## Deployment shapes
+## Deployment choices in the repository
 
-- Source-based local or VM deployment:
-  Run `packages/sps-server`, `packages/dashboard`, and `packages/browser-ui` from this repository and back them with PostgreSQL and Redis.
-- Packaged container deployment:
-  Use the GHCR images and the deployment templates documented in [Unraid.md](../../docs/deployment/Unraid.md).
+Run SPS from source or its Dockerfile, serve the dashboard and browser-input builds, and supply PostgreSQL plus Redis. The controller/brokers described in the product specification are new work. Existing application images are not evidence of their host identity, service delivery, non-root packaging, recovery or migration guarantees.
 
-## What you need
+For source development, follow the [quick start](quickstart.md). PostgreSQL and Redis can be provided natively or externally; Docker is needed only for the supplied development harness or a chosen container deployment. [Unraid](../deployment/Unraid.md) documents the template files and image build assumptions.
 
-- Node.js 22+
-- npm 10+
-- Docker Engine with Compose for PostgreSQL and Redis
-- A reverse proxy and TLS terminator for any public deployment
+## Configuration
 
-## 1. Install and configure
+Start from [the example environment](../../.env.example) and inject reviewed values into each process. npm workspace commands do not automatically read the root `.env`; explicitly export it in a trusted shell or use your service manager's protected environment inputs.
 
-```bash
-npm install
-cp .env.example .env
-```
+| Configuration | Purpose |
+|---|---|
+| `SPS_HMAC_SECRET`, `SPS_USER_JWT_SECRET`, `SPS_AGENT_JWT_SECRET` | Required independent signing inputs; protect and back up their configured values |
+| `DATABASE_URL`, `REDIS_URL` | Management data and request/exchange store connections |
+| `SPS_BASE_URL` | Explicit client/plugin API endpoint; override stale plugin defaults |
+| `SPS_UI_BASE_URL` | Reachable browser-input origin used in issued links |
+| `SPS_CORS_ALLOWED_ORIGINS` | Explicit dashboard and input-page origin allowlist |
+| `SPS_HOSTED_MODE=1` | Workspace-scoped application/auth behavior; does not mean the server is vendor-hosted |
+| `SPS_TRUST_PROXY` | Trust forwarded headers only behind a configured trusted proxy |
+| `SPS_AUTH_COOKIE_DOMAIN` | Optional cookie-domain override; leave unset for host-only cookies unless a reviewed topology needs sharing |
+| `VITE_SPS_API_URL` | Frontend build-time API origin, not a runtime container override |
 
-Review `.env` before the first boot.
+Keep in-memory mode off for persistent operation. Configure email/Turnstile if the chosen hosted-style flows require them. Do not run public services with `NODE_ENV=test` or test seed routes enabled; test auth can expose refresh tokens in JSON.
 
-At minimum, set real values for:
+Payment and guest expansion is frozen. The example enables mock billing and x402 for development; explicitly review these flags for your use case instead of treating example values as production defaults. Freezing roadmap work does not automatically disable deployed routes or remove existing quota enforcement.
 
-- `SPS_HMAC_SECRET`
-- `SPS_USER_JWT_SECRET`
-- `SPS_AGENT_JWT_SECRET`
-- `DATABASE_URL`
-- `REDIS_URL`
-- `SPS_UI_BASE_URL`
-- `SPS_CORS_ALLOWED_ORIGINS`
+## Startup and state
 
-For hosted-style cookie auth behind a reverse proxy, also set:
-
-- `SPS_HOSTED_MODE=1`
-- `SPS_TRUST_PROXY=1`
-- `SPS_AUTH_COOKIE_DOMAIN`
-
-## 2. Start PostgreSQL and Redis
+For source deployment, install the lockfile dependency set and build. Run migrations once under controlled rollout before starting the built SPS entry point:
 
 ```bash
-make up
+npm ci
+npm run build
+npm run db:migrate --workspace=packages/sps-server
+node packages/sps-server/dist/index.js
 ```
 
-The standard integration harness is [docker-compose.test.yml](../../docker-compose.test.yml).
+The environment must already be configured. Serve the frontend build outputs from the corresponding `dist` directories through your static server; Vite development commands are for local development, not the public serving contract. The [manual image workflow](../../.github/workflows/build-and-push-images.yml) and package Dockerfiles show the repository's container build paths.
 
-## 3. Run database migrations
+The supplied Compose files are development infrastructure: published database ports, development database defaults, and Redis configured without persistence. Use protected backing services and explicitly selected persistence/backup policies for any durable deployment. PostgreSQL backup alone does not capture active Redis requests/exchanges or signing/key material. Recovery must account for all three and must not revive consumed authority; tested fleet recovery remains W2 work.
 
-Load the environment in your shell, then migrate:
+## Routing and authentication
 
-```bash
-set -a
-source .env
-set +a
-make migrate
-```
+Use configured HTTPS origins such as `sps.example.com`, `app.example.com`, and `secret.example.com`. Build both frontends for the intended API origin and list their exact origins in SPS CORS. Secure hosted cookies require an HTTPS browser connection in production. Cookie scope, browser site boundaries and proxy trust must agree with the chosen topology.
 
-## 4. Start the services
+Hosted agent bootstrap uses enrolled API keys at `POST /api/v2/agents/token`; configure external JWT/JWKS providers only when needed. An external JWT alone is not OS workload attestation. See the [API auth summary](../api/README.md) and [current auth-storage limits](../security/blindpass-threat-model.md#authentication-storage).
 
-Source deployment:
+Hosted workspace policy is stored in PostgreSQL. Environment policy values seed new/missing policy records; changing them does not rewrite existing workspace policy. Use the dashboard/API for subsequent changes. Non-hosted single-workspace operation can use env-backed policy; see [policy configuration](policy.md).
 
-```bash
-make dev-sps
-```
+## Health and release checks
 
-```bash
-make dev-dashboard
-```
+- `/healthz` establishes process liveness.
+- `/readyz` reports database/Redis checks and returns 503 on a failed configured check. A skipped check is not evidence that the backing service is working.
+- Current nginx templates include CSP/frame headers, but permissive `connect-src` values and missing HSTS remain review items. Verify actual deployed headers rather than assuming repository configuration matches the edge.
+- Document and test upgrades, backups, key recovery and rollback for the actual deployment. Neither existing Dockerfiles nor this guide establish high availability or native/container migration parity.
 
-```bash
-make dev-browser
-```
-
-Container deployment:
-
-- build and publish the images from [/.github/workflows/build-and-push-images.yml](../../.github/workflows/build-and-push-images.yml)
-- deploy them with your platform-specific tooling
-
-## 5. Public routing model
-
-Recommended split:
-
-- `sps.example.com` -> SPS API
-- `app.example.com` -> Dashboard
-- `secret.example.com` -> Browser UI
-
-The browser-facing origins in `SPS_CORS_ALLOWED_ORIGINS` must include the dashboard and browser UI origins.
-
-## 6. Auth and agent bootstrap choices
-
-Recommended default:
-
-- enroll agents through the dashboard or hosted API
-- distribute only the returned `ak_` bootstrap API keys to agents
-- let agents mint short-lived bearer tokens through `POST /api/v2/agents/token`
-
-Use `SPS_AGENT_AUTH_PROVIDERS_JSON` only if you also need SPS to trust external workload JWT issuers.
-
-## 7. Policy configuration
-
-Two valid models exist:
-
-- Hosted-style per-workspace management:
-  Keep `SPS_HOSTED_MODE=1` and manage the secret registry and exchange policy through the dashboard/API.
-- Self-hosted bootstrap/default policy:
-  Set `SPS_SECRET_REGISTRY_JSON` and `SPS_EXCHANGE_POLICY_JSON` in the environment to seed a default policy model.
-
-See [policy.md](../../docs/guides/policy.md) for the document format and operational model.
-
-## 8. Health checks
-
-Use these endpoints from your reverse proxy or orchestrator:
-
-- `GET /healthz`
-- `GET /readyz`
-
-`/readyz` returns `503` when PostgreSQL or Redis is unavailable.
-
-## 9. Operational commands
-
-```bash
-make logs
-```
-
-```bash
-make build
-```
-
-```bash
-make test
-```
-
-```bash
-make down
-```
-
-## Production notes
-
-- Do not use `SPS_USE_IN_MEMORY=1` in production.
-- Do not expose Redis directly to the internet.
-- Terminate TLS before the dashboard or browser UI are used publicly.
-- Configure `SPS_TURNSTILE_SECRET` and `VITE_TURNSTILE_SITE_KEY` for hosted registration/login abuse protection.
-- Keep Stripe and x402 credentials out of the repository and rotate them independently of app deploys.
+See [security status](../security/README.md) before making exposure or readiness claims, and [test setup](../testing/README.md) for repository verification commands.

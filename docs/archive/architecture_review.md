@@ -1,5 +1,7 @@
 # Architecture Review: Phase Split & Guest x402 Flows
 
+> Historical record, archived during the 2026-09-22 documentation alignment. Dates, checkboxes, commands, and proposed decisions below describe their original review period; they do not establish current support or authorize new work. See the [current documentation](../README.md) and [roadmap](../product/Roadmap.md).
+
 **Commit**: `5c7f5da` — `docs(architecture): split hosted phases and refine guest x402 flows`
 
 ## Summary of Changes
@@ -15,7 +17,7 @@ The commit splits what was a monolithic **Phase 3B** (9 milestones) into four fo
 
 Also adds [policy.md](../guides/policy.md) (workspace-admin policy guide), and new test plans for 3C/3D/3E.
 
-Follow-on planning updates now also add [Hosted Workspace Policy Foundation](Hosted%20Workspace%20Policy%20Foundation.md) plus its dedicated test plan so the workspace-scoped PostgreSQL policy engine is no longer buried inside Phase 3E.
+Follow-on planning updates now also add [Hosted Workspace Policy Foundation](architecture/Hosted%20Workspace%20Policy%20Foundation.md) plus its dedicated test plan so the workspace-scoped PostgreSQL policy engine is no longer buried inside Phase 3E.
 
 This review was validated against the current repository state, not just the docs diff. A few of the original concerns are real implementation questions; a few others needed tightening so they point at the actual risk.
 

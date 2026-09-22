@@ -1,5 +1,7 @@
 # OpenClaw + Telegram Integration Test Plan
 
+> Historical record, archived during the 2026-09-22 documentation alignment. Dates, checkboxes, commands, and proposed decisions below describe their original review period; they do not establish current support or authorize new work. See the [current documentation](../../README.md) and [roadmap](../../product/Roadmap.md).
+
 Build an OpenClaw plugin (`openclaw-plugin-blindpass`) and an agent skill that together enable an OpenClaw agent to securely request secrets via Telegram. This plan covers what to build, how to wire it, and how to test the full flow.
 
 ## User Review Required
@@ -33,10 +35,10 @@ sequenceDiagram
     SPS-->>Plugin: {request_id, secret_url, confirmation_code}
     Plugin->>TG: sendText → Telegram chat<br/>"🔐 Secret requested. Code: BLUE-FOX-42<br/>Open: https://tunnel.example/r/abc..."
     Plugin-->>Agent: {status: "secret_request_pending", request_id}
-    
+
     User->>Browser: clicks link in Telegram
     Browser->>SPS: HPKE encrypt + POST /submit
-    
+
     Plugin->>SPS: poll /status → "submitted"
     Plugin->>SPS: GET /retrieve (atomic GETDEL)
     Plugin->>Agent: decrypted secret value
@@ -132,7 +134,7 @@ For the full test with a real OpenClaw deployment:
    ```bash
    # Terminal 1: Start SPS
    SPS_HOST=0.0.0.0 npm run dev --workspace=packages/sps-server
-   
+
    # Terminal 2: Expose via ngrok (or Tailscale)
    ngrok http 3100
    # Note the https://xxxx.ngrok.io URL

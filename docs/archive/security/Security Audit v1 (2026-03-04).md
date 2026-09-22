@@ -1,7 +1,9 @@
 # 🔒 Security Audit Report — blindpass
 
-**Date**: 2026-03-04  
-**Scope**: Full codebase review of `blindpass` v0.1.0  
+> Historical record, archived during the 2026-09-22 documentation alignment. Dates, checkboxes, commands, and proposed decisions below describe their original review period; they do not establish current support or authorize new work. See the [current documentation](../../README.md) and [roadmap](../../product/Roadmap.md).
+
+**Date**: 2026-03-04\
+**Scope**: Full codebase review of `blindpass` v0.1.0\
 **Packages reviewed**: `sps-server`, `gateway`, `agent-skill`, `browser-ui`, scripts
 
 ---
@@ -27,7 +29,7 @@ However, several findings across **Critical**, **High**, **Medium**, and **Low**
 
 ### C-1: HMAC Signature Comparison Uses Non-Constant-Time Equality
 
-**File**: [crypto.ts](../../../packages/sps-server/src/services/crypto.ts#L79)
+**File**: [crypto.ts](../../../packages/sps-server/src/services/crypto.ts)
 
 ```typescript
 if (expected !== signature) {
@@ -53,7 +55,7 @@ if (expectedBuf.length !== signatureBuf.length || !timingSafeEqual(expectedBuf, 
 
 ### C-2: Default HMAC Secret Is a Hardcoded String
 
-**File**: [index.ts](../../../packages/sps-server/src/index.ts#L43)
+**File**: [index.ts](../../../packages/sps-server/src/index.ts)
 
 ```typescript
 const hmacSecret = options.hmacSecret ?? process.env.SPS_HMAC_SECRET ?? "local-dev-hmac-secret";
@@ -77,7 +79,7 @@ if (process.env.NODE_ENV === "production" && !process.env.SPS_HMAC_SECRET) {
 
 ### H-1: Redis `updateRequest` Has a TOCTOU Race Condition
 
-**File**: [redis.ts](../../../packages/sps-server/src/services/redis.ts#L24-L43)
+**File**: [redis.ts](../../../packages/sps-server/src/services/redis.ts)
 
 `updateRequest` performs GET → modify → SET as separate Redis commands without any transaction or Lua script atomicity. Two concurrent calls could read the same state and overwrite each other's changes.
 
@@ -100,7 +102,7 @@ No rate limiting is configured on any of the API endpoints. This exposes the ser
 
 ### H-3: Confirmation Code Has Insufficient Entropy
 
-**File**: [crypto.ts](../../../packages/sps-server/src/services/crypto.ts#L44-L48)
+**File**: [crypto.ts](../../../packages/sps-server/src/services/crypto.ts)
 
 ```typescript
 const adjective = ADJECTIVES[randomBytes(1)[0] % ADJECTIVES.length];  // 8 options
@@ -118,7 +120,7 @@ More importantly, 6,400 combinations is very low — it's a human-readable confi
 
 ### H-4: CORS Is Configured with `origin: true` (Reflects Any Origin)
 
-**File**: [index.ts](../../../packages/sps-server/src/index.ts#L33-L36)
+**File**: [index.ts](../../../packages/sps-server/src/index.ts)
 
 ```typescript
 await app.register(cors, {
@@ -139,7 +141,7 @@ await app.register(cors, {
 
 ### M-1: Gateway Code Generator Uses `Math.random()` Instead of CSPRNG
 
-**File**: [code-generator.ts](../../../packages/gateway/src/code-generator.ts#L5-L7)
+**File**: [code-generator.ts](../../../packages/gateway/src/code-generator.ts)
 
 ```typescript
 const adjective = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
@@ -176,7 +178,7 @@ Previously, the `/ui/*` route served arbitrary files from the `browser-ui` direc
 
 ### M-4: JWKS Cache Has No TTL / No Revocation Mechanism
 
-**File**: [auth.ts](../../../packages/sps-server/src/middleware/auth.ts#L7-L23)
+**File**: [auth.ts](../../../packages/sps-server/src/middleware/auth.ts)
 
 The JWKS is loaded from a file and cached indefinitely. If a gateway key is compromised and rotated:
 - The old key remains cached until server restart
@@ -199,7 +201,7 @@ This is acknowledged as a design limitation of the confirmation code approach, b
 
 ### L-1: Private Key File Permissions on Gateway Identity
 
-**File**: [identity.ts](../../../packages/gateway/src/identity.ts#L72-L83)
+**File**: [identity.ts](../../../packages/gateway/src/identity.ts)
 
 The gateway key file is correctly written with `mode: 0o600`, ✅ but is the JWKS file:
 
@@ -215,7 +217,7 @@ The JWKS file only contains public keys so this is informational, but explicitly
 
 ### L-2: Audit Log Goes Only to `console.info`
 
-**File**: [audit.ts](../../../packages/sps-server/src/services/audit.ts#L20)
+**File**: [audit.ts](../../../packages/sps-server/src/services/audit.ts)
 
 Audit events go only to stdout via `console.info`. In production, this requires external log collection (which may or may not be in place). If the process crashes, buffered log entries may be lost.
 
@@ -237,7 +239,7 @@ Only `Referrer-Policy` is set. Missing headers include:
 
 ### L-4: `SecretStore.get()` Should Return Defensive Copies
 
-**File**: [secret-store.ts](../../../packages/agent-skill/src/secret-store.ts#L8-L11)
+**File**: [secret-store.ts](../../../packages/agent-skill/src/secret-store.ts)
 
 ```typescript
 get(name: string): Buffer | null {
