@@ -1,0 +1,9 @@
+{
+  "suite": {
+    "kem": "DHKEM(X25519, HKDF-SHA256)",
+    "kdf": "HKDF-SHA256",
+    "aead": "ChaCha20-Poly1305",
+    "rfc": "RFC 9180 Appendix A.2"
+  },
+  "typescript_status": "round-trip executable; RFC interoperability vector file is prepared for the Rust P02 gate"
+}

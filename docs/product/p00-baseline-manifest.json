@@ -1,0 +1,128 @@
+{
+  "phase": "P00",
+  "title": "Baseline and contracts",
+  "generated_at": "2026-09-22",
+  "source_revision": "e2112c4",
+  "source_revision_note": "Inventory started from the documentation-alignment commit; the implementation is intentionally left uncommitted for review.",
+  "package_manager": "npm workspaces",
+  "packages": [
+    {
+      "name": "@blindpass/sps-server",
+      "path": "packages/sps-server",
+      "license": "AGPL-3.0-only",
+      "responsibility": "Fastify API, authentication, exchange policy, Redis request state and PostgreSQL management data",
+      "p00_disposition": "preserve as TypeScript baseline"
+    },
+    {
+      "name": "@blindpass/gateway",
+      "path": "packages/gateway",
+      "license": "MIT",
+      "responsibility": "Interception, secure-link routing and agent identity helpers",
+      "p00_disposition": "preserve; client compatibility gate"
+    },
+    {
+      "name": "@blindpass/agent-skill",
+      "path": "packages/agent-skill",
+      "license": "MIT",
+      "responsibility": "HPKE, SPS clients, runtime memory and exchange helpers",
+      "p00_disposition": "preserve; client compatibility gate"
+    },
+    {
+      "name": "@blindpass/openclaw-plugin",
+      "path": "packages/openclaw-plugin",
+      "license": "MIT",
+      "responsibility": "OpenClaw integration, encrypted store, resolver and MCP entry point",
+      "p00_disposition": "preserve; frozen surface"
+    },
+    {
+      "name": "@blindpass/browser-ui",
+      "path": "packages/browser-ui",
+      "license": "MIT",
+      "responsibility": "Vite secret-input page and client-side encryption",
+      "p00_disposition": "preserve; browser handoff compatibility gate"
+    },
+    {
+      "name": "@blindpass/dashboard",
+      "path": "packages/dashboard",
+      "license": "AGPL-3.0-only",
+      "responsibility": "React/Vite workspace administration",
+      "p00_disposition": "preserve current implementation; future rebuild remains gated"
+    },
+    {
+      "name": "@blindpass/i18n",
+      "path": "packages/i18n",
+      "license": "AGPL-3.0-only",
+      "responsibility": "Shared locale resources and validation",
+      "p00_disposition": "preserve"
+    },
+    {
+      "name": "@blindpass/contract-tests",
+      "path": "packages/contract-tests",
+      "license": "AGPL-3.0-only",
+      "responsibility": "Black-box CT01–CT18, CV01–CV06 and CC01 baseline harness",
+      "p00_disposition": "new P00 compatibility gate"
+    }
+  ],
+  "runtime_inventory": {
+    "database": {
+      "engine": "PostgreSQL",
+      "migration_files": [
+        "001_workspaces.sql",
+        "002_users.sql",
+        "003_user_sessions.sql",
+        "004_agents.sql",
+        "005_billing.sql",
+        "006_audit_log.sql",
+        "007_billing_provider.sql",
+        "008_x402.sql",
+        "009_workspace_policy.sql",
+        "010_public_offers.sql",
+        "011_guest_intents.sql",
+        "012_guest_payments.sql",
+        "013_audit_guest_actor.sql",
+        "014_guest_agent_delivery_state.sql",
+        "015_user_tokens.sql",
+        "016_drop_users_verification_token.sql",
+        "017_user_preferred_locale.sql"
+      ],
+      "plaintext_secret_inventory": "No source secret values are intended to persist in PostgreSQL; management records, policy, session metadata and audit metadata do."
+    },
+    "redis": {
+      "key_families": [
+        "sps:request:<request-id>",
+        "sps:exchange:<exchange-id>",
+        "sps:approval:<approval-reference>",
+        "rate-limit and quota counters"
+      ],
+      "plaintext_secret_inventory": "Submitted encrypted payloads are temporary request/exchange state; plaintext is consumed by the browser or trusted client, not the relay audit path."
+    },
+    "deployment": {
+      "repository_templates": [
+        "deploy/",
+        "docker-compose.yml",
+        "docker-compose.test.yml"
+      ],
+      "rust_controller": "not present in this source revision",
+      "host_broker": "not present in this source revision",
+      "linux_vm_fleet": "not audited by this repository inventory"
+    }
+  },
+  "dependencies": {
+    "new_runtime_dependencies": [],
+    "new_test_dependencies": [],
+    "reused_locked_tools": [
+      "vitest",
+      "tsx",
+      "pg",
+      "ioredis",
+      "jose",
+      "hpke-js"
+    ],
+    "socket_review": "Authenticated Socket CLI was present, but the repository scan could not reach api.socket.dev from the execution environment. No manifest or lockfile dependency was added."
+  },
+  "evidence_gaps": [
+    "No production database, backup, installation or live-link inventory was accessed.",
+    "The Linux Fleet Pilot still requires real systemd VM and stock-client evidence.",
+    "Rust parity, broker identity and native/container fleet parity remain unimplemented."
+  ]
+}

@@ -1,0 +1,1205 @@
+{
+  "CT01.healthz": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ok": true
+    }
+  },
+  "CT01.readyz.up": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "checks": {
+        "database": "up",
+        "redis": "up"
+      },
+      "ok": true
+    }
+  },
+  "CT02.token.bearer": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "access_token": "<access-token>",
+      "access_token_expires_at": "<timestamp>",
+      "agent": {
+        "agent_id": "contract-rotatable",
+        "created_at": "<timestamp>",
+        "display_name": "contract-rotatable Display",
+        "id": "<uuid>",
+        "revoked_at": null,
+        "status": "active",
+        "workspace_id": "<uuid>"
+      }
+    }
+  },
+  "CT02.token.header": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "access_token": "<access-token>",
+      "access_token_expires_at": "<timestamp>",
+      "agent": {
+        "agent_id": "contract-revocable",
+        "created_at": "<timestamp>",
+        "display_name": "contract-revocable Display",
+        "id": "<uuid>",
+        "revoked_at": null,
+        "status": "active",
+        "workspace_id": "<uuid>"
+      }
+    }
+  },
+  "CT02.token.missing": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "missing_api_key",
+      "error": "Missing agent API key"
+    }
+  },
+  "CT02.token.malformed": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "missing_api_key",
+      "error": "Missing agent API key"
+    }
+  },
+  "CT02.token.unknown": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.key.rotate": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "agent": {
+        "agent_id": "contract-rotatable",
+        "created_at": "<timestamp>",
+        "display_name": "contract-rotatable Display",
+        "id": "<uuid>",
+        "revoked_at": null,
+        "status": "active",
+        "workspace_id": "<uuid>"
+      },
+      "bootstrap_api_key": "<bootstrap-api-key>"
+    }
+  },
+  "CT02.key.rotated-old": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.key.rotated-new": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "access_token": "<access-token>",
+      "access_token_expires_at": "<timestamp>",
+      "agent": {
+        "agent_id": "contract-rotatable",
+        "created_at": "<timestamp>",
+        "display_name": "contract-rotatable Display",
+        "id": "<uuid>",
+        "revoked_at": null,
+        "status": "active",
+        "workspace_id": "<uuid>"
+      }
+    }
+  },
+  "CT02.key.revoke": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "agent": {
+        "agent_id": "contract-revocable",
+        "created_at": "<timestamp>",
+        "display_name": "contract-revocable Display",
+        "id": "<uuid>",
+        "revoked_at": "<timestamp>",
+        "status": "revoked",
+        "workspace_id": "<uuid>"
+      }
+    }
+  },
+  "CT02.key.revoked": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.1": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.2": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.3": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.4": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.5": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.6": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.7": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.8": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.9": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.10": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.11": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.12": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.13": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.14": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.15": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.16": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.17": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.18": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.19": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.allowed.20": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_api_key",
+      "error": "Invalid agent API key"
+    }
+  },
+  "CT02.rate.limited": {
+    "status": 429,
+    "content_type": "application/json",
+    "body": {
+      "code": "rate_limited",
+      "error": "Too many token requests",
+      "limit": 20,
+      "retry_after_seconds": 1,
+      "used": 21
+    }
+  },
+  "helper.secret.requester.CT03 hosted request": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT03.request.external-jwks": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT03.request.missing-auth": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Missing bearer token"
+    }
+  },
+  "CT03.request.wrong-issuer": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid token"
+    }
+  },
+  "CT03.request.wrong-audience": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid token"
+    }
+  },
+  "CT03.request.invalid-public-key": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": {
+      "code": "FST_ERR_VALIDATION",
+      "error": "Bad Request",
+      "message": "body/public_key must match pattern \"^[A-Za-z0-9+/]+={0,2}$\"",
+      "statusCode": 400
+    }
+  },
+  "helper.secret.requester.CT04 metadata request": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT04.metadata.correct": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "description": "CT04 metadata request",
+      "expiry": "<timestamp>",
+      "public_key": "<public-key>"
+    }
+  },
+  "CT04.metadata.submit-scope": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid signature"
+    }
+  },
+  "CT04.metadata.tampered": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid signature"
+    }
+  },
+  "CT04.metadata.expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Request expired"
+    }
+  },
+  "CT04.metadata.unknown": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Request expired"
+    }
+  },
+  "helper.secret.requester.CT05 submit request": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "helper.submit.<id>": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "status": "submitted"
+    }
+  },
+  "CT05.submit.repeat": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": "Already submitted"
+    }
+  },
+  "helper.secret.requester.CT05 wrong scope request": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "helper.secret.requester.CT05 oversized request": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT05.submit.oversized": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": {
+      "code": "FST_ERR_VALIDATION",
+      "error": "Bad Request",
+      "message": "body/ciphertext must NOT have more than 524288 characters",
+      "statusCode": 400
+    }
+  },
+  "helper.secret.requester.CT06 pending": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT06.pending": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "pending"
+    }
+  },
+  "helper.secret.requester.CT06 submitted": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT06.submitted": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "submitted"
+    }
+  },
+  "CT06.unknown": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "status": "expired"
+    }
+  },
+  "CT06.foreign": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "status": "expired"
+    }
+  },
+  "helper.secret.requester.CT06 consumed": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "helper.retrieve.consumed": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ciphertext": "<ciphertext>",
+      "enc": "<enc>"
+    }
+  },
+  "CT06.consumed": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "status": "expired"
+    }
+  },
+  "helper.secret.requester.CT06 expired": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT06.expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "status": "expired"
+    }
+  },
+  "helper.secret.requester.CT07 before submit": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT07.retrieve.before-submit": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not submitted yet"
+    }
+  },
+  "CT07.retrieve.owner": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ciphertext": "<ciphertext>",
+      "enc": "<enc>"
+    }
+  },
+  "CT07.retrieve.replay": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "helper.secret.requester.CT07 foreign": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT07.retrieve.foreign": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "CT07.retrieve.owner-after-foreign": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ciphertext": "<ciphertext>",
+      "enc": "<enc>"
+    }
+  },
+  "helper.secret.requester.CT07 race": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT07.retrieve.race": [
+    200,
+    410,
+    410,
+    410,
+    410,
+    410,
+    410,
+    410
+  ],
+  "helper.secret.requester.CT08 pending expiry": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT08.pending.expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "status": "expired"
+    }
+  },
+  "helper.secret.requester.CT08 submitted expiry": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CT08.submitted.expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "status": "expired"
+    }
+  },
+  "CT08.submitted.retrieve-expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "helper.exchange.request": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfillment_token": "<fulfillment-token>",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "<jwt>"
+      },
+      "status": "pending"
+    }
+  },
+  "CT08.revoked": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    }
+  },
+  "CT08.revoked.expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "CT09.exchange.allow": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfillment_token": "<fulfillment-token>",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "<jwt>"
+      },
+      "status": "pending"
+    }
+  },
+  "CT09.exchange.approval": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "approval_status": "pending",
+      "error": "Exchange requires human approval",
+      "policy": {
+        "approval_reference": "<approval-reference>",
+        "approval_required": true,
+        "fulfiller_ring": null,
+        "mode": "pending_approval",
+        "reason": "contract approval fixture",
+        "requester_ring": null,
+        "rule_id": "contract-approval",
+        "secret_name": "restricted.secret"
+      }
+    }
+  },
+  "CT09.exchange.deny": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "approval_status": null,
+      "error": "Exchange not allowed",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "deny",
+        "reason": "contract deny fixture",
+        "requester_ring": null,
+        "rule_id": "contract-deny",
+        "secret_name": "denied.secret"
+      }
+    }
+  },
+  "CT09.exchange.unknown": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "error": "Exchange not allowed"
+    }
+  },
+  "CT10.status.pending": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "pending"
+    }
+  },
+  "CT10.status.foreign": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "helper.exchange.fulfill": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfilled_by": "contract-fulfiller",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "<jwt>"
+      },
+      "purpose": "CT10 lifecycle",
+      "requester_id": "contract-requester",
+      "requester_public_key": "<requester-public-key>",
+      "secret_name": "<jwt>",
+      "status": "reserved"
+    }
+  },
+  "CT10.status.reserved": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "reserved"
+    }
+  },
+  "helper.exchange.submit": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "fulfilled_by": "contract-fulfiller",
+      "retrieve_by": "<timestamp>",
+      "status": "submitted"
+    }
+  },
+  "CT10.status.submitted": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "submitted"
+    }
+  },
+  "helper.exchange.retrieve": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ciphertext": "<ciphertext>",
+      "enc": "<enc>",
+      "fulfilled_by": "contract-fulfiller",
+      "secret_name": "<jwt>"
+    }
+  },
+  "CT10.status.after-retrieve": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "CT11.fulfill.wrong-agent": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": "Exchange policy no longer allows fulfillment"
+    }
+  },
+  "CT11.fulfill.owner": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfilled_by": "contract-fulfiller",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "<jwt>"
+      },
+      "purpose": "CT11 ownership",
+      "requester_id": "contract-requester",
+      "requester_public_key": "<requester-public-key>",
+      "secret_name": "<jwt>",
+      "status": "reserved"
+    }
+  },
+  "CT11.submit.wrong-agent": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": "Exchange is reserved for a different fulfiller"
+    }
+  },
+  "CT11.submit.owner": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "fulfilled_by": "contract-fulfiller",
+      "retrieve_by": "<timestamp>",
+      "status": "submitted"
+    }
+  },
+  "CT11.retrieve.requester": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ciphertext": "<ciphertext>",
+      "enc": "<enc>",
+      "fulfilled_by": "contract-fulfiller",
+      "secret_name": "<jwt>"
+    }
+  },
+  "CT11.retrieve.replay": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "CT12.revoke.requester": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    }
+  },
+  "CT12.revoke.repeat": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    }
+  },
+  "CT12.revoke.foreign": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    }
+  },
+  "CT12.retrieve.revoked": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": "Exchange is not ready"
+    }
+  },
+  "CT12.revoke.admin": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    }
+  },
+  "CT13.exchange.approve.pending": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "approval_status": "pending",
+      "error": "Exchange requires human approval",
+      "policy": {
+        "approval_reference": "<approval-reference>",
+        "approval_required": true,
+        "fulfiller_ring": null,
+        "mode": "pending_approval",
+        "reason": "contract approval fixture",
+        "requester_ring": null,
+        "rule_id": "contract-approval",
+        "secret_name": "restricted.secret"
+      }
+    }
+  },
+  "CT13.approval.approve": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "approval_reference": "<approval-reference>",
+      "decided_at": "<timestamp>",
+      "decided_by": "<uuid>",
+      "status": "approved"
+    }
+  },
+  "CT13.exchange.approve.continued": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfillment_token": "<fulfillment-token>",
+      "policy": {
+        "approval_reference": "<approval-reference>",
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "exchange approved by <uuid>",
+        "requester_ring": null,
+        "rule_id": "contract-approval",
+        "secret_name": "restricted.secret"
+      },
+      "status": "pending"
+    }
+  },
+  "CT13.exchange.reject.pending": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "approval_status": "pending",
+      "error": "Exchange requires human approval",
+      "policy": {
+        "approval_reference": "<approval-reference>",
+        "approval_required": true,
+        "fulfiller_ring": null,
+        "mode": "pending_approval",
+        "reason": "contract approval fixture",
+        "requester_ring": null,
+        "rule_id": "contract-approval",
+        "secret_name": "restricted.secret"
+      }
+    }
+  },
+  "CT13.approval.reject": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "approval_reference": "<approval-reference>",
+      "decided_at": "<timestamp>",
+      "decided_by": "<uuid>",
+      "status": "rejected"
+    }
+  },
+  "CT13.exchange.reject.rejected": {
+    "status": 403,
+    "content_type": "application/json",
+    "body": {
+      "approval_status": "rejected",
+      "error": "Exchange approval was rejected",
+      "policy": {
+        "approval_reference": "<approval-reference>",
+        "approval_required": true,
+        "fulfiller_ring": null,
+        "mode": "pending_approval",
+        "reason": "contract approval fixture",
+        "requester_ring": null,
+        "rule_id": "contract-approval",
+        "secret_name": "restricted.secret"
+      }
+    }
+  },
+  "CT14.refresh.valid": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "access_token": "<access-token>",
+      "access_token_expires_at": "<timestamp>",
+      "refresh_token": "<refresh-token>",
+      "refresh_token_expires_at": "<timestamp>",
+      "user": {
+        "created_at": "<timestamp>",
+        "email": "test-refresh-<run>@example.com",
+        "email_verified": true,
+        "force_password_change": false,
+        "id": "<uuid>",
+        "preferred_locale": "en",
+        "role": "workspace_admin",
+        "status": "active",
+        "updated_at": "<timestamp>",
+        "workspace_id": "<uuid>"
+      },
+      "workspace": {
+        "created_at": "<timestamp>",
+        "display_name": "REFRESH E2E Space",
+        "id": "<uuid>",
+        "owner_user_id": "<uuid>",
+        "slug": "test-refresh-<run>",
+        "status": "active",
+        "tier": "free",
+        "updated_at": "<timestamp>"
+      }
+    }
+  },
+  "CT14.refresh.replay": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_refresh_token",
+      "error": "Invalid refresh token"
+    }
+  },
+  "CT14.refresh.absent": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_refresh_token",
+      "error": "Invalid refresh token"
+    }
+  },
+  "CT14.refresh.expired": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "code": "invalid_refresh_token",
+      "error": "Invalid refresh token"
+    }
+  },
+  "CT15.rate.reset": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "access_token": "<access-token>",
+      "access_token_expires_at": "<timestamp>",
+      "agent": {
+        "agent_id": "contract-rotatable",
+        "created_at": "<timestamp>",
+        "display_name": "contract-rotatable Display",
+        "id": "<uuid>",
+        "revoked_at": null,
+        "status": "active",
+        "workspace_id": "<uuid>"
+      }
+    }
+  },
+  "CT16.cors.allowed": {
+    "status": 204,
+    "content_type": null,
+    "body": null
+  },
+  "CT16.cors.disallowed": {
+    "status": 404,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not Found",
+      "message": "Route OPTIONS:/healthz not found",
+      "statusCode": 404
+    }
+  },
+  "CT17.audit": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "next_cursor": null,
+      "records": []
+    }
+  },
+  "CT18.error.400": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": {
+      "code": "FST_ERR_VALIDATION",
+      "error": "Bad Request",
+      "message": "body/public_key must match pattern \"^[A-Za-z0-9+/]+={0,2}$\"",
+      "statusCode": 400
+    }
+  },
+  "CT18.error.401": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Missing bearer token"
+    }
+  },
+  "CT18.error.403": {
+    "status": 400,
+    "content_type": "application/json",
+    "body": {
+      "code": "FST_ERR_VALIDATION",
+      "error": "Bad Request",
+      "message": "querystring/sig must match pattern \"^[0-9]{10,13}\\.[A-Za-z0-9_-]{43}$\"",
+      "statusCode": 400
+    }
+  },
+  "CT18.error.404": {
+    "status": 404,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not Found",
+      "message": "Route GET:/route-that-does-not-exist not found",
+      "statusCode": 404
+    }
+  },
+  "CT18.error.409": {
+    "status": 409,
+    "body": {
+      "error": "Already submitted"
+    }
+  },
+  "CT18.error.410": {
+    "status": 410,
+    "body": {
+      "status": "expired"
+    }
+  },
+  "CT18.error.429": {
+    "status": 429,
+    "body": {
+      "error": "Too many token requests",
+      "code": "rate_limited",
+      "retry_after_seconds": 1,
+      "limit": 20,
+      "used": 21
+    }
+  },
+  "CT18.error.validation": {
+    "status": 400,
+    "body": {
+      "statusCode": 400,
+      "code": "FST_ERR_VALIDATION",
+      "error": "Bad Request",
+      "message": "body/ciphertext must NOT have more than 524288 characters"
+    }
+  },
+  "helper.secret.requester.CC01 client shape": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "request_id": "<id>",
+      "secret_url": "<secret-url>"
+    }
+  },
+  "CC01.secret-status": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "pending"
+    }
+  }
+}

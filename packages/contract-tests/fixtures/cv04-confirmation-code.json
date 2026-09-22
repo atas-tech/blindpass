@@ -1,0 +1,7 @@
+{
+  "adjectives": ["BLUE", "GREEN", "SILVER", "BRIGHT", "BOLD", "SWIFT", "CALM", "NOBLE"],
+  "nouns": ["FOX", "RIVER", "MOUNTAIN", "FALCON", "HARBOR", "PINE", "MEADOW", "FIELD"],
+  "number_min": 0,
+  "number_max": 99,
+  "format": "ADJECTIVE-NOUN-00"
+}

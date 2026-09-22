@@ -1,0 +1,12 @@
+{
+  "name": "@blindpass/contract-tests",
+  "version": "0.1.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:update": "UPDATE_CONTRACT_SNAPSHOTS=1 vitest run"
+  }
+}

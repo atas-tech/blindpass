@@ -11,6 +11,8 @@
 | [Linux Fleet Pilot](testing/Linux%20Fleet%20Pilot.md) | E2E/integration scenarios and evidence requirements for the proposed work |
 | [Decision records](product/decisions/README.md) | Stack, implementation-language and dependency-baseline decisions that settle roadmap and specification open items |
 | [Controller Contract Suite](testing/Controller%20Contract%20Suite.md) | Test-first HTTP compatibility scenarios (CT/CV/CC) that gate the Rust controller port |
+| [P00 baseline manifest](product/p00-baseline-manifest.json) | Source/package/data inventory and dependency/licensing review boundary |
+| [P00 compatibility matrix](product/p00-compatibility-matrix.md) | Retained 13-route envelope, identity mapping, exclusions and executed baseline evidence |
 
 The implementation-phase plans and their paired acceptance plans are in the Obsidian vault under `blindpass/docs/product/phases/` and `blindpass/docs/testing/phases/`. The dashboard and secret-input redesign plans are under `blindpass/docs/product/`, `blindpass/docs/design/` and `blindpass/docs/testing/`.
 

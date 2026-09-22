@@ -31,6 +31,13 @@ import {
 import { HttpX402Provider, type X402Provider, x402ConfigFromEnv } from "./services/x402.js";
 import type { RequestStore } from "./types.js";
 import { resolveRequiredSecret } from "./utils/secrets.js";
+import {
+  approvalTtlSeconds,
+  assertTestOnlyTimingOverridesSafe,
+  requestTtlSeconds,
+  revokedTtlSeconds,
+  submittedTtlSeconds
+} from "./utils/test-timing.js";
 
 type ReadinessStatus = "up" | "down" | "skipped";
 
@@ -148,6 +155,8 @@ function resolveCorsAllowedOrigins(options: BuildAppOptions): Set<string> {
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
+  assertTestOnlyTimingOverridesSafe();
+
   if (options.db && options.runMigrations) {
     await runMigrations(options.db);
   }
@@ -221,7 +230,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     ? (store instanceof RedisRequestStore ? "redis" : "custom")
     : "custom";
   if (!store) {
-    if (shouldUseInMemoryStore || process.env.NODE_ENV === "test") {
+    const testEnvironmentUsesInMemoryStore = process.env.NODE_ENV === "test" && process.env.SPS_USE_IN_MEMORY !== "0";
+    if (shouldUseInMemoryStore || testEnvironmentUsesInMemoryStore) {
       store = new InMemoryRequestStore();
       storeMode = "in-memory";
       quotaService ??= new InMemoryQuotaService();
@@ -289,8 +299,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       quotaService,
       rateLimitService,
       hmacSecret,
-      requestTtlSeconds: 180,
-      submittedTtlSeconds: 60,
+      requestTtlSeconds: requestTtlSeconds(),
+      submittedTtlSeconds: submittedTtlSeconds(),
       uiBaseUrl: options.uiBaseUrl ?? options.baseUrl ?? process.env.SPS_UI_BASE_URL ?? "http://localhost:5173",
       baseUrl: options.baseUrl ?? process.env.SPS_BASE_URL ?? "http://localhost:3100"
     });
@@ -309,9 +319,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       ),
       hmacSecret,
       policyResolver,
-      requestTtlSeconds: 180,
-      submittedTtlSeconds: 60,
-      revokedTtlSeconds: 300
+      requestTtlSeconds: requestTtlSeconds(),
+      submittedTtlSeconds: submittedTtlSeconds(),
+      revokedTtlSeconds: revokedTtlSeconds(),
+      approvalTtlSeconds: approvalTtlSeconds()
     });
   }, { prefix: "/api/v2/secret/exchange" });
 
@@ -354,8 +365,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         hmacSecret,
         uiBaseUrl: options.uiBaseUrl ?? options.baseUrl ?? process.env.SPS_UI_BASE_URL ?? "http://localhost:5173",
         apiBaseUrl: options.baseUrl ?? process.env.SPS_BASE_URL ?? "http://localhost:3100",
-        requestTtlSeconds: 180,
-        revokedTtlSeconds: 300,
+        requestTtlSeconds: requestTtlSeconds(),
+        revokedTtlSeconds: revokedTtlSeconds(),
         rateLimitService,
         x402Provider: options.x402Provider ?? (
           x402Config.enabled && x402Config.facilitatorUrl

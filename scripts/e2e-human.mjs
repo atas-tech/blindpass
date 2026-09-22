@@ -8,6 +8,8 @@
  * Usage:
  *   npm run e2e:human
  *   # or: node scripts/e2e-human.mjs
+ *   # against an already-running SPS instance:
+ *   SPS_E2E_BEARER_TOKEN=... node scripts/e2e-human.mjs --base-url http://127.0.0.1:3100
  */
 
 import { mkdtemp, rm } from "node:fs/promises";
@@ -45,6 +47,11 @@ async function isServerRunning(url) {
     }
 }
 
+function argumentValue(name) {
+    const index = process.argv.indexOf(name);
+    return index >= 0 ? process.argv[index + 1] : undefined;
+}
+
 function openBrowser(url) {
     const platform = os.platform();
     const cmd =
@@ -69,23 +76,35 @@ async function run() {
     console.log(`${BOLD}═══════════════════════════════════════════════════════${RESET}`);
     console.log();
 
-    // 1. Setup temp dir and gateway identity
+    const requestedBaseUrl = argumentValue("--base-url") ?? process.env.SPS_E2E_BASE_URL;
+    const externalBearerToken = process.env.SPS_E2E_BEARER_TOKEN?.trim();
+    const externalServer = Boolean(requestedBaseUrl);
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "sps-e2e-human-"));
-    const keyPath = path.join(tempDir, "gateway-key.json");
-    const jwksPath = path.join(tempDir, "jwks.json");
+    let identity;
+    let app;
+    let baseUrl = requestedBaseUrl?.replace(/\/$/, "");
+    let uiProcess;
 
-    log("SETUP", "Generating gateway identity...");
-    const identity = await loadOrCreateGatewayIdentity({ keyPath });
-    await writeJwksFile(identity, jwksPath);
+    if (externalServer) {
+        if (!externalBearerToken) {
+            throw new Error("--base-url requires SPS_E2E_BEARER_TOKEN for the already-running server");
+        }
+        log("SETUP", `Using existing SPS server at ${CYAN}${baseUrl}${RESET}`);
+    } else {
+        const keyPath = path.join(tempDir, "gateway-key.json");
+        const jwksPath = path.join(tempDir, "jwks.json");
 
-    process.env.SPS_AGENT_AUTH_PROVIDERS_JSON = JSON.stringify([
-        { name: "human-e2e", jwks_file: jwksPath, issuer: "gateway", audience: "sps" }
-    ]);
+        log("SETUP", "Generating gateway identity...");
+        identity = await loadOrCreateGatewayIdentity({ keyPath });
+        await writeJwksFile(identity, jwksPath);
+
+        process.env.SPS_AGENT_AUTH_PROVIDERS_JSON = JSON.stringify([
+            { name: "human-e2e", jwks_file: jwksPath, issuer: "gateway", audience: "sps" }
+        ]);
+    }
 
     // 1.5. Ensure Browser UI is running
     const uiBaseUrl = process.env.VITE_SPS_UI_URL ?? "http://localhost:5173";
-    let uiProcess;
-    
     if (!(await isServerRunning(uiBaseUrl)) && uiBaseUrl.includes("localhost:5173")) {
         log("SETUP", `${YELLOW}Browser UI server not detected at ${uiBaseUrl}. Starting it...${RESET}`);
         
@@ -110,20 +129,23 @@ async function run() {
         }
     }
 
-    // 2. Start real SPS server on an ephemeral port
-    const host = "127.0.0.1";
+    // 2. Start SPS unless the caller supplied an already-running server.
+    if (!externalServer) {
+        app = await buildApp({
+            useInMemoryStore: true,
+            hmacSecret: "e2e-human-hmac-secret",
+            uiBaseUrl,
+        });
 
-    // We bind to 0 to get an ephemeral port, so we don't clash with
-    // a dev server running in another tab.
-    const app = await buildApp({
-        useInMemoryStore: true,
-        hmacSecret: "e2e-human-hmac-secret",
-        uiBaseUrl,
-    });
-
-    const address = await app.listen({ host, port: 0 });
-    const baseUrl = address; // The actual bound address (e.g. http://127.0.0.1:45321)
-    log("SPS", `Server listening on ${CYAN}${baseUrl}${RESET}`);
+        const address = await app.listen({ host: "127.0.0.1", port: 0 });
+        baseUrl = address;
+        log("SPS", `Server listening on ${CYAN}${baseUrl}${RESET}`);
+    } else {
+        if (!(await isServerRunning(`${baseUrl}/healthz`))) {
+            throw new Error(`Existing SPS server is not reachable at ${baseUrl}/healthz`);
+        }
+        log("SPS", `Connected to ${CYAN}${baseUrl}${RESET}`);
+    }
 
     // 3. Generate agent HPKE keypair
     log("AGENT", "Generating HPKE keypair...");
@@ -131,7 +153,7 @@ async function run() {
 
     try {
         // 4. Gateway creates secret request
-        const gatewayToken = await issueJwt(identity, "e2e-human-agent");
+        const gatewayToken = externalBearerToken ?? await issueJwt(identity, "e2e-human-agent");
         const gatewayClient = new GatewaySpsClient({
             baseUrl,
             gatewayBearerToken: gatewayToken,
@@ -167,8 +189,9 @@ async function run() {
             throw new Error("Could not extract secret URL from chat message");
         }
 
-        let secretUrl = linkMatch[1];
-        secretUrl += `&api_url=${encodeURIComponent(baseUrl)}`;
+        const secretUrlObject = new URL(linkMatch[1]);
+        secretUrlObject.searchParams.set("api_url", baseUrl);
+        const secretUrl = secretUrlObject.toString();
 
         // 6. Extract confirmation code
         const codeMatch = chatMessage.match(/Confirmation code:\s*(\S+)/);
@@ -200,7 +223,7 @@ async function run() {
         openBrowser(secretUrl);
 
         // 9. Poll for submission (agent-side)
-        const agentToken = await issueJwt(identity, "e2e-human-agent");
+        const agentToken = externalBearerToken ?? await issueJwt(identity, "e2e-human-agent");
         const agentClient = new SpsClient({
             baseUrl,
             gatewayBearerToken: agentToken,
@@ -248,7 +271,7 @@ async function run() {
         console.log();
     } finally {
         destroyKeyPair(keyPair);
-        await app.close();
+        await app?.close();
         if (uiProcess) {
             uiProcess.kill();
         }

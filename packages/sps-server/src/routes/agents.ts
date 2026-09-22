@@ -17,6 +17,7 @@ import {
 import { activeAgentLimit } from "../services/quota.js";
 import { ensureWorkspaceOwnerVerified, UserServiceError } from "../services/user.js";
 import { getWorkspace } from "../services/workspace.js";
+import { agentTokenRateLimitWindowMs } from "../utils/test-timing.js";
 
 const AGENT_ID_PATTERN = "^[A-Za-z0-9._:@-]{1,160}$";
 
@@ -166,7 +167,11 @@ export async function registerAgentRoutes(app: FastifyInstance, opts: AgentRoute
   app.post("/token", async (req, reply) => {
     if (opts.rateLimitService) {
       const limit = Number(process.env.SPS_AGENT_TOKEN_RATE_LIMIT) || 5;
-      const rateLimit = await opts.rateLimitService.consume(rateLimitKeyByIp(req, "agents:token"), limit, 60_000);
+      const rateLimit = await opts.rateLimitService.consume(
+        rateLimitKeyByIp(req, "agents:token"),
+        limit,
+        agentTokenRateLimitWindowMs()
+      );
       if (!rateLimit.allowed) {
         return sendRateLimited(reply, rateLimit, "Too many token requests");
       }

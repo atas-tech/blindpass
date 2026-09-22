@@ -2,7 +2,7 @@
 
 **Proposed:** 2026-09-22
 
-**Status:** Proposed; no scenario in this document has been implemented or executed. Case counts and coupling findings come from profiling the existing test files on 2026-09-22.
+**Status:** P00 TypeScript baseline implemented and executed on 2026-09-22; Rust parity and fleet scenarios remain proposed.
 
 **Design:** [Decision 0002](../product/decisions/0002-rust-controller-and-broker.md) · [Specification](../product/Specification.md) · [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md)
 
@@ -112,6 +112,6 @@ CC-series cases prove the TypeScript clients run unchanged.
 
 | ID | Server under test | Version and commit | Environment | Date | Outcome | Evidence |
 |---|---|---|---|---|---|---|
-| none | | | | | | |
+| P00 baseline | TypeScript SPS (`SUT=ts`) | Node 26.9.0; PostgreSQL 16; Redis 7; source working tree from `e2112c4` plus P00 changes | Linux; isolated PostgreSQL schema and Redis logical DB; real HTTP child process | 2026-09-22 | 19/19 CT01–CT18 and CC01 passed; 6/6 CV01–CV06 passed | `packages/contract-tests/fixtures/snapshots/ts-baseline.json` |
 
 Record each run with the server under test, controller or SPS commit, Node or Rust toolchain, operating system, date and sanitized evidence path. Snapshot files count as evidence only with the run that produced them.

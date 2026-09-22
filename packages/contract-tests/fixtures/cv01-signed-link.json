@@ -1,0 +1,7 @@
+{
+  "root_secret": "p00-vector-root-secret",
+  "request_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "expiry": 1893456000,
+  "metadata_scope": "metadata",
+  "submit_scope": "submit"
+}

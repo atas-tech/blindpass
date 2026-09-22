@@ -23,6 +23,7 @@ import { TurnstileServiceError, verifyTurnstileToken } from "../services/turnsti
 import type { AuthResult, UserRecord } from "../services/user.js";
 import type { WorkspaceRecord } from "../services/workspace.js";
 import { enrollAgent } from "../services/agent.js";
+import { longRateLimitWindowMs, rateLimitWindowMs } from "../utils/test-timing.js";
 
 export interface AuthRoutesOptions extends FastifyPluginOptions {
   db: Pool;
@@ -388,7 +389,7 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
         opts.rateLimitService,
         "auth:register",
         authRateLimitFromEnv("SPS_AUTH_REGISTRATION_LIMIT", 3),
-        60_000,
+        rateLimitWindowMs(),
         "Too many registration attempts"
       )) {
         return;
@@ -437,7 +438,7 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
         opts.rateLimitService,
         "auth:login",
         authRateLimitFromEnv("SPS_AUTH_LOGIN_LIMIT", 10),
-        60_000,
+        rateLimitWindowMs(),
         "Too many login attempts"
       )) {
         return;
@@ -584,7 +585,7 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
         opts.rateLimitService,
         "auth:forgot-password",
         authRateLimitFromEnv("SPS_AUTH_FORGOT_PASSWORD_LIMIT", 3),
-        15 * 60_000,
+        longRateLimitWindowMs(),
         "Too many password reset requests"
       )) {
         return;
@@ -665,7 +666,7 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
       opts.rateLimitService,
       "auth:retrigger-verification",
       authRateLimitFromEnv("SPS_AUTH_RETRIGGER_VERIFICATION_LIMIT", 3),
-      15 * 60_000,
+      longRateLimitWindowMs(),
       "Too many verification resend requests"
     )) {
       return;
@@ -675,7 +676,7 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
       const userLimit = await opts.rateLimitService.consume(
         `auth:retrigger-verification:user:${currentUser.sub}`,
         authRateLimitFromEnv("SPS_AUTH_RETRIGGER_VERIFICATION_PER_USER_LIMIT", 3),
-        15 * 60_000
+        longRateLimitWindowMs()
       );
       if (!userLimit.allowed) {
         return sendRateLimited(reply, userLimit, "Too many verification resend requests");
@@ -749,7 +750,7 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
     process.env.SPS_E2E_SEED_TOKEN.length > 0;
 
   if (seedRoutesEnabled) {
-    app.post<{ Body: { prefix: string; role?: string; agents?: string[]; initial_usage?: number } }>(
+    app.post<{ Body: { prefix: string; role?: string; agents?: string[]; initial_usage?: number; tier?: "free" | "standard" } }>(
       "/test/seed-workspace",
       {
         schema: {
@@ -760,7 +761,8 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
               prefix: { type: "string", minLength: 1, maxLength: 64 },
               role: { type: "string", enum: ["workspace_admin", "workspace_operator", "workspace_viewer"] },
               agents: { type: "array", items: { type: "string" } },
-              initial_usage: { type: "integer", minimum: 0 }
+              initial_usage: { type: "integer", minimum: 0 },
+              tier: { type: "string", enum: ["free", "standard"] }
             },
             required: ["prefix"]
           }
@@ -771,7 +773,7 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
           return reply.code(404).send();
         }
 
-        const { prefix, role = "workspace_admin", agents = [], initial_usage = 0 } = req.body;
+        const { prefix, role = "workspace_admin", agents = [], initial_usage = 0, tier = "free" } = req.body;
         const shortTs = Date.now().toString().slice(-6); // Last 6 digits
         const rand = crypto.randomBytes(3).toString("hex"); // 6 chars
         const email = `test-${prefix}-${shortTs}-${rand}@example.com`;
@@ -795,6 +797,10 @@ export async function registerAuthRoutes(app: FastifyInstance, opts: AuthRoutesO
             "UPDATE users SET email_verified = true, role = $1 WHERE id = $2",
             [role, result.user.id]
           );
+
+          if (tier !== "free") {
+            await opts.db.query("UPDATE workspaces SET tier = $1 WHERE id = $2", [tier, result.workspace.id]);
+          }
 
           if (initial_usage > 0) {
             const now = new Date();

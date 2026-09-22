@@ -53,6 +53,7 @@ The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build
 | `npm run test:skill-install` | Installer regression | See script prerequisites and generated bundle |
 | `npm run test:audience-packaging` | Audience packaging paths | See script prerequisites and generated bundle |
 | `npm run test:openclaw-activation` | OpenClaw activation contract harness | Defined local harness, not proof of every released OpenClaw version |
+| `SUT=ts CONTRACT_DATABASE_URL=... CONTRACT_REDIS_URL=... npm test --workspace=@blindpass/contract-tests` | P00 CT01–CT18, CC01 and CV01–CV06 against a child TypeScript SPS over HTTP | Disposable PostgreSQL and Redis; run `npm run build` first |
 
 Inspect skipped-test counts. `npm run test:e2e` at the root is **dashboard E2E**, while the workspace-qualified SPS command is the PostgreSQL API suite. `npm run test:e2e:full` starts infrastructure and runs dashboard E2E; it does not mean every repository or proposed fleet suite.
 
@@ -64,9 +65,9 @@ npm exec --workspace=packages/dashboard -- playwright install chromium
 
 The [Playwright config](../../packages/dashboard/playwright.config.ts) starts SPS, dashboard and input-page servers and has a preflight setup project. Outside CI it may reuse existing servers, so stop incompatible dev instances first. Global setup checks PostgreSQL; the full setup/config determines additional readiness and fixture requirements. E2E enables test seed routes and body refresh tokens: keep this configuration isolated from real deployments.
 
-## Planned CI ownership
+## CI ownership
 
-The current workflows build images and check/deploy the landing page; they do not run workspace or Rust suites. The P00.4/P01.1/P02.1 CI ownership and runner plan is maintained in the Obsidian vault. These are planned deliverables, not existing automated coverage.
+`.github/workflows/ci.yml` runs the workspace build/default tests, Redis integration, PostgreSQL SPS tests and a separate P00 contract job. It does not establish Rust, systemd VM, stock-client or fleet evidence; those remain the phase gates in the Obsidian vault and Linux Fleet Pilot.
 
 ## Evidence and troubleshooting
 

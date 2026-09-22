@@ -1,0 +1,119 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql://blindpass:localdev@127.0.0.1:5433/blindpass
+  REDIS_URL: redis://127.0.0.1:6380
+
+jobs:
+  workspace:
+    name: Build and workspace tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: blindpass
+          POSTGRES_USER: blindpass
+          POSTGRES_PASSWORD: localdev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U blindpass -d blindpass"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install lockfile dependencies
+        run: npm ci
+
+      - name: Build workspace
+        run: npm run build
+
+      - name: Run default workspace tests
+        run: npm test
+
+      - name: Run Redis integration tests
+        run: npm run test:integration
+
+      - name: Run PostgreSQL SPS tests
+        run: SPS_PG_INTEGRATION=1 npm test --workspace=packages/sps-server
+
+  contract:
+    name: P00 HTTP contract suite
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: blindpass
+          POSTGRES_USER: blindpass
+          POSTGRES_PASSWORD: localdev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U blindpass -d blindpass"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install lockfile dependencies
+        run: npm ci
+
+      - name: Build workspace and contract harness
+        run: npm run build
+
+      - name: Run P00 CT01–CT18, CC01 and CV01–CV06
+        env:
+          SUT: ts
+          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
+          CONTRACT_REDIS_URL: ${{ env.REDIS_URL }}
+        run: npm test --workspace=@blindpass/contract-tests

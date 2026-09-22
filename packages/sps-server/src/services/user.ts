@@ -11,9 +11,8 @@ import { MailerServiceError, type MailDeliveryResult, sendPasswordResetEmail, se
 import { initializeWorkspacePolicy, loadBootstrapWorkspacePolicyFromEnv } from "./workspace-policy.js";
 import type { WorkspaceRecord } from "./workspace.js";
 import { createWorkspace, getWorkspace } from "./workspace.js";
+import { accessTokenTtlSeconds, refreshTokenTtlSeconds } from "../utils/test-timing.js";
 
-const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
-const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 const PASSWORD_HASH_ROUNDS = process.env.NODE_ENV === "test" ? 4 : 12;
 const PASSWORD_MIN_LENGTH = 8;
 const TEMPORARY_PASSWORD_MIN_LENGTH = 12;
@@ -483,7 +482,7 @@ function enforceActiveAccess(user: UserRecord, workspace: WorkspaceRecord): void
 
 async function mintAccessToken(user: UserRecord, sessionId: string): Promise<{ token: string; expiresAt: number }> {
   const issuedAt = nowSeconds();
-  const expiresAt = issuedAt + ACCESS_TOKEN_TTL_SECONDS;
+  const expiresAt = issuedAt + accessTokenTtlSeconds();
   const token = await new SignJWT({
     email: user.email,
     workspace_id: user.workspaceId,
@@ -504,7 +503,7 @@ async function mintAccessToken(user: UserRecord, sessionId: string): Promise<{ t
 
 async function mintRefreshToken(user: UserRecord, sessionId: string): Promise<{ token: string; expiresAt: number }> {
   const issuedAt = nowSeconds();
-  const expiresAt = issuedAt + REFRESH_TOKEN_TTL_SECONDS;
+  const expiresAt = issuedAt + refreshTokenTtlSeconds();
   const token = await new SignJWT({
     workspace_id: user.workspaceId,
     sid: sessionId,
@@ -559,7 +558,7 @@ async function createSessionAndTokens(
       pendingTokenHash,
       normalizeUserAgent(session.userAgent),
       normalizeIpAddress(session.ipAddress),
-      toDateFromEpoch(nowSeconds() + REFRESH_TOKEN_TTL_SECONDS)
+      toDateFromEpoch(nowSeconds() + refreshTokenTtlSeconds())
     ]
   );
 

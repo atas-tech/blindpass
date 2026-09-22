@@ -13,6 +13,7 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `packages/browser-ui` | `MIT` | Client-side encryption sandbox |
 | `packages/gateway` | `MIT` | Interception / delivery middleware |
 | `packages/openclaw-plugin` | `MIT` | Runtime integration plugin |
+| `packages/contract-tests` | `AGPL-3.0-only` | Black-box compatibility and acceptance harness; private test package |
 
 ## Repository Notes
 

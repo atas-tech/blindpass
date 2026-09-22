@@ -8,6 +8,7 @@ import { dailyQuotaLimit, type QuotaService } from "../services/quota.js";
 import { createSecretRequest } from "../services/secret-request.js";
 import { getWorkspace } from "../services/workspace.js";
 import type { RequestStore, StoredRequest } from "../types.js";
+import { workspaceBurstWindowMs, workspaceThrottleWindowMs } from "../utils/test-timing.js";
 
 const REQUEST_ID_PATTERN = "^[a-f0-9]{64}$";
 const SIG_PATTERN = "^[0-9]{10,13}\\.[A-Za-z0-9_-]{43}$";
@@ -43,8 +44,6 @@ export interface SecretRoutesOptions extends FastifyPluginOptions {
   rateLimitService?: RateLimitService;
 }
 
-const WORKSPACE_BURST_WINDOW_MS = 60 * 60 * 1000;
-const WORKSPACE_THROTTLE_WINDOW_MS = 60 * 1000;
 const WORKSPACE_BURST_MULTIPLIER = 5;
 const WORKSPACE_THROTTLE_LIMIT = 1;
 
@@ -141,9 +140,9 @@ export async function registerSecretRoutes(app: FastifyInstance, opts: SecretRou
           const burst = await opts.rateLimitService.consumeWorkspaceBurst(
             `workspace:burst:${payload.workspaceId}:secret_request`,
             burstThreshold,
-            WORKSPACE_BURST_WINDOW_MS,
+            workspaceBurstWindowMs(),
             WORKSPACE_THROTTLE_LIMIT,
-            WORKSPACE_THROTTLE_WINDOW_MS
+            workspaceThrottleWindowMs()
           );
 
           if (burst.triggerAlert) {
@@ -158,8 +157,8 @@ export async function registerSecretRoutes(app: FastifyInstance, opts: SecretRou
                 threshold: burst.threshold,
                 used: burst.windowUsed,
                 throttle_limit: burst.throttleLimit,
-                throttle_window_seconds: Math.floor(WORKSPACE_THROTTLE_WINDOW_MS / 1000),
-                window_seconds: Math.floor(WORKSPACE_BURST_WINDOW_MS / 1000),
+                throttle_window_seconds: Math.floor(workspaceThrottleWindowMs() / 1000),
+                window_seconds: Math.floor(workspaceBurstWindowMs() / 1000),
                 ip: req.ip
               },
               action: "workspace_burst_detected",
