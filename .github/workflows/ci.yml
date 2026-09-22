@@ -117,3 +117,28 @@ jobs:
           CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
           CONTRACT_REDIS_URL: ${{ env.REDIS_URL }}
         run: npm test --workspace=@blindpass/contract-tests
+
+  rust:
+    name: Rust broker checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install native broker libraries
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libsystemd-dev libssl-dev
+
+      - name: Set up pinned Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+          components: rustfmt, clippy
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy gate
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Run locked Rust tests
+        run: cargo test --workspace --locked

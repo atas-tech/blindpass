@@ -1,6 +1,6 @@
 # 0003: Dependency baseline, September 2026
 
-**Status:** Proposed 2026-09-22. No manifest or lockfile has been changed. Changes wait on the Socket review required by the dependency-guard skill, which needs an authenticated Socket CLI (`socket login`) or the MCP `depscore` tool; neither was available in the session that produced this record.
+**Status:** Proposed 2026-09-22. The existing npm upgrade set remains unapplied. P01 adds a dependency-free Cargo workspace; it does not resolve or add the candidate Rust crates below. The authenticated Socket CLI now reaches `api.socket.dev` outside the sandbox, but full repository report creation is access-limited by the logged-in token (`full-scans:create` is missing); see the [P01 execution record](../../testing/p01-host-broker-evidence.md).
 
 **Companions:** [Decision 0001](0001-dashboard-ui-stack.md) · [Decision 0002](0002-rust-controller-and-broker.md) · [Security documentation](../../security/README.md) · [Repository instructions](../../../AGENTS.md)
 
@@ -61,7 +61,7 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 
 ## Process
 
-1. Authenticate the Socket CLI (`socket login`, interactive) or expose MCP `depscore`. The CLI is installed (1.1.176) but refuses `package score` without a token.
+1. Authenticate the Socket CLI (`socket login`, interactive) or expose MCP `depscore`. The CLI is installed (1.1.176); the current login can discover scan files and read supported types but cannot create a full scan without `full-scans:create`.
 2. For each Tier A package run the dependency-guard `check_dependency.sh` helper in `deep` mode with the target version, classify with the decision matrix, and record the outcome in the pull request. Version upgrades of previously allowed packages may use the fast path only if no new alerts appear.
 3. Run the skill's `discover_scan_targets.sh` on the repository, then `socket scan create` over `package.json` and `package-lock.json` after the manifest edits, and carry forward any partial-coverage warning.
 4. Edit the manifests, run `npm install` to refresh the lockfile, then `npm audit`.
@@ -78,4 +78,4 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 
 - `npm audit --json` and `npm view` against the public registry on 2026-09-22 with npm 11.19.1 and Node 26.9.0 on the development host.
 - Lockfile history from `git log -- package-lock.json`.
-- Socket CLI 1.1.176 installed globally on 2026-09-22; the `package score` command returned "This command requires a Socket API token for access".
+- Socket CLI 1.1.176 installed globally; on 2026-09-23 the read-only repository scan reached `api.socket.dev` and discovered 20 files, while full report creation returned HTTP 403 for missing `full-scans:create`.

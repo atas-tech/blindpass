@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+g blindpass-workload -
+u blindpass-agent - "BlindPass registered workload" /usr/sbin/nologin

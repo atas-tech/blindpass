@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass root credential broker
+After=local-fs.target dbus.service
+Wants=dbus.service
+ConditionPathExists=/etc/blindpass/api-key
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key
+Restart=on-failure
+RestartSec=1s
+RuntimeDirectory=blindpass
+RuntimeDirectoryMode=0750
+UMask=0027
+ExecStartPost=/usr/bin/chgrp blindpass-workload /run/blindpass
+ExecStartPost=/usr/bin/chgrp blindpass-workload /run/blindpass/workload.sock
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/etc/blindpass
+ReadWritePaths=/run/blindpass
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

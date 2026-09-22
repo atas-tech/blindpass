@@ -1,0 +1,13 @@
+[package]
+name = "blindpass-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+blindpass-core = { path = "../blindpass-core" }
+
+[lints]
+workspace = true

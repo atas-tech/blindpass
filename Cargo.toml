@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/blindpass-core",
+    "crates/blindpass-broker",
+    "crates/blindpass-controller",
+    "crates/blindpass-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+license = "AGPL-3.0-only"
+repository = "https://github.com/atas-tech/blindpass"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+unsafe_code = "allow"
+
+[workspace.lints.clippy]
+all = "deny"
+# The workspace gate promotes every emitted warning to an error. The FFI-heavy
+# baseline deliberately keeps pedantic cast/documentation suggestions out of
+# that gate until the public controller APIs are introduced.
+pedantic = "allow"

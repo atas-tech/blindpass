@@ -1,0 +1,55 @@
+name: P01 disposable fleet VM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: p01-fleet-vm
+  cancel-in-progress: true
+
+jobs:
+  p01:
+    name: P01 real systemd VM gate
+    runs-on: [self-hosted, linux, x64, blindpass-kvm]
+    timeout-minutes: 45
+    env:
+      BLINDPASS_FLEET_GUEST_IMAGE: ${{ vars.BLINDPASS_FLEET_GUEST_IMAGE }}
+      BLINDPASS_FLEET_GUEST_IMAGE_SHA256: ${{ vars.BLINDPASS_FLEET_GUEST_IMAGE_SHA256 }}
+      BLINDPASS_FLEET_SSH_KEY: ${{ vars.BLINDPASS_FLEET_SSH_KEY }}
+      BLINDPASS_FLEET_GUEST_USER: ${{ vars.BLINDPASS_FLEET_GUEST_USER }}
+      BLINDPASS_FLEET_RUNNER_OWNER: ${{ vars.BLINDPASS_FLEET_RUNNER_OWNER }}
+      BLINDPASS_FLEET_KEEP_ARTIFACTS: "1"
+    steps:
+      - name: Check out reviewed revision
+        uses: actions/checkout@v4
+
+      - name: Verify trusted VM runner
+        run: |
+          set -eu
+          qemu-system-x86_64 --version
+          qemu-img --version
+          test -r /dev/kvm
+          test -w /dev/kvm
+          test -n "$BLINDPASS_FLEET_RUNNER_OWNER"
+
+      - name: Run pinned Rust checks
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo test --workspace --locked
+
+      - name: Run P01 disposable guest
+        run: sudo -E ./tests/fleet/p01-vm.sh
+
+      - name: Collect VM harness artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: p01-fleet-vm-${{ github.run_id }}
+          if-no-files-found: warn
+          path: |
+            /tmp/blindpass-p01.*/serial.log
+            /tmp/blindpass-p01.*/guest-result.log

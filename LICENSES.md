@@ -14,6 +14,10 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `packages/gateway` | `MIT` | Interception / delivery middleware |
 | `packages/openclaw-plugin` | `MIT` | Runtime integration plugin |
 | `packages/contract-tests` | `AGPL-3.0-only` | Black-box compatibility and acceptance harness; private test package |
+| `crates/blindpass-core` | `AGPL-3.0-only` | Shared identity, delivery, custody and protocol contracts |
+| `crates/blindpass-broker` | `AGPL-3.0-only` | Root host broker and native consumer probes |
+| `crates/blindpass-controller` | `AGPL-3.0-only` | Future local controller scaffold |
+| `crates/blindpass-cli` | `AGPL-3.0-only` | Future enrollment and administration CLI scaffold |
 
 ## Repository Notes
 
@@ -25,4 +29,7 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 
 - MIT packages are intended to remain separable integrations around the protocol and service.
 - MIT packages should not vendor or embed AGPL application code.
+- The Rust broker uses host `libsystemd` and `libcrypto` through a narrow FFI
+  surface; no third-party Cargo crypto or zeroization dependency is included
+  in this phase.
 - If package boundaries change materially, the licensing split should be reviewed again.

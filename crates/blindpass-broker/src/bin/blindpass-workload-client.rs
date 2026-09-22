@@ -1,0 +1,98 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
+//! Small non-root workload probe used by the disposable systemd VM harness.
+
+use std::io::{Read, Write};
+use std::os::unix::net::UnixStream;
+use std::path::PathBuf;
+use std::time::Duration;
+
+fn main() {
+    if let Err(error) = run(std::env::args().skip(1).collect()) {
+        eprintln!("blindpass-workload-client: {error}");
+        std::process::exit(1);
+    }
+}
+
+fn run(args: Vec<String>) -> Result<(), String> {
+    let mut socket = PathBuf::from("/run/blindpass/workload.sock");
+    let mut node = None;
+    let mut workload = None;
+    let mut unit = None;
+    let mut invocation = std::env::var("INVOCATION_ID").ok();
+    let mut operation = "health".to_owned();
+    let mut hold_seconds = 0u64;
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--socket" => socket = PathBuf::from(next(&args, &mut index)?),
+            "--node" => node = Some(next(&args, &mut index)?),
+            "--workload" => workload = Some(next(&args, &mut index)?),
+            "--unit" => unit = Some(next(&args, &mut index)?),
+            "--invocation" => invocation = Some(next(&args, &mut index)?),
+            "--operation" => operation = next(&args, &mut index)?,
+            "--hold-seconds" => {
+                hold_seconds = next(&args, &mut index)?
+                    .parse()
+                    .map_err(|_| "--hold-seconds must be an integer".to_owned())?;
+            }
+            "--help" | "-h" => {
+                println!(
+                    "blindpass-workload-client --node NODE --workload ID --unit UNIT \\
+                     [--invocation ID] [--operation NAME] [--hold-seconds N]"
+                );
+                return Ok(());
+            }
+            unknown => return Err(format!("unknown argument {unknown}")),
+        }
+        index += 1;
+    }
+
+    let node = node.ok_or("--node is required")?;
+    let workload = workload.ok_or("--workload is required")?;
+    let unit = unit.ok_or("--unit is required")?;
+    let invocation = invocation.ok_or("--invocation or INVOCATION_ID is required")?;
+    let frame = format!("WORK {node} {workload} {unit} {invocation} {operation}\n");
+
+    let mut last_error = None;
+    // The VM harness starts this unit first so that it can read the systemd
+    // invocation ID before registering the workload with the broker.
+    for _attempt in 0..600 {
+        match UnixStream::connect(&socket) {
+            Ok(mut stream) => {
+                stream
+                    .write_all(frame.as_bytes())
+                    .map_err(|error| error.to_string())?;
+                stream
+                    .shutdown(std::net::Shutdown::Write)
+                    .map_err(|error| error.to_string())?;
+                let mut response = Vec::new();
+                stream
+                    .read_to_end(&mut response)
+                    .map_err(|error| error.to_string())?;
+                if !response.starts_with(b"OK ") {
+                    return Err(String::from_utf8_lossy(&response).trim().to_owned());
+                }
+                println!("WORKLOAD_READY");
+                if hold_seconds > 0 {
+                    std::thread::sleep(Duration::from_secs(hold_seconds));
+                }
+                return Ok(());
+            }
+            Err(error) => last_error = Some(error),
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    Err(format!(
+        "workload socket unavailable: {}",
+        last_error.map_or_else(|| "unknown error".to_owned(), |error| error.to_string())
+    ))
+}
+
+fn next(args: &[String], index: &mut usize) -> Result<String, String> {
+    *index += 1;
+    args.get(*index)
+        .cloned()
+        .ok_or_else(|| "missing option value".to_owned())
+}

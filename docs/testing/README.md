@@ -2,7 +2,7 @@
 
 This is the current command reference. The [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the Obsidian vault. A passing workspace suite does not establish the new broker, browser or deployment guarantees.
 
-The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. Their proposed Rust/VM/controller runners must be added alongside their feature code; the commands below describe the current repository only.
+The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are now in this repository; the real runner remains an explicit prerequisite and is never inferred from hosted CI.
 
 The proposed landing-aligned dashboard rebuild and secret-input acceptance plans are maintained in the Obsidian vault. The proposed Rust controller port is gated by the [Controller Contract Suite](Controller%20Contract%20Suite.md), an HTTP-level compatibility suite run against both servers; it is not implemented.
 
@@ -54,6 +54,10 @@ The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build
 | `npm run test:audience-packaging` | Audience packaging paths | See script prerequisites and generated bundle |
 | `npm run test:openclaw-activation` | OpenClaw activation contract harness | Defined local harness, not proof of every released OpenClaw version |
 | `SUT=ts CONTRACT_DATABASE_URL=... CONTRACT_REDIS_URL=... npm test --workspace=@blindpass/contract-tests` | P00 CT01–CT18, CC01 and CV01–CV06 against a child TypeScript SPS over HTTP | Disposable PostgreSQL and Redis; run `npm run build` first |
+| `cargo fmt --all -- --check` | P01 Rust formatting gate | Rust toolchain pinned by `rust-toolchain.toml` |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | P01 Rust lint gate | Native `libsystemd`/OpenSSL development libraries |
+| `cargo test --workspace --locked` | P01 portable unit, transport-boundary and HPKE interop tests | Unix-socket operations; rerun outside restricted sandboxes if required |
+| `sudo -E ./tests/fleet/p01-vm.sh` | P01 real systemd guest harness | Named self-hosted QEMU/KVM runner, pinned image hash, SSH key and cloud-localds; exit 78 means unsupported/blocking infrastructure |
 
 Inspect skipped-test counts. `npm run test:e2e` at the root is **dashboard E2E**, while the workspace-qualified SPS command is the PostgreSQL API suite. `npm run test:e2e:full` starts infrastructure and runs dashboard E2E; it does not mean every repository or proposed fleet suite.
 
@@ -67,7 +71,7 @@ The [Playwright config](../../packages/dashboard/playwright.config.ts) starts SP
 
 ## CI ownership
 
-`.github/workflows/ci.yml` runs the workspace build/default tests, Redis integration, PostgreSQL SPS tests and a separate P00 contract job. It does not establish Rust, systemd VM, stock-client or fleet evidence; those remain the phase gates in the Obsidian vault and Linux Fleet Pilot.
+`.github/workflows/ci.yml` runs the workspace build/default tests, Redis integration, PostgreSQL SPS tests, a separate P00 contract job, and the pinned Rust format/lint/test gates. `.github/workflows/fleet-vm.yml` is manual-only and requires the labeled disposable QEMU/KVM runner; hosted CI and a successful Rust job do not establish systemd VM, stock-client or fleet evidence.
 
 ## Evidence and troubleshooting
 

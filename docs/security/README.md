@@ -7,7 +7,7 @@ The [current threat model](blindpass-threat-model.md) owns the present interpret
 | [Current threat model](blindpass-threat-model.md) | Actual auth/storage behavior, plaintext boundaries, residual risks and proposed fleet threats |
 | [Product finding register](../product/Specification.md#repository-findings) | F-1–F-13 with historical provenance and selected current corrections |
 | [Pilot security tests](../testing/Linux%20Fleet%20Pilot.md) | Required future OS, browser, deployment and release evidence |
-| [Dependency baseline](../product/decisions/0003-dependency-baseline-2026-09.md) | 2026-09-22 `npm audit` snapshot, upgrade tiers and Socket review status; no manifest changed yet |
+| [Dependency baseline](../product/decisions/0003-dependency-baseline-2026-09.md) | 2026-09-22 `npm audit` snapshot, upgrade tiers and Socket review status; existing npm manifests remain unchanged, while P01's dependency-free Cargo workspace is separate |
 | Historical audits and threat model | Maintained in the Obsidian vault; they are evidence, not a current open/closed ledger |
 
 Key corrections from source inspection: hosted cookies exist, but both frontends still support `localStorage` body-token paths; verification/reset tokens are hashed with expiry/one-use checks; the implemented HPKE AEAD is ChaCha20-Poly1305; production nginx configuration exists for both frontends but still has permissive connection policies. Historical audit claims to the contrary must not be copied as current state.

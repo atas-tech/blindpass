@@ -1,6 +1,6 @@
 # 0002: Rust for the host broker and the new controller
 
-**Status:** Accepted 2026-09-22 as direction. P02 starts after the P00 TypeScript contract baseline, in parallel with P01. W0 real-VM evidence in the [roadmap](../Roadmap.md#w0-host-identity-and-custody) gates P03 start and P02.6 cutover, not the controller port. If W0 fails, a Rust controller can still replace SPS for the existing product through a revised standalone cutover review. Nothing in this record is implemented; the repository contains no Rust code as of this date.
+**Status:** Accepted 2026-09-22 as direction. P02 starts after the P00 TypeScript contract baseline, in parallel with P01. W0 real-VM evidence in the [roadmap](../Roadmap.md#w0-host-identity-and-custody) gates P03 start and P02.6 cutover, not the controller port. If W0 fails, a Rust controller can still replace SPS for the existing product through a revised standalone cutover review. At adoption the repository contained no Rust code; the current P01 change adds the reviewed workspace/broker foundation while the real-VM gate remains open.
 
 **Companions:** [Specification](../Specification.md) · [Linux Fleet Pilot](../../testing/Linux%20Fleet%20Pilot.md) · [Decision 0001](0001-dashboard-ui-stack.md) · [Code architecture](../../architecture/README.md)
 
