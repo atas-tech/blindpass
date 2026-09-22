@@ -2,6 +2,8 @@
 
 This is the current command reference. The [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the [archive](../archive/README.md). A passing workspace suite does not establish the new broker, browser or deployment guarantees.
 
+The proposed landing-aligned dashboard refresh has a separate [Dashboard Redesign acceptance plan](Dashboard%20Redesign.md), covering existing UI routes, roles, credential-handling boundaries and visual regression gates.
+
 ## Environment
 
 Run commands from the repository root with Node.js 22+ and installed lockfile dependencies. Use a disposable test database: suites and demo helpers create, alter or clean up workspace/account state. Keep real secrets out of fixtures and captured outputs.

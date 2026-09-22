@@ -15,6 +15,7 @@
     "dev": "npm run dev --workspaces --if-present",
     "dev:e2e": "node scripts/dev-e2e.mjs",
     "test": "npm run test --workspaces --if-present",
+    "test:landing": "node --check landing/dist/script.js && node --test landing/tests/",
     "test:e2e": "npm run test:e2e --workspace=packages/dashboard",
     "test:integration": "npm run test:integration --workspace=packages/sps-server",
     "test:skill-install": "node scripts/tests/install_skill.test.mjs",

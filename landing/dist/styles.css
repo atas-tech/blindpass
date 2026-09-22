@@ -18,3 +18,6 @@
 
 .hero-detail,.section-heading>p{font-size:16px}
 @media(max-width:600px){.hero-actions{align-items:flex-start;flex-direction:column;gap:10px}.release-note{font-size:12px;flex-wrap:wrap;line-height:1.6}.release-note .icon{display:none}}
+
+.flow-picker{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px}.flow-picker button{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:11px 16px;border:1px solid var(--line);border-radius:5px;background:var(--panel);color:var(--muted);font-size:14px}.flow-picker button:hover{border-color:#647545;color:var(--ink)}.flow-picker button[aria-pressed="true"]{background:#202b19;border-color:#647545;color:var(--lime)}.flow-picker button span{font:12px var(--mono);color:var(--muted)}.flow-caption{color:var(--muted);font-size:14px;line-height:1.7;margin:0 0 24px}.request-details dd{overflow-wrap:anywhere;min-width:0}.request-details dt{flex-shrink:0}
+@media(max-width:600px){.flow-picker{flex-direction:column;align-items:stretch}.flow-picker button{justify-content:space-between}.flow-caption{font-size:13px}.capability-tag{line-height:1.7}}

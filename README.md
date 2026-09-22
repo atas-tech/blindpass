@@ -7,7 +7,7 @@ The next product direction is an Omarchy-first Linux access pilot: one controlle
 ## Start here
 
 - [Documentation index](docs/README.md): current guides, architecture, security status and historical records.
-- [Landing page](landing/README.md): standalone HTML presentation and interactive illustration of the proposed access workflow.
+- [Landing page](landing/README.md): human-to-agent secret provisioning, agent-to-agent exchange, and a separately labeled browser-pilot illustration.
 - [Quick start](docs/guides/quickstart.md): run the existing source-based development stack.
 - [Self-hosting](docs/guides/self-hosting.md): configuration and operational limits of the current SPS stack.
 - [Testing](docs/testing/README.md): unit, Redis, PostgreSQL and dashboard E2E commands.

@@ -31,6 +31,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check landing page workflow demos
+        run: npm run test:landing
+
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 

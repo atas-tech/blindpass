@@ -24,6 +24,7 @@ The controller/broker fleet, protected browser session handoff and native/contai
 | [OpenClaw integration](plugins/openclaw-capability-extension.md) | Existing transport, storage and resolver contracts; MCP limitations |
 | [Unraid templates](deployment/Unraid.md) | Repository container/template configuration and release prerequisites |
 | [Dashboard maintenance](architecture/dashboard-maintainability.md) | Existing style and shared translation conventions |
+| [Dashboard redesign proposal](product/dashboard-redesign.md) | Landing-aligned dashboard mockup direction, route coverage, rollout and proposed UI acceptance scenarios |
 | [Test setup](testing/README.md) | Actual scripts, service requirements and skipped-suite behavior |
 | [Demos](testing/Manual%20Demos.md) | Dummy-data exchange exercises and known helper limitations |
 | [Security status](security/README.md) | Current threat model, selected source checks and historical audits |

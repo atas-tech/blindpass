@@ -1,0 +1,75 @@
+# BlindPass
+
+> Secure secret handoffs for AI agents. An agent asks a person for an API key, or asks
+> another agent for one it holds. BlindPass encrypts the handoff and applies exchange
+> policy to agent-to-agent requests.
+
+BlindPass is an open-source Secret Provisioning Service (SPS) and agent skill. It covers
+two implemented workflows — human-to-agent provisioning and agent-to-agent exchange —
+plus a proposed Linux/browser access pilot that is not implemented. Statements below
+separate the two; do not describe proposed work as an available capability.
+
+## Implemented today
+
+- **Human to agent.** An agent requests a named secret. A person enters it on a secure
+  input page; the browser encrypts it to the requesting runtime's public key. The
+  recipient retrieves the ciphertext and decrypts it.
+- **Agent to agent.** A requesting agent names a secret and a fulfilling agent. Exchange
+  policy evaluates requester, fulfiller, secret name and purpose, then returns `allow`,
+  `deny` or `pending_approval`. The fulfiller encrypts the secret it holds for the
+  requesting runtime. Permission is directional: the reverse exchange is a separate
+  request with its own policy check.
+- **Encryption.** HPKE (RFC 9180) using X25519, HKDF-SHA256 and ChaCha20-Poly1305,
+  in both the browser input page and the agent skill.
+- **One-use retrieval.** Retrieval is an atomic read-and-delete, so a stored ciphertext
+  is served at most once.
+- **Exchange policy.** A secret registry plus rules matching on `requesterIds`,
+  `fulfillerIds`, `requesterRings`, `fulfillerRings`, `purposes`, `sameRing` and
+  `allowedRings`, with optional agent approver configuration. Versioned per workspace
+  in hosted mode; environment-configured otherwise.
+- **Audit.** Exchange and decision events are recorded as metadata. Secret values are
+  not written to the audit trail.
+- **Operator dashboard.** Workspace UI for approvals, agents, policy, members, audit
+  and usage. Self-hosted as part of the stack.
+
+## Boundaries — state these accurately
+
+- **Not zero-knowledge.** The browser handling input and the recipient runtime that
+  decrypts are plaintext endpoints. HPKE protects the relay path; SPS does not need the
+  plaintext value, but that guarantee depends on trustworthy endpoint code and correct
+  recipient-key binding.
+- **Delivery limits are not revocation.** One-use retrieval and short request TTLs limit
+  delivery. They do not expire or revoke the credential at its provider, and they do not
+  constrain what a recipient runtime does with a secret it has decrypted.
+- **Approval authorizes an exchange,** not the recipient's subsequent activity. Purpose
+  is policy metadata.
+- **An authorized process can copy what it receives.** A runtime with shell access can
+  read a credential delivered to it.
+- **Agent "active" means enrolled,** not reachable or online.
+
+## Proposed, not implemented
+
+A Linux fleet access pilot: one controller, two hosts, an approved browser task and a
+native service job, with host identity and session revocation. Browser session handoff,
+the host broker and native/container controller parity are planned work pending real
+workload identity, revocation, recovery and stock-client evidence. Do not present these
+as shipping features.
+
+## Components
+
+- `packages/sps-server` — Fastify/Redis service coordinating requests, policy and audit;
+  PostgreSQL for hosted workspace state.
+- `packages/agent-skill` — client-side HPKE keypair generation and retrieval.
+- `packages/browser-ui` — secure human input page performing browser-side encryption.
+- `packages/dashboard` — operator dashboard.
+- `packages/gateway`, `packages/openclaw-plugin`, `packages/i18n` — transport, agent
+  integration and localization.
+
+## Links
+
+- Website: https://blindpass.atas.tech/
+- Source and documentation: https://github.com/atas-tech/blindpass
+- Threat model: https://github.com/atas-tech/blindpass/blob/main/docs/security/blindpass-threat-model.md
+- Exchange policy guide: https://github.com/atas-tech/blindpass/blob/main/docs/guides/policy.md
+- Quick start: https://github.com/atas-tech/blindpass/blob/main/docs/guides/quickstart.md
+- Self-hosting: https://github.com/atas-tech/blindpass/blob/main/docs/guides/self-hosting.md
