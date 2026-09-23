@@ -44,6 +44,11 @@ jobs:
       - name: Run P01 disposable guest
         run: sudo -E ./tests/fleet/p01-vm.sh
 
+      - name: Verify P01 failure and cancellation teardown
+        run: |
+          sudo -E ./tests/fleet/p01-teardown.sh failure
+          sudo -E ./tests/fleet/p01-teardown.sh cancel
+
       - name: Collect VM harness artifacts
         if: always()
         uses: actions/upload-artifact@v4

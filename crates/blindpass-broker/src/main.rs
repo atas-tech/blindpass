@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use blindpass_broker::{BrokerConfig, BrokerState, load_protected_credential, run};
+use blindpass_broker::{BrokerConfig, BrokerState, DeliveryFault, load_protected_credential, run};
 use blindpass_core::delivery::{CredentialFormat, DeliveryPolicy};
 use blindpass_core::identity::WorkloadRegistration;
 use std::path::PathBuf;
@@ -14,7 +14,10 @@ fn main() {
 }
 
 fn run_from_args(args: Vec<String>) -> Result<(), String> {
-    let mut config = BrokerConfig::default();
+    let mut config = BrokerConfig {
+        delivery_fault: configured_delivery_fault()?,
+        ..BrokerConfig::default()
+    };
     let mut state = BrokerState::new(DeliveryPolicy {
         max_bytes: blindpass_core::MAX_CREDENTIAL_BYTES,
         deadline: Duration::from_secs(2),
@@ -74,6 +77,19 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
         index += 1;
     }
     run(config, state).map_err(|error| error.to_string())
+}
+
+fn configured_delivery_fault() -> Result<Option<DeliveryFault>, String> {
+    let Some(value) = std::env::var_os("BLINDPASS_P01_DELIVERY_FAULT") else {
+        return Ok(None);
+    };
+    if std::env::var("BLINDPASS_P01_TEST_MODE").as_deref() != Ok("1") {
+        return Err("BLINDPASS_P01_DELIVERY_FAULT requires BLINDPASS_P01_TEST_MODE=1".to_owned());
+    }
+    let value = value
+        .to_str()
+        .ok_or("BLINDPASS_P01_DELIVERY_FAULT is not valid UTF-8")?;
+    DeliveryFault::parse(value).map(Some).map_err(str::to_owned)
 }
 
 fn next(args: &[String], index: &mut usize) -> Result<String, String> {

@@ -9,13 +9,13 @@ ConditionPathExists=/etc/blindpass/api-key
 Type=simple
 User=root
 Group=root
-ExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key
+ExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --map blindpass-backup.service=api-key --credential api-key=/etc/blindpass/api-key
 Restart=on-failure
 RestartSec=1s
 RuntimeDirectory=blindpass
 RuntimeDirectoryMode=0751
 UMask=0027
-ExecStartPost=/usr/bin/chgrp blindpass-workload /run/blindpass/workload.sock
+ExecStartPost=/bin/sh -c 'i=0; while [ "$i" -lt 50 ]; do if [ -S /run/blindpass/workload.sock ]; then /usr/bin/chgrp blindpass-workload /run/blindpass/workload.sock; exit 0; fi; i=$((i + 1)); /usr/bin/sleep 0.02; done; exit 1'
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
@@ -25,6 +25,7 @@ ReadWritePaths=/run/blindpass
 RestrictAddressFamilies=AF_UNIX
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
+LimitCORE=0
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes

@@ -14,16 +14,53 @@ guest_systemd=$(systemd --version | awk 'NR == 1 { print $2 }')
 printf 'P01-GUEST-ENV os=%s kernel=%s systemd=%s pid1=%s\n' \
     "$guest_os" "$(uname -r)" "$guest_systemd" "$(ps -p 1 -o comm=)"
 
+assert_canary_absent() {
+    local canary=$1
+    if ps axww -o args= | awk -v needle="$canary" \
+        '$0 !~ /awk/ && index($0, needle) { found = 1 } END { exit found ? 0 : 1 }'; then
+        printf 'P01-FAIL %s appeared in a process argument\n' "$canary" >&2
+        exit 1
+    fi
+    if journalctl --no-pager -u blindpass-broker.service -u blindpass-consumer.service \
+        -u blindpass-backup.service -u blindpass-workload.service -u blindpass-loader-nonroot.service \
+        | grep -F -- "$canary" >/dev/null 2>&1; then
+        printf 'P01-FAIL %s appeared in a service journal\n' "$canary" >&2
+        exit 1
+    fi
+    while IFS= read -r -d '' artifact; do
+        [[ "$artifact" == /tmp/p01-guest.sh ]] && continue
+        if grep -aF -- "$canary" "$artifact" >/dev/null 2>&1; then
+            printf 'P01-FAIL %s appeared in runtime artifact %s\n' "$canary" "$artifact" >&2
+            exit 1
+        fi
+    done < <(
+        find /tmp /var/tmp /var/crash /run/blindpass-consumer /run/blindpass-backup \
+            /run/blindpass-faults /run/blindpass-custody-probe -xdev -type f -size -1M -print0 2>/dev/null
+    )
+}
+
 install -d -m 0755 /usr/libexec /etc/blindpass /etc/systemd/system
 install -m 0755 /tmp/blindpass-broker /usr/libexec/blindpass-broker
+install -m 0755 /tmp/blindpass-backup-probe /usr/libexec/blindpass-backup-probe
 install -m 0755 /tmp/blindpass-consumer /usr/libexec/blindpass-consumer
+install -m 0755 /tmp/blindpass-custody-probe /usr/libexec/blindpass-custody-probe
 install -m 0755 /tmp/blindpass-credential-loader /usr/libexec/blindpass-credential-loader
 install -m 0755 /tmp/blindpass-workload-client /usr/libexec/blindpass-workload-client
 install -m 0755 /tmp/blindpass-transport-probe /usr/libexec/blindpass-transport-probe
 install -m 0644 /tmp/blindpass-broker.service /etc/systemd/system/blindpass-broker.service
+install -m 0644 /tmp/blindpass-backup.service /etc/systemd/system/blindpass-backup.service
 install -m 0644 /tmp/blindpass-consumer.service /etc/systemd/system/blindpass-consumer.service
 install -m 0644 /tmp/blindpass-consumer-native.service /etc/systemd/system/blindpass-consumer-native.service
 install -m 0644 /tmp/blindpass-workload.service /etc/systemd/system/blindpass-workload.service
+
+if [[ "${BLINDPASS_P01_INJECT_FAILURE:-0}" == 1 ]]; then
+    printf 'P01-INJECTED-FAILURE guest test failure for teardown validation\n' >&2
+    exit 42
+fi
+if [[ -n "${BLINDPASS_P01_CANCEL_AFTER_BOOT_SECONDS:-}" ]]; then
+    printf 'P01-CANCEL-WINDOW seconds=%s\n' "$BLINDPASS_P01_CANCEL_AFTER_BOOT_SECONDS"
+    sleep "$BLINDPASS_P01_CANCEL_AFTER_BOOT_SECONDS"
+fi
 
 getent group blindpass-workload >/dev/null || groupadd --system blindpass-workload
 id blindpass-agent >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin --gid blindpass-workload blindpass-agent
@@ -64,8 +101,12 @@ workload_uid=$(id -u blindpass-agent)
 
 install -d -m 0755 /etc/systemd/system/blindpass-broker.service.d
 write_workload_registration() {
-    printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:workload-a:blindpass-workload.service:%s:%s\n' \
-        "$workload_uid" "$invocation" \
+    local registration_uid=${1:-$workload_uid}
+    local registration_invocation=${2:-$invocation}
+    local registration_unit=${3:-blindpass-workload.service}
+    local registration_workload=${4:-workload-a}
+    printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --map blindpass-backup.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:%s:%s:%s:%s\n' \
+        "$registration_workload" "$registration_unit" "$registration_uid" "$registration_invocation" \
         >/etc/systemd/system/blindpass-broker.service.d/p01-workload.conf
 }
 write_workload_registration
@@ -97,6 +138,12 @@ journalctl -u blindpass-workload.service --no-pager -n 20 | grep -q 'WORKLOAD_RE
     exit 1
 }
 printf 'P01-I02 registered non-root workload: PASS\n'
+
+install -d -m 0700 /run/blindpass-custody-probe
+if ! /usr/libexec/blindpass-custody-probe --workdir /run/blindpass-custody-probe; then
+    printf 'P01-FAIL custody lifecycle probe failed\n' >&2
+    exit 1
+fi
 
 cat >/etc/systemd/system/blindpass-loader-nonroot.service <<'UNIT'
 [Unit]
@@ -148,6 +195,59 @@ systemctl is-active --quiet blindpass-consumer.service || {
     exit 1
 }
 printf 'P01-I01 loader restart re-resolved current invocation: PASS\n'
+
+systemctl reset-failed blindpass-backup.service >/dev/null 2>&1 || true
+systemctl start blindpass-backup.service
+systemctl is-active --quiet blindpass-backup.service || {
+    printf 'P01-FAIL disposable backup consumer did not activate\n' >&2
+    exit 1
+}
+backup_restore=$(/usr/libexec/blindpass-backup-probe \
+    --credential-file /run/blindpass-backup/api-key \
+    --artifact /run/blindpass-backup/artifact --mode restore)
+[[ "$backup_restore" == BACKUP_RESTORED ]] || {
+    printf 'P01-FAIL disposable backup restore did not validate\n' >&2
+    exit 1
+}
+[[ "$(stat -c '%a:%u' /run/blindpass-backup/artifact)" == 600:0 ]] || {
+    printf 'P01-FAIL disposable backup artifact permissions were not root-only\n' >&2
+    exit 1
+}
+printf 'P01-E01 credential-consuming backup write/restore: PASS\n'
+
+for delivery_fault in empty partial malformed oversized corrupt; do
+    cat >/etc/systemd/system/blindpass-broker.service.d/p01-delivery-fault.conf <<UNIT
+[Service]
+Environment=BLINDPASS_P01_TEST_MODE=1
+Environment=BLINDPASS_P01_DELIVERY_FAULT=$delivery_fault
+UNIT
+    systemctl daemon-reload
+    systemctl stop blindpass-consumer.service >/dev/null 2>&1 || true
+    systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
+    rm -f /run/blindpass-consumer/api-key /run/blindpass-consumer/api-key.tmp
+    systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+    if ! systemctl restart blindpass-broker.service; then
+        printf 'P01-FAIL broker did not restart for delivery fault %s\n' "$delivery_fault" >&2
+        systemctl status blindpass-broker.service --no-pager -l >&2 || true
+        journalctl -u blindpass-broker.service --no-pager -n 80 >&2 || true
+        exit 1
+    fi
+    if systemctl start blindpass-consumer.service >/dev/null 2>&1; then
+        printf 'P01-FAIL consumer accepted broker delivery fault %s\n' "$delivery_fault" >&2
+        exit 1
+    fi
+    [[ ! -e /run/blindpass-consumer/api-key.tmp ]] || {
+        printf 'P01-FAIL broker delivery fault %s left a temporary credential\n' "$delivery_fault" >&2
+        exit 1
+    }
+    rm -f /run/blindpass-consumer/api-key
+    systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
+done
+rm -f /etc/systemd/system/blindpass-broker.service.d/p01-delivery-fault.conf
+systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+systemctl restart blindpass-broker.service
+printf 'P01-I04 broker empty/partial/malformed/oversized/corrupt delivery: PASS\n'
 
 old_invocation=$invocation
 systemctl stop blindpass-workload.service >/dev/null 2>&1 || true
@@ -204,6 +304,7 @@ done
 invocation=$re_registered_invocation
 write_workload_registration
 systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
 systemctl restart blindpass-broker.service
 workload_recovered=no
 for _attempt in {1..30}; do
@@ -227,6 +328,180 @@ systemctl daemon-reload
     exit 1
 }
 printf 'P01-I01 stale workload invocation denied and re-registration required: PASS\n'
+
+install -d -m 0755 /etc/systemd/system/blindpass-workload.service.d
+cat >/etc/systemd/system/blindpass-workload.service.d/p01-race.conf <<'UNIT'
+[Service]
+ExecStart=
+ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload workload-a --unit blindpass-workload.service --operation health --pre-request-delay-ms 5000 --hold-seconds 3600
+UNIT
+systemctl daemon-reload
+systemctl stop blindpass-workload.service >/dev/null 2>&1 || true
+systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
+race_started_at=$(date --iso-8601=seconds)
+systemctl start --no-block blindpass-workload.service
+race_old_invocation=
+race_old_pid=
+for _attempt in {1..30}; do
+    race_old_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+    race_old_pid=$(systemctl show --property=MainPID --value blindpass-workload.service)
+    if [[ -n "$race_old_invocation" && "$race_old_pid" != 0 ]]; then
+        break
+    fi
+    sleep 0.2
+done
+[[ -n "$race_old_invocation" && "$race_old_pid" != 0 ]] || {
+    printf 'P01-FAIL race workload did not start\n' >&2
+    exit 1
+}
+sleep 1
+systemctl restart blindpass-workload.service
+race_new_invocation=
+race_new_pid=
+for _attempt in {1..30}; do
+    race_new_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+    race_new_pid=$(systemctl show --property=MainPID --value blindpass-workload.service)
+    if [[ -n "$race_new_invocation" && "$race_new_invocation" != "$race_old_invocation" \
+        && "$race_new_pid" != 0 && "$race_new_pid" != "$race_old_pid" ]]; then
+        break
+    fi
+    sleep 0.2
+done
+[[ -n "$race_new_invocation" && "$race_new_invocation" != "$race_old_invocation" \
+    && "$race_new_pid" != 0 && "$race_new_pid" != "$race_old_pid" ]] || {
+    printf 'P01-FAIL workload race did not receive a replacement invocation\n' >&2
+    exit 1
+}
+invocation=$race_new_invocation
+write_workload_registration
+systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+systemctl restart blindpass-broker.service
+race_recovered=no
+for _attempt in {1..40}; do
+    if systemctl is-active --quiet blindpass-workload.service \
+        && [[ "$(systemctl show --property=InvocationID --value blindpass-workload.service)" == "$race_new_invocation" ]] \
+        && journalctl -u blindpass-workload.service --since "$race_started_at" --no-pager \
+            | grep -q 'WORKLOAD_READY'; then
+        race_recovered=yes
+        break
+    fi
+    sleep 0.2
+done
+rm -f /etc/systemd/system/blindpass-workload.service.d/p01-race.conf
+systemctl daemon-reload
+[[ "$race_recovered" == yes ]] || {
+    printf 'P01-FAIL replacement workload did not recover after pidfd race\n' >&2
+    journalctl -u blindpass-workload.service --no-pager -n 60 >&2 || true
+    journalctl -u blindpass-broker.service --no-pager -n 60 >&2 || true
+    exit 1
+}
+printf 'P01-I01 pidfd-to-invocation restart race: PASS (old_pid=%s new_pid=%s)\n' \
+    "$race_old_pid" "$race_new_pid"
+
+cat >/etc/systemd/system/blindpass-dynamic.service <<'UNIT'
+[Unit]
+Description=BlindPass P01 DynamicUser workload probe
+After=blindpass-broker.service
+[Service]
+Type=simple
+DynamicUser=yes
+SupplementaryGroups=blindpass-workload
+ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload dynamic-a --unit blindpass-dynamic.service --operation health --startup-delay-ms 5000 --hold-seconds 3600
+Restart=on-failure
+RestartSec=1s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/run/blindpass
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+LimitCORE=0
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+UNIT
+systemctl daemon-reload
+systemctl stop blindpass-workload.service >/dev/null 2>&1 || true
+systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
+systemctl start --no-block blindpass-dynamic.service
+dynamic_invocation=
+dynamic_pid=
+dynamic_uid=
+for _attempt in {1..30}; do
+    dynamic_invocation=$(systemctl show --property=InvocationID --value blindpass-dynamic.service)
+    dynamic_pid=$(systemctl show --property=MainPID --value blindpass-dynamic.service)
+    if [[ -n "$dynamic_invocation" && "$dynamic_pid" != 0 && -r "/proc/$dynamic_pid/status" ]]; then
+        dynamic_uid=$(stat -c '%u' "/proc/$dynamic_pid")
+        if [[ "$dynamic_uid" != 0 ]]; then
+            break
+        fi
+    fi
+    sleep 0.2
+done
+[[ -n "$dynamic_invocation" && "$dynamic_pid" != 0 && "$dynamic_uid" != 0 ]] || {
+    printf 'P01-FAIL DynamicUser workload identity was unavailable\n' >&2
+    systemctl status blindpass-dynamic.service --no-pager -l >&2 || true
+    exit 1
+}
+write_workload_registration "$dynamic_uid" "$dynamic_invocation" \
+    blindpass-dynamic.service dynamic-a
+systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+systemctl restart blindpass-broker.service
+dynamic_ready=no
+for _attempt in {1..40}; do
+    if systemctl is-active --quiet blindpass-dynamic.service \
+        && [[ "$(systemctl show --property=InvocationID --value blindpass-dynamic.service)" == "$dynamic_invocation" ]] \
+        && journalctl -u blindpass-dynamic.service --no-pager -n 30 | grep -q 'WORKLOAD_READY'; then
+        dynamic_ready=yes
+        break
+    fi
+    sleep 0.2
+done
+[[ "$dynamic_ready" == yes ]] || {
+    printf 'P01-FAIL DynamicUser workload was not authorized\n' >&2
+    systemctl status blindpass-dynamic.service --no-pager -l >&2 || true
+    journalctl -u blindpass-dynamic.service --no-pager -n 60 >&2 || true
+    exit 1
+}
+printf 'P01-I02 DynamicUser workload identity and registration: PASS (uid=%s)\n' "$dynamic_uid"
+systemctl stop blindpass-dynamic.service >/dev/null 2>&1 || true
+systemctl reset-failed blindpass-dynamic.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/blindpass-dynamic.service
+systemctl daemon-reload
+
+systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
+systemctl start --no-block blindpass-workload.service
+invocation=
+for _attempt in {1..30}; do
+    invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+    [[ -n "$invocation" ]] && break
+    sleep 0.2
+done
+[[ -n "$invocation" ]] || {
+    printf 'P01-FAIL fixed workload did not restart after DynamicUser profile\n' >&2
+    exit 1
+}
+write_workload_registration
+systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+systemctl restart blindpass-broker.service
+for _attempt in {1..40}; do
+    if journalctl -u blindpass-workload.service --no-pager -n 30 | grep -q 'WORKLOAD_READY'; then
+        break
+    fi
+    sleep 0.2
+done
+journalctl -u blindpass-workload.service --no-pager -n 30 | grep -q 'WORKLOAD_READY' || {
+    printf 'P01-FAIL fixed workload did not recover after DynamicUser profile\n' >&2
+    exit 1
+}
+printf 'P01-I02 fixed-account workload restored after DynamicUser profile: PASS\n'
 
 command -v systemd-creds >/dev/null 2>&1 || {
     printf 'P01-UNSUPPORTED systemd-creds is unavailable for the mandatory native credential comparison\n' >&2
@@ -260,6 +535,41 @@ systemctl is-active --quiet blindpass-consumer-native.service || {
     exit 1
 }
 printf 'P01-E02 native encrypted credstore controlled rotation: PASS\n'
+
+tpm_probe_status=0
+tpm_capability=$(systemd-analyze has-tpm2 2>&1) || tpm_probe_status=$?
+tpm_capability_one_line=$(printf '%s' "$tpm_capability" | tr '\n' ' ' | tr -cs '[:alnum:]_.+-' '_')
+if [[ "$tpm_capability" == *'Unknown command verb'* ]]; then
+    printf 'P01-I06 TPM-CAPABILITY unsupported-command=%s\n' "$tpm_capability_one_line"
+    tpm_probe_available=no
+else
+    printf 'P01-I06 TPM-CAPABILITY status=%s result=%s\n' "$tpm_probe_status" "$tpm_capability_one_line"
+    tpm_probe_available=yes
+fi
+tpm_credential=/etc/blindpass/api-key.tpm2.cred
+tpm_plaintext=/run/blindpass-consumer/api-key.tpm2
+rm -f "$tpm_credential" "$tpm_plaintext"
+if [[ "$tpm_probe_available" == yes && "$tpm_probe_status" == 0 ]]; then
+    if systemd-creds --no-ask-password --with-key=tpm2 --name=api-key \
+        encrypt /etc/blindpass/api-key "$tpm_credential" >/dev/null 2>&1 \
+        && systemd-creds --no-ask-password --with-key=tpm2 \
+            decrypt "$tpm_credential" "$tpm_plaintext" >/dev/null 2>&1 \
+        && cmp -s /etc/blindpass/api-key "$tpm_plaintext"; then
+        printf 'P01-I06 TPM-required custody profile: PASS\n'
+    else
+        printf 'P01-I06 TPM-required custody profile: NOT_CLAIMED (capability probe succeeded but encryption/recovery failed)\n'
+    fi
+elif [[ "$tpm_probe_available" == yes ]]; then
+    if systemd-creds --no-ask-password --with-key=tpm2 --name=api-key \
+        encrypt /etc/blindpass/api-key "$tpm_credential" >/dev/null 2>&1; then
+        printf 'P01-FAIL TPM-required profile silently accepted without TPM\n' >&2
+        exit 1
+    fi
+    printf 'P01-I06 TPM-required custody profile: UNSUPPORTED (TPM absent; no host-key fallback)\n'
+else
+    printf 'P01-I06 TPM-required custody profile: NOT_CLAIMED (systemd TPM capability probe unavailable)\n'
+fi
+rm -f "$tpm_credential" "$tpm_plaintext"
 
 cat >/etc/systemd/system/blindpass-unauthorized.service <<'UNIT'
 [Unit]
@@ -310,35 +620,28 @@ for case_name in empty partial malformed oversized; do
 done
 printf 'P01-I04 empty/partial/malformed/oversized consumer material: PASS\n'
 
-for canary in P01-INITIAL-CANARY; do
-    if ps axww -o args= | awk -v needle="$canary" \
-        '$0 !~ /awk/ && index($0, needle) { found = 1 } END { exit found ? 0 : 1 }'; then
-        printf 'P01-FAIL %s appeared in a process argument\n' "$canary" >&2
-        exit 1
-    fi
-    if journalctl --no-pager -u blindpass-broker.service -u blindpass-consumer.service \
-        -u blindpass-workload.service -u blindpass-loader-nonroot.service \
-        | grep -F -- "$canary" >/dev/null 2>&1; then
-        printf 'P01-FAIL %s appeared in a service journal\n' "$canary" >&2
-        exit 1
-    fi
-done
-printf 'P01-I06 initial canary absent from process arguments and service journals: PASS\n'
+assert_canary_absent 'P01-INITIAL-CANARY'
+printf 'P01-I06 initial canary absent from args/journals/runtime artifacts: PASS\n'
 
-systemctl stop blindpass-consumer.service
+systemctl stop blindpass-backup.service blindpass-consumer.service
 printf '%s' 'P01-ROTATED-CANARY' >/etc/blindpass/api-key
 chmod 0600 /etc/blindpass/api-key
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
 systemctl restart blindpass-broker.service
 systemctl start blindpass-consumer.service
 printf 'P01-E01 controlled restart rotation: PASS\n'
-if ps axww -o args= | awk -v needle='P01-ROTATED-CANARY' \
-    '$0 !~ /awk/ && index($0, needle) { found = 1 } END { exit found ? 0 : 1 }' \
-    || journalctl --no-pager -u blindpass-broker.service -u blindpass-consumer.service \
-        -u blindpass-workload.service | grep -F -- 'P01-ROTATED-CANARY' >/dev/null 2>&1; then
-    printf 'P01-FAIL rotated canary appeared in process arguments or service journals\n' >&2
+systemctl reset-failed blindpass-backup.service >/dev/null 2>&1 || true
+systemctl start blindpass-backup.service
+backup_restore=$(/usr/libexec/blindpass-backup-probe \
+    --credential-file /run/blindpass-backup/api-key \
+    --artifact /run/blindpass-backup/artifact --mode restore)
+[[ "$backup_restore" == BACKUP_RESTORED ]] || {
+    printf 'P01-FAIL rotated disposable backup restore did not validate\n' >&2
     exit 1
-fi
-printf 'P01-I06 rotated canary absent from process arguments and service journals: PASS\n'
+}
+printf 'P01-E01 rotated credential-consuming backup write/restore: PASS\n'
+assert_canary_absent 'P01-ROTATED-CANARY'
+printf 'P01-I06 rotated canary absent from args/journals/runtime artifacts: PASS\n'
 
 systemctl stop blindpass-consumer.service blindpass-broker.service >/dev/null 2>&1 || true
 cat >/etc/systemd/system/blindpass-broker.service.d/p01-api-removed.conf <<'UNIT'
@@ -346,6 +649,7 @@ cat >/etc/systemd/system/blindpass-broker.service.d/p01-api-removed.conf <<'UNIT
 InaccessiblePaths=/run/dbus/system_bus_socket
 UNIT
 systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
 systemctl start blindpass-broker.service
 rm -f /run/blindpass-consumer/api-key
 if systemctl start blindpass-consumer.service >/dev/null 2>&1; then
@@ -359,13 +663,14 @@ fi
 printf 'P01-I03 system-bus API removal failed closed: PASS\n'
 rm -f /etc/systemd/system/blindpass-broker.service.d/p01-api-removed.conf
 systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
 systemctl restart blindpass-broker.service
 systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
 
-printf 'P01-I05 HPKE restart/absent-key VM path: NOT_CLAIMED (portable vector covered separately)\n'
+printf 'P01-I05 HPKE restart/absent-key VM path: PASS (ephemeral custody probe)\n'
 printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key /etc/blindpass/api-key.cred\n'
 
-systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-consumer.service blindpass-consumer-native.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
+systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-dynamic.service blindpass-consumer.service blindpass-consumer-native.service blindpass-backup.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
 rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
 [[ ! -e /run/blindpass/loader.sock && ! -e /run/blindpass/workload.sock ]] || {
     printf 'P01-FAIL broker sockets remained after cleanup\n' >&2
@@ -380,18 +685,22 @@ rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
     exit 1
 }
 rm -f /run/blindpass-unauthorized.key /run/blindpass-nonroot.key
-rm -rf -- /run/blindpass-faults /run/blindpass-consumer
+rm -rf -- /run/blindpass-faults /run/blindpass-consumer /run/blindpass-backup /run/blindpass-custody-probe
 rm -f /etc/systemd/system/blindpass-broker.service \
+    /etc/systemd/system/blindpass-backup.service \
     /etc/systemd/system/blindpass-consumer.service \
     /etc/systemd/system/blindpass-consumer-native.service \
     /etc/systemd/system/blindpass-workload.service \
     /etc/systemd/system/blindpass-stall.service \
     /etc/systemd/system/blindpass-loader-nonroot.service \
+    /etc/systemd/system/blindpass-dynamic.service \
     /etc/systemd/system/blindpass-unauthorized.service \
     /etc/systemd/system/blindpass-unregistered.service
 rm -rf -- /etc/systemd/system/blindpass-broker.service.d
 rm -rf -- /etc/systemd/system/blindpass-workload.service.d
 rm -f /usr/libexec/blindpass-broker /usr/libexec/blindpass-consumer \
+    /usr/libexec/blindpass-backup-probe \
+    /usr/libexec/blindpass-custody-probe \
     /usr/libexec/blindpass-credential-loader /usr/libexec/blindpass-workload-client \
     /usr/libexec/blindpass-transport-probe
 systemctl daemon-reload

@@ -29,31 +29,44 @@ The script exits `78` with an `UNSUPPORTED` record when QEMU, KVM, the pinned
 image, cloud-localds, or the named runner owner is missing. That is an
 infrastructure block, not a passing or skipped P01 gate.
 
-The guest exercises the portable loader/workload path, consumer rejection for
-empty/partial/malformed/oversized files, unauthorized unit routing, a
-registered non-root workload, and controlled credential rotation. The
-mandatory native `LoadCredentialEncrypted=` comparison runs with an explicit
-systemd host-key profile and records initial delivery and controlled rotation;
-it does not claim TPM protection. The
-pidfd-to-unit restart race, API-removal profile, TPM modes, cancellation
-teardown, and deeper custody recovery remain separately recorded VM scenarios
-where they require additional fault injection; this harness must not turn
-their absence into a pass.
+The guest exercises the portable loader/workload path, root-only socket
+boundaries, registered fixed-account and `DynamicUser` workloads, stale and
+pidfd-to-invocation restart races, empty/partial/malformed/oversized/corrupt
+delivery, a bounded stalled frame, unauthorized unit routing, API-removal
+fail-closed behavior, ephemeral custody restart/expiry/one-use behavior, and
+controlled credential rotation. It also runs a disposable credential-consuming
+backup/restore probe before and after rotation; the probe persists only a
+checksum and is not a production backup implementation. The mandatory native
+`LoadCredentialEncrypted=` comparison runs with an explicit systemd host-key
+profile and records initial delivery and controlled rotation; it does not
+claim TPM protection.
+
+Use `./tests/fleet/p01-teardown.sh failure` and
+`./tests/fleet/p01-teardown.sh cancel` with the same environment to verify
+bounded failure and cancellation cleanup. The pinned Ubuntu profile does not
+close the full TPM, crash-artifact, kernel API, or guest-version matrix; those
+remain explicitly recorded as open or unclaimed rather than being converted
+into passes.
 
 The local KVM runner used on 2026-09-23 reported QEMU 11.1.1, `qemu-img`
 11.1.1, readable/writable `/dev/kvm`, and `cloud-localds`. It booted the
 pinned Ubuntu 24.04 image, recorded guest kernel 6.8.0-139-generic and
 systemd 255, and removed the QEMU process, guest broker sockets, and guest
-disk artifacts after the run. The run owner was explicitly supplied as
-`local-kvm-followup`; this is disposable
-runtime evidence, not a claim that the manual VM job is already configured as
-a shared GitHub self-hosted runner.
+disk artifacts after the run. The positive run owner was explicitly supplied
+as `local-kvm-p01-final2`; separate `failure` and `cancel` teardown runs also
+passed with named local owners. This is disposable runtime evidence, not a
+claim that the manual VM job is already configured as a shared GitHub
+self-hosted runner.
 
 The run passed the exercised loader/workload boundaries, stale-invocation
-rejection and re-registration, bounded stalled-frame denial, consumer
-validation, canary exposure checks, controlled rotation, uninstall cleanup,
-system-bus API-removal fail-closed behavior, and native host-key
-`LoadCredentialEncrypted=` comparison. The VM half of P01-I05, kernel API
-matrix, and unrun TPM/crash/deeper-exposure portions of P01-I06 remain
-explicit additional profiles for the W0 go/narrow/stop review. See
+rejection and re-registration, pidfd/invocation restart race, `DynamicUser`
+registration, bounded stalled-frame denial, broker delivery fault matrix,
+consumer validation, ephemeral custody restart/expiry/one-use checks, canary
+exposure checks, backup write/restore and controlled rotation, uninstall
+cleanup, system-bus API-removal fail-closed behavior, and native host-key
+`LoadCredentialEncrypted=` comparison. The TPM capability command is not
+available in this systemd 255 profile, so the TPM-required path is explicitly
+not claimed. The kernel API matrix, guest-version matrix, and deeper
+crash/custody profiles remain explicit additional profiles for the W0
+go/narrow/stop review. See
 `docs/testing/p01-host-broker-evidence.md` for the dated evidence record.

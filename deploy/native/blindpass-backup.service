@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass P01 disposable native backup probe
+Requires=blindpass-broker.service
+After=blindpass-broker.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+RuntimeDirectory=blindpass-backup
+RuntimeDirectoryMode=0700
+ExecStartPre=/usr/libexec/blindpass-credential-loader --socket /run/blindpass/loader.sock --unit blindpass-backup.service --credential api-key --output /run/blindpass-backup/api-key
+ExecStart=/usr/libexec/blindpass-backup-probe --credential-file /run/blindpass-backup/api-key --artifact /run/blindpass-backup/artifact --mode write
+RemainAfterExit=yes
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/etc/blindpass
+ReadWritePaths=/run/blindpass-backup
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+LimitCORE=0
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

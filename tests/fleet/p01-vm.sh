@@ -26,11 +26,29 @@ printf 'P01-HOST-ENV runner_owner=%s qemu=%s qemu_img=%s kvm=%s cloud_localds=%s
 guest_user=${BLINDPASS_FLEET_GUEST_USER:-blindpass}
 ssh_port=${BLINDPASS_FLEET_SSH_PORT:-22222}
 keep_artifacts=${BLINDPASS_FLEET_KEEP_ARTIFACTS:-0}
+inject_failure=${BLINDPASS_FLEET_INJECT_FAILURE:-0}
+cancel_after_boot=${BLINDPASS_FLEET_CANCEL_AFTER_BOOT_SECONDS:-}
+[[ "$inject_failure" == 0 || "$inject_failure" == 1 ]] || {
+    printf 'BLINDPASS_FLEET_INJECT_FAILURE must be 0 or 1\n' >&2
+    exit 2
+}
+if [[ -n "$cancel_after_boot" && ! "$cancel_after_boot" =~ ^[0-9]+$ ]]; then
+    printf 'BLINDPASS_FLEET_CANCEL_AFTER_BOOT_SECONDS must be an integer\n' >&2
+    exit 2
+fi
 run_dir=$(mktemp -d "${TMPDIR:-/tmp}/blindpass-p01.XXXXXXXX")
 qemu_pidfile=$run_dir/qemu.pid
 serial_log=$run_dir/serial.log
+cleanup_done=0
+guest_ssh_pid=
 
 cleanup() {
+    [[ "$cleanup_done" == 0 ]] || return
+    cleanup_done=1
+    if [[ -n "$guest_ssh_pid" ]]; then
+        kill "$guest_ssh_pid" 2>/dev/null || true
+        wait "$guest_ssh_pid" 2>/dev/null || true
+    fi
     if [[ -f "$qemu_pidfile" ]]; then
         qemu_pid=$(<"$qemu_pidfile")
         kill "$qemu_pid" 2>/dev/null || true
@@ -49,7 +67,13 @@ cleanup() {
         rm -rf -- "$run_dir"
     fi
 }
-trap cleanup EXIT INT TERM
+on_signal() {
+    cleanup
+    trap - EXIT INT TERM
+    exit 143
+}
+trap cleanup EXIT
+trap on_signal INT TERM
 
 "$(dirname "$0")/provision-guest.sh" --output-dir "$run_dir/image"
 cargo build --release --workspace --locked
@@ -80,15 +104,24 @@ ssh "${ssh_options[@]}" "$guest_target" true >/dev/null 2>&1 || {
 
 scp "${scp_options[@]}" \
     target/release/blindpass-broker \
+    target/release/blindpass-backup-probe \
     target/release/blindpass-consumer \
+    target/release/blindpass-custody-probe \
     target/release/blindpass-credential-loader \
     target/release/blindpass-transport-probe \
     target/release/blindpass-workload-client \
     tests/fleet/p01-guest.sh \
     "$guest_target:/tmp/"
 scp "${scp_options[@]}" deploy/native/*.service "$guest_target:/tmp/"
+guest_environment=(env)
+[[ "$inject_failure" == 1 ]] && guest_environment+=(BLINDPASS_P01_INJECT_FAILURE=1)
+[[ -n "$cancel_after_boot" ]] && guest_environment+=(BLINDPASS_P01_CANCEL_AFTER_BOOT_SECONDS="$cancel_after_boot")
 ssh "${ssh_options[@]}" "$guest_target" \
-    'sudo install -m 0755 /tmp/p01-guest.sh /usr/local/sbin/blindpass-p01-guest && sudo /usr/local/sbin/blindpass-p01-guest' \
-    | tee "$run_dir/guest-result.log"
+    "sudo install -m 0755 /tmp/p01-guest.sh /usr/local/sbin/blindpass-p01-guest && sudo ${guest_environment[*]} /usr/local/sbin/blindpass-p01-guest" \
+    >"$run_dir/guest-result.log" 2>&1 &
+guest_ssh_pid=$!
+wait "$guest_ssh_pid"
+guest_ssh_pid=
+cat "$run_dir/guest-result.log"
 
 printf 'P01-VM-COMPLETE runner_owner=%s serial_log=%s\n' "$BLINDPASS_FLEET_RUNNER_OWNER" "$serial_log"

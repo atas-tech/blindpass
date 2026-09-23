@@ -1,6 +1,6 @@
 # BlindPass documentation
 
-**Aligned:** 2026-09-23. Current guides describe source behavior; project-tied contracts remain here. Planning, design and historical notes are maintained in the `blindpass/` area of the Obsidian vault. P01 has a portable Rust broker implementation and VM harness, but no deployment or W0 pilot pass is established yet.
+**Aligned:** 2026-09-23. Current guides describe source behavior; project-tied contracts remain here. Planning, design and historical notes are maintained in the `blindpass/` area of the Obsidian vault. P01 has a portable Rust broker implementation and a real Ubuntu 24.04/QEMU-KVM execution record for the selected profile; W0 remains open for the explicitly unsupported or unrun matrices recorded in the evidence.
 
 ## Product direction
 
@@ -32,7 +32,7 @@ The controller/broker fleet, protected browser session handoff and native/contai
 | [Dashboard maintenance](architecture/dashboard-maintainability.md) | Existing style and shared translation conventions |
 | Dashboard redesign proposal | Maintained in the Obsidian vault; the existing `packages/dashboard` remains the project-tied implementation |
 | [Test setup](testing/README.md) | Actual scripts, service requirements and skipped-suite behavior |
-| [P01 execution record](testing/p01-host-broker-evidence.md) | Portable broker checks, VM prerequisites and dated unsupported status |
+| [P01 execution record](testing/p01-host-broker-evidence.md) | Portable broker checks, selected real-VM profile, teardown evidence and dated open/unsupported status |
 | [Demos](testing/Manual%20Demos.md) | Dummy-data exchange exercises and known helper limitations |
 | [Security status](security/README.md) | Current threat model, selected source checks and historical audits |
 

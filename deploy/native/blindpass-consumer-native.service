@@ -9,6 +9,7 @@ Group=root
 LoadCredentialEncrypted=api-key:/etc/blindpass/api-key.cred
 ExecStart=/usr/libexec/blindpass-consumer --credential-file ${CREDENTIALS_DIRECTORY}/api-key --prefix P01-
 RemainAfterExit=yes
+LimitCORE=0
 
 [Install]
 WantedBy=multi-user.target

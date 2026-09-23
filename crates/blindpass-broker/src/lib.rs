@@ -37,6 +37,48 @@ pub enum BrokerError {
     Configuration(&'static str),
 }
 
+/// Deliberately malformed loader responses used only by the disposable P01
+/// guest harness. The production unit never enables this hook; keeping the
+/// mutation in the broker path lets the VM exercise the actual loader,
+/// socket, and consumer boundaries instead of only testing files in isolation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeliveryFault {
+    Empty,
+    Partial,
+    Malformed,
+    Oversized,
+    Corrupt,
+}
+
+impl DeliveryFault {
+    pub fn parse(value: &str) -> Result<Self, &'static str> {
+        match value {
+            "empty" => Ok(Self::Empty),
+            "partial" => Ok(Self::Partial),
+            "malformed" => Ok(Self::Malformed),
+            "oversized" => Ok(Self::Oversized),
+            "corrupt" => Ok(Self::Corrupt),
+            _ => Err("delivery fault must be empty, partial, malformed, oversized or corrupt"),
+        }
+    }
+
+    fn response(self, credential: &[u8]) -> Vec<u8> {
+        match self {
+            Self::Empty => Vec::new(),
+            Self::Partial => credential[..credential.len().min(2)].to_vec(),
+            Self::Malformed => b"not-a-P01-credential".to_vec(),
+            Self::Oversized => vec![0; MAX_CREDENTIAL_BYTES + 1],
+            Self::Corrupt => {
+                let mut response = credential.to_vec();
+                if let Some(first) = response.first_mut() {
+                    *first ^= 0x20;
+                }
+                response
+            }
+        }
+    }
+}
+
 impl std::fmt::Display for BrokerError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -135,6 +177,7 @@ pub struct BrokerConfig {
     pub loader_socket_mode: u32,
     pub workload_socket_mode: u32,
     pub read_timeout: Duration,
+    pub delivery_fault: Option<DeliveryFault>,
 }
 
 impl Default for BrokerConfig {
@@ -146,6 +189,7 @@ impl Default for BrokerConfig {
             loader_socket_mode: 0o600,
             workload_socket_mode: 0o660,
             read_timeout: Duration::from_secs(2),
+            delivery_fault: None,
         }
     }
 }
@@ -170,9 +214,10 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
     let shared = Arc::new(Mutex::new(state));
     let loader_shared = Arc::clone(&shared);
     let loader_timeout = config.read_timeout;
+    let loader_fault = config.delivery_fault;
     let loader_thread = std::thread::Builder::new()
         .name("blindpass-loader".to_owned())
-        .spawn(move || serve_loader(loader_listener, loader_shared, loader_timeout))
+        .spawn(move || serve_loader(loader_listener, loader_shared, loader_timeout, loader_fault))
         .map_err(BrokerError::Io)?;
     let workload_shared = Arc::clone(&shared);
     let workload_timeout = config.read_timeout;
@@ -220,12 +265,13 @@ fn serve_loader(
     listener: UnixListener,
     state: Arc<Mutex<BrokerState>>,
     timeout: Duration,
+    delivery_fault: Option<DeliveryFault>,
 ) -> Result<(), BrokerError> {
     for connection in listener.incoming() {
         let mut stream = connection?;
         stream.set_read_timeout(Some(timeout))?;
         stream.set_write_timeout(Some(timeout))?;
-        let result = handle_loader_connection(&mut stream, &state);
+        let result = handle_loader_connection(&mut stream, &state, delivery_fault);
         if let Err(error) = result {
             eprintln!("loader request denied: {error}");
             write_error(&mut stream, &error);
@@ -255,6 +301,7 @@ fn serve_workload(
 fn handle_loader_connection(
     stream: &mut UnixStream,
     state: &Arc<Mutex<BrokerState>>,
+    delivery_fault: Option<DeliveryFault>,
 ) -> Result<(), BrokerError> {
     let peer = resolve_peer(stream)?;
     let frame = read_frame(stream)?;
@@ -263,7 +310,12 @@ fn handle_loader_connection(
         .lock()
         .map_err(|_| BrokerError::Configuration("broker state poisoned"))?
         .process_loader(&peer, &request.claimed_unit, &request.credential_name)?;
-    stream.write_all(credential.as_bytes())?;
+    if let Some(fault) = delivery_fault {
+        let response = fault.response(credential.as_bytes());
+        stream.write_all(&response)?;
+    } else {
+        stream.write_all(credential.as_bytes())?;
+    }
     Ok(())
 }
 
@@ -384,7 +436,9 @@ fn effective_uid() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{BrokerConfig, BrokerState, bind_socket, read_frame, validate_config};
+    use super::{
+        BrokerConfig, BrokerState, DeliveryFault, bind_socket, read_frame, validate_config,
+    };
     use blindpass_core::delivery::{CredentialFormat, DeliveryPolicy};
     use blindpass_core::identity::{PeerIdentity, WorkloadRegistration, WorkloadRequest};
     use std::fs;
@@ -467,6 +521,27 @@ mod tests {
                 .unwrap_err()
                 .to_string()
                 .contains("absolute")
+        );
+    }
+
+    #[test]
+    fn delivery_faults_are_explicit_and_do_not_change_the_default() {
+        assert_eq!(BrokerConfig::default().delivery_fault, None);
+        assert_eq!(DeliveryFault::parse("corrupt"), Ok(DeliveryFault::Corrupt));
+        assert!(DeliveryFault::parse("unknown").is_err());
+        assert_eq!(DeliveryFault::Empty.response(b"P01-CANARY"), b"");
+        assert_eq!(DeliveryFault::Partial.response(b"P01-CANARY"), b"P0");
+        assert_eq!(
+            DeliveryFault::Malformed.response(b"P01-CANARY"),
+            b"not-a-P01-credential"
+        );
+        assert_eq!(
+            DeliveryFault::Corrupt.response(b"P01-CANARY"),
+            b"p01-CANARY"
+        );
+        assert_eq!(
+            DeliveryFault::Oversized.response(b"P01-CANARY").len(),
+            blindpass_core::MAX_CREDENTIAL_BYTES + 1
         );
     }
 

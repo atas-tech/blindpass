@@ -18,6 +18,7 @@ ReadOnlyPaths=/run/blindpass
 RestrictAddressFamilies=AF_UNIX
 LockPersonality=yes
 MemoryDenyWriteExecute=yes
+LimitCORE=0
 ProtectKernelTunables=yes
 ProtectControlGroups=yes
 ProtectKernelModules=yes

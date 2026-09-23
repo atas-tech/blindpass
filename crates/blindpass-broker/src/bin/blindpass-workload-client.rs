@@ -23,6 +23,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
     let mut operation = "health".to_owned();
     let mut hold_seconds = 0u64;
     let mut startup_delay = Duration::ZERO;
+    let mut pre_request_delay = Duration::ZERO;
     let mut index = 0;
 
     while index < args.len() {
@@ -45,11 +46,18 @@ fn run(args: Vec<String>) -> Result<(), String> {
                         .map_err(|_| "--startup-delay-ms must be an integer".to_owned())?,
                 );
             }
+            "--pre-request-delay-ms" => {
+                pre_request_delay = Duration::from_millis(
+                    next(&args, &mut index)?
+                        .parse()
+                        .map_err(|_| "--pre-request-delay-ms must be an integer".to_owned())?,
+                );
+            }
             "--help" | "-h" => {
                 println!(
                     "blindpass-workload-client --node NODE --workload ID --unit UNIT \\
                      [--invocation ID] [--operation NAME] [--hold-seconds N] \\
-                     [--startup-delay-ms N]"
+                     [--startup-delay-ms N] [--pre-request-delay-ms N]"
                 );
                 return Ok(());
             }
@@ -68,38 +76,51 @@ fn run(args: Vec<String>) -> Result<(), String> {
         std::thread::sleep(startup_delay);
     }
 
-    let mut last_error = None;
+    let mut last_error: Option<String> = None;
+    let mut delayed_before_request = pre_request_delay.is_zero();
     // The VM harness starts this unit first so that it can read the systemd
     // invocation ID before registering the workload with the broker.
     for _attempt in 0..600 {
         match UnixStream::connect(&socket) {
             Ok(mut stream) => {
-                stream
-                    .write_all(frame.as_bytes())
-                    .map_err(|error| error.to_string())?;
-                stream
-                    .shutdown(std::net::Shutdown::Write)
-                    .map_err(|error| error.to_string())?;
-                let mut response = Vec::new();
-                stream
-                    .read_to_end(&mut response)
-                    .map_err(|error| error.to_string())?;
-                if !response.starts_with(b"OK ") {
-                    return Err(String::from_utf8_lossy(&response).trim().to_owned());
+                if !delayed_before_request {
+                    std::thread::sleep(pre_request_delay);
+                    delayed_before_request = true;
                 }
-                println!("WORKLOAD_READY");
-                if hold_seconds > 0 {
-                    std::thread::sleep(Duration::from_secs(hold_seconds));
+                let response = (|| -> Result<Vec<u8>, String> {
+                    stream
+                        .write_all(frame.as_bytes())
+                        .map_err(|error| error.to_string())?;
+                    stream
+                        .shutdown(std::net::Shutdown::Write)
+                        .map_err(|error| error.to_string())?;
+                    let mut response = Vec::new();
+                    stream
+                        .read_to_end(&mut response)
+                        .map_err(|error| error.to_string())?;
+                    Ok(response)
+                })();
+                match response {
+                    Ok(response) if response.starts_with(b"OK ") => {
+                        println!("WORKLOAD_READY");
+                        if hold_seconds > 0 {
+                            std::thread::sleep(Duration::from_secs(hold_seconds));
+                        }
+                        return Ok(());
+                    }
+                    Ok(response) => {
+                        last_error = Some(String::from_utf8_lossy(&response).trim().to_owned());
+                    }
+                    Err(error) => last_error = Some(error),
                 }
-                return Ok(());
             }
-            Err(error) => last_error = Some(error),
+            Err(error) => last_error = Some(error.to_string()),
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     Err(format!(
         "workload socket unavailable: {}",
-        last_error.map_or_else(|| "unknown error".to_owned(), |error| error.to_string())
+        last_error.unwrap_or_else(|| "unknown error".to_owned())
     ))
 }
 

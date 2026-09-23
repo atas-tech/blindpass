@@ -48,40 +48,47 @@ still needed for the full repository report.
 - Native unit files define root ownership, socket modes, systemd hardening, a
   registered workload probe, and a separate `LoadCredentialEncrypted=`
   comparison baseline. The guest harness provisions an explicit systemd
-  host-key profile and exercises initial delivery plus controlled rotation;
-  TPM protection is not claimed.
+  host-key profile and exercises initial delivery plus controlled rotation. A
+  disposable backup/restore probe consumes credentials through the same loader
+  path and persists only a checksum; it is a test fixture, not a production
+  backup implementation. TPM protection is not claimed.
 
 ## VM and W0 status
 
 The live disposable run completed on 2026-09-23 using the explicitly named
-`local-kvm-followup` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
+`local-kvm-p01-final2` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
 read/write `/dev/kvm`, and `cloud-localds`; the pinned Ubuntu cloud image had
 SHA-256
 `612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`.
 Guest evidence was Ubuntu 24.04, kernel 6.8.0-139-generic, systemd 255 as
 PID 1. The guest recorded directory `0751` root-owned, loader socket `0600`
 root-owned, and workload socket `0660` with the dedicated workload group.
-The guest measured stalled-loader rejection at 2.025 seconds, stopped QEMU,
+The guest measured stalled-loader rejection at about 2.04 seconds, exercised
+the broker empty/partial/malformed/oversized/corrupt delivery matrix, ran the
+pidfd-to-invocation restart race and a `DynamicUser` profile, stopped QEMU,
 removed the broker units/binaries and sockets, and retained only text evidence
-on the host; the guest disk overlay and seed media were removed. The protected
-dummy material remained root-owned mode `0600`. No live credential was used.
+on the host; the guest disk overlay and seed media were removed. Separate
+failure-injection and cancellation runs passed the bounded teardown checks and
+also removed QEMU and guest disk artifacts. The protected dummy material
+remained root-owned mode `0600`. No live credential was used.
 
 | Scenario | Current evidence | Acceptance status |
 |---|---|---|
-| P01-I01 | Guest restarted the root consumer and re-resolved its invocation; it rejected a stale workload invocation and re-registered the currently running replacement before delivery | VM pass for exercised restart paths; repeated fault-injection loop remains open |
-| P01-I02 | Root loader delivery, non-root loader socket access, forged loader routing, registered non-root workload and unregistered workload were exercised in the guest; user-manager/shared-UID profiles remain out of scope | VM pass for supported system-unit profile |
+| P01-I01 | Guest restarted the root consumer and re-resolved its invocation; it rejected a stale workload invocation, re-registered the replacement, and exercised a real workload pidfd-to-invocation restart race | VM pass for exercised restart paths; broader fault-injection matrix remains open |
+| P01-I02 | Root loader delivery, non-root loader socket access, forged loader routing, registered fixed-account and `DynamicUser` workloads, and an unregistered workload were exercised in the guest; user-manager/shared-UID profiles remain out of scope | VM pass for supported system-unit profile |
 | P01-I03 | Guest hid the system bus socket inside the broker service namespace; an otherwise authorized native consumer failed closed and produced no credential file | VM pass for exercised API-removal profile; kernel API-removal matrix remains open |
-| P01-I04 | Guest measured a stalled root-system-unit loader denial at 2.025 seconds and rejected empty, partial, malformed and oversized consumer material; broker truncate/corrupt delivery is not separately injected | VM pass for exercised cases; remaining fault profiles open |
-| P01-I05 | Ephemeral one-use custody and Rust ↔ `hpke-js` ciphertext parity pass | Portable pass; VM restart/absent-key evidence open |
-| P01-I06 | Guest found both canaries absent from process arguments and service journals; TPM, crash-artifact and deeper temporary-file inspection profiles are not run | VM partial pass; custody-mode/exposure review remains open |
-| P01-I07 | Rust format/lint/test checks pass; the named local runner booted the pinned guest, collected metadata, removed QEMU/guest disks and retained text logs | Runner/harness pass; failure/cancel and matrix coverage remain open |
-| P01-E01 | Guest delivered the dummy value, validated the native consumer, performed controlled broker restart rotation, removed installed units/binaries and retained protected material | VM pass for exercised path; recovery procedure remains open |
+| P01-I04 | Guest measured a stalled root-system-unit loader denial at about 2.04 seconds, rejected malformed consumer material, and injected empty, partial, malformed, oversized and corrupt broker responses against the real native consumer | VM pass for exercised cases; additional transport/fault profiles remain open |
+| P01-I05 | Ephemeral one-use custody, expiry, wrong-key/tamper/AAD rejection, process-restart absent-key behavior, and Rust ↔ `hpke-js` ciphertext parity pass | VM pass for the selected ephemeral profile; persistent custody/recovery profile remains open |
+| P01-I06 | Guest found both canaries absent from process arguments, selected service journals and runtime artifacts; `LimitCORE=0` is applied and the systemd TPM capability command is unavailable on this profile | VM partial pass; TPM, crash-review, and broader exposure/custody review remain open |
+| P01-I07 | Rust format/lint/test checks pass; the named local runner booted the pinned guest, collected metadata, and removed QEMU/guest disks. Injected failure and SIGTERM cancellation teardown both pass | Runner/harness pass for the exercised profile; guest-version and broader matrix coverage remain open |
+| P01-E01 | Guest delivered the dummy value, validated the native consumer, wrote/restored a checksum-only backup before and after controlled broker restart rotation, removed installed units/binaries and retained protected material | VM pass for exercised path; production recovery procedure remains out of scope |
 | P01-E02 | Guest harness used an explicit host-key `LoadCredentialEncrypted=` profile and exercised initial delivery plus controlled rotation | VM pass for host-key profile; no TPM or superiority claim |
 
-The live run does not close every W0 scenario: the VM half of P01-I05 and the
-unrun portions of P01-I06 still require explicit absent/wrong-key recovery,
-TPM, crash-artifact and deeper exposure-review profiles; the kernel API-removal
-matrix also remains open. W0 therefore remains **open for go/narrow/stop
-review**, rather than being represented as a full acceptance pass. The
-executable harness records unsupported prerequisites with exit 78 and must
-not convert those profiles into skips or passes.
+The live run does not close every W0 scenario: the persistent custody/unlock
+profile, TPM-required profile, crash-artifact review, kernel API-removal
+matrix, and guest-version matrix remain open. On this Ubuntu/systemd profile,
+`systemd-analyze has-tpm2` is an unsupported command, so no TPM result is
+inferred from the host-key comparison. W0 therefore remains **open for
+go/narrow/stop review**, rather than being represented as a full acceptance
+pass. The executable harness records unsupported prerequisites with exit 78 and
+must not convert those profiles into skips or passes.
