@@ -56,16 +56,17 @@ still needed for the full repository report.
 ## VM and W0 status
 
 The live disposable run completed on 2026-09-23 using the explicitly named
-`local-kvm-p01-final2` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
+`local-kvm-p01-loader-final2` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
 read/write `/dev/kvm`, and `cloud-localds`; the pinned Ubuntu cloud image had
 SHA-256
 `612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`.
 Guest evidence was Ubuntu 24.04, kernel 6.8.0-139-generic, systemd 255 as
 PID 1. The guest recorded directory `0751` root-owned, loader socket `0600`
 root-owned, and workload socket `0660` with the dedicated workload group.
-The guest measured stalled-loader rejection at about 2.04 seconds, exercised
+The guest measured stalled-loader rejection at about 2.05 seconds, exercised
 the broker empty/partial/malformed/oversized/corrupt delivery matrix, ran the
-pidfd-to-invocation restart race and a `DynamicUser` profile, stopped QEMU,
+two-round root-loader and three-round workload pidfd-to-invocation restart
+races, a real user-manager denial, and a `DynamicUser` profile, stopped QEMU,
 removed the broker units/binaries and sockets, and retained only text evidence
 on the host; the guest disk overlay and seed media were removed. Separate
 failure-injection and cancellation runs passed the bounded teardown checks and
@@ -74,10 +75,10 @@ remained root-owned mode `0600`. No live credential was used.
 
 | Scenario | Current evidence | Acceptance status |
 |---|---|---|
-| P01-I01 | Guest restarted the root consumer and re-resolved its invocation; it rejected a stale workload invocation, re-registered the replacement, and exercised a real workload pidfd-to-invocation restart race | VM pass for exercised restart paths; broader fault-injection matrix remains open |
-| P01-I02 | Root loader delivery, non-root loader socket access, forged loader routing, registered fixed-account and `DynamicUser` workloads, and an unregistered workload were exercised in the guest; user-manager/shared-UID profiles remain out of scope | VM pass for supported system-unit profile |
+| P01-I01 | Guest restarted the root consumer and re-resolved its invocation; it rejected a stale workload invocation, exercised two root-loader restart races and three workload restart races, and re-registered each replacement before delivery | VM pass for exercised restart paths; broader fault-injection matrix remains open |
+| P01-I02 | Root loader delivery, non-root and real user-manager socket access, forged loader routing, registered fixed-account and `DynamicUser` workloads, and an unregistered workload were exercised; user-manager/shared-UID execution remains denied/out of scope | VM pass for supported system-unit profile and explicit user-manager denial |
 | P01-I03 | Guest hid the system bus socket inside the broker service namespace; an otherwise authorized native consumer failed closed and produced no credential file | VM pass for exercised API-removal profile; kernel API-removal matrix remains open |
-| P01-I04 | Guest measured a stalled root-system-unit loader denial at about 2.04 seconds, rejected malformed consumer material, and injected empty, partial, malformed, oversized and corrupt broker responses against the real native consumer | VM pass for exercised cases; additional transport/fault profiles remain open |
+| P01-I04 | Guest measured a stalled root-system-unit loader denial at about 2.05 seconds, rejected malformed consumer material, and injected empty, partial, malformed, oversized and corrupt broker responses against the real native consumer | VM pass for exercised cases; additional transport/fault profiles remain open |
 | P01-I05 | Ephemeral one-use custody, expiry, wrong-key/tamper/AAD rejection, process-restart absent-key behavior, and Rust ↔ `hpke-js` ciphertext parity pass | VM pass for the selected ephemeral profile; persistent custody/recovery profile remains open |
 | P01-I06 | Guest found both canaries absent from process arguments, selected service journals and runtime artifacts; `LimitCORE=0` is applied and the systemd TPM capability command is unavailable on this profile | VM partial pass; TPM, crash-review, and broader exposure/custody review remain open |
 | P01-I07 | Rust format/lint/test checks pass; the named local runner booted the pinned guest, collected metadata, and removed QEMU/guest disks. Injected failure and SIGTERM cancellation teardown both pass | Runner/harness pass for the exercised profile; guest-version and broader matrix coverage remain open |

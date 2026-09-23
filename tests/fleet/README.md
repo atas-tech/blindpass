@@ -30,7 +30,8 @@ image, cloud-localds, or the named runner owner is missing. That is an
 infrastructure block, not a passing or skipped P01 gate.
 
 The guest exercises the portable loader/workload path, root-only socket
-boundaries, registered fixed-account and `DynamicUser` workloads, stale and
+boundaries, real user-manager denial, registered fixed-account and
+`DynamicUser` workloads, stale and repeated loader/workload
 pidfd-to-invocation restart races, empty/partial/malformed/oversized/corrupt
 delivery, a bounded stalled frame, unauthorized unit routing, API-removal
 fail-closed behavior, ephemeral custody restart/expiry/one-use behavior, and
@@ -53,14 +54,15 @@ The local KVM runner used on 2026-09-23 reported QEMU 11.1.1, `qemu-img`
 pinned Ubuntu 24.04 image, recorded guest kernel 6.8.0-139-generic and
 systemd 255, and removed the QEMU process, guest broker sockets, and guest
 disk artifacts after the run. The positive run owner was explicitly supplied
-as `local-kvm-p01-final2`; separate `failure` and `cancel` teardown runs also
+as `local-kvm-p01-loader-final2`; separate `failure` and `cancel` teardown runs also
 passed with named local owners. This is disposable runtime evidence, not a
 claim that the manual VM job is already configured as a shared GitHub
 self-hosted runner.
 
-The run passed the exercised loader/workload boundaries, stale-invocation
-rejection and re-registration, pidfd/invocation restart race, `DynamicUser`
-registration, bounded stalled-frame denial, broker delivery fault matrix,
+The run passed the exercised loader/workload boundaries, user-manager denial,
+stale-invocation rejection and re-registration, repeated loader and
+workload pidfd/invocation restart races, `DynamicUser` registration,
+bounded stalled-frame denial, broker delivery fault matrix,
 consumer validation, ephemeral custody restart/expiry/one-use checks, canary
 exposure checks, backup write/restore and controlled rotation, uninstall
 cleanup, system-bus API-removal fail-closed behavior, and native host-key

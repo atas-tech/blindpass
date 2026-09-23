@@ -23,6 +23,7 @@ assert_canary_absent() {
     fi
     if journalctl --no-pager -u blindpass-broker.service -u blindpass-consumer.service \
         -u blindpass-backup.service -u blindpass-workload.service -u blindpass-loader-nonroot.service \
+        -u blindpass-loader-race.service \
         | grep -F -- "$canary" >/dev/null 2>&1; then
         printf 'P01-FAIL %s appeared in a service journal\n' "$canary" >&2
         exit 1
@@ -35,7 +36,8 @@ assert_canary_absent() {
         fi
     done < <(
         find /tmp /var/tmp /var/crash /run/blindpass-consumer /run/blindpass-backup \
-            /run/blindpass-faults /run/blindpass-custody-probe -xdev -type f -size -1M -print0 2>/dev/null
+            /run/blindpass-loader-race /run/blindpass-faults /run/blindpass-custody-probe \
+            -xdev -type f -size -1M -print0 2>/dev/null
     )
 }
 
@@ -105,7 +107,7 @@ write_workload_registration() {
     local registration_invocation=${2:-$invocation}
     local registration_unit=${3:-blindpass-workload.service}
     local registration_workload=${4:-workload-a}
-    printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --map blindpass-backup.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:%s:%s:%s:%s\n' \
+    printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --map blindpass-backup.service=api-key --map blindpass-loader-race.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:%s:%s:%s:%s\n' \
         "$registration_workload" "$registration_unit" "$registration_uid" "$registration_invocation" \
         >/etc/systemd/system/blindpass-broker.service.d/p01-workload.conf
 }
@@ -162,6 +164,37 @@ if systemctl start blindpass-loader-nonroot.service >/dev/null 2>&1; then
 fi
 printf 'P01-I02 non-root loader denied by socket boundary: PASS\n'
 
+user_manager_uid=$(id -u blindpass)
+user_manager_runtime=/run/user/$user_manager_uid
+user_manager_ready=no
+if command -v runuser >/dev/null 2>&1 && command -v systemd-run >/dev/null 2>&1 \
+    && systemctl start "user-runtime-dir@$user_manager_uid.service" >/dev/null 2>&1 \
+    && systemctl start "user@$user_manager_uid.service" >/dev/null 2>&1; then
+    install -d -o blindpass -g blindpass -m 0700 "$user_manager_runtime"
+    user_manager_ready=yes
+fi
+if [[ "$user_manager_ready" == yes ]]; then
+    rm -f "$user_manager_runtime/p01-user-manager.key"
+    if runuser -u blindpass -- env \
+        XDG_RUNTIME_DIR="$user_manager_runtime" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=$user_manager_runtime/bus" \
+        systemd-run --user --wait --collect --unit=blindpass-p01-user-loader \
+        /usr/libexec/blindpass-credential-loader \
+        --socket /run/blindpass/loader.sock --unit blindpass-consumer.service \
+        --credential api-key --output "$user_manager_runtime/p01-user-manager.key" \
+        >/run/blindpass-user-manager.log 2>&1; then
+        printf 'P01-FAIL user-manager loader reached the root-only socket\n' >&2
+        exit 1
+    fi
+    [[ ! -e "$user_manager_runtime/p01-user-manager.key" ]] || {
+        printf 'P01-FAIL user-manager loader left credential material\n' >&2
+        exit 1
+    }
+    printf 'P01-I02 user-manager loader denied by socket boundary: PASS\n'
+else
+    printf 'P01-I02 user-manager profile: NOT_CLAIMED (user manager unavailable)\n'
+fi
+
 cat >/etc/systemd/system/blindpass-stall.service <<'UNIT'
 [Unit]
 Description=BlindPass P01 stalled loader probe
@@ -195,6 +228,75 @@ systemctl is-active --quiet blindpass-consumer.service || {
     exit 1
 }
 printf 'P01-I01 loader restart re-resolved current invocation: PASS\n'
+
+install -d -m 0700 /run/blindpass-loader-race
+cat >/etc/systemd/system/blindpass-loader-race.service <<'UNIT'
+[Unit]
+Description=BlindPass P01 root loader restart race probe
+After=blindpass-broker.service
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/libexec/blindpass-credential-loader --socket /run/blindpass/loader.sock --unit blindpass-loader-race.service --credential api-key --output /run/blindpass-loader-race/api-key --pre-request-delay-ms 1000
+LimitCORE=0
+UNIT
+systemctl daemon-reload
+for loader_race_round in 1 2; do
+    rm -f /run/blindpass-loader-race/api-key /run/blindpass-loader-race/api-key.tmp
+    systemctl reset-failed blindpass-loader-race.service >/dev/null 2>&1 || true
+    systemctl start --no-block blindpass-loader-race.service
+    loader_old_pid=
+    loader_old_invocation=
+    for _attempt in {1..30}; do
+        loader_old_pid=$(systemctl show --property=MainPID --value blindpass-loader-race.service)
+        loader_old_invocation=$(systemctl show --property=InvocationID --value blindpass-loader-race.service)
+        if [[ "$loader_old_pid" != 0 && -n "$loader_old_invocation" ]]; then
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$loader_old_pid" != 0 && -n "$loader_old_invocation" ]] || {
+        printf 'P01-FAIL root loader race did not start (round=%s)\n' "$loader_race_round" >&2
+        exit 1
+    }
+    sleep 0.2
+    systemctl restart --no-block blindpass-loader-race.service
+    loader_new_pid=
+    loader_new_invocation=
+    for _attempt in {1..30}; do
+        loader_new_pid=$(systemctl show --property=MainPID --value blindpass-loader-race.service)
+        loader_new_invocation=$(systemctl show --property=InvocationID --value blindpass-loader-race.service)
+        if [[ "$loader_new_pid" != 0 && "$loader_new_pid" != "$loader_old_pid" \
+            && "$loader_new_invocation" != "$loader_old_invocation" ]]; then
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$loader_new_pid" != 0 && "$loader_new_pid" != "$loader_old_pid" \
+        && "$loader_new_invocation" != "$loader_old_invocation" ]] || {
+        printf 'P01-FAIL root loader race did not receive a replacement invocation (round=%s)\n' "$loader_race_round" >&2
+        exit 1
+    }
+    for _attempt in {1..40}; do
+        [[ -f /run/blindpass-loader-race/api-key ]] && break
+        sleep 0.2
+    done
+    [[ -f /run/blindpass-loader-race/api-key ]] || {
+        printf 'P01-FAIL replacement root loader did not deliver a credential (round=%s)\n' "$loader_race_round" >&2
+        systemctl status blindpass-loader-race.service --no-pager -l >&2 || true
+        exit 1
+    }
+    /usr/libexec/blindpass-consumer --credential-file /run/blindpass-loader-race/api-key --prefix P01- || {
+        printf 'P01-FAIL replacement root loader delivered invalid material (round=%s)\n' "$loader_race_round" >&2
+        exit 1
+    }
+    printf 'P01-I01 root loader pidfd-to-invocation restart race: PASS (round=%s old_pid=%s new_pid=%s)\n' \
+        "$loader_race_round" "$loader_old_pid" "$loader_new_pid"
+done
+systemctl stop blindpass-loader-race.service >/dev/null 2>&1 || true
+rm -f /etc/systemd/system/blindpass-loader-race.service
+systemctl daemon-reload
 
 systemctl reset-failed blindpass-backup.service >/dev/null 2>&1 || true
 systemctl start blindpass-backup.service
@@ -330,74 +432,76 @@ systemctl daemon-reload
 printf 'P01-I01 stale workload invocation denied and re-registration required: PASS\n'
 
 install -d -m 0755 /etc/systemd/system/blindpass-workload.service.d
-cat >/etc/systemd/system/blindpass-workload.service.d/p01-race.conf <<'UNIT'
+for race_round in 1 2 3; do
+    cat >/etc/systemd/system/blindpass-workload.service.d/p01-race.conf <<'UNIT'
 [Service]
 ExecStart=
 ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload workload-a --unit blindpass-workload.service --operation health --pre-request-delay-ms 5000 --hold-seconds 3600
 UNIT
-systemctl daemon-reload
-systemctl stop blindpass-workload.service >/dev/null 2>&1 || true
-systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
-race_started_at=$(date --iso-8601=seconds)
-systemctl start --no-block blindpass-workload.service
-race_old_invocation=
-race_old_pid=
-for _attempt in {1..30}; do
-    race_old_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
-    race_old_pid=$(systemctl show --property=MainPID --value blindpass-workload.service)
-    if [[ -n "$race_old_invocation" && "$race_old_pid" != 0 ]]; then
-        break
-    fi
-    sleep 0.2
-done
-[[ -n "$race_old_invocation" && "$race_old_pid" != 0 ]] || {
-    printf 'P01-FAIL race workload did not start\n' >&2
-    exit 1
-}
-sleep 1
-systemctl restart blindpass-workload.service
-race_new_invocation=
-race_new_pid=
-for _attempt in {1..30}; do
-    race_new_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
-    race_new_pid=$(systemctl show --property=MainPID --value blindpass-workload.service)
-    if [[ -n "$race_new_invocation" && "$race_new_invocation" != "$race_old_invocation" \
-        && "$race_new_pid" != 0 && "$race_new_pid" != "$race_old_pid" ]]; then
-        break
-    fi
-    sleep 0.2
-done
-[[ -n "$race_new_invocation" && "$race_new_invocation" != "$race_old_invocation" \
-    && "$race_new_pid" != 0 && "$race_new_pid" != "$race_old_pid" ]] || {
-    printf 'P01-FAIL workload race did not receive a replacement invocation\n' >&2
-    exit 1
-}
-invocation=$race_new_invocation
-write_workload_registration
-systemctl daemon-reload
-systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
-systemctl restart blindpass-broker.service
-race_recovered=no
-for _attempt in {1..40}; do
-    if systemctl is-active --quiet blindpass-workload.service \
-        && [[ "$(systemctl show --property=InvocationID --value blindpass-workload.service)" == "$race_new_invocation" ]] \
-        && journalctl -u blindpass-workload.service --since "$race_started_at" --no-pager \
-            | grep -q 'WORKLOAD_READY'; then
-        race_recovered=yes
-        break
-    fi
-    sleep 0.2
+    systemctl daemon-reload
+    systemctl stop blindpass-workload.service >/dev/null 2>&1 || true
+    systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
+    race_started_at=$(date --iso-8601=seconds)
+    systemctl start --no-block blindpass-workload.service
+    race_old_invocation=
+    race_old_pid=
+    for _attempt in {1..30}; do
+        race_old_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+        race_old_pid=$(systemctl show --property=MainPID --value blindpass-workload.service)
+        if [[ -n "$race_old_invocation" && "$race_old_pid" != 0 ]]; then
+            break
+        fi
+        sleep 0.2
+    done
+    [[ -n "$race_old_invocation" && "$race_old_pid" != 0 ]] || {
+        printf 'P01-FAIL race workload did not start (round=%s)\n' "$race_round" >&2
+        exit 1
+    }
+    sleep 1
+    systemctl restart blindpass-workload.service
+    race_new_invocation=
+    race_new_pid=
+    for _attempt in {1..30}; do
+        race_new_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+        race_new_pid=$(systemctl show --property=MainPID --value blindpass-workload.service)
+        if [[ -n "$race_new_invocation" && "$race_new_invocation" != "$race_old_invocation" \
+            && "$race_new_pid" != 0 && "$race_new_pid" != "$race_old_pid" ]]; then
+            break
+        fi
+        sleep 0.2
+    done
+    [[ -n "$race_new_invocation" && "$race_new_invocation" != "$race_old_invocation" \
+        && "$race_new_pid" != 0 && "$race_new_pid" != "$race_old_pid" ]] || {
+        printf 'P01-FAIL workload race did not receive a replacement invocation (round=%s)\n' "$race_round" >&2
+        exit 1
+    }
+    invocation=$race_new_invocation
+    write_workload_registration
+    systemctl daemon-reload
+    systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+    systemctl restart blindpass-broker.service
+    race_recovered=no
+    for _attempt in {1..40}; do
+        if systemctl is-active --quiet blindpass-workload.service \
+            && [[ "$(systemctl show --property=InvocationID --value blindpass-workload.service)" == "$race_new_invocation" ]] \
+            && journalctl -u blindpass-workload.service --since "$race_started_at" --no-pager \
+                | grep -q 'WORKLOAD_READY'; then
+            race_recovered=yes
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$race_recovered" == yes ]] || {
+        printf 'P01-FAIL replacement workload did not recover after pidfd race (round=%s)\n' "$race_round" >&2
+        journalctl -u blindpass-workload.service --no-pager -n 60 >&2 || true
+        journalctl -u blindpass-broker.service --no-pager -n 60 >&2 || true
+        exit 1
+    }
+    printf 'P01-I01 pidfd-to-invocation restart race: PASS (round=%s old_pid=%s new_pid=%s)\n' \
+        "$race_round" "$race_old_pid" "$race_new_pid"
 done
 rm -f /etc/systemd/system/blindpass-workload.service.d/p01-race.conf
 systemctl daemon-reload
-[[ "$race_recovered" == yes ]] || {
-    printf 'P01-FAIL replacement workload did not recover after pidfd race\n' >&2
-    journalctl -u blindpass-workload.service --no-pager -n 60 >&2 || true
-    journalctl -u blindpass-broker.service --no-pager -n 60 >&2 || true
-    exit 1
-}
-printf 'P01-I01 pidfd-to-invocation restart race: PASS (old_pid=%s new_pid=%s)\n' \
-    "$race_old_pid" "$race_new_pid"
 
 cat >/etc/systemd/system/blindpass-dynamic.service <<'UNIT'
 [Unit]
@@ -670,7 +774,11 @@ systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
 printf 'P01-I05 HPKE restart/absent-key VM path: PASS (ephemeral custody probe)\n'
 printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key /etc/blindpass/api-key.cred\n'
 
-systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-dynamic.service blindpass-consumer.service blindpass-consumer-native.service blindpass-backup.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
+systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-loader-race.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-dynamic.service blindpass-consumer.service blindpass-consumer-native.service blindpass-backup.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
+if [[ "$user_manager_ready" == yes ]]; then
+    rm -f /run/blindpass-user-manager.log "$user_manager_runtime/p01-user-manager.key"
+    systemctl stop "user@$user_manager_uid.service" "user-runtime-dir@$user_manager_uid.service" >/dev/null 2>&1 || true
+fi
 rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
 [[ ! -e /run/blindpass/loader.sock && ! -e /run/blindpass/workload.sock ]] || {
     printf 'P01-FAIL broker sockets remained after cleanup\n' >&2
@@ -685,7 +793,7 @@ rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
     exit 1
 }
 rm -f /run/blindpass-unauthorized.key /run/blindpass-nonroot.key
-rm -rf -- /run/blindpass-faults /run/blindpass-consumer /run/blindpass-backup /run/blindpass-custody-probe
+rm -rf -- /run/blindpass-faults /run/blindpass-consumer /run/blindpass-backup /run/blindpass-loader-race /run/blindpass-custody-probe
 rm -f /etc/systemd/system/blindpass-broker.service \
     /etc/systemd/system/blindpass-backup.service \
     /etc/systemd/system/blindpass-consumer.service \
@@ -693,6 +801,7 @@ rm -f /etc/systemd/system/blindpass-broker.service \
     /etc/systemd/system/blindpass-workload.service \
     /etc/systemd/system/blindpass-stall.service \
     /etc/systemd/system/blindpass-loader-nonroot.service \
+    /etc/systemd/system/blindpass-loader-race.service \
     /etc/systemd/system/blindpass-dynamic.service \
     /etc/systemd/system/blindpass-unauthorized.service \
     /etc/systemd/system/blindpass-unregistered.service

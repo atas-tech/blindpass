@@ -20,6 +20,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
     let mut unit = None;
     let mut credential = None;
     let mut output = None;
+    let mut pre_request_delay = Duration::ZERO;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -27,9 +28,16 @@ fn run(args: Vec<String>) -> Result<(), String> {
             "--unit" => unit = Some(next(&args, &mut index)?),
             "--credential" => credential = Some(next(&args, &mut index)?),
             "--output" => output = Some(PathBuf::from(next(&args, &mut index)?)),
+            "--pre-request-delay-ms" => {
+                pre_request_delay = Duration::from_millis(
+                    next(&args, &mut index)?
+                        .parse()
+                        .map_err(|_| "--pre-request-delay-ms must be an integer".to_owned())?,
+                );
+            }
             "--help" | "-h" => {
                 println!(
-                    "blindpass-credential-loader --socket PATH --unit UNIT --credential NAME --output PATH"
+                    "blindpass-credential-loader --socket PATH --unit UNIT --credential NAME --output PATH [--pre-request-delay-ms N]"
                 );
                 return Ok(());
             }
@@ -47,6 +55,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
     stream
         .set_write_timeout(Some(Duration::from_secs(2)))
         .map_err(|error| error.to_string())?;
+    std::thread::sleep(pre_request_delay);
     stream
         .write_all(format!("LOAD {unit} {credential}\n").as_bytes())
         .map_err(|error| error.to_string())?;
