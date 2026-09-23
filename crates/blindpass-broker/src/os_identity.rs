@@ -111,9 +111,13 @@ unsafe extern "C" {
 pub fn resolve_peer(
     stream: &UnixStream,
     deadline: Instant,
+    identity_lookup_delay: Duration,
 ) -> Result<PeerIdentity, OsIdentityError> {
     let credentials = peer_credentials(stream.as_raw_fd())?;
     let pidfd = peer_pidfd(stream.as_raw_fd())?;
+    if !identity_lookup_delay.is_zero() {
+        std::thread::sleep(identity_lookup_delay);
+    }
     let (unit, invocation_id) = resolve_unit_and_invocation(pidfd.as_raw_fd(), deadline)?;
     ensure_peer_alive(pidfd.as_raw_fd(), &unit, &invocation_id)?;
     Ok(PeerIdentity {

@@ -538,6 +538,9 @@ for loader_race_round in 1 2; do
     [[ -n "$old_peer_denial" ]] || {
         printf 'P01-FAIL delayed pidfd lookup did not deny the pre-restart peer after it exited (round=%s)\n' \
             "$loader_race_round" >&2
+        printf 'P01-DIAG old_pid=%s old_invocation=%s new_pid=%s new_invocation=%s old_pid_proc=%s\n' \
+            "$loader_old_pid" "$loader_old_invocation" "$loader_new_pid" "$loader_new_invocation" \
+            "$([[ -e "/proc/$loader_old_pid" ]] && echo present || echo absent)" >&2
         journalctl -u blindpass-broker.service --since "$p01_started_at" --no-pager -o cat -n 80 >&2 || true
         exit 1
     }

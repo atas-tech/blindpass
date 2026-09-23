@@ -610,10 +610,7 @@ fn handle_loader_connection(
     identity_lookup_delay: Duration,
     deadline: Instant,
 ) -> Result<(), BrokerError> {
-    if !identity_lookup_delay.is_zero() {
-        std::thread::sleep(identity_lookup_delay);
-    }
-    let peer = resolve_peer(stream, deadline)?;
+    let peer = resolve_peer(stream, deadline, identity_lookup_delay)?;
     let _ = remaining(deadline)?;
     if let Some(route) = stream.peer_addr()?.as_abstract_name() {
         return handle_systemd_credential_connection(stream, state, &peer, route, delivery_fault);
@@ -713,7 +710,7 @@ fn handle_workload_connection(
     state: &Arc<Mutex<BrokerState>>,
     deadline: Instant,
 ) -> Result<(), BrokerError> {
-    let peer = resolve_peer(stream, deadline)?;
+    let peer = resolve_peer(stream, deadline, Duration::ZERO)?;
     log_peer_identity("workload", &peer);
     let frame = read_frame(stream, deadline)?;
     let request = parse_workload_request(&frame)?;
