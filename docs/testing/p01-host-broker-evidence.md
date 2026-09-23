@@ -4,20 +4,40 @@
 
 This is the repository-side execution record for the P01 plan in the docs
 vault. The live-HPKE/non-root profile, including stock systemd
-`LoadCredential=` delivery, has a pre-commit VM run recorded below. That run
-does not count as phase evidence because it did not identify a committed
-source SHA. The final committed-SHA VM result will be recorded here after the
-closure commit. Earlier root-consumer/file-loaded evidence is historical
-context. Disposable VM artifacts remain runner-local and are not committed.
+`LoadCredential=` delivery, passed on commit
+`a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57`. Earlier root-consumer/file-loaded
+evidence and the pre-commit run below are historical context. Disposable VM
+artifacts remain runner-local and are not committed.
+
+## Final committed-SHA VM run
+
+| Source SHA | Runner owner | Guest and host profile | Outcome |
+|---|---|---|---|
+| `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` | `local-kvm-p01-final-a45c3d0-20260923` | QEMU 11.1.1 with KVM; pinned Ubuntu 24.04 image SHA-256 `612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`; guest kernel 6.8.0-139-generic; systemd 255; no TPM device | `./tests/fleet/p01-vm.sh` exited 0 on 2026-09-23; sanitized serial and guest logs retained runner-local |
+
+The selected profile passed the provision socket negatives, HPKE
+wrong-key/tamper/AAD/replay probes, non-root and user-manager denial, bounded
+stall check (2012 ms against a 2500 ms limit), stock `LoadCredential=`
+delivery, broker restart and expiry cases, and native encrypted credstore
+comparison. The lookup-after-exit race ran twice: after the broker logged
+pidfd capture and systemd reaped the old process, `GetUnitByPIDFD` denied the
+old peer; the replacement invocation delivered successfully. Both generated
+canaries were absent from scanned runtime artifacts. Native backup bytes
+changed after rotation and restored successfully. The emulated TPM profile
+was not run on this no-TPM guest; the harness explicitly reported that mode
+unsupported.
+
+The complete P01 scenario output is retained as sanitized text on the named
+runner; VM disk and seed artifacts were removed. No live credential was used.
 
 ## Pre-commit verification (not final acceptance evidence)
 
 | Check | Result | Limit |
 |---|---|---|
-| `cargo fmt`, locked Clippy, locked workspace tests | Passed before commit | Includes route-to-pidfd authorization, binary credentials, RFC 9180 HPKE vector, live-state destination binding and bounded request deadlines; rerun evidence must cite the committed SHA |
+| `cargo fmt`, locked Clippy, locked workspace tests | Passed before commit | Includes route-to-pidfd authorization, binary credentials, RFC 9180 HPKE vector, live-state destination binding and bounded request deadlines; final committed-SHA checks are recorded below |
 | `cargo check --workspace --locked` | Passed before commit | Does not execute systemd identity or service handoff |
 | `bash -n tests/fleet/p01-guest.sh tests/fleet/p01-vm.sh tests/fleet/p01-teardown.sh` | Passed before commit | Syntax checked on the pre-commit harness revision |
-| Live provisioning + native and direct delivery in QEMU guest | Pre-commit run passed | Named local KVM run on pinned Ubuntu 24.04/systemd 255; rerun on a committed SHA is pending |
+| Live provisioning + native and direct delivery in QEMU guest | Pre-commit run passed | The final committed-SHA run on `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` is recorded above |
 | `p01-teardown.sh failure` and `cancel` | Passed before commit | Injected guest failure and SIGTERM cancellation removed QEMU and guest disks; rerun evidence must cite a committed SHA |
 
 The selected ephemeral profile now has a root-only `provision.sock` at mode
@@ -95,16 +115,17 @@ drop-in ordering, and teardown process matcher. The final complete guest and
 both teardown runs passed. The sandbox had hidden `/dev/kvm` during the
 initial availability check, while the host device was present and usable.
 
-## Portable checks
+## Portable checks on committed SHA `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57`
 
 | Check | Result | Evidence |
 |---|---|---|
-| `cargo fmt --all -- --check` | Pass | Pinned workspace formatting gate |
-| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Pass | Rust 1.98.1 toolchain; no third-party Cargo dependencies |
-| `cargo test --workspace --locked` | Pass outside the development sandbox | Broker socket-mode/path-boundary tests, bounded frame tests, identity/delivery/custody units, and the Rust ↔ `hpke-js` vector |
-| `cargo build --release --workspace --locked` | Pass outside the development sandbox | Release probes copied into the disposable guest, including the core-artifact probe |
-| HPKE suite | Pass | DHKEM(X25519, HKDF-SHA256) + HKDF-SHA256 + ChaCha20-Poly1305; exact `enc` and ciphertext match the generated `hpke-js` fixture |
-| Socket dependency scan | Completed after credential update | Pre-upgrade scan `0d2bc0fb-57d3-41ce-bea7-ed4ac29703ee` failed on Vitest 3.2.4. After the user-approved four-package npm upgrade, scan `2f43843e-a3d2-4aee-90bd-0eac5eb0e731` covered 20 manifests/lockfiles and passed organization policy. No Cargo dependency was added. |
+| `cargo fmt --all -- --check` | Pass on committed SHA | Formatting gate |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | Pass on committed SHA | Rust 1.98.1 toolchain; no third-party Cargo dependencies |
+| `cargo test --workspace --locked` | Pass on committed SHA | Broker 18, broker main 1, credential loader 2, core 12, HPKE interoperability 2; no failures |
+| `cargo build --release --workspace --locked` | Pass on committed SHA | Release probes copied into the disposable guest, including the core-artifact probe |
+| `bash -n tests/fleet/p01-guest.sh tests/fleet/p01-vm.sh tests/fleet/p01-teardown.sh` | Pass on committed SHA | Fleet harness syntax |
+| HPKE suite | Pass on committed SHA | DHKEM(X25519, HKDF-SHA256) + HKDF-SHA256 + ChaCha20-Poly1305; exact `enc` and ciphertext match the generated `hpke-js` fixture |
+| Socket dependency scan | Pass on manifest/lockfile SHA `a18ecb1e26e576c8475f0e68d7e538278a5f4e0e` | Pre-upgrade scan `0d2bc0fb-57d3-41ce-bea7-ed4ac29703ee` failed on Vitest 3.2.4. After the user-approved four-package npm upgrade, scan `2f43843e-a3d2-4aee-90bd-0eac5eb0e731` covered 20 manifests/lockfiles and passed organization policy. No Cargo dependency was added. |
 
 The sandbox denied Unix socket operations with `EPERM`; the transport tests
 were therefore rerun outside it. No test fixture contains a live credential.
@@ -146,6 +167,10 @@ full scan listed above supersedes that access limitation.
   a pinned tpm2-tss runtime bundle.
 
 ## Earlier VM run and W0 status (historical)
+
+The runs in this historical section are retained for context only. The final
+acceptance evidence is the committed-SHA run recorded at the top of this file;
+these older observations do not widen that selected profile.
 
 The live disposable run completed on 2026-09-23 using the explicitly named
 `local-kvm-p01-final` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
@@ -231,8 +256,9 @@ tpm-udev_0.6ubuntu1_all.deb 7ff6b02368f0db0589a509209383e8a875934bc92f3cca737633
 
 **Recorded:** 2026-09-23. **Historical disposition:** NARROW for the earlier
 profile. **Current technical disposition:** NARROW for the selected live HPKE,
-dedicated non-root, Ubuntu 24.04/systemd 255 profile after the passing VM run.
-This is not a full-matrix go decision; product acceptance remains pending.
+dedicated non-root, Ubuntu 24.04/systemd 255 profile on committed SHA
+`a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57`. This is not a full-matrix go
+decision; product acceptance remains pending.
 
 The selected P01 profile is x86_64 Linux with system-scope systemd, kernel
 6.8.0-139-generic, systemd 255, root-only loader socket `0600`, workload socket

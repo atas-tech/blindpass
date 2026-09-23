@@ -2,7 +2,7 @@
 
 This is the current command reference. The [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the Obsidian vault. A passing workspace suite does not establish the new broker, browser or deployment guarantees.
 
-The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are in this repository. A pre-commit local QEMU/KVM run passed the selected profile on 2026-09-23; it is not final phase evidence until the VM reruns against a recorded commit SHA. A shared self-hosted CI runner remains an explicit prerequisite and is never inferred from hosted CI.
+The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are in this repository. The selected local QEMU/KVM profile passed on source SHA `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` on 2026-09-23; a shared self-hosted CI runner remains an explicit prerequisite and is never inferred from hosted CI.
 
 The proposed landing-aligned dashboard rebuild and secret-input acceptance plans are maintained in the Obsidian vault. The proposed Rust controller port is gated by the [Controller Contract Suite](Controller%20Contract%20Suite.md), an HTTP-level compatibility suite run against both servers; it is not implemented.
 

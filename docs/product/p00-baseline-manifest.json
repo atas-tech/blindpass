@@ -2,8 +2,8 @@
   "phase": "P00",
   "title": "Baseline and contracts",
   "generated_at": "2026-09-23",
-  "source_revision": "e2112c4",
-  "source_revision_note": "Historical baseline anchor; the P00/P01 closure commit and exact execution revision are recorded in the testing execution records.",
+  "source_revision": "a18ecb1e26e576c8475f0e68d7e538278a5f4e0e",
+  "source_revision_note": "Committed P00 closure source; P00 test execution is recorded against this exact revision. The earlier e2112c4 baseline anchor is historical context.",
   "package_manager": "npm workspaces",
   "packages": [
     {
@@ -103,8 +103,8 @@
         "docker-compose.test.yml"
       ],
       "rust_controller": "scaffold present; HTTP/database parity not implemented",
-      "host_broker": "P01 local broker with live ephemeral HPKE provisioning and dedicated non-root consumers has a pre-commit selected disposable Ubuntu VM run; final committed-SHA VM evidence is pending; W0 technical disposition NARROW",
-      "linux_vm_fleet": "pre-commit disposable Ubuntu 24.04/systemd 255 KVM run and teardown checks passed; final committed-SHA VM evidence is pending; alternate guest matrix and stock-client evidence remain open"
+      "host_broker": "P01 local broker with live ephemeral HPKE provisioning and dedicated non-root consumers passed the selected disposable Ubuntu VM profile on committed SHA a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57; W0 technical disposition NARROW",
+      "linux_vm_fleet": "committed SHA a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57 passed on disposable Ubuntu 24.04/systemd 255 KVM; alternate guest matrix and stock-client evidence remain open"
     }
   },
   "dependencies": {
@@ -124,7 +124,7 @@
     "No production database, backup, installation or live-link inventory was accessed.",
     "The Linux Fleet Pilot still requires real systemd VM and stock-client evidence.",
     "Rust controller parity and native/container fleet parity remain unimplemented.",
-    "P01 W0 selected-profile VM passed before commit; rerun against a committed SHA is pending. Product acceptance and broader guest, physical TPM and crash collector matrices remain open.",
+    "P01 W0 selected-profile VM passed on committed SHA a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57. Product acceptance and broader guest, physical TPM and crash collector matrices remain open.",
     "P00 SUT=base browser handoff and hosted PR-CI execution remain open. Local P00-I06 snapshot-mismatch and skipped-suite gate fault injections passed on 2026-09-23."
   ]
 }
