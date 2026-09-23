@@ -116,6 +116,7 @@ pub fn resolve_peer(
     let credentials = peer_credentials(stream.as_raw_fd())?;
     let pidfd = peer_pidfd(stream.as_raw_fd())?;
     if !identity_lookup_delay.is_zero() {
+        eprintln!("identity lookup test delay after pidfd capture");
         std::thread::sleep(identity_lookup_delay);
     }
     let (unit, invocation_id) = resolve_unit_and_invocation(pidfd.as_raw_fd(), deadline)?;

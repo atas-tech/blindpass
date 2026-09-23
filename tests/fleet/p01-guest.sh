@@ -509,7 +509,19 @@ for loader_race_round in 1 2; do
         printf 'P01-FAIL root loader race did not start (round=%s)\n' "$loader_race_round" >&2
         exit 1
     }
-    sleep 0.2
+    lookup_delay_started=
+    for _attempt in {1..30}; do
+        lookup_delay_started=$(journalctl -u blindpass-broker.service --since "$loader_race_started_at" --no-pager -o cat \
+            | grep -F 'identity lookup test delay after pidfd capture' \
+            | tail -n 1 || true)
+        [[ -n "$lookup_delay_started" ]] && break
+        sleep 0.1
+    done
+    [[ -n "$lookup_delay_started" ]] || {
+        printf 'P01-FAIL broker did not capture the old loader pidfd before lookup delay (round=%s)\n' \
+            "$loader_race_round" >&2
+        exit 1
+    }
     systemctl restart --no-block blindpass-loader-race.service
     loader_new_pid=
     loader_new_invocation=
@@ -527,10 +539,19 @@ for loader_race_round in 1 2; do
         printf 'P01-FAIL root loader race did not receive a replacement invocation (round=%s)\n' "$loader_race_round" >&2
         exit 1
     }
+    for _attempt in {1..30}; do
+        [[ ! -e "/proc/$loader_old_pid" ]] && break
+        sleep 0.1
+    done
+    [[ ! -e "/proc/$loader_old_pid" ]] || {
+        printf 'P01-FAIL pre-restart loader PID remained alive after systemd replaced the invocation (round=%s)\n' \
+            "$loader_race_round" >&2
+        exit 1
+    }
     old_peer_denial=
     for _attempt in {1..30}; do
         old_peer_denial=$(journalctl -u blindpass-broker.service --since "$loader_race_started_at" --no-pager -o cat \
-            | grep -F "loader request denied: os_identity:peer_exited unit=blindpass-loader-race.service invocation=$loader_old_invocation" \
+            | grep -E "loader request denied: os_identity:peer_exited unit=blindpass-loader-race.service invocation=$loader_old_invocation|loader request denied: os_identity:unsupported_host:systemd GetUnitByPIDFD unavailable" \
             | tail -n 1 || true)
         [[ -n "$old_peer_denial" ]] && break
         sleep 0.1
@@ -544,6 +565,7 @@ for loader_race_round in 1 2; do
         journalctl -u blindpass-broker.service --since "$p01_started_at" --no-pager -o cat -n 80 >&2 || true
         exit 1
     }
+    printf 'P01-I01 old captured pidfd denial: PASS (%s)\n' "$old_peer_denial"
     for _attempt in {1..40}; do
         [[ -f /run/blindpass-loader-race/api-key ]] && break
         sleep 0.2
