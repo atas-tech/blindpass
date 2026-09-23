@@ -138,6 +138,12 @@ describe("P00 golden vectors", () => {
 
   it("CV05 evaluates policy decisions and hashes identically", async () => {
     const results = await evaluatePolicyVectors();
+    const fixture = JSON.parse(await readFile(path.join(HERE, "../fixtures/cv05-policy.json"), "utf8")) as {
+      cases: Array<{ expectedMode: string; expectedRuleId: string | null }>;
+    };
+    expect(results).toHaveLength(fixture.cases.length);
+    expect(results.map((result) => result.mode)).toEqual(fixture.cases.map((testCase) => testCase.expectedMode));
+    expect(results.map((result) => result.ruleId)).toEqual(fixture.cases.map((testCase) => testCase.expectedRuleId));
     expect(results.map((result) => result.mode)).toEqual(["allow", "pending_approval", "none", "none", "allow"]);
     expect(results.map((result) => result.policy_hash)).toEqual([
       "6b81aae31baf41a8d34abdc5cf033d111ff6ae2abd25510fb9304f6622407eb4",

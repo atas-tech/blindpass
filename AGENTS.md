@@ -1,56 +1,28 @@
 # Repository instructions
 
-## Scope and sources of truth
+## Start here
 
-- Read [docs/README.md](docs/README.md) for documentation ownership and current implementation limits.
-- Forward work follows the [Roadmap](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md), [Specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md), and [Linux Fleet Pilot](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) in the Obsidian docs vault. The selected P01 broker profile has [execution evidence](docs/testing/p01-host-broker-evidence.md); browser session handoff and native/container fleet parity remain proposed. [Decision records](docs/product/decisions/README.md) track the dashboard stack, Rust broker/controller direction and dependency baseline.
-- [Historical records](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/archive/README.md) live in the Obsidian docs vault. Their checkboxes, deadlines, and proposed work do not override the current roadmap or reactivate frozen features.
-- Use source and executed tests to establish behavior. Do not turn a plan, source inspection, or skipped suite into a claim that a feature works.
-
-## Workspace
-
-This is an npm workspace monorepo. Packages are:
-
-| Package | Responsibility |
-|---|---|
-| `packages/sps-server` | Fastify API, authentication, exchange policy, Redis state and PostgreSQL management data |
-| `packages/gateway` | Interception, secure-link routing and agent identity helpers |
-| `packages/agent-skill` | HPKE, SPS clients, runtime memory and exchange helpers |
-| `packages/openclaw-plugin` | OpenClaw integration, encrypted store, resolver and MCP entry point |
-| `packages/browser-ui` | Vite secret-input page and client-side encryption |
-| `packages/dashboard` | React/Vite workspace administration |
-| `packages/i18n` | Shared locale resources and validation |
-
-Scripts and packaging live in `scripts/`; service templates live in `deploy/`. Read [LICENSES.md](LICENSES.md) before changing package boundaries.
+- Read [docs/README.md](docs/README.md) for documentation ownership, current limits and links to the authoritative vault Roadmap, Specification and Linux Fleet Pilot. Historical plans do not override the roadmap or reactivate frozen features.
+- See [architecture](docs/architecture/README.md) for the package map and [test setup](docs/testing/README.md) for commands and prerequisites. Code lives in `packages/` and `crates/`; scripts in `scripts/`; service templates in `deploy/`.
+- Read [LICENSES.md](LICENSES.md) before changing package boundaries.
 
 ## Working conventions
 
-- Follow surrounding TypeScript/JavaScript style; TypeScript is strict ESM/NodeNext. Keep `.js` suffixes on local TypeScript imports.
-- Use descriptive kebab-case filenames, camelCase values/functions, PascalCase types and UPPER_SNAKE_CASE environment variables. Avoid unrelated reformatting.
-- Use relative links within this repository and stable docs-vault URLs across repository boundaries; never use machine-specific checkout paths. Update inbound links when moving or deleting documents.
-- Keep credentials, `.env` files, private keys, live links and bearer tokens out of commits, chat, logs and test evidence. Use generated dummy canaries for exposure checks.
-- Identify the plaintext consumer honestly. Runtime memory, encrypted-at-rest storage, service delivery and a browser session have different exposure and lifetime limits.
-- For adding, upgrading, removing or reviewing software dependencies, **use the global `dependency-guard` skill before changing manifests or lockfiles** and evaluate its Socket risk signals. Stop for unresolved risk as the skill requires.
+- Follow surrounding style; avoid unrelated reformatting. TypeScript is strict ESM/NodeNext: keep `.js` suffixes on local imports. Use kebab-case filenames, camelCase values/functions, PascalCase types and UPPER_SNAKE_CASE environment variables.
+- Use relative repository links and stable docs-vault URLs, never machine-specific paths. Repair inbound links when moving or deleting documents.
+- Keep credentials, `.env` files, private keys, live links and bearer tokens out of commits, chat, logs and evidence. Use generated dummy canaries for exposure checks.
+- State who consumes plaintext and its lifetime; runtime memory, encrypted storage, service delivery and browser sessions have different limits.
+- For dependency additions, upgrades, removals or reviews, use the global `dependency-guard` skill before changing manifests or lockfiles. Evaluate Socket signals and stop for unresolved risk as the skill requires.
 
-## Commands and validation
+## Tests and acceptance
 
-Run commands from the repository root. [Testing setup](docs/testing/README.md) covers prerequisites and environment loading; npm workspace scripts execute in their package directories, so do not assume they load the root `.env`.
+- **Prefer tests first:** derive test scenarios from acceptance criteria, then write or update meaningful tests before implementation code. Run them to confirm the expected failure, implement the behavior, and rerun to confirm it passes. Cover authorization, secret handling, transport fallback, TTL and one-use retrieval where relevant.
+- For each phase/milestone, define comprehensive E2E and integration scenarios in the paired vault plan under `blindpass/docs/testing/phases/`. Implement those tests with the feature, preserve scenario IDs and record actual execution evidence in this repository.
+- Run commands from the repository root. Workspace scripts run in package directories; do not assume they load the root `.env`. Follow [test setup](docs/testing/README.md) for service prerequisites and suite gates.
+- For implementation changes, run `npm run build`, `npm test` and relevant integration/E2E and Rust gates. Inspect skipped suites and report unexecuted checks; source inspection, plans and skipped tests do not establish working behavior.
+- For documentation-only edits, check links, command accuracy and `git diff --check`; report runtime checks not run.
+- Linux pilot guarantees require real systemd VM and stock-client tests. Before declaring P01 VM testing unavailable, check `/dev/kvm` read/write access and QEMU through an approved unsandboxed command, then run `./tests/fleet/p01-vm.sh` with the pinned image and disposable SSH key from [fleet setup](tests/fleet/README.md). Report denied host access precisely: sandbox visibility and portable Rust tests are not VM evidence.
 
-| Command | Purpose |
-|---|---|
-| `npm ci` | Install the committed workspace dependency set |
-| `npm run build` | Build all packages and the plugin bundle |
-| `npm test` | Workspace unit/component suites; database-gated suites may skip |
-| `npm run test:integration` | Redis integration; requires configured Redis |
-| `npm run test:e2e --workspace=packages/sps-server` | PostgreSQL SPS E2E; script sets `SPS_PG_INTEGRATION=1` |
-| `SPS_PG_INTEGRATION=1 npm test --workspace=packages/sps-server` | Include the wider PostgreSQL-gated SPS suites |
-| `npm run test:e2e` | Dashboard Playwright E2E, not the SPS-only suite |
-| `npm run test:release-metadata` | Distribution metadata/staging regression |
-| `make up` / `make down` | Start/stop the local PostgreSQL and Redis test stack |
-| `npm run redis:up` | Start Redis only; does not start PostgreSQL |
+## Commits and reviews
 
-For implementation changes, run the workspace build/tests and relevant integration/E2E gates. Add meaningful regression coverage for behavior changes, especially authorization, secret handling, transport fallback, TTL and one-use retrieval. For documentation-only edits, check links, command accuracy and `git diff --check`; report which runtime checks were not run.
-
-**Phase testing rule:** When planning or implementing a phase/milestone, define comprehensive E2E and integration scenarios in the paired plan under `blindpass/docs/testing/phases/` in the Obsidian docs vault, and implement them alongside feature code. Preserve scenario IDs and record actual execution evidence in repository-bound records. The Linux pilot requires real systemd VM and stock-client tests; mocks cannot establish those guarantees.
-
-Use Conventional Commit subjects. PRs should state the behavior change, affected packages, checks run and material limits; include screenshots or message samples for visible UI/chat changes. Do not include secret values in review artifacts.
+Use Conventional Commit subjects. PRs should describe the behavior change, affected packages, checks run and material limits. Include screenshots or message samples for visible UI/chat changes, without secret values.

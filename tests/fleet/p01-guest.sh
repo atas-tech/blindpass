@@ -39,67 +39,112 @@ assert_canary_absent() {
     local expected_owner
     local mode
     local owner
+    local group
+    local expected_group
     local mode_value
     local proc_cmdline
     local process_args
+    local scan_file
+    local scan_status
+    local -a scan_paths
     for proc_cmdline in /proc/[0-9]*/cmdline; do
         [[ -r "$proc_cmdline" ]] || continue
-        process_args=$(tr '\0' ' ' <"$proc_cmdline" 2>/dev/null || true)
+        process_args=$(tr '\0' ' ' <"$proc_cmdline") || {
+            [[ ! -e "$proc_cmdline" ]] && continue
+            printf 'P01-FAIL could not scan process arguments: %s\n' "$proc_cmdline" >&2
+            exit 1
+        }
         if [[ "$process_args" == *"$initial_canary"* || "$process_args" == *"$rotated_canary"* \
             || "$process_args" == *"$crash_canary"* ]]; then
             printf 'P01-FAIL a generated canary appeared in a process argument\n' >&2
             exit 1
         fi
     done
-    if journalctl --since "$p01_started_at" --no-pager \
-        | grep -F -f /run/blindpass-source/canary-patterns >/dev/null 2>&1; then
+    scan_file=$(mktemp /run/blindpass-source/journal-scan.XXXXXX)
+    journalctl --since "$p01_started_at" --no-pager >"$scan_file" || {
+        printf 'P01-FAIL could not read the journal for canary scan\n' >&2
+        exit 1
+    }
+    scan_status=0
+    grep -F -f /run/blindpass-source/canary-patterns "$scan_file" >/dev/null || scan_status=$?
+    rm -f "$scan_file"
+    if [[ "$scan_status" == 0 ]]; then
         printf 'P01-FAIL a generated canary appeared in the journal\n' >&2
         exit 1
     fi
+    [[ "$scan_status" == 1 ]] || { printf 'P01-FAIL journal canary scanner errored\n' >&2; exit 1; }
+    scan_paths=()
+    for scan_file in /tmp /var/tmp /var/crash /var/log /var/lib/systemd/coredump \
+        /run/credentials /run/blindpass /etc/blindpass \
+        /run/blindpass-consumer /run/blindpass-backup /run/blindpass-backup-native \
+        /run/blindpass-loader-race /run/blindpass-faults /run/blindpass-custody-probe \
+        /run/blindpass-provision-probes /run/blindpass-crash-canary \
+        /run/blindpass-unauthorized.key /run/blindpass-nonroot.key /run/blindpass-user-manager.log; do
+        [[ -e "$scan_file" ]] && scan_paths+=("$scan_file")
+    done
+    scan_file=$(mktemp /run/blindpass-source/artifact-list.XXXXXX)
+    find "${scan_paths[@]}" -type f -print0 >"$scan_file" || {
+        printf 'P01-FAIL could not enumerate runtime artifacts\n' >&2
+        exit 1
+    }
     while IFS= read -r -d '' artifact; do
         [[ "$artifact" == /tmp/p01-guest.sh ]] && continue
+        expected_owner=
+        expected_group=
         case "$artifact" in
-            /run/credentials/blindpass-consumer.service/api-key|\
+            /run/credentials/blindpass-consumer.service/api-key)
+                expected_owner=$(id -u blindpass-consumer)
+                expected_group=$(id -g blindpass-consumer)
+                ;;
+            /run/credentials/blindpass-backup.service/api-key)
+                expected_owner=$(id -u blindpass-backup)
+                expected_group=$(id -g blindpass-backup)
+                ;;
             /run/credentials/blindpass-consumer-native.service/api-key)
                 expected_owner=$(id -u blindpass-consumer)
+                expected_group=$(id -g blindpass-consumer)
                 ;;
-            /run/credentials/blindpass-backup.service/api-key|\
             /run/credentials/blindpass-backup-native.service/api-key)
                 expected_owner=$(id -u blindpass-backup)
+                expected_group=$(id -g blindpass-backup)
                 ;;
             /run/blindpass-loader-race/api-key)
                 expected_owner=0
+                expected_group=0
                 ;;
-            *) expected_owner= ;;
         esac
         if [[ -n "$expected_owner" ]]; then
-            read -r mode owner < <(stat -c '%a %u' "$artifact")
+            read -r mode owner group < <(stat -c '%a %u %g' "$artifact")
             mode_value=$((8#$mode))
-            [[ "$owner" == "$expected_owner" || "$owner" == 0 ]] \
-                && (( (mode_value & 077) == 0 )) || {
-                printf 'P01-FAIL credential file had unexpected owner or group/world access: %s\n' "$artifact" >&2
+            # systemd can expose these files as root:root 0440 from outside the unit.
+            if ! { [[ "$owner" == "$expected_owner" || "$owner" == 0 ]] \
+                && { (( (mode_value & 077) == 0 )) \
+                    || { [[ "$group" == "$expected_group" || "$group" == 0 ]] \
+                        && (( (mode_value & 037) == 0 )); }; }; }; then
+                printf 'P01-FAIL credential file had unexpected owner or group/world access: path=%s mode=%s owner=%s group=%s expected_owner=%s expected_group=%s\n' \
+                    "$artifact" "$mode" "$owner" "$group" "$expected_owner" "$expected_group" >&2
                 exit 1
-            }
+            fi
             continue
         fi
-        if grep -aF -f /run/blindpass-source/canary-patterns "$artifact" >/dev/null 2>&1; then
+        scan_status=0
+        grep -aF -f /run/blindpass-source/canary-patterns "$artifact" >/dev/null || scan_status=$?
+        if [[ "$scan_status" == 0 ]]; then
             printf 'P01-FAIL a generated canary appeared in runtime artifact %s\n' "$artifact" >&2
             exit 1
         fi
-    done < <(
-        find /tmp /var/tmp /var/crash /var/log /var/lib/systemd/coredump \
-            /run/credentials /run/blindpass-consumer /run/blindpass-backup \
-            /run/blindpass-backup-native \
-            /run/blindpass-loader-race /run/blindpass-faults /run/blindpass-custody-probe \
-            /run/blindpass-provision-probes /run/blindpass-crash-canary \
-            /run/blindpass-unauthorized.key /run/blindpass-nonroot.key /run/blindpass-user-manager.log \
-            -type f -size -1M -print0 2>/dev/null
-    )
+        [[ "$scan_status" == 1 ]] || {
+            printf 'P01-FAIL could not scan runtime artifact %s\n' "$artifact" >&2
+            exit 1
+        }
+    done <"$scan_file"
+    rm -f "$scan_file"
 }
 
 assert_broker_log_contains() {
     local expected=$1
-    if ! journalctl -u blindpass-broker.service --since "$p01_started_at" --no-pager -o cat \
+    local since=${2:-$p01_started_at}
+    if ! journalctl -u blindpass-broker.service --since "$since" --no-pager -o cat \
         | grep -F -- "$expected" >/dev/null; then
         printf 'P01-FAIL broker journal did not contain expected denial evidence: %s\n' "$expected" >&2
         journalctl -u blindpass-broker.service --since "$p01_started_at" --no-pager -o cat -n 100 >&2 || true
@@ -177,6 +222,20 @@ install -d -m 0700 /run/blindpass-source
 printf '%s\n%s\n%s\n' "$initial_canary" "$rotated_canary" "$crash_canary" \
     >/run/blindpass-source/canary-patterns
 chmod 0600 /run/blindpass-source/canary-patterns
+install -d -m 0700 /run/blindpass-faults
+printf '%s' "$initial_canary" >/run/blindpass-faults/scanner-positive-control
+scanner_control_result=
+if scanner_control_result=$( (assert_canary_absent) 2>&1); then
+    printf 'P01-FAIL canary scanner missed its positive control\n' >&2
+    exit 1
+fi
+[[ "$scanner_control_result" == *'a generated canary appeared in runtime artifact /run/blindpass-faults/scanner-positive-control'* ]] || {
+    printf 'P01-FAIL canary scanner positive control failed for a different reason\n' >&2
+    exit 1
+}
+rm -f /run/blindpass-faults/scanner-positive-control
+assert_canary_absent
+printf 'P01-I06 canary scanner positive control: PASS\n'
 printf '%s' "$initial_canary" >/run/blindpass-source/api-key
 chmod 0600 /run/blindpass-source/api-key
 install -d -m 0700 /run/blindpass-consumer
@@ -551,7 +610,7 @@ for loader_race_round in 1 2; do
     old_peer_denial=
     for _attempt in {1..30}; do
         old_peer_denial=$(journalctl -u blindpass-broker.service --since "$loader_race_started_at" --no-pager -o cat \
-            | grep -E "loader request denied: os_identity:peer_exited unit=blindpass-loader-race.service invocation=$loader_old_invocation|loader request denied: os_identity:unsupported_host:systemd GetUnitByPIDFD unavailable" \
+            | grep -E "loader request denied: os_identity:peer_exited (unit=blindpass-loader-race.service invocation=$loader_old_invocation|before unit lookup)" \
             | tail -n 1 || true)
         [[ -n "$old_peer_denial" ]] && break
         sleep 0.1
@@ -816,7 +875,7 @@ UNIT
         journalctl -u blindpass-broker.service --no-pager -n 60 >&2 || true
         exit 1
     }
-    printf 'P01-I01 pidfd-to-invocation restart race: PASS (round=%s old_pid=%s new_pid=%s)\n' \
+    printf 'P01-I01 workload restart recovery only (round=%s old_pid=%s new_pid=%s)\n' \
         "$race_round" "$race_old_pid" "$race_new_pid"
 done
 rm -f /etc/systemd/system/blindpass-workload.service.d/p01-race.conf
@@ -1114,11 +1173,12 @@ TimeoutStartSec=5s
 ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload unregistered --unit blindpass-unregistered.service --operation health
 UNIT
 systemctl daemon-reload
+unregistered_started_at=$(date --iso-8601=seconds)
 if systemctl start blindpass-unregistered.service >/dev/null 2>&1; then
     printf 'P01-FAIL unregistered workload was accepted\n' >&2
     exit 1
 fi
-assert_broker_log_contains 'identity:unknown_registration'
+assert_broker_log_contains 'identity:unknown_registration' "$unregistered_started_at"
 printf 'P01-I02 unregistered workload: PASS\n'
 
 install -d -m 0700 /run/blindpass-faults
@@ -1372,6 +1432,8 @@ systemctl restart blindpass-broker.service
 systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
 systemctl start blindpass-consumer.service
 
+assert_canary_absent
+printf 'P01-I06 final canary scan after restart and short-TTL scenarios: PASS\n'
 printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key.cred\n'
 
 systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-loader-race.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-dynamic.service blindpass-crash.service blindpass-consumer.service blindpass-consumer-native.service blindpass-backup.service blindpass-backup-native.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true

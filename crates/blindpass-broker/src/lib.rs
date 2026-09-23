@@ -557,6 +557,12 @@ where
 {
     let handler = Arc::new(handler);
     let active = Arc::new(AtomicUsize::new(0));
+    struct ActiveConnection(Arc<AtomicUsize>);
+    impl Drop for ActiveConnection {
+        fn drop(&mut self) {
+            self.0.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
     for connection in listener.incoming() {
         let mut stream = match connection {
             Ok(stream) => stream,
@@ -579,6 +585,7 @@ where
         let handler = Arc::clone(&handler);
         let active = Arc::clone(&active);
         std::thread::spawn(move || {
+            let _slot = ActiveConnection(active);
             let result = (|| {
                 stream.set_write_timeout(Some(timeout))?;
                 handler(&mut stream, deadline)
@@ -586,7 +593,6 @@ where
             if let Err(error) = result {
                 reject_connection(role, &mut stream, &error);
             }
-            active.fetch_sub(1, Ordering::AcqRel);
         });
     }
     Ok(())
@@ -882,8 +888,17 @@ pub fn bind_socket(
     let parent = path
         .parent()
         .ok_or(BrokerError::Configuration("socket path has no parent"))?;
-    fs::create_dir_all(parent)?;
-    fs::set_permissions(parent, fs::Permissions::from_mode(directory_mode))?;
+    match fs::create_dir(parent) {
+        Ok(()) => fs::set_permissions(parent, fs::Permissions::from_mode(directory_mode))?,
+        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+            if !fs::symlink_metadata(parent)?.file_type().is_dir() {
+                return Err(BrokerError::Configuration(
+                    "socket parent is not a directory",
+                ));
+            }
+        }
+        Err(error) => return Err(error.into()),
+    }
     if let Ok(metadata) = fs::symlink_metadata(path) {
         if !metadata.file_type().is_socket() {
             return Err(BrokerError::Configuration(
@@ -916,7 +931,7 @@ mod tests {
     use blindpass_core::identity::{PeerIdentity, WorkloadRegistration, WorkloadRequest};
     use std::fs;
     use std::io::Write;
-    use std::os::unix::fs::MetadataExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     use std::os::unix::net::UnixStream;
     use std::sync::{Arc, Mutex};
     use std::time::Duration;
@@ -973,6 +988,18 @@ mod tests {
         let replacement = bind_socket(&socket, 0o750, 0o660).unwrap();
         assert_eq!(fs::metadata(&socket).unwrap().mode() & 0o777, 0o660);
         drop(replacement);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn existing_socket_parent_keeps_its_mode() {
+        let root = unique_test_path("socket-parent");
+        fs::create_dir(&root).unwrap();
+        fs::set_permissions(&root, fs::Permissions::from_mode(0o700)).unwrap();
+        let socket = root.join("loader.sock");
+        let listener = bind_socket(&socket, 0o751, 0o600).unwrap();
+        assert_eq!(fs::metadata(&root).unwrap().mode() & 0o777, 0o700);
+        drop(listener);
         fs::remove_dir_all(root).unwrap();
     }
 

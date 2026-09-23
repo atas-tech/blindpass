@@ -24,8 +24,7 @@ jobs:
   workspace:
     name: Build and workspace tests
     runs-on: ubuntu-latest
-    env:
-      SUT: ts
+    timeout-minutes: 45
     services:
       postgres:
         image: postgres:16-alpine
@@ -75,7 +74,9 @@ jobs:
         run: npm run test:integration
 
       - name: Run PostgreSQL SPS tests
-        run: SPS_PG_INTEGRATION=1 npm test --workspace=packages/sps-server
+        run: |
+          SPS_PG_INTEGRATION=1 npm test --workspace=packages/sps-server -- --reporter=json --outputFile=/tmp/sps-pg-results.json
+          node scripts/tests/assert-pg-vitest-gate.mjs /tmp/sps-pg-results.json
 
       - name: Run PostgreSQL SPS E2E suite
         run: npm run test:e2e --workspace=packages/sps-server
@@ -89,6 +90,7 @@ jobs:
   contract:
     name: P00 HTTP contract suite
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
@@ -138,8 +140,9 @@ jobs:
           node scripts/tests/assert-no-vitest-skips.mjs /tmp/p00-contract-results.json
 
   base-contract:
-    name: P00 external HTTP adapter
+    name: P00 harness-spawned base URL adapter
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     services:
       postgres:
         image: postgres:16-alpine
@@ -191,6 +194,7 @@ jobs:
   rust:
     name: Rust broker checks
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

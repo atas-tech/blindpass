@@ -26,6 +26,10 @@ printf 'P01-HOST-ENV runner_owner=%s qemu=%s qemu_img=%s kvm=%s cloud_localds=%s
     "$(stat -c '%A:%a' /dev/kvm)" \
     "$(command -v cloud-localds)" \
     "$tpm_mode"
+printf 'P01-HOST-BUILD rustc=%s cargo=%s openssl=%s systemd=%s\n' \
+    "$(rustc --version)" "$(cargo --version)" \
+    "$(pkg-config --modversion openssl 2>/dev/null || printf unavailable)" \
+    "$(pkg-config --modversion libsystemd 2>/dev/null || printf unavailable)"
 
 guest_user=${BLINDPASS_FLEET_GUEST_USER:-blindpass}
 ssh_port=${BLINDPASS_FLEET_SSH_PORT:-22222}

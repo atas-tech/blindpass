@@ -34,6 +34,13 @@ type sd_bus = c_void;
 #[allow(non_camel_case_types)]
 type sd_bus_message = c_void;
 
+#[repr(C)]
+struct SdBusError {
+    name: *const c_char,
+    message: *const c_char,
+    need_free: c_int,
+}
+
 unsafe extern "C" {
     fn poll(fds: *mut PollFd, nfds: usize, timeout: c_int) -> c_int;
 }
@@ -44,6 +51,7 @@ pub enum OsIdentityError {
     PermissionDenied(&'static str),
     LookupFailed(&'static str),
     PeerExited { unit: String, invocation_id: String },
+    PeerExitedBeforeLookup,
     System(io::ErrorKind),
 }
 
@@ -55,6 +63,7 @@ impl OsIdentityError {
             Self::PermissionDenied(_) => "permission_denied",
             Self::LookupFailed(_) => "identity_lookup_failed",
             Self::PeerExited { .. } => "peer_exited",
+            Self::PeerExitedBeforeLookup => "peer_exited",
             Self::System(_) => "identity_system_error",
         }
     }
@@ -75,6 +84,7 @@ impl fmt::Display for OsIdentityError {
                     "peer_exited unit={unit} invocation={invocation_id}"
                 )
             }
+            Self::PeerExitedBeforeLookup => write!(formatter, "peer_exited before unit lookup"),
             Self::System(kind) => write!(formatter, "identity_system_error:{kind:?}"),
         }
     }
@@ -93,12 +103,13 @@ unsafe extern "C" {
         path: *const c_char,
         interface: *const c_char,
         member: *const c_char,
-        error: *mut c_void,
+        error: *mut SdBusError,
         reply: *mut *mut sd_bus_message,
         types: *const c_char,
         ...
     ) -> c_int;
     fn sd_bus_message_unref(message: *mut sd_bus_message) -> *mut sd_bus_message;
+    fn sd_bus_error_free(error: *mut SdBusError) -> *mut SdBusError;
     fn sd_bus_message_read(message: *mut sd_bus_message, types: *const c_char, ...) -> c_int;
     fn sd_bus_message_read_array(
         message: *mut sd_bus_message,
@@ -250,6 +261,11 @@ fn resolve_unit_and_invocation_on_bus(
     let member = CString::new("GetUnitByPIDFD").unwrap();
     let types = CString::new("h").unwrap();
     let mut reply = std::ptr::null_mut();
+    let mut bus_error = SdBusError {
+        name: std::ptr::null(),
+        message: std::ptr::null(),
+        need_free: 0,
+    };
     let call_result = unsafe {
         sd_bus_call_method(
             bus,
@@ -257,12 +273,22 @@ fn resolve_unit_and_invocation_on_bus(
             manager_path.as_ptr(),
             manager_interface.as_ptr(),
             member.as_ptr(),
-            std::ptr::null_mut(),
+            &mut bus_error,
             &mut reply,
             types.as_ptr(),
             pidfd,
         )
     };
+    let error_name = if bus_error.name.is_null() {
+        None
+    } else {
+        Some(
+            unsafe { CStr::from_ptr(bus_error.name) }
+                .to_bytes()
+                .to_vec(),
+        )
+    };
+    unsafe { sd_bus_error_free(&mut bus_error) };
     if Instant::now() >= deadline {
         if !reply.is_null() {
             unsafe { sd_bus_message_unref(reply) };
@@ -270,11 +296,15 @@ fn resolve_unit_and_invocation_on_bus(
         return Err(OsIdentityError::System(io::ErrorKind::TimedOut));
     }
     if call_result < 0 || reply.is_null() {
+        if !reply.is_null() {
+            unsafe { sd_bus_message_unref(reply) };
+        }
         if call_result == -110 {
             return Err(OsIdentityError::System(io::ErrorKind::TimedOut));
         }
-        return Err(OsIdentityError::UnsupportedHost(
-            "systemd GetUnitByPIDFD unavailable",
+        return Err(classify_unit_lookup_error(
+            call_result,
+            error_name.as_deref(),
         ));
     }
     let object_and_unit_types = CString::new("os").unwrap();
@@ -322,6 +352,20 @@ fn resolve_unit_and_invocation_on_bus(
     Ok((unit, invocation_id))
 }
 
+fn classify_unit_lookup_error(result: c_int, name: Option<&[u8]>) -> OsIdentityError {
+    if result == -3
+        || name.is_some_and(|name| {
+            name.ends_with(b".NoUnitForPID") || name.ends_with(b".NoUnitForPIDFD")
+        })
+    {
+        return OsIdentityError::PeerExitedBeforeLookup;
+    }
+    if name.is_some_and(|name| name == b"org.freedesktop.DBus.Error.UnknownMethod") {
+        return OsIdentityError::UnsupportedHost("systemd GetUnitByPIDFD unavailable");
+    }
+    OsIdentityError::LookupFailed("systemd GetUnitByPIDFD call")
+}
+
 fn remaining(deadline: Instant) -> Result<Duration, OsIdentityError> {
     deadline
         .checked_duration_since(Instant::now())
@@ -350,7 +394,27 @@ unsafe extern "C" {
 
 #[cfg(test)]
 mod tests {
-    use super::{OsIdentityError, format_invocation_id};
+    use super::{OsIdentityError, classify_unit_lookup_error, format_invocation_id};
+
+    #[test]
+    fn unit_lookup_distinguishes_dead_peer_from_missing_api() {
+        assert_eq!(
+            classify_unit_lookup_error(-3, None),
+            OsIdentityError::PeerExitedBeforeLookup
+        );
+        assert_eq!(
+            classify_unit_lookup_error(-1, Some(b"org.freedesktop.systemd1.NoUnitForPIDFD")),
+            OsIdentityError::PeerExitedBeforeLookup
+        );
+        assert_eq!(
+            classify_unit_lookup_error(-1, Some(b"org.freedesktop.DBus.Error.UnknownMethod")),
+            OsIdentityError::UnsupportedHost("systemd GetUnitByPIDFD unavailable")
+        );
+        assert_eq!(
+            classify_unit_lookup_error(-1, None),
+            OsIdentityError::LookupFailed("systemd GetUnitByPIDFD call")
+        );
+    }
 
     #[test]
     fn invocation_id_is_the_systemd_lowercase_hex_array() {

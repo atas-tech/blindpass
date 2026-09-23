@@ -9,6 +9,38 @@ vault. The live-HPKE/non-root profile, including stock systemd
 evidence and the pre-commit run below are historical context. Disposable VM
 artifacts remain runner-local and are not committed.
 
+**2026-09-23 review correction:** The cited VM exit is historical evidence for
+that exact source and harness. It does not establish P01-I01 workload race
+rejection: those three rounds checked recovery after a broker restart, without
+asserting denial of the old invocation. It also does not establish P01-I06
+absence: the scanner had no positive control, could treat scan errors as
+absence, skipped large files and ended before the final scenarios. Both rows
+are **not established** for W0 acceptance. The working-tree run below tests
+the revised scanner and loader denial. The workload race remains incomplete,
+and a committed-SHA VM run is still required before W0 acceptance.
+
+## Current review working-tree VM run (not final acceptance evidence)
+
+On 2026-09-23, `./tests/fleet/p01-vm.sh` exited 0 with runner owner
+`local-kvm-p01-review-20260923-r6` on dirty HEAD
+`03503390d39ff04efd81752ebea811b51058b1ee`. Host QEMU 11.1.1 used
+read/write `/dev/kvm`; the pinned Ubuntu 24.04 image matched SHA-256
+`612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`.
+The guest reported kernel 6.8.0-139-generic and systemd 255. Runner-local
+sanitized logs were retained; this run used generated dummy canaries.
+
+The revised scanner rejected an injected canary in a runtime artifact, then
+completed initial, post-rotation, and final scans after the restart and
+short-TTL cases. It inspected one crash report; `coredumpctl` was unavailable,
+and the guest had no TPM device. The loader lookup-after-exit test denied the
+old captured peer twice with `os_identity:peer_exited before unit lookup` and
+delivered to each replacement. The stale workload invocation was denied after
+restart and re-registration was required, but the three workload rounds still
+assert only recovery. They do not establish rejection of a stale peer captured
+before process exit. Thus P01-I01 and full P01-I06 acceptance remain open even
+though this selected VM run passed. The sandbox had hidden `/dev/kvm`; the
+approved host run confirmed the device was usable.
+
 ## Final committed-SHA VM run
 
 | Source SHA | Runner owner | Guest and host profile | Outcome |
@@ -86,12 +118,12 @@ includes the reusable environment settings; no image bytes are stored in Git.
 
 | Scenario | Pre-commit VM observation | Profile limit |
 |---|---|---|
-| P01-I01 | Pass: two direct-loader and three workload pidfd/invocation restart races, native credential re-request, stale invocation denial and re-registration | PIDs differed in the exercised races; forced reuse of the same numeric PID remains untested |
+| P01-I01 | Original harness printed pass for two direct-loader and three workload restart rounds | Workload rounds asserted recovery after broker restart, not race rejection; acceptance not established. Forced PID reuse remains untested. |
 | P01-I02 | Pass: native `LoadCredential=` traced UID 0 plus exact target unit/invocation, direct loader, user-manager and non-root denial, forged/unregistered routing, `DynamicUser` and fixed-account workloads | User-manager execution remains unsupported |
 | P01-I03 | Pass: system-bus removal and `getsockopt` seccomp removal fail closed without credential delivery; broker remains active | Broader kernel/systemd API matrix open; systemd 252 not rerun on this build |
 | P01-I04 | Pass: 2023 ms stalled-frame denial and empty/partial/malformed/oversized/corrupt delivery rejection | Selected transport profile only |
 | P01-I05 | Pass: live HPKE wrong-key/tamper/AAD/replay, mapped destination, one-use lifecycle, shortened-TTL expiry, restart absent-key denial and explicit reprovisioning | Ephemeral custody only; shortened test TTLs exercise expiry branches, not a full 30-second/one-hour wait |
-| P01-I06 | Pass for no-TPM profile: generated initial/rotated canaries absent from scanned process args, journals, runtime/log/crash paths; one crash report inspected; explicit TPM2 mode rejected with no device | `coredumpctl` unavailable; firmware measurement and broader crash-collector matrix open |
+| P01-I06 | Original harness printed pass for the no-TPM profile | Scanner had no positive control, could fail open, skipped large files and ended before final scenarios; acceptance not established. |
 | P01-I07 | Pass: pinned guest boot, metadata, uninstall, injected failure and cancellation teardown; serial private keys redacted before retention | Shared self-hosted CI runner and alternate guest versions remain open |
 | P01-E01 | Pass: dedicated non-root consumer and backup restore, controlled rotation, runtime ownership and uninstall cleanup | Backup probe stores a checksum only |
 | P01-E02 | Runtime pass: native host-key encrypted credstore initial delivery, rotation and missing-key denial | Operational approval/audit benefit not demonstrated in P01; no superiority claim |
@@ -242,12 +274,12 @@ tpm-udev_0.6ubuntu1_all.deb 7ff6b02368f0db0589a509209383e8a875934bc92f3cca737633
 
 | Scenario | Earlier VM evidence | Status for that earlier profile |
 |---|---|---|
-| P01-I01 | Guest restarted the root consumer and re-resolved its invocation; it rejected a stale workload invocation, exercised two root-loader restart races and three workload restart races, and re-registered each replacement before delivery | VM pass for exercised restart paths; broader fault-injection matrix remains open |
+| P01-I01 | Guest restarted the root consumer, exercised two lookup-after-exit rounds and three workload recovery rounds, then re-registered replacements | Historical output only; workload race rejection was not asserted and acceptance is not established |
 | P01-I02 | Root loader delivery, non-root and real user-manager socket access, forged loader routing, registered fixed-account and `DynamicUser` workloads, and an unregistered workload were exercised; the broker journal recorded actual UID/GID, pidfd, unit and invocation values; user-manager/shared-UID execution remains denied/out of scope | VM pass for supported system-unit profile and explicit user-manager denial |
 | P01-I03 | Guest hid the system bus socket and blocked `getsockopt` inside the broker service namespace; an otherwise authorized native consumer failed closed in both profiles and produced no credential file | VM pass for exercised API-removal profiles; broader kernel API-removal matrix remains open |
 | P01-I04 | Guest measured a stalled root-system-unit loader denial at about 2.05 seconds, rejected malformed consumer material, and injected empty, partial, malformed, oversized and corrupt broker responses against the real native consumer | VM pass for exercised cases; additional transport/fault profiles remain open |
 | P01-I05 | Ephemeral one-use custody, expiry, wrong-key/tamper/AAD rejection, process-restart absent-key behavior, and Rust ↔ `hpke-js` ciphertext parity pass | VM pass for the selected ephemeral profile; persistent custody/recovery profile remains open |
-| P01-I06 | Guest found canaries absent from process arguments, selected service journals, runtime artifacts and the apport crash report; `LimitCORE=0` was applied, one crash report was inspected and removed without the canary. The default no-TPM path rejected explicit `tpm2` mode. The opt-in QEMU/swtpm path reported a real TPM device and passed `systemd-creds has-tpm2` library support plus explicit tpm2 encrypt/decrypt/compare | VM pass for the selected no-plaintext profile and emulated TPM-present profile; physical TPM/firmware-measured and broader exposure/custody review remain open |
+| P01-I06 | Original scanner printed absence in selected artifacts; no-TPM and emulated TPM feature probes ran | Historical output only; detector coverage and final scan were insufficient, so absence acceptance is not established |
 | P01-I07 | Rust format/lint/test checks pass; the named local runner booted the pinned guest, collected metadata, and removed QEMU/guest disks. Injected failure and SIGTERM cancellation teardown both pass | Runner/harness pass for the exercised profile; guest-version and broader matrix coverage remain open |
 | P01-E01 | Guest delivered the dummy value, validated the native consumer, wrote/restored a checksum-only backup before and after controlled broker restart rotation, removed installed units/binaries and retained protected material | VM pass for exercised path; production recovery procedure remains out of scope |
 | P01-E02 | Guest harness used an explicit host-key `LoadCredentialEncrypted=` profile, exercised initial delivery plus controlled rotation, and denied decrypt when the protected host key was temporarily absent | VM pass for host-key comparison profile; no broker-custody superiority claim |
@@ -255,10 +287,11 @@ tpm-udev_0.6ubuntu1_all.deb 7ff6b02368f0db0589a509209383e8a875934bc92f3cca737633
 ## W0 go/narrow/stop review
 
 **Recorded:** 2026-09-23. **Historical disposition:** NARROW for the earlier
-profile. **Current technical disposition:** NARROW for the selected live HPKE,
-dedicated non-root, Ubuntu 24.04/systemd 255 profile on committed SHA
-`a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57`. This is not a full-matrix go
-decision; product acceptance remains pending.
+profile. **Current technical disposition:** NARROW as a scope boundary only;
+P01-I01 and P01-I06 are not established and W0 acceptance remains open. The
+selected live HPKE, dedicated non-root, Ubuntu 24.04/systemd 255 run on
+`a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` passed its original harness,
+but the two gaps above prevent using it as complete W0 evidence.
 
 The selected P01 profile is x86_64 Linux with system-scope systemd, kernel
 6.8.0-139-generic, systemd 255, root-only loader socket `0600`, workload socket
@@ -277,6 +310,24 @@ guest profile has no TPM device and rejects explicit `--with-key=tpm2`; the
 opt-in QEMU/swtpm profile passes the TPM-present native systemd round-trip but
 reports firmware as absent. The harness records missing prerequisites as
 unsupported (exit 78) and does not turn them into passes.
+The selected units now set `KillMode=control-group`; deployments with lingering
+processes from an earlier invocation, including `KillMode=process`, are outside
+this profile. The consumer units set `TimeoutStartSec=5s`, but a stalled real
+`LoadCredential=` handoff has not yet been measured against that bound.
+The broker deliberately fails closed if a handler panics while holding its
+state mutex: later requests report `broker state poisoned` until systemd
+restarts the service. This is an availability limit, not recovered state.
+The inherited C02 abstract-route forgery, C03, C05, C12 and C13 scenarios
+do not have independent VM rows, and P01-E02 records functional native
+credstore parity without timing or operator-effort measurements. Those gaps
+remain open even after a scanner rerun.
+The old non-root and user-manager probes reached filesystem permission denial,
+not the broker's own identity checks. The historical unregistered-workload log
+assertion was run-wide and could match an earlier round; the revised harness
+scopes it to the test start but has not run in a VM. Loader lookup-after-exit did
+not force numeric PID reuse or assert descriptor closure. QEMU teardown after
+an untrappable runner `SIGKILL` has not been demonstrated. These limits must
+be addressed in a subsequent VM harness revision or kept out of the W0 claim.
 The tested minimum for this built binary is therefore systemd 255 on the
 selected Ubuntu profile; a systemd-252-compatible build remains unclaimed.
 P03/P02.6 fleet cutover must not broaden beyond this profile without a new

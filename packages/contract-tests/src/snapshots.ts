@@ -30,11 +30,19 @@ export class SnapshotRecorder {
   constructor(private readonly snapshotFile = SNAPSHOT_FILE) {}
 
   record(name: string, result: { status: number; contentType: string | null; headers?: Headers; body: unknown }): void {
-    this.records[normalizeRecordName(name)] = normalizeHttpResult(result);
+    this.recordUnique(name, normalizeHttpResult(result));
   }
 
   recordValue(name: string, value: unknown): void {
-    this.records[normalizeRecordName(name)] = normalizeSnapshotValue(value);
+    this.recordUnique(name, normalizeSnapshotValue(value));
+  }
+
+  private recordUnique(name: string, value: unknown): void {
+    const key = normalizeRecordName(name);
+    if (Object.hasOwn(this.records, key)) {
+      throw new Error(`Duplicate contract snapshot name: ${key}`);
+    }
+    this.records[key] = value;
   }
 
   async finish(): Promise<void> {

@@ -2,7 +2,7 @@
 
 This is the current command reference. The [Linux Fleet Pilot](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the Obsidian vault. A passing workspace suite does not establish the new broker, browser or deployment guarantees.
 
-The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are in this repository. The selected local QEMU/KVM profile passed on source SHA `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` on 2026-09-23; a shared self-hosted CI runner remains an explicit prerequisite and is never inferred from hosted CI.
+The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are in this repository. The selected local QEMU/KVM profile passed its original harness on source SHA `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` on 2026-09-23, but P01-I01 and P01-I06 were not established by that harness. A revised committed-SHA VM run is required. A shared self-hosted CI runner remains an explicit prerequisite and is never inferred from hosted CI.
 
 The proposed landing-aligned dashboard rebuild and secret-input acceptance plans are maintained in the Obsidian vault. The proposed Rust controller port is gated by the [Controller Contract Suite](Controller%20Contract%20Suite.md), an HTTP-level compatibility suite run against both servers; it is not implemented.
 
@@ -43,7 +43,7 @@ The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build
 
 | Command | What it runs | Additional requirements |
 |---|---|---|
-| `npm test` | Default workspace tests | Built shared package inputs where imported; gated DB/Redis suites can skip |
+| `npm test` | Ordinary workspace tests, excluding the separately gated P00 contract package | Built shared package inputs where imported; gated DB/Redis suites can skip |
 | `npm test --workspace=packages/sps-server` | SPS Vitest suite | Same gating behavior |
 | `npm run test:integration` | SPS Redis integration | Redis; script sets `SPS_REDIS_INTEGRATION=1` |
 | `npm run test:e2e --workspace=packages/sps-server` | SPS `tests/e2e.test.ts` | PostgreSQL and `DATABASE_URL`; script sets `SPS_PG_INTEGRATION=1` |
@@ -72,7 +72,7 @@ The [Playwright config](../../packages/dashboard/playwright.config.ts) starts SP
 
 ## CI ownership
 
-`.github/workflows/ci.yml` runs the workspace build, landing workflow checks, default tests, Redis integration, PostgreSQL SPS tests, a separate P00 contract job, and the pinned Rust format/lint/test gates. The P00 job writes a Vitest JSON report and fails if any contract case or suite was skipped. `.github/workflows/fleet-vm.yml` is manual-only and requires the labeled disposable QEMU/KVM runner; hosted CI and a successful Rust job do not establish systemd VM, stock-client or fleet evidence.
+`.github/workflows/ci.yml` runs the workspace build, landing workflow checks, default tests, Redis integration, PostgreSQL SPS tests, a separate P00 contract job, and the pinned Rust format/lint/test gates. The P00 job writes a Vitest JSON report and fails if any contract case or suite was skipped. The PostgreSQL job checks that every gated SPS test file executed passing cases. `.github/workflows/fleet-vm.yml` is manual-only and requires the labeled disposable QEMU/KVM runner; hosted CI and a successful Rust job do not establish systemd VM, stock-client or fleet evidence.
 
 ## Evidence and troubleshooting
 

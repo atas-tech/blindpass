@@ -5,6 +5,7 @@ After=blindpass-broker.service
 
 [Service]
 Type=simple
+KillMode=control-group
 User=blindpass-agent
 Group=blindpass-workload
 ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload workload-a --unit blindpass-workload.service --operation health --hold-seconds 3600

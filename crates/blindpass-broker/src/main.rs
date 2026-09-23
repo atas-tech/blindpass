@@ -66,17 +66,9 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
             }
             "--workload" => {
                 let registration = next(&args, &mut index)?;
-                let fields: Vec<&str> = registration.split(':').collect();
-                if fields.len() != 5 {
-                    return Err("--workload requires NODE:WORKLOAD:UNIT:UID:INVOCATION".to_owned());
-                }
-                state.workloads.push(WorkloadRegistration {
-                    node_id: fields[0].to_owned(),
-                    workload_id: fields[1].to_owned(),
-                    unit: fields[2].to_owned(),
-                    account: format!("uid:{}", fields[3]),
-                    invocation_id: fields[4].to_owned(),
-                });
+                state
+                    .workloads
+                    .push(parse_workload_registration(&registration)?);
             }
             "--help" | "-h" => {
                 print_help();
@@ -87,6 +79,29 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
         index += 1;
     }
     run(config, state).map_err(|error| error.to_string())
+}
+
+fn parse_workload_registration(value: &str) -> Result<WorkloadRegistration, String> {
+    const FORMAT: &str = "--workload requires NODE:WORKLOAD:UNIT:UID:INVOCATION";
+    let (node, rest) = value.split_once(':').ok_or(FORMAT)?;
+    let (workload, rest) = rest.split_once(':').ok_or(FORMAT)?;
+    let (rest, invocation) = rest.rsplit_once(':').ok_or(FORMAT)?;
+    let (unit, uid) = rest.rsplit_once(':').ok_or(FORMAT)?;
+    if node.is_empty()
+        || workload.is_empty()
+        || unit.is_empty()
+        || invocation.is_empty()
+        || uid.parse::<u32>().is_err()
+    {
+        return Err(FORMAT.to_owned());
+    }
+    Ok(WorkloadRegistration {
+        node_id: node.to_owned(),
+        workload_id: workload.to_owned(),
+        unit: unit.to_owned(),
+        account: format!("uid:{uid}"),
+        invocation_id: invocation.to_owned(),
+    })
 }
 
 fn configured_delivery_fault() -> Result<Option<DeliveryFault>, String> {
@@ -155,7 +170,7 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use super::configured_test_lifetime_value;
+    use super::{configured_test_lifetime_value, parse_workload_registration};
     use std::time::Duration;
 
     #[test]
@@ -172,5 +187,14 @@ mod tests {
         );
         assert!(configured_test_lifetime_value("TTL", Some("0"), true, default).is_err());
         assert!(configured_test_lifetime_value("TTL", Some("NaN"), true, default).is_err());
+    }
+
+    #[test]
+    fn workload_parser_preserves_colons_in_unit_names() {
+        let registration =
+            parse_workload_registration("node:work:foo:bar.service:1001:inv").unwrap();
+        assert_eq!(registration.unit, "foo:bar.service");
+        assert_eq!(registration.account, "uid:1001");
+        assert!(parse_workload_registration("node:work:unit:bad:inv").is_err());
     }
 }

@@ -6,6 +6,8 @@ After=blindpass-broker.service
 
 [Service]
 Type=oneshot
+KillMode=control-group
+TimeoutStartSec=5s
 User=blindpass-consumer
 Group=blindpass-consumer
 RuntimeDirectory=blindpass-consumer

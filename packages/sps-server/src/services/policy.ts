@@ -139,7 +139,6 @@ export class ExchangePolicyEngine {
     });
 
     if (!matchedRule) {
-      console.log("[EVALUATE DEBUG] No matched rule found for input:", JSON.stringify(input));
       return null;
     }
 

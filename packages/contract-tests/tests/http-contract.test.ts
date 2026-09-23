@@ -75,8 +75,10 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
 
   async function call<T = unknown>(name: string, path: string, init: RequestInit = {}): Promise<Awaited<ReturnType<typeof httpRequest<T>>>> {
     const result = await httpRequest<T>(fixture.baseUrl, path, init);
-    snapshots.record(name, result);
-    namedResults.set(name, result);
+    if (!name.startsWith("helper.")) {
+      snapshots.record(name, result);
+      namedResults.set(name, result);
+    }
     return result;
   }
 
@@ -538,7 +540,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(raceStatuses).toEqual([200, 410, 410, 410, 410, 410, 410, 410]);
   });
 
-  it("CT12 makes revocation requester/admin-authorized and idempotent", async () => {
+  it("CT12 records requester and configured-issuer admin-claim revocation", async () => {
     const requesterExchange = await createExchange("CT12 requester revoke");
     const requesterId = requireBody(requesterExchange).exchange_id;
     const revoke = await call("CT12.revoke.requester", `/api/v2/secret/exchange/revoke/${requesterId}`, withBearer(agent(fixture, "requester").token, { method: "DELETE" }));
@@ -568,8 +570,14 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
 
     const adminExchange = await createExchange("CT12 admin revoke");
     const adminId = requireBody(adminExchange).exchange_id;
+    const nonAdminToken = adapter.externalJwt({ admin: false });
+    const nonAdminRevoke = await httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/revoke/${adminId}`, withBearer(nonAdminToken, { method: "DELETE" }));
+    expect(nonAdminRevoke.status).toBe(410);
+    const foreignAdminToken = adapter.externalJwt({ admin: true, workspace_id: "foreign-workspace" });
+    const foreignAdminRevoke = await httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/revoke/${adminId}`, withBearer(foreignAdminToken, { method: "DELETE" }));
+    expect(foreignAdminRevoke.status).toBe(410);
     const adminToken = adapter.externalJwt({ admin: true });
-    const adminRevoke = await call("CT12.revoke.admin", `/api/v2/secret/exchange/revoke/${adminId}`, withBearer(adminToken, { method: "DELETE" }));
+    const adminRevoke = await call("CT12.revoke.issuer-admin-claim", `/api/v2/secret/exchange/revoke/${adminId}`, withBearer(adminToken, { method: "DELETE" }));
     expect(adminRevoke.status).toBe(200);
     const adminRevokedStatus = await call("CT12.status.admin-revoked", `/api/v2/secret/exchange/status/${adminId}`, withBearer(agent(fixture, "requester").token));
     expect(requireBody(adminRevokedStatus)).toEqual({ status: "revoked" });
@@ -621,6 +629,20 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     addCanaries(fixture, oldRefresh, refreshWorkspaceAccess);
     const rotated = await call<{ refresh_token: string; access_token: string }>("CT14.refresh.valid", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: oldRefresh }));
     expect(rotated.status).toBe(200);
+    const cookie = rotated.headers.get("set-cookie");
+    expect(cookie).toMatch(/^sps_refresh_token=[^;]+;/);
+    const cookieAttributes = new Map(cookie!.split(";").slice(1).map((part) => {
+      const [name, ...value] = part.trim().split("=");
+      return [name!.toLowerCase(), value.join("=")];
+    }));
+    snapshots.recordValue("CT14.refresh.cookie", {
+      path: cookieAttributes.get("path"),
+      expires: cookieAttributes.has("expires") ? "<timestamp>" : null,
+      max_age: cookieAttributes.has("max-age") ? "<seconds>" : null,
+      http_only: cookieAttributes.has("httponly"),
+      same_site: cookieAttributes.get("samesite"),
+      secure: cookieAttributes.has("secure")
+    });
     const rotatedBody = requireBody(rotated);
     addCanaries(fixture, rotatedBody.refresh_token, rotatedBody.access_token);
 

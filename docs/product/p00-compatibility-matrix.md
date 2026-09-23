@@ -35,9 +35,9 @@ The following 13 routes are the retained machine contract. The later controller 
 | `POST /api/v2/secret/exchange/fulfill` | Authorized fulfiller agent access token + fulfillment token | CT11, CT17–CT18 |
 | `POST /api/v2/secret/exchange/submit/:id` | Authorized fulfiller agent access token | CT11, CT17–CT18 |
 | `GET /api/v2/secret/exchange/retrieve/:id` | Requester agent access token | CT10–CT12, CT17–CT18 |
-| `DELETE /api/v2/secret/exchange/revoke/:id` | Requester or administrator authorization | CT12, CT17–CT18 |
+| `DELETE /api/v2/secret/exchange/revoke/:id` | Requester or configured external issuer's `admin: true` claim in the same asserted workspace; target authorization decision open | CT12, CT17–CT18 |
 | `POST /api/v2/agents/token` | Database-backed bootstrap key as Bearer or `x-agent-api-key` | CT02, CT15, CT18 |
-| `POST /api/v2/auth/refresh` | Refresh credential in body/cookie | CT14, CT18 |
+| `POST /api/v2/auth/refresh` | Hosted cookie path; body response is conditional in test mode | CT14, CT18 |
 
 The browser receives only the public key and description before submission. Encrypted payloads are one-use state, and audit output is metadata-only. The client is intentionally allowed to hold the plaintext after decryption; P00 does not claim model or runtime containment.
 
@@ -46,7 +46,7 @@ The browser receives only the public key and description before submission. Encr
 | Contract item | Baseline decision |
 |---|---|
 | Tenant mapping | Every seeded agent, policy row, exchange and audit record maps to one `workspace_id`; cross-workspace requests fail closed. |
-| Roles | `workspace_admin` administers policy/agents and may perform the tested admin approval/revoke path; agent identities request, fulfill or observe according to policy. |
+| Roles | `workspace_admin` administers policy/agents and exercises approval. CT12 revocation instead accepts a configured external issuer's `admin: true` agent claim in the same asserted workspace. This is observed TypeScript behavior, not an approved controller policy. |
 | Bootstrap/recovery | The existing admin session and agent bootstrap-key rotation/revocation endpoints are the P00 fixture contract. New host enrollment/recovery belongs to the controller/broker phases. |
 | External workload identity | Ed25519 JWT plus configured JWKS, issuer and audience; wrong issuer/audience and malformed keys are rejected. |
 | Signed browser links | HMAC-derived domain secret, request id, expiry and scope; metadata and submit scopes are not interchangeable. |
@@ -58,4 +58,13 @@ The browser receives only the public key and description before submission. Encr
 
 Earlier 2026-09-23 evidence recorded CT01–CT18 and CC01 over real HTTP (19 tests), CV01–CV06 (6 tests), two adapter cleanup/isolation tests, the health/readiness behavior after Redis outage/recovery, and dashboard browser E2E against spawned and base-URL SPS servers. That run preceded the review corrections below.
 
-After the review corrections, the TypeScript adapter completed 32/32 contract, vector, normalization, snapshot-fault and adapter-isolation tests against the disposable PostgreSQL 16 and Redis 7 stack. The regenerated [ts-baseline.json](../../packages/contract-tests/fixtures/snapshots/ts-baseline.json) then passed a second comparison run with no skipped tests. The P00-I06 intentional snapshot mismatch case passed, and the skip gate correctly failed an otherwise successful no-SUT run that skipped the HTTP and adapter suites. The PostgreSQL-gated SPS suite passed 178 tests with 2 Redis-gated cases skipped; `npm run test:landing` passed. The dedicated `SUT=base` contract adapter and hosted PR-CI execution remain open. These are TypeScript-baseline checks, not controller parity or fleet evidence.
+The last committed-SHA baseline execution is recorded in the [Controller Contract Suite](../testing/Controller%20Contract%20Suite.md): 34 TypeScript adapter tests and 19 `SUT=base` HTTP cases on `a18ecb1e26e576c8475f0e68d7e538278a5f4e0e`. The PostgreSQL SPS suite passed 179 tests with 2 Redis-gated skips; the separate Redis integration suite executed its 2 cases. Hosted PR CI is not claimed locally. These are TypeScript-baseline checks, not controller parity or fleet evidence.
+
+On the current uncommitted review tree, the revised `SUT=ts` suite passed 35/35 with no skips and the harness-spawned `SUT=base` HTTP suite passed 19/19 against a disposable PostgreSQL 16/Redis 7 stack. The PostgreSQL SPS suite passed 179 cases with 2 Redis-gated skips; all 18 PostgreSQL-gated files executed, and the separate Redis integration suite passed 2/2. SPS E2E passed 9/9. These results do not replace a committed-SHA run or hosted PR CI evidence.
+
+## Open contract decisions before P02
+
+- **CT12:** Decide whether a configured external issuer may authorize cross-requester revoke using its `admin: true` claim and self-asserted `workspace_id`. The TypeScript SPS currently accepts this, subject to workspace equality. The new CT12 negatives cover `admin: false` and a foreign workspace, but acceptance of the positive case remains a product/security decision.
+- **CT14:** Decide the controller's auth mode and response shape. The current snapshot uses hosted mode under `NODE_ENV=test`, where the refresh token appears in both the cookie and response body. Hosted production omits that body field. CT14 now records cookie attributes; the body field is conditional test behavior, not a required controller response.
+
+P00 exit remains open until these decisions are recorded in the vault and the revised evidence is reconciled on a committed SHA and hosted PR CI.

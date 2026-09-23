@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 import { SnapshotRecorder } from "../src/snapshots.js";
 
 describe("contract snapshot failure detection", () => {
+  it("rejects duplicate names before one observation can overwrite another", () => {
+    const recorder = new SnapshotRecorder();
+    recorder.recordValue("CT12.same", { status: 200 });
+    expect(() => recorder.recordValue("CT12.same", { status: 403 })).toThrow("Duplicate contract snapshot name");
+  });
   it("P00-I06 fails on an intentionally mismatched committed snapshot", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "p00-snapshot-fault-"));
     const snapshotFile = path.join(tempDir, "snapshot.json");

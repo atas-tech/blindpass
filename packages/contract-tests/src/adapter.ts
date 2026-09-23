@@ -286,11 +286,16 @@ class TsServerAdapter implements ServerAdapter {
     const hmacSecret = `contract-hmac-${randomBytes(24).toString("hex")}`;
     const seedToken = `contract-seed-${randomBytes(24).toString("hex")}`;
     const childEnv: NodeJS.ProcessEnv = {
-      ...process.env,
+      PATH: process.env.PATH,
+      TMPDIR: process.env.TMPDIR,
+      LANG: process.env.LANG,
+      TZ: process.env.TZ,
+      DOTENV_CONFIG_PATH: "/dev/null",
       NODE_ENV: "test",
       SPS_HOST: "127.0.0.1",
       PORT: String(port),
       SPS_BASE_URL: this.baseUrl,
+      SPS_BODY_LIMIT: "1048576",
       SPS_UI_BASE_URL: process.env.CONTRACT_UI_BASE_URL?.trim() || "http://127.0.0.1:5175",
       SPS_CORS_ALLOWED_ORIGINS: "http://allowed.contract.test",
       DATABASE_URL: withSearchPath(databaseUrl, this.schema),

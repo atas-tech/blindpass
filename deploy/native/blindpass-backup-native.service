@@ -4,6 +4,7 @@ Description=BlindPass native encrypted-credential baseline backup probe
 
 [Service]
 Type=oneshot
+KillMode=control-group
 User=blindpass-backup
 Group=blindpass-backup
 RuntimeDirectory=blindpass-backup-native

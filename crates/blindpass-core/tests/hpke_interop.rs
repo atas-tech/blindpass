@@ -51,6 +51,21 @@ fn opens_rfc_9180_appendix_a_2_1_1_base_mode_vector() {
         .open_with_info(&enc, &ciphertext, &info, &aad)
         .unwrap();
     assert_eq!(opened.as_bytes(), b"Beauty is truth, truth beauty");
+    assert!(
+        recipient
+            .open_with_info(&enc, &ciphertext, b"wrong info", &aad)
+            .is_err()
+    );
+    assert!(
+        recipient
+            .open_with_info(&[0; 32], &ciphertext, &info, &aad)
+            .is_err()
+    );
+    assert!(
+        recipient
+            .open_with_info(&enc, &ciphertext[..16], &info, &aad)
+            .is_err()
+    );
 }
 
 fn decode(input: &str) -> Vec<u8> {

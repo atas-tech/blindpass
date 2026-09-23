@@ -27,8 +27,12 @@ at the beginning and end of a run; use only a disposable test Redis.
 
 To target an existing server, use `SUT=base CONTRACT_BASE_URL=...` and provide
 the same seed configuration (`CONTRACT_SEED_TOKEN`) or a fixture file through
-`CONTRACT_FIXTURE_FILE`. A base server must be configured with the matching
-test-only seed route and must not be a production deployment.
+`CONTRACT_FIXTURE_FILE`. The committed base job uses a harness-spawned SPS
+with the generated JWKS issuer/audience, CORS origin, hosted test mode, seeded
+policy and secret registry, test TTL/rate overrides, and disposable PostgreSQL
+and Redis stores. An arbitrary external server will not meet that profile.
+The base server must enable the matching test-only seed route and must not be
+a production deployment.
 
 `UPDATE_CONTRACT_SNAPSHOTS=1` records sanitized HTTP snapshots under
 `fixtures/snapshots/`. Snapshot files contain normalized identifiers,

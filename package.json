@@ -18,7 +18,7 @@
     "publish:clawhub": "bash scripts/publish_clawhub.sh",
     "dev": "npm run dev --workspaces --if-present",
     "dev:e2e": "node scripts/dev-e2e.mjs",
-    "test": "npm run test --workspaces --if-present",
+    "test": "node scripts/tests/run-workspace-tests.mjs",
     "test:landing": "node --check landing/dist/script.js && node --test landing/tests/workflow.test.mjs",
     "test:e2e": "npm run test:e2e --workspace=packages/dashboard",
     "test:integration": "npm run test:integration --workspace=packages/sps-server",

@@ -245,18 +245,6 @@
       "retry-after": "<seconds>"
     }
   },
-  "helper.secret.requester.CT03 hosted request": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT03.request.external-jwks": {
     "status": 201,
     "content_type": "application/json",
@@ -322,18 +310,6 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.secret.requester.CT04 metadata request": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT04.metadata.correct": {
     "status": 200,
     "content_type": "application/json",
@@ -387,57 +363,11 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.secret.requester.CT05 submit request": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.submit.<id>": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "status": "submitted"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT05.submit.repeat": {
     "status": 409,
     "content_type": "application/json",
     "body": {
       "error": "Already submitted"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.secret.requester.CT05 wrong scope request": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.secret.requester.CT05 oversized request": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
     },
     "headers": {
       "access-control-allow-credentials": "true"
@@ -456,35 +386,11 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.secret.requester.CT06 pending": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT06.pending": {
     "status": 200,
     "content_type": "application/json",
     "body": {
       "status": "pending"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.secret.requester.CT06 submitted": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
     },
     "headers": {
       "access-control-allow-credentials": "true"
@@ -520,29 +426,6 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.secret.requester.CT06 consumed": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.retrieve.consumed": {
-    "status": 200,
-    "content_type": "application/json",
-    "body": {
-      "ciphertext": "<ciphertext>",
-      "enc": "<enc>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT06.consumed": {
     "status": 410,
     "content_type": "application/json",
@@ -553,35 +436,11 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.secret.requester.CT06 expired": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT06.expired": {
     "status": 410,
     "content_type": "application/json",
     "body": {
       "status": "expired"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.secret.requester.CT07 before submit": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
     },
     "headers": {
       "access-control-allow-credentials": "true"
@@ -618,18 +477,6 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.secret.requester.CT07 foreign": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT07.retrieve.foreign": {
     "status": 410,
     "content_type": "application/json",
@@ -651,18 +498,6 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.secret.requester.CT07 race": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT07.retrieve.race": [
     200,
     410,
@@ -673,35 +508,11 @@
     410,
     410
   ],
-  "helper.secret.requester.CT08 pending expiry": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT08.pending.expired": {
     "status": 410,
     "content_type": "application/json",
     "body": {
       "status": "expired"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.secret.requester.CT08 submitted expiry": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
     },
     "headers": {
       "access-control-allow-credentials": "true"
@@ -722,29 +533,6 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.exchange.request": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "exchange_id": "<id>",
-      "expires_at": "<timestamp>",
-      "fulfillment_token": "<fulfillment-token>",
-      "policy": {
-        "approval_reference": null,
-        "approval_required": false,
-        "fulfiller_ring": null,
-        "mode": "allow",
-        "reason": "contract allow fixture",
-        "requester_ring": null,
-        "rule_id": "contract-allow",
-        "secret_name": "stripe.api_key.prod"
-      },
-      "status": "pending"
     },
     "headers": {
       "access-control-allow-credentials": "true"
@@ -875,33 +663,6 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.exchange.fulfill": {
-    "status": 200,
-    "content_type": "application/json",
-    "body": {
-      "exchange_id": "<id>",
-      "expires_at": "<timestamp>",
-      "fulfilled_by": "contract-fulfiller",
-      "policy": {
-        "approval_reference": null,
-        "approval_required": false,
-        "fulfiller_ring": null,
-        "mode": "allow",
-        "reason": "contract allow fixture",
-        "requester_ring": null,
-        "rule_id": "contract-allow",
-        "secret_name": "stripe.api_key.prod"
-      },
-      "purpose": "CT10 lifecycle",
-      "requester_id": "contract-requester",
-      "requester_public_key": "<requester-public-key>",
-      "secret_name": "stripe.api_key.prod",
-      "status": "reserved"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT10.status.reserved": {
     "status": 200,
     "content_type": "application/json",
@@ -912,36 +673,11 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.exchange.submit": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "fulfilled_by": "contract-fulfiller",
-      "retrieve_by": "<timestamp>",
-      "status": "submitted"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT10.status.submitted": {
     "status": 200,
     "content_type": "application/json",
     "body": {
       "status": "submitted"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.exchange.retrieve": {
-    "status": 200,
-    "content_type": "application/json",
-    "body": {
-      "ciphertext": "<ciphertext>",
-      "enc": "<enc>",
-      "fulfilled_by": "contract-fulfiller",
-      "secret_name": "stripe.api_key.prod"
     },
     "headers": {
       "access-control-allow-credentials": "true"
@@ -1115,45 +851,6 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "helper.CT11.parallel.fulfill": {
-    "status": 200,
-    "content_type": "application/json",
-    "body": {
-      "exchange_id": "<id>",
-      "expires_at": "<timestamp>",
-      "fulfilled_by": "contract-fulfiller",
-      "policy": {
-        "approval_reference": null,
-        "approval_required": false,
-        "fulfiller_ring": null,
-        "mode": "allow",
-        "reason": "contract allow fixture",
-        "requester_ring": null,
-        "rule_id": "contract-allow",
-        "secret_name": "stripe.api_key.prod"
-      },
-      "purpose": "CT11 parallel retrieve",
-      "requester_id": "contract-requester",
-      "requester_public_key": "<requester-public-key>",
-      "secret_name": "stripe.api_key.prod",
-      "status": "reserved"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
-  "helper.CT11.parallel.submit": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "fulfilled_by": "contract-fulfiller",
-      "retrieve_by": "<timestamp>",
-      "status": "submitted"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
-    }
-  },
   "CT11.retrieve.race": [
     200,
     410,
@@ -1294,7 +991,7 @@
       "access-control-allow-credentials": "true"
     }
   },
-  "CT12.revoke.admin": {
+  "CT12.revoke.issuer-admin-claim": {
     "status": 200,
     "content_type": "application/json",
     "body": {
@@ -1445,6 +1142,14 @@
     "headers": {
       "access-control-allow-credentials": "true"
     }
+  },
+  "CT14.refresh.cookie": {
+    "expires": "<timestamp>",
+    "http_only": true,
+    "max_age": "<seconds>",
+    "path": "/api/v2/auth",
+    "same_site": "Lax",
+    "secure": false
   },
   "CT14.refresh.valid": {
     "status": 200,
@@ -2822,18 +2527,6 @@
       "code": "FST_ERR_VALIDATION",
       "error": "Bad Request",
       "message": "body/ciphertext must NOT have more than 524288 characters"
-    }
-  },
-  "helper.secret.requester.CC01 client shape": {
-    "status": 201,
-    "content_type": "application/json",
-    "body": {
-      "confirmation_code": "<confirmation-code>",
-      "request_id": "<id>",
-      "secret_url": "<secret-url>"
-    },
-    "headers": {
-      "access-control-allow-credentials": "true"
     }
   },
   "CC01.secret-status": {

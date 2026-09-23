@@ -4,6 +4,7 @@ Description=BlindPass native encrypted-credential baseline consumer
 
 [Service]
 Type=oneshot
+KillMode=control-group
 User=blindpass-consumer
 Group=blindpass-consumer
 RuntimeDirectory=blindpass-consumer-native
