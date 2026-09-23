@@ -23,7 +23,7 @@ assert_canary_absent() {
     fi
     if journalctl --no-pager -u blindpass-broker.service -u blindpass-consumer.service \
         -u blindpass-backup.service -u blindpass-workload.service -u blindpass-loader-nonroot.service \
-        -u blindpass-loader-race.service \
+        -u blindpass-loader-race.service -u blindpass-crash.service \
         | grep -F -- "$canary" >/dev/null 2>&1; then
         printf 'P01-FAIL %s appeared in a service journal\n' "$canary" >&2
         exit 1
@@ -46,6 +46,7 @@ install -m 0755 /tmp/blindpass-broker /usr/libexec/blindpass-broker
 install -m 0755 /tmp/blindpass-backup-probe /usr/libexec/blindpass-backup-probe
 install -m 0755 /tmp/blindpass-consumer /usr/libexec/blindpass-consumer
 install -m 0755 /tmp/blindpass-custody-probe /usr/libexec/blindpass-custody-probe
+install -m 0755 /tmp/blindpass-crash-probe /usr/libexec/blindpass-crash-probe
 install -m 0755 /tmp/blindpass-credential-loader /usr/libexec/blindpass-credential-loader
 install -m 0755 /tmp/blindpass-workload-client /usr/libexec/blindpass-workload-client
 install -m 0755 /tmp/blindpass-transport-probe /usr/libexec/blindpass-transport-probe
@@ -99,6 +100,7 @@ systemctl is-failed --quiet blindpass-workload.service && {
     exit 1
 }
 workload_uid=$(id -u blindpass-agent)
+workload_gid=$(id -g blindpass-agent)
 [[ -n "$workload_uid" ]] || { printf 'P01-FAIL workload uid unavailable\n' >&2; exit 1; }
 
 install -d -m 0755 /etc/systemd/system/blindpass-broker.service.d
@@ -114,6 +116,12 @@ write_workload_registration() {
 write_workload_registration
 systemctl daemon-reload
 if ! systemctl start blindpass-broker.service; then
+    if journalctl -u blindpass-broker.service --no-pager -n 80 \
+        | grep -Eq 'LIBSYSTEMD_[0-9]+|SO_PEERPIDFD unavailable|GetUnitByPIDFD unavailable'; then
+        printf 'P01-UNSUPPORTED guest lacks the systemd pidfd API required by this broker profile\n' >&2
+        journalctl -u blindpass-broker.service --no-pager -n 80 >&2 || true
+        exit 78
+    fi
     printf 'P01-FAIL broker start command failed\n' >&2
     systemctl status blindpass-broker.service --no-pager -l >&2 || true
     journalctl -u blindpass-broker.service --no-pager -n 80 >&2 || true
@@ -140,6 +148,17 @@ journalctl -u blindpass-workload.service --no-pager -n 20 | grep -q 'WORKLOAD_RE
     exit 1
 }
 printf 'P01-I02 registered non-root workload: PASS\n'
+identity_workload_trace=$(journalctl -u blindpass-broker.service --no-pager -o cat \
+    | grep 'identity peer role=workload' \
+    | grep 'unit=blindpass-workload.service' \
+    | tail -n 1 || true)
+[[ "$identity_workload_trace" =~ uid=$workload_uid\ gid=$workload_gid\ pidfd=true\ unit=blindpass-workload\.service\ invocation=[0-9a-f]{32} ]] || {
+    printf 'P01-FAIL successful workload identity trace was not recorded\n' >&2
+    printf 'P01-DIAG identity_workload_trace=%s\n' "$identity_workload_trace" >&2
+    journalctl -u blindpass-broker.service --no-pager -o cat -n 80 >&2 || true
+    exit 1
+}
+printf 'P01-I02 workload identity trace: PASS (%s)\n' "$identity_workload_trace"
 
 install -d -m 0700 /run/blindpass-custody-probe
 if ! /usr/libexec/blindpass-custody-probe --workdir /run/blindpass-custody-probe; then
@@ -222,6 +241,17 @@ printf 'P01-I04 stalled loader frame within broker deadline: PASS (%s)\n' "$stal
 systemctl start blindpass-consumer.service
 systemctl is-active --quiet blindpass-consumer.service || { printf 'P01-FAIL consumer did not activate\n' >&2; exit 1; }
 printf 'P01-E01 initial native consumer: PASS\n'
+identity_loader_trace=$(journalctl -u blindpass-broker.service --no-pager -o cat \
+    | grep 'identity peer role=loader' \
+    | grep 'unit=blindpass-consumer.service' \
+    | tail -n 1 || true)
+[[ "$identity_loader_trace" =~ uid=0\ gid=0\ pidfd=true\ unit=blindpass-consumer\.service\ invocation=[0-9a-f]{32} ]] || {
+    printf 'P01-FAIL successful loader identity trace was not recorded\n' >&2
+    printf 'P01-DIAG identity_loader_trace=%s\n' "$identity_loader_trace" >&2
+    journalctl -u blindpass-broker.service --no-pager -o cat -n 80 >&2 || true
+    exit 1
+}
+printf 'P01-I02 loader identity trace: PASS (%s)\n' "$identity_loader_trace"
 systemctl restart blindpass-consumer.service
 systemctl is-active --quiet blindpass-consumer.service || {
     printf 'P01-FAIL consumer restart could not re-resolve loader identity\n' >&2
@@ -639,6 +669,23 @@ systemctl is-active --quiet blindpass-consumer-native.service || {
     exit 1
 }
 printf 'P01-E02 native encrypted credstore controlled rotation: PASS\n'
+native_host_key=/var/lib/systemd/credential.secret
+native_recovery_plaintext=/run/blindpass-consumer/native-recovery
+[[ -f "$native_host_key" ]] || {
+    printf 'P01-FAIL native host-key profile did not create its protected key\n' >&2
+    exit 1
+}
+mv "$native_host_key" "$native_host_key.p01-missing"
+native_recovery_status=0
+systemd-creds --no-ask-password --with-key=host decrypt \
+    "$native_credential" "$native_recovery_plaintext" >/dev/null 2>&1 || native_recovery_status=$?
+mv "$native_host_key.p01-missing" "$native_host_key"
+rm -f "$native_recovery_plaintext"
+[[ "$native_recovery_status" != 0 ]] || {
+    printf 'P01-FAIL native encrypted credstore decrypted without its host key\n' >&2
+    exit 1
+}
+printf 'P01-E02 native encrypted credstore missing-key recovery denial: PASS\n'
 
 tpm_probe_status=0
 tpm_capability=$(systemd-analyze has-tpm2 2>&1) || tpm_probe_status=$?
@@ -671,7 +718,12 @@ elif [[ "$tpm_probe_available" == yes ]]; then
     fi
     printf 'P01-I06 TPM-required custody profile: UNSUPPORTED (TPM absent; no host-key fallback)\n'
 else
-    printf 'P01-I06 TPM-required custody profile: NOT_CLAIMED (systemd TPM capability probe unavailable)\n'
+    if systemd-creds --no-ask-password --with-key=tpm2 --name=api-key \
+        encrypt /etc/blindpass/api-key "$tpm_credential" >/dev/null 2>&1; then
+        printf 'P01-FAIL TPM-required profile silently accepted after unavailable capability probe\n' >&2
+        exit 1
+    fi
+    printf 'P01-I06 TPM-required custody profile: UNSUPPORTED (capability probe unavailable; explicit tpm2 mode rejected)\n'
 fi
 rm -f "$tpm_credential" "$tpm_plaintext"
 
@@ -724,6 +776,43 @@ for case_name in empty partial malformed oversized; do
 done
 printf 'P01-I04 empty/partial/malformed/oversized consumer material: PASS\n'
 
+cat >/etc/systemd/system/blindpass-crash.service <<'UNIT'
+[Unit]
+Description=BlindPass P01 core-artifact probe
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/libexec/blindpass-crash-probe
+LimitCORE=0
+UNIT
+systemctl daemon-reload
+crash_started_at=$(date --iso-8601=seconds)
+if systemctl start blindpass-crash.service >/dev/null 2>&1; then
+    printf 'P01-FAIL crash probe unexpectedly exited successfully\n' >&2
+    exit 1
+fi
+if command -v coredumpctl >/dev/null 2>&1; then
+    crash_records=$(coredumpctl --no-pager --no-legend --since "$crash_started_at" 2>/dev/null \
+        | grep -F 'P01-CRASH-CANARY' || true)
+    [[ -z "$crash_records" ]] || {
+        printf 'P01-FAIL crash canary appeared in coredump metadata: %s\n' "$crash_records" >&2
+        exit 1
+    }
+fi
+crash_artifact_count=0
+while IFS= read -r -d '' crash_artifact; do
+    crash_artifact_count=$((crash_artifact_count + 1))
+    if grep -aF -- 'P01-CRASH-CANARY' "$crash_artifact" >/dev/null 2>&1; then
+        printf 'P01-FAIL crash canary appeared in artifact %s\n' "$crash_artifact" >&2
+        exit 1
+    fi
+    rm -f -- "$crash_artifact"
+done < <(find /var/crash /var/lib/systemd/coredump -xdev -type f \
+    -newermt "$crash_started_at" -print0 2>/dev/null)
+printf 'P01-I06 core-artifact canary review: PASS (reports_inspected=%s coredumpctl=%s)\n' \
+    "$crash_artifact_count" "$(command -v coredumpctl >/dev/null 2>&1 && printf available || printf unavailable)"
+assert_canary_absent 'P01-CRASH-CANARY'
+
 assert_canary_absent 'P01-INITIAL-CANARY'
 printf 'P01-I06 initial canary absent from args/journals/runtime artifacts: PASS\n'
 
@@ -771,10 +860,33 @@ systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
 systemctl restart blindpass-broker.service
 systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
 
+cat >/etc/systemd/system/blindpass-broker.service.d/p01-kernel-api-removed.conf <<'UNIT'
+[Service]
+SystemCallFilter=~getsockopt
+UNIT
+systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+systemctl restart blindpass-broker.service
+rm -f /run/blindpass-consumer/api-key
+if systemctl start blindpass-consumer.service >/dev/null 2>&1; then
+    printf 'P01-FAIL broker delivered after getsockopt API removal\n' >&2
+    exit 1
+fi
+[[ ! -e /run/blindpass-consumer/api-key ]] || {
+    printf 'P01-FAIL consumer material remained after getsockopt API removal\n' >&2
+    exit 1
+}
+printf 'P01-I03 kernel socket-identity API removal failed closed: PASS\n'
+rm -f /etc/systemd/system/blindpass-broker.service.d/p01-kernel-api-removed.conf
+systemctl daemon-reload
+systemctl reset-failed blindpass-broker.service >/dev/null 2>&1 || true
+systemctl restart blindpass-broker.service
+systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
+
 printf 'P01-I05 HPKE restart/absent-key VM path: PASS (ephemeral custody probe)\n'
 printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key /etc/blindpass/api-key.cred\n'
 
-systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-loader-race.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-dynamic.service blindpass-consumer.service blindpass-consumer-native.service blindpass-backup.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
+systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-loader-race.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-dynamic.service blindpass-crash.service blindpass-consumer.service blindpass-consumer-native.service blindpass-backup.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
 if [[ "$user_manager_ready" == yes ]]; then
     rm -f /run/blindpass-user-manager.log "$user_manager_runtime/p01-user-manager.key"
     systemctl stop "user@$user_manager_uid.service" "user-runtime-dir@$user_manager_uid.service" >/dev/null 2>&1 || true
@@ -802,6 +914,7 @@ rm -f /etc/systemd/system/blindpass-broker.service \
     /etc/systemd/system/blindpass-stall.service \
     /etc/systemd/system/blindpass-loader-nonroot.service \
     /etc/systemd/system/blindpass-loader-race.service \
+    /etc/systemd/system/blindpass-crash.service \
     /etc/systemd/system/blindpass-dynamic.service \
     /etc/systemd/system/blindpass-unauthorized.service \
     /etc/systemd/system/blindpass-unregistered.service
@@ -810,6 +923,7 @@ rm -rf -- /etc/systemd/system/blindpass-workload.service.d
 rm -f /usr/libexec/blindpass-broker /usr/libexec/blindpass-consumer \
     /usr/libexec/blindpass-backup-probe \
     /usr/libexec/blindpass-custody-probe \
+    /usr/libexec/blindpass-crash-probe \
     /usr/libexec/blindpass-credential-loader /usr/libexec/blindpass-workload-client \
     /usr/libexec/blindpass-transport-probe
 systemctl daemon-reload

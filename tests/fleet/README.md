@@ -13,7 +13,7 @@ and QEMU process on success, failure, or cancellation.
 Required host configuration:
 
 ```bash
-export BLINDPASS_FLEET_GUEST_IMAGE=/srv/blindpass-images/debian-12-amd64.qcow2
+export BLINDPASS_FLEET_GUEST_IMAGE=/srv/blindpass-images/noble-server-cloudimg-amd64.img
 export BLINDPASS_FLEET_GUEST_IMAGE_SHA256=replace-with-the-reviewed-sha256
 export BLINDPASS_FLEET_SSH_KEY=/srv/blindpass-runner/ed25519
 export BLINDPASS_FLEET_GUEST_USER=blindpass
@@ -54,21 +54,28 @@ The local KVM runner used on 2026-09-23 reported QEMU 11.1.1, `qemu-img`
 pinned Ubuntu 24.04 image, recorded guest kernel 6.8.0-139-generic and
 systemd 255, and removed the QEMU process, guest broker sockets, and guest
 disk artifacts after the run. The positive run owner was explicitly supplied
-as `local-kvm-p01-loader-final2`; separate `failure` and `cancel` teardown runs also
+as `local-kvm-p01-final`; separate `failure` and `cancel` teardown runs also
 passed with named local owners. This is disposable runtime evidence, not a
 claim that the manual VM job is already configured as a shared GitHub
 self-hosted runner.
 
-The run passed the exercised loader/workload boundaries, user-manager denial,
+A Debian 12 candidate-minimum attempt (kernel 6.1.0-53, systemd 252) was
+recorded as `P01-UNSUPPORTED` because the broker binary requires the
+`LIBSYSTEMD_253` pidfd API; it failed before delivery and did not become a
+pass or silent skip.
+
+The run passed the exercised loader/workload boundaries, recorded real
+UID/GID/pidfd/unit/invocation traces, user-manager denial,
 stale-invocation rejection and re-registration, repeated loader and
 workload pidfd/invocation restart races, `DynamicUser` registration,
 bounded stalled-frame denial, broker delivery fault matrix,
 consumer validation, ephemeral custody restart/expiry/one-use checks, canary
-exposure checks, backup write/restore and controlled rotation, uninstall
-cleanup, system-bus API-removal fail-closed behavior, and native host-key
-`LoadCredentialEncrypted=` comparison. The TPM capability command is not
-available in this systemd 255 profile, so the TPM-required path is explicitly
-not claimed. The kernel API matrix, guest-version matrix, and deeper
-crash/custody profiles remain explicit additional profiles for the W0
-go/narrow/stop review. See
+exposure and apport crash-report checks, backup write/restore and controlled
+rotation, uninstall cleanup, system-bus and `getsockopt` API-removal fail-closed
+behavior, and native host-key `LoadCredentialEncrypted=` comparison including
+missing-key denial. The TPM capability command is not available in this
+systemd 255 profile; explicit `tpm2` encryption was rejected, so no
+TPM-present path is claimed. The alternate kernel/systemd, guest-version and
+persistent broker-custody matrices remain explicitly outside this narrow
+profile. See
 `docs/testing/p01-host-broker-evidence.md` for the dated evidence record.

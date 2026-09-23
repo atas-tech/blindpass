@@ -107,6 +107,7 @@ scp "${scp_options[@]}" \
     target/release/blindpass-backup-probe \
     target/release/blindpass-consumer \
     target/release/blindpass-custody-probe \
+    target/release/blindpass-crash-probe \
     target/release/blindpass-credential-loader \
     target/release/blindpass-transport-probe \
     target/release/blindpass-workload-client \
@@ -120,8 +121,15 @@ ssh "${ssh_options[@]}" "$guest_target" \
     "sudo install -m 0755 /tmp/p01-guest.sh /usr/local/sbin/blindpass-p01-guest && sudo ${guest_environment[*]} /usr/local/sbin/blindpass-p01-guest" \
     >"$run_dir/guest-result.log" 2>&1 &
 guest_ssh_pid=$!
+set +e
 wait "$guest_ssh_pid"
+guest_result=$?
+set -e
 guest_ssh_pid=
 cat "$run_dir/guest-result.log"
+
+if [[ "$guest_result" != 0 ]]; then
+    exit "$guest_result"
+fi
 
 printf 'P01-VM-COMPLETE runner_owner=%s serial_log=%s\n' "$BLINDPASS_FLEET_RUNNER_OWNER" "$serial_log"

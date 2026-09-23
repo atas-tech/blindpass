@@ -304,6 +304,7 @@ fn handle_loader_connection(
     delivery_fault: Option<DeliveryFault>,
 ) -> Result<(), BrokerError> {
     let peer = resolve_peer(stream)?;
+    log_peer_identity("loader", &peer);
     let frame = read_frame(stream)?;
     let request = parse_loader_request(&frame)?;
     let credential = state
@@ -324,6 +325,7 @@ fn handle_workload_connection(
     state: &Arc<Mutex<BrokerState>>,
 ) -> Result<(), BrokerError> {
     let peer = resolve_peer(stream)?;
+    log_peer_identity("workload", &peer);
     let frame = read_frame(stream)?;
     let request = parse_workload_request(&frame)?;
     let response = state
@@ -332,6 +334,17 @@ fn handle_workload_connection(
         .process_workload(&peer, &request)?;
     stream.write_all(&response)?;
     Ok(())
+}
+
+fn log_peer_identity(role: &str, peer: &PeerIdentity) {
+    eprintln!(
+        "identity peer role={role} uid={} gid={} pidfd={} unit={} invocation={}",
+        peer.uid,
+        peer.gid,
+        peer.pidfd_supported,
+        peer.unit.as_deref().unwrap_or("<none>"),
+        peer.invocation_id.as_deref().unwrap_or("<none>")
+    );
 }
 
 fn read_frame(stream: &mut UnixStream) -> Result<Vec<u8>, BrokerError> {
