@@ -40,9 +40,16 @@ teardown, and deeper custody recovery remain separately recorded VM scenarios
 where they require additional fault injection; this harness must not turn
 their absence into a pass.
 
-The development host snapshot on 2026-09-23 has QEMU 11.1.1 and `qemu-img`
-11.1.1 installed, but `cloud-localds` is unavailable and `/dev/kvm` is
-absent. The harness therefore exits 78 with
-`P01-UNSUPPORTED /dev/kvm is unavailable or inaccessible`; it is implemented
-but not executed here. P01 W0 remains blocked until the labeled runner is
-provisioned and its artifacts are reviewed.
+The local KVM runner used on 2026-09-23 reported QEMU 11.1.1, `qemu-img`
+11.1.1, readable/writable `/dev/kvm`, and `cloud-localds`. It booted the
+pinned Ubuntu 24.04 image, recorded guest kernel 6.8.0-139-generic and
+systemd 255, and removed the QEMU process and guest broker sockets after the
+run. The run owner was explicitly supplied as `local-kvm`; this is disposable
+runtime evidence, not a claim that the manual VM job is already configured as
+a shared GitHub self-hosted runner.
+
+The run passed the exercised loader/workload boundaries, consumer validation,
+controlled rotation, and native host-key `LoadCredentialEncrypted=` comparison.
+P01-I01, P01-I03, the VM half of P01-I05, and P01-I06 remain explicit
+additional profiles for the W0 go/narrow/stop review. See
+`docs/testing/p01-host-broker-evidence.md` for the dated evidence record.

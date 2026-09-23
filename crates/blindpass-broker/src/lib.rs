@@ -142,7 +142,7 @@ impl Default for BrokerConfig {
         Self {
             loader_socket: PathBuf::from("/run/blindpass/loader.sock"),
             workload_socket: PathBuf::from("/run/blindpass/workload.sock"),
-            socket_directory_mode: 0o750,
+            socket_directory_mode: 0o751,
             loader_socket_mode: 0o600,
             workload_socket_mode: 0o660,
             read_timeout: Duration::from_secs(2),
@@ -156,14 +156,7 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
             "blindpass-broker must run as root",
         ));
     }
-    if config.socket_directory_mode != 0o750
-        || config.loader_socket_mode != 0o600
-        || config.workload_socket_mode != 0o660
-    {
-        return Err(BrokerError::Configuration(
-            "broker socket modes must be directory 0750, loader 0600 and workload 0660",
-        ));
-    }
+    validate_config(&config)?;
     let loader_listener = bind_socket(
         &config.loader_socket,
         config.socket_directory_mode,
@@ -196,6 +189,33 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
     Ok(())
 }
 
+fn validate_config(config: &BrokerConfig) -> Result<(), BrokerError> {
+    if config.socket_directory_mode != 0o751
+        || config.loader_socket_mode != 0o600
+        || config.workload_socket_mode != 0o660
+    {
+        return Err(BrokerError::Configuration(
+            "broker socket modes must be directory 0751, loader 0600 and workload 0660",
+        ));
+    }
+    if !config.loader_socket.is_absolute() || !config.workload_socket.is_absolute() {
+        return Err(BrokerError::Configuration(
+            "broker socket paths must be absolute",
+        ));
+    }
+    if config.loader_socket == config.workload_socket {
+        return Err(BrokerError::Configuration(
+            "loader and workload sockets must be distinct",
+        ));
+    }
+    if config.read_timeout.is_zero() {
+        return Err(BrokerError::Configuration(
+            "broker read timeout must be non-zero",
+        ));
+    }
+    Ok(())
+}
+
 fn serve_loader(
     listener: UnixListener,
     state: Arc<Mutex<BrokerState>>,
@@ -207,6 +227,7 @@ fn serve_loader(
         stream.set_write_timeout(Some(timeout))?;
         let result = handle_loader_connection(&mut stream, &state);
         if let Err(error) = result {
+            eprintln!("loader request denied: {error}");
             write_error(&mut stream, &error);
         }
     }
@@ -224,6 +245,7 @@ fn serve_workload(
         stream.set_write_timeout(Some(timeout))?;
         let result = handle_workload_connection(&mut stream, &state);
         if let Err(error) = result {
+            eprintln!("workload request denied: {error}");
             write_error(&mut stream, &error);
         }
     }
@@ -361,7 +383,7 @@ fn effective_uid() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{BrokerState, bind_socket, read_frame};
+    use super::{BrokerConfig, BrokerState, bind_socket, read_frame, validate_config};
     use blindpass_core::delivery::{CredentialFormat, DeliveryPolicy};
     use blindpass_core::identity::{PeerIdentity, WorkloadRegistration, WorkloadRequest};
     use std::fs;
@@ -421,6 +443,30 @@ mod tests {
         assert_eq!(fs::metadata(&socket).unwrap().mode() & 0o777, 0o660);
         drop(replacement);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn broker_configuration_keeps_trust_boundaries_distinct() {
+        let config = BrokerConfig::default();
+        assert!(validate_config(&config).is_ok());
+
+        let mut same_socket = config.clone();
+        same_socket.workload_socket = same_socket.loader_socket.clone();
+        assert!(
+            validate_config(&same_socket)
+                .unwrap_err()
+                .to_string()
+                .contains("distinct")
+        );
+
+        let mut relative_socket = config;
+        relative_socket.loader_socket = "loader.sock".into();
+        assert!(
+            validate_config(&relative_socket)
+                .unwrap_err()
+                .to_string()
+                .contains("absolute")
+        );
     }
 
     #[test]

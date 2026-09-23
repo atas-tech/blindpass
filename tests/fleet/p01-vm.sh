@@ -16,6 +16,13 @@ command -v scp >/dev/null 2>&1 || unsupported 'scp is unavailable'
 [[ -n "${BLINDPASS_FLEET_SSH_KEY:-}" && -r "$BLINDPASS_FLEET_SSH_KEY" ]] || \
     unsupported 'BLINDPASS_FLEET_SSH_KEY is missing or unreadable'
 
+printf 'P01-HOST-ENV runner_owner=%s qemu=%s qemu_img=%s kvm=%s cloud_localds=%s\n' \
+    "$BLINDPASS_FLEET_RUNNER_OWNER" \
+    "$(qemu-system-x86_64 --version | head -n 1)" \
+    "$(qemu-img --version | head -n 1)" \
+    "$(stat -c '%A:%a' /dev/kvm)" \
+    "$(command -v cloud-localds)"
+
 guest_user=${BLINDPASS_FLEET_GUEST_USER:-blindpass}
 ssh_port=${BLINDPASS_FLEET_SSH_PORT:-22222}
 keep_artifacts=${BLINDPASS_FLEET_KEEP_ARTIFACTS:-0}

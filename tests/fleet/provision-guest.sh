@@ -62,7 +62,14 @@ actual_sha=$(sha256sum "$base_image" | awk '{print $1}')
 }
 
 qemu-img create -q -f qcow2 -F qcow2 -b "$base_image" "$overlay"
-public_key=$(<"$ssh_key")
+public_key_file="${ssh_key}.pub"
+if [[ -r "$public_key_file" ]]; then
+    public_key=$(<"$public_key_file")
+else
+    command -v ssh-keygen >/dev/null 2>&1 || unsupported 'ssh-keygen is unavailable and the SSH public-key sidecar is missing'
+    public_key=$(ssh-keygen -y -f "$ssh_key") || unsupported 'could not derive the SSH public key'
+fi
+[[ "$public_key" == ssh-* ]] || unsupported 'SSH public key is missing or malformed'
 umask 077
 printf '#cloud-config\nusers:\n  - default\n  - name: %s\n    groups: [sudo]\n    shell: /bin/bash\n    sudo: ["ALL=(ALL) NOPASSWD:ALL"]\n    lock_passwd: true\n    ssh_authorized_keys:\n      - %s\nssh_pwauth: false\npackage_update: false\nruncmd:\n  - [ sh, -c, "install -d -m 0755 /var/lib/blindpass-p01" ]\n' \
     "$guest_user" "$public_key" >"$user_data"

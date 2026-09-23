@@ -78,6 +78,9 @@ impl LoaderPolicy {
     pub fn map_unit(&mut self, unit: &str, credential_name: &str) -> Result<(), IdentityError> {
         validate_name(unit, "unit")?;
         validate_name(credential_name, "credential")?;
+        if self.mappings.contains_key(unit) {
+            return Err(IdentityError::InvalidRequest("duplicate unit mapping"));
+        }
         self.mappings
             .insert(unit.to_owned(), credential_name.to_owned());
         Ok(())
@@ -242,6 +245,10 @@ mod tests {
         policy
             .map_unit("blindpass-consumer.service", "api-key")
             .unwrap();
+        assert_eq!(
+            policy.map_unit("blindpass-consumer.service", "other-key"),
+            Err(IdentityError::InvalidRequest("duplicate unit mapping"))
+        );
         let user_peer = PeerIdentity::fixture(
             1000,
             1000,

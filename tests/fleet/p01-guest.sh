@@ -9,6 +9,11 @@ set -Eeuo pipefail
 }
 command -v systemctl >/dev/null 2>&1 || { printf 'P01-UNSUPPORTED systemctl missing\n' >&2; exit 78; }
 
+guest_os=$(. /etc/os-release && printf '%s-%s' "$ID" "$VERSION_ID")
+guest_systemd=$(systemd --version | awk 'NR == 1 { print $2 }')
+printf 'P01-GUEST-ENV os=%s kernel=%s systemd=%s pid1=%s\n' \
+    "$guest_os" "$(uname -r)" "$guest_systemd" "$(ps -p 1 -o comm=)"
+
 install -d -m 0755 /usr/libexec /etc/blindpass /etc/systemd/system
 install -m 0755 /tmp/blindpass-broker /usr/libexec/blindpass-broker
 install -m 0755 /tmp/blindpass-consumer /usr/libexec/blindpass-consumer
@@ -27,19 +32,32 @@ umask 077
 printf '%s' 'P01-INITIAL-CANARY' >/etc/blindpass/api-key
 chmod 0600 /etc/blindpass/api-key
 install -d -m 0700 /run/blindpass-consumer
+# The workload is started first solely to capture its invocation ID. The
+# broker normally owns this RuntimeDirectory; pre-create it for the same
+# systemd namespace policy while the broker is still stopped.
+install -d -m 0751 /run/blindpass
 
 systemctl daemon-reload
 systemctl start --no-block blindpass-workload.service
+invocation=
 for _attempt in {1..30}; do
-    systemctl is-active --quiet blindpass-workload.service && break
+    invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+    [[ -n "$invocation" ]] && break
+    systemctl is-failed --quiet blindpass-workload.service && break
     sleep 1
 done
-systemctl is-active --quiet blindpass-workload.service || {
-    printf 'P01-FAIL workload unit did not activate\n' >&2
+[[ -n "$invocation" ]] || {
+    printf 'P01-FAIL workload invocation unavailable before broker registration\n' >&2
+    systemctl status blindpass-workload.service --no-pager -l >&2 || true
+    journalctl -u blindpass-workload.service --no-pager -n 40 >&2 || true
     exit 1
 }
-invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
-[[ -n "$invocation" ]] || { printf 'P01-FAIL workload invocation unavailable\n' >&2; exit 1; }
+systemctl is-failed --quiet blindpass-workload.service && {
+    printf 'P01-FAIL workload unit failed before broker registration\n' >&2
+    systemctl status blindpass-workload.service --no-pager -l >&2 || true
+    journalctl -u blindpass-workload.service --no-pager -n 40 >&2 || true
+    exit 1
+}
 workload_uid=$(id -u blindpass-agent)
 [[ -n "$workload_uid" ]] || { printf 'P01-FAIL workload uid unavailable\n' >&2; exit 1; }
 
@@ -47,14 +65,30 @@ install -d -m 0755 /etc/systemd/system/blindpass-broker.service.d
 printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:workload-a:blindpass-workload.service:%s:%s\n' \
     "$workload_uid" "$invocation" >/etc/systemd/system/blindpass-broker.service.d/p01-workload.conf
 systemctl daemon-reload
-systemctl start blindpass-broker.service
+if ! systemctl start blindpass-broker.service; then
+    printf 'P01-FAIL broker start command failed\n' >&2
+    systemctl status blindpass-broker.service --no-pager -l >&2 || true
+    journalctl -u blindpass-broker.service --no-pager -n 80 >&2 || true
+    exit 1
+fi
 systemctl is-active --quiet blindpass-broker.service || { printf 'P01-FAIL broker did not activate\n' >&2; exit 1; }
+printf 'P01-SOCKET-POLICY directory=%s loader=%s workload=%s\n' \
+    "$(stat -c '%a:%u:%g' /run/blindpass)" \
+    "$(stat -c '%a:%u:%g' /run/blindpass/loader.sock)" \
+    "$(stat -c '%a:%u:%g' /run/blindpass/workload.sock)"
 for _attempt in {1..30}; do
     journalctl -u blindpass-workload.service --no-pager -n 20 | grep -q 'WORKLOAD_READY' && break
     sleep 1
 done
 journalctl -u blindpass-workload.service --no-pager -n 20 | grep -q 'WORKLOAD_READY' || {
     printf 'P01-FAIL registered workload was not authorized\n' >&2
+    printf 'P01-DIAG workload_uid=%s invocation=%s\n' "$workload_uid" "$invocation" >&2
+    id blindpass-agent >&2 || true
+    systemctl show blindpass-workload.service --property=InvocationID,SubState,MainPID --no-pager >&2 || true
+    stat -c 'P01-DIAG %n mode=%a uid=%u gid=%g' /run/blindpass /run/blindpass/workload.sock 2>&1 || true
+    systemctl status blindpass-workload.service --no-pager -l >&2 || true
+    journalctl -u blindpass-workload.service --no-pager -n 60 >&2 || true
+    journalctl -u blindpass-broker.service --no-pager -n 60 >&2 || true
     exit 1
 }
 printf 'P01-I02 registered non-root workload: PASS\n'
@@ -160,4 +194,12 @@ printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key\n'
 
 systemctl stop blindpass-unregistered.service blindpass-unauthorized.service blindpass-consumer.service blindpass-consumer-native.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
 rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
-printf 'P01-GUEST-CLEANUP sockets_stopped=yes protected_material_retained=yes\n'
+[[ ! -e /run/blindpass/loader.sock && ! -e /run/blindpass/workload.sock ]] || {
+    printf 'P01-FAIL broker sockets remained after cleanup\n' >&2
+    exit 1
+}
+[[ -f /etc/blindpass/api-key && "$(stat -c '%a:%u' /etc/blindpass/api-key)" == 600:0 ]] || {
+    printf 'P01-FAIL protected material was not retained with root-only mode\n' >&2
+    exit 1
+}
+printf 'P01-GUEST-CLEANUP sockets_removed=yes protected_material_retained=yes\n'

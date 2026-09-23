@@ -74,16 +74,23 @@ unsafe extern "C" {
         types: *const c_char,
         ...
     ) -> c_int;
-    fn sd_bus_message_unref(message: *mut sd_bus_message) -> *mut sd_bus_message;
-    fn sd_bus_message_read(message: *mut sd_bus_message, types: *const c_char, ...) -> c_int;
-    fn sd_bus_get_property_string(
+    fn sd_bus_get_property(
         bus: *mut sd_bus,
         destination: *const c_char,
         path: *const c_char,
         interface: *const c_char,
         member: *const c_char,
         error: *mut c_void,
-        ret_value: *mut *mut c_char,
+        reply: *mut *mut sd_bus_message,
+        types: *const c_char,
+    ) -> c_int;
+    fn sd_bus_message_unref(message: *mut sd_bus_message) -> *mut sd_bus_message;
+    fn sd_bus_message_read(message: *mut sd_bus_message, types: *const c_char, ...) -> c_int;
+    fn sd_bus_message_read_array(
+        message: *mut sd_bus_message,
+        element_type: c_char,
+        data: *mut *const c_void,
+        length: *mut usize,
     ) -> c_int;
     fn free(pointer: *mut c_void);
 }
@@ -209,35 +216,59 @@ fn resolve_invocation_id_on_bus(bus: *mut sd_bus, pidfd: RawFd) -> Result<String
     let object_path = String::from_utf8(object_path)
         .map_err(|_| OsIdentityError::LookupFailed("unit object path is not utf8"))?;
 
-    let service_interface = CString::new("org.freedesktop.systemd1.Service").unwrap();
+    let unit_interface = CString::new("org.freedesktop.systemd1.Unit").unwrap();
     let property = CString::new("InvocationID").unwrap();
     let object_path =
         CString::new(object_path).map_err(|_| OsIdentityError::LookupFailed("unit path"))?;
-    let mut invocation = std::ptr::null_mut();
+    let property_type = CString::new("ay").unwrap();
+    let mut property_reply = std::ptr::null_mut();
     let property_result = unsafe {
-        sd_bus_get_property_string(
+        sd_bus_get_property(
             bus,
             destination.as_ptr(),
             object_path.as_ptr(),
-            service_interface.as_ptr(),
+            unit_interface.as_ptr(),
             property.as_ptr(),
             std::ptr::null_mut(),
-            &mut invocation,
+            &mut property_reply,
+            property_type.as_ptr(),
         )
     };
-    if property_result < 0 || invocation.is_null() {
+    if property_result < 0 || property_reply.is_null() {
         return Err(OsIdentityError::UnsupportedHost(
             "systemd invocation lookup unavailable",
         ));
     }
-    let invocation_text = unsafe { CStr::from_ptr(invocation) }.to_bytes().to_vec();
-    unsafe { free(invocation.cast::<c_void>()) };
-    let invocation_text = String::from_utf8(invocation_text)
-        .map_err(|_| OsIdentityError::LookupFailed("invocation is not utf8"))?;
-    if invocation_text.is_empty() {
-        return Err(OsIdentityError::LookupFailed("empty invocation id"));
+    let mut invocation_data: *const c_void = std::ptr::null();
+    let mut invocation_length = 0;
+    let read_result = unsafe {
+        sd_bus_message_read_array(
+            property_reply,
+            b'y' as c_char,
+            &mut invocation_data,
+            &mut invocation_length,
+        )
+    };
+    if read_result <= 0 || invocation_data.is_null() {
+        unsafe { sd_bus_message_unref(property_reply) };
+        return Err(OsIdentityError::LookupFailed("invocation id array"));
     }
-    Ok(invocation_text)
+    // SAFETY: systemd owns this array for the lifetime of the reply message. Copy it before
+    // releasing that message so the returned identity has no borrowed D-Bus state.
+    let invocation_bytes = unsafe {
+        std::slice::from_raw_parts(invocation_data.cast::<u8>(), invocation_length).to_vec()
+    };
+    unsafe { sd_bus_message_unref(property_reply) };
+    format_invocation_id(&invocation_bytes)
+}
+
+fn format_invocation_id(bytes: &[u8]) -> Result<String, OsIdentityError> {
+    if bytes.len() != 16 {
+        return Err(OsIdentityError::LookupFailed(
+            "invalid invocation id length",
+        ));
+    }
+    Ok(bytes.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 unsafe extern "C" {
@@ -248,4 +279,24 @@ unsafe extern "C" {
         value: *mut c_void,
         length: *mut u32,
     ) -> c_int;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{OsIdentityError, format_invocation_id};
+
+    #[test]
+    fn invocation_id_is_the_systemd_lowercase_hex_array() {
+        let bytes: Vec<u8> = (0..16).collect();
+        assert_eq!(
+            format_invocation_id(&bytes).unwrap(),
+            "000102030405060708090a0b0c0d0e0f"
+        );
+        assert_eq!(
+            format_invocation_id(&bytes[..15]),
+            Err(OsIdentityError::LookupFailed(
+                "invalid invocation id length"
+            ))
+        );
+    }
 }
