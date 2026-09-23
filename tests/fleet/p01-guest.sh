@@ -11,8 +11,12 @@ command -v systemctl >/dev/null 2>&1 || { printf 'P01-UNSUPPORTED systemctl miss
 
 guest_os=$(. /etc/os-release && printf '%s-%s' "$ID" "$VERSION_ID")
 guest_systemd=$(systemd --version | awk 'NR == 1 { print $2 }')
-printf 'P01-GUEST-ENV os=%s kernel=%s systemd=%s pid1=%s\n' \
-    "$guest_os" "$(uname -r)" "$guest_systemd" "$(ps -p 1 -o comm=)"
+tpm_device=absent
+if [[ -e /dev/tpmrm0 || -e /dev/tpm0 ]]; then
+    tpm_device=present
+fi
+printf 'P01-GUEST-ENV os=%s kernel=%s systemd=%s pid1=%s tpm=%s\n' \
+    "$guest_os" "$(uname -r)" "$guest_systemd" "$(ps -p 1 -o comm=)" "$tpm_device"
 
 assert_canary_absent() {
     local canary=$1
@@ -40,6 +44,31 @@ assert_canary_absent() {
             -xdev -type f -size -1M -print0 2>/dev/null
     )
 }
+
+tpm_deb_dir=${BLINDPASS_P01_TPM_DEB_DIR:-}
+if [[ -n "$tpm_deb_dir" ]]; then
+    command -v dpkg >/dev/null 2>&1 || {
+        printf 'P01-UNSUPPORTED dpkg is unavailable for the TPM runtime bundle\n' >&2
+        exit 78
+    }
+    mapfile -t tpm_debs < <(find "$tpm_deb_dir" -maxdepth 1 -type f -name '*.deb' -print | sort)
+    ((${#tpm_debs[@]} > 0)) || {
+        printf 'P01-FAIL TPM runtime bundle has no .deb files\n' >&2
+        exit 1
+    }
+    tpm_install_log=/run/blindpass-p01-tpm-install.log
+    tpm_install_status=0
+    dpkg --unpack "${tpm_debs[@]}" >"$tpm_install_log" 2>&1 || tpm_install_status=$?
+    dpkg --configure -a >>"$tpm_install_log" 2>&1 || tpm_install_status=$?
+    if [[ "$tpm_install_status" != 0 ]]; then
+        printf 'P01-FAIL TPM runtime bundle could not be configured\n' >&2
+        tail -n 40 "$tpm_install_log" >&2 || true
+        exit 1
+    fi
+    printf 'P01-GUEST-TPM-PACKAGES installed=%s\n' \
+        "$(dpkg-query -W -f='${db:Status-Abbrev} ${Package}=${Version}\n' 'libtss2*' tpm-udev 2>/dev/null \
+            | awk '$1 == \"ii\" { print $2 }' | tr '\n' ' ' | sed 's/[[:space:]]*$//')"
+fi
 
 install -d -m 0755 /usr/libexec /etc/blindpass /etc/systemd/system
 install -m 0755 /tmp/blindpass-broker /usr/libexec/blindpass-broker
@@ -688,7 +717,7 @@ rm -f "$native_recovery_plaintext"
 printf 'P01-E02 native encrypted credstore missing-key recovery denial: PASS\n'
 
 tpm_probe_status=0
-tpm_capability=$(systemd-analyze has-tpm2 2>&1) || tpm_probe_status=$?
+tpm_capability=$(systemd-creds has-tpm2 2>&1) || tpm_probe_status=$?
 tpm_capability_one_line=$(printf '%s' "$tpm_capability" | tr '\n' ' ' | tr -cs '[:alnum:]_.+-' '_')
 if [[ "$tpm_capability" == *'Unknown command verb'* ]]; then
     printf 'P01-I06 TPM-CAPABILITY unsupported-command=%s\n' "$tpm_capability_one_line"
@@ -699,33 +728,49 @@ else
 fi
 tpm_credential=/etc/blindpass/api-key.tpm2.cred
 tpm_plaintext=/run/blindpass-consumer/api-key.tpm2
+tpm_encrypt_error=/run/blindpass-consumer/tpm2-encrypt.error
+tpm_decrypt_error=/run/blindpass-consumer/tpm2-decrypt.error
+install -d -m 0700 /run/blindpass-consumer
 rm -f "$tpm_credential" "$tpm_plaintext"
-if [[ "$tpm_probe_available" == yes && "$tpm_probe_status" == 0 ]]; then
-    if systemd-creds --no-ask-password --with-key=tpm2 --name=api-key \
-        encrypt /etc/blindpass/api-key "$tpm_credential" >/dev/null 2>&1 \
-        && systemd-creds --no-ask-password --with-key=tpm2 \
-            decrypt "$tpm_credential" "$tpm_plaintext" >/dev/null 2>&1 \
-        && cmp -s /etc/blindpass/api-key "$tpm_plaintext"; then
-        printf 'P01-I06 TPM-required custody profile: PASS\n'
-    else
-        printf 'P01-I06 TPM-required custody profile: NOT_CLAIMED (capability probe succeeded but encryption/recovery failed)\n'
-    fi
-elif [[ "$tpm_probe_available" == yes ]]; then
-    if systemd-creds --no-ask-password --with-key=tpm2 --name=api-key \
-        encrypt /etc/blindpass/api-key "$tpm_credential" >/dev/null 2>&1; then
-        printf 'P01-FAIL TPM-required profile silently accepted without TPM\n' >&2
-        exit 1
-    fi
-    printf 'P01-I06 TPM-required custody profile: UNSUPPORTED (TPM absent; no host-key fallback)\n'
-else
-    if systemd-creds --no-ask-password --with-key=tpm2 --name=api-key \
-        encrypt /etc/blindpass/api-key "$tpm_credential" >/dev/null 2>&1; then
-        printf 'P01-FAIL TPM-required profile silently accepted after unavailable capability probe\n' >&2
-        exit 1
-    fi
-    printf 'P01-I06 TPM-required custody profile: UNSUPPORTED (capability probe unavailable; explicit tpm2 mode rejected)\n'
+: >"$tpm_encrypt_error"
+: >"$tpm_decrypt_error"
+tpm_encrypt_status=0
+systemd-creds --with-key=tpm2 --name=api-key \
+    encrypt /etc/blindpass/api-key "$tpm_credential" >/dev/null 2>"$tpm_encrypt_error" \
+    || tpm_encrypt_status=$?
+tpm_decrypt_status=skipped
+if [[ "$tpm_encrypt_status" == 0 ]]; then
+    tpm_decrypt_status=0
+    systemd-creds --with-key=tpm2 --name=api-key \
+        decrypt "$tpm_credential" "$tpm_plaintext" >/dev/null 2>"$tpm_decrypt_error" \
+        || tpm_decrypt_status=$?
 fi
-rm -f "$tpm_credential" "$tpm_plaintext"
+tpm_compare=no
+if [[ "$tpm_encrypt_status" == 0 && "$tpm_decrypt_status" == 0 ]] &&
+    cmp -s /etc/blindpass/api-key "$tpm_plaintext"; then
+    tpm_compare=yes
+fi
+if [[ "$tpm_encrypt_status" == 0 && "$tpm_decrypt_status" == 0 && "$tpm_compare" == yes ]]; then
+    [[ "$tpm_device" == present ]] || {
+        printf 'P01-FAIL TPM-required profile succeeded without a visible TPM device\n' >&2
+        rm -f "$tpm_credential" "$tpm_plaintext"
+        exit 1
+    }
+    printf 'P01-I06 TPM-required custody profile: PASS (device=%s probe_status=%s)\n' \
+        "$tpm_device" "$tpm_probe_status"
+elif [[ "$tpm_device" == present ]]; then
+    tpm_encrypt_error_one_line=$(tr '\n' ' ' <"$tpm_encrypt_error" | tr -cs '[:alnum:]_.:/+-' '_' | cut -c1-240)
+    tpm_decrypt_error_one_line=$(tr '\n' ' ' <"$tpm_decrypt_error" | tr -cs '[:alnum:]_.:/+-' '_' | cut -c1-240)
+    printf 'P01-FAIL TPM device is present but explicit tpm2 encryption/recovery failed (encrypt_status=%s decrypt_status=%s compare=%s encrypt_error=%s decrypt_error=%s)\n' \
+        "$tpm_encrypt_status" "$tpm_decrypt_status" "$tpm_compare" \
+        "${tpm_encrypt_error_one_line:-none}" "${tpm_decrypt_error_one_line:-none}" >&2
+    rm -f "$tpm_credential" "$tpm_plaintext"
+    exit 1
+else
+    printf 'P01-I06 TPM-required custody profile: UNSUPPORTED (device absent; explicit tpm2 mode rejected; probe_status=%s available=%s)\n' \
+        "$tpm_probe_status" "$tpm_probe_available"
+fi
+rm -f "$tpm_credential" "$tpm_plaintext" "$tpm_encrypt_error" "$tpm_decrypt_error"
 
 cat >/etc/systemd/system/blindpass-unauthorized.service <<'UNIT'
 [Unit]

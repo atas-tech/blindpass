@@ -25,6 +25,24 @@ sudo -E ./tests/fleet/p01-vm.sh
 and QEMU artifacts are never committed. The guest uses synthetic
 `P01-*-CANARY` values only.
 
+The default profile has no TPM device. To exercise the optional emulated TPM
+profile, provide a runner-local `swtpm` binary and a directory containing the
+pinned Ubuntu noble `tpm2-tss` runtime `.deb` files plus `tpm-udev`, then add:
+
+```bash
+export BLINDPASS_FLEET_TPM_MODE=emulated
+export BLINDPASS_FLEET_SWTPM=/srv/blindpass-runner/swtpm
+export BLINDPASS_FLEET_SWTPM_LD_LIBRARY_PATH=/srv/blindpass-runner/swtpm-libs
+export BLINDPASS_FLEET_TPM_DEB_DIR=/srv/blindpass-runner/ubuntu-noble-tpm2-debs
+sudo -E ./tests/fleet/p01-vm.sh
+```
+
+The host harness prints SHA-256 values for every supplied package, installs
+the bundle only in the disposable guest overlay, attaches `tpm-tis` to QEMU,
+and requires an explicit `systemd-creds --with-key=tpm2` encrypt/decrypt
+round-trip. The package directory is not a repository dependency and is not
+copied into committed artifacts.
+
 The script exits `78` with an `UNSUPPORTED` record when QEMU, KVM, the pinned
 image, cloud-localds, or the named runner owner is missing. That is an
 infrastructure block, not a passing or skipped P01 gate.
@@ -45,9 +63,9 @@ claim TPM protection.
 Use `./tests/fleet/p01-teardown.sh failure` and
 `./tests/fleet/p01-teardown.sh cancel` with the same environment to verify
 bounded failure and cancellation cleanup. The pinned Ubuntu profile does not
-close the full TPM, crash-artifact, kernel API, or guest-version matrix; those
-remain explicitly recorded as open or unclaimed rather than being converted
-into passes.
+close the physical-TPM/firmware-measured, crash-artifact, kernel API, or
+guest-version matrix; those remain explicitly recorded as open or unclaimed
+rather than being converted into passes.
 
 The local KVM runner used on 2026-09-23 reported QEMU 11.1.1, `qemu-img`
 11.1.1, readable/writable `/dev/kvm`, and `cloud-localds`. It booted the
@@ -73,9 +91,12 @@ consumer validation, ephemeral custody restart/expiry/one-use checks, canary
 exposure and apport crash-report checks, backup write/restore and controlled
 rotation, uninstall cleanup, system-bus and `getsockopt` API-removal fail-closed
 behavior, and native host-key `LoadCredentialEncrypted=` comparison including
-missing-key denial. The TPM capability command is not available in this
-systemd 255 profile; explicit `tpm2` encryption was rejected, so no
-TPM-present path is claimed. The alternate kernel/systemd, guest-version and
-persistent broker-custody matrices remain explicitly outside this narrow
-profile. See
+missing-key denial. The default no-TPM profile rejects explicit `tpm2` mode.
+The opt-in `local-kvm-p01-tpm-pass` run attached a real QEMU/swtpm TPM device,
+installed the pinned tpm2-tss runtime bundle, and passed the explicit TPM2
+credential round-trip; `systemd-creds has-tpm2` correctly reported `partial`
+because the emulated profile has no firmware-measured TPM state. This is an
+emulated TPM-present result, not a physical TPM or measured-boot claim. The
+alternate kernel/systemd, guest-version and persistent broker-custody matrices
+remain explicitly outside this narrow profile. See
 `docs/testing/p01-host-broker-evidence.md` for the dated evidence record.
