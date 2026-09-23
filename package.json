@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build:i18n": "npm run build --workspace=@blindpass/i18n",
+    "build": "npm run build:i18n && npm run build --workspaces --if-present",
     "build:skill": "bash scripts/build_bundle.sh",
     "install:skill": "bash scripts/install_skill.sh",
     "publish:dist": "bash scripts/publish_dist.sh",
