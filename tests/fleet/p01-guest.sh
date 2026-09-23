@@ -530,7 +530,7 @@ for loader_race_round in 1 2; do
     old_peer_denial=
     for _attempt in {1..30}; do
         old_peer_denial=$(journalctl -u blindpass-broker.service --since "$loader_race_started_at" --no-pager -o cat \
-            | grep -E "loader request denied unit=blindpass-loader-race.service invocation=$loader_old_invocation error=protocol:empty_frame|loader request denied: os_identity:.*GetUnitByPIDFD" \
+            | grep -F "loader request denied: os_identity:peer_exited unit=blindpass-loader-race.service invocation=$loader_old_invocation" \
             | tail -n 1 || true)
         [[ -n "$old_peer_denial" ]] && break
         sleep 0.1

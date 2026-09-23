@@ -12,6 +12,14 @@ use std::time::{Duration, Instant};
 const SOL_SOCKET: c_int = 1;
 const SO_PEERCRED: c_int = 17;
 const SO_PEERPIDFD: c_int = 77;
+const POLLIN: i16 = 0x0001;
+
+#[repr(C)]
+struct PollFd {
+    fd: c_int,
+    events: i16,
+    revents: i16,
+}
 
 #[repr(C)]
 struct Ucred {
@@ -26,11 +34,16 @@ type sd_bus = c_void;
 #[allow(non_camel_case_types)]
 type sd_bus_message = c_void;
 
+unsafe extern "C" {
+    fn poll(fds: *mut PollFd, nfds: usize, timeout: c_int) -> c_int;
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OsIdentityError {
     UnsupportedHost(&'static str),
     PermissionDenied(&'static str),
     LookupFailed(&'static str),
+    PeerExited { unit: String, invocation_id: String },
     System(io::ErrorKind),
 }
 
@@ -41,6 +54,7 @@ impl OsIdentityError {
             Self::UnsupportedHost(_) => "unsupported_host",
             Self::PermissionDenied(_) => "permission_denied",
             Self::LookupFailed(_) => "identity_lookup_failed",
+            Self::PeerExited { .. } => "peer_exited",
             Self::System(_) => "identity_system_error",
         }
     }
@@ -52,6 +66,15 @@ impl fmt::Display for OsIdentityError {
             Self::UnsupportedHost(reason) => write!(formatter, "unsupported_host:{reason}"),
             Self::PermissionDenied(reason) => write!(formatter, "permission_denied:{reason}"),
             Self::LookupFailed(reason) => write!(formatter, "identity_lookup_failed:{reason}"),
+            Self::PeerExited {
+                unit,
+                invocation_id,
+            } => {
+                write!(
+                    formatter,
+                    "peer_exited unit={unit} invocation={invocation_id}"
+                )
+            }
             Self::System(kind) => write!(formatter, "identity_system_error:{kind:?}"),
         }
     }
@@ -92,6 +115,7 @@ pub fn resolve_peer(
     let credentials = peer_credentials(stream.as_raw_fd())?;
     let pidfd = peer_pidfd(stream.as_raw_fd())?;
     let (unit, invocation_id) = resolve_unit_and_invocation(pidfd.as_raw_fd(), deadline)?;
+    ensure_peer_alive(pidfd.as_raw_fd(), &unit, &invocation_id)?;
     Ok(PeerIdentity {
         uid: credentials.uid,
         gid: credentials.gid,
@@ -100,6 +124,25 @@ pub fn resolve_peer(
         invocation_id: Some(invocation_id),
         account: Some(format!("uid:{}", credentials.uid)),
     })
+}
+
+fn ensure_peer_alive(pidfd: RawFd, unit: &str, invocation_id: &str) -> Result<(), OsIdentityError> {
+    let mut descriptor = PollFd {
+        fd: pidfd,
+        events: POLLIN,
+        revents: 0,
+    };
+    let result = unsafe { poll(&mut descriptor, 1, 0) };
+    if result < 0 {
+        return Err(OsIdentityError::System(io::Error::last_os_error().kind()));
+    }
+    if result > 0 && descriptor.revents & POLLIN != 0 {
+        return Err(OsIdentityError::PeerExited {
+            unit: unit.to_owned(),
+            invocation_id: invocation_id.to_owned(),
+        });
+    }
+    Ok(())
 }
 
 /// Provisioning is a local root administration operation, independent of a
