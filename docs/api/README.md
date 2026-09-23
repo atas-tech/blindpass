@@ -4,7 +4,7 @@
 
 ## Coverage
 
-The snapshot covers liveness/readiness, user auth and locale preferences, workspace/policy management, agent enrollment/token minting, human secret provisioning, selected exchange paths, billing and analytics. Some advanced exchange/guest flows require reading source. Existing commercial routes remain documented for maintenance, while expansion is [frozen](../product/Roadmap.md#freeze-register).
+The snapshot covers liveness/readiness, user auth and locale preferences, workspace/policy management, agent enrollment/token minting, human secret provisioning, selected exchange paths, billing and analytics. Some advanced exchange/guest flows require reading source. Existing commercial routes remain documented for maintenance, while expansion is [frozen](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#freeze-register).
 
 The local server entry is an example endpoint. Configure your deployment's API URL explicitly; this documentation does not verify hosted service availability.
 
@@ -24,4 +24,4 @@ Auth responses include `preferred_locale`; registration and `PATCH /api/v2/auth/
 - [Exchange policy](../guides/policy.md): implemented RBAC, full-document replacement and optimistic concurrency.
 - [Self-hosting](../guides/self-hosting.md): API/frontend origins, state and proxy configuration.
 - [Current architecture](../architecture/README.md): provisioning and exchange boundaries.
-- [Proposed product specification](../product/Specification.md): new node/workload grants and browser sessions, not yet represented by this snapshot.
+- [Proposed product specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md): new node/workload grants and browser sessions, not yet represented by this snapshot.

@@ -35,7 +35,7 @@ OpenClaw's exec-provider integration materializes credentials at activation/relo
 
 The MCP entry point still advertises `2024-11-05`, expects `Content-Length` framing, and has no URL-mode elicitation. Its registration hooks do not create a general bridge from the secret map to a stock client's shell or browser. A config file, generated entry point or package manifest is not evidence that the full flow works in Claude Code, Codex or another client.
 
-W1 must implement standard framing, negotiated human-input transport and actual credential consumption through the proposed host broker. Browser session handoff protects the source password against accidental exposure while intentionally giving the agent session authority. It is a new operation, not an existing OpenClaw storage capability. See [the specification](../product/Specification.md#mcp-and-human-input-transport).
+W1 must implement standard framing, negotiated human-input transport and actual credential consumption through the proposed host broker. Browser session handoff protects the source password against accidental exposure while intentionally giving the agent session authority. It is a new operation, not an existing OpenClaw storage capability. See [the specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#mcp-and-human-input-transport).
 
 ## Packaging and maintenance
 
@@ -43,4 +43,4 @@ The repository has scripts for [building](../../scripts/build_bundle.sh), [stagi
 
 The retained repository instruction file is [AGENTS.md](../../AGENTS.md); integration tool guidance lives with the packaged skill. Distribution metadata must list only retained artifacts. Run the relevant [packaging tests](../testing/README.md#test-matrix) when those files change.
 
-The proposed plaintext-config migration command and broader OpenClaw expansion remain W4 work, with [A-series scenarios](../testing/Linux%20Fleet%20Pilot.md#security-and-later-milestones). No generic migration, new backend, additional client support or release readiness is established by this documentation cleanup.
+The proposed plaintext-config migration command and broader OpenClaw expansion remain W4 work, with [A-series scenarios](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md#security-and-later-milestones). No generic migration, new backend, additional client support or release readiness is established by this documentation cleanup.

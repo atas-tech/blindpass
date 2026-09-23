@@ -5,8 +5,8 @@ The [current threat model](blindpass-threat-model.md) owns the present interpret
 | Reference | Use |
 |---|---|
 | [Current threat model](blindpass-threat-model.md) | Actual auth/storage behavior, plaintext boundaries, residual risks and proposed fleet threats |
-| [Product finding register](../product/Specification.md#repository-findings) | F-1–F-13 with historical provenance and selected current corrections |
-| [Pilot security tests](../testing/Linux%20Fleet%20Pilot.md) | Required future OS, browser, deployment and release evidence |
+| [Product finding register](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#repository-findings) | F-1–F-13 with historical provenance and selected current corrections |
+| [Pilot security tests](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) | Required future OS, browser, deployment and release evidence |
 | [Dependency baseline](../product/decisions/0003-dependency-baseline-2026-09.md) | 2026-09-22 `npm audit` snapshot, upgrade tiers and Socket review status; existing npm manifests remain unchanged, while P01's dependency-free Cargo workspace is separate |
 | Historical audits and threat model | Maintained in the Obsidian vault; they are evidence, not a current open/closed ledger |
 

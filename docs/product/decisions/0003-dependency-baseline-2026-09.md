@@ -2,7 +2,7 @@
 
 **Status:** Partially implemented 2026-09-23. The user approved the reviewed Vitest 4.1.11, Vite 7.3.6, Fastify 5.12.5 and react-router-dom 7.18.4 upgrade slice; those four direct dependencies and their resolved lockfile entries are updated. Other proposed maintenance upgrades remain unapplied. P01 adds a dependency-free Cargo workspace. See the [P01 execution record](../../testing/p01-host-broker-evidence.md).
 
-**Companions:** [Decision 0001](0001-dashboard-ui-stack.md) · [Decision 0002](0002-rust-controller-and-broker.md) · [Security documentation](../../security/README.md) · [Repository instructions](../../../AGENTS.md)
+**Companions:** [Decision 0001](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0001-dashboard-ui-stack.md) · [Decision 0002](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0002-rust-controller-and-broker.md) · [Security documentation](../../security/README.md) · [Repository instructions](../../../AGENTS.md)
 
 ## Context
 
@@ -40,7 +40,7 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 
 `@vitejs/plugin-react` stays at 5.2.0 because 6.x requires Vite 8. TypeScript stays at 5.9.3. CI and the Node-based Docker build/runtime images use Node 26.x to match the recorded P00 runtime; the root `engines` field and `.npmrc` reject a different major during npm install.
 
-**Tier B: baseline for the rebuilt dashboard package only** ([Decision 0001](0001-dashboard-ui-stack.md)).
+**Tier B: baseline for the rebuilt dashboard package only** ([Decision 0001](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0001-dashboard-ui-stack.md)).
 
 | Package | Version | Notes |
 |---|---|---|
@@ -72,7 +72,7 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 
 - The approved slice removes the pre-upgrade Vitest critical advisory and updates Fastify and react-router. Ten advisories remain in the lockfile, including PostCSS and viem; `npm audit` is a package advisory inventory, not proof that a deployed service is exploitable or safe.
 - The rebuilt dashboard starts on Tier B and never inherits the Tailwind or PostCSS toolchain.
-- New Rust crates for [Decision 0002](0002-rust-controller-and-broker.md) follow the same skill with the `cargo` ecosystem.
+- New Rust crates for [Decision 0002](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0002-rust-controller-and-broker.md) follow the same skill with the `cargo` ecosystem.
 
 ## Evidence
 

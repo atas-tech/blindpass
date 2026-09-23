@@ -1,6 +1,6 @@
 # Dashboard maintenance
 
-The existing dashboard is a React/Vite application using Tailwind and CSS custom properties. Theme and localization expansion follow the [roadmap freeze](../product/Roadmap.md#freeze-register); maintaining existing screens and translations remains part of normal changes. The replacement is specified in [Decision 0001](../product/decisions/0001-dashboard-ui-stack.md); until it lands, this application receives the security-driven dependency updates in [Decision 0003](../product/decisions/0003-dependency-baseline-2026-09.md) and no feature work.
+The existing dashboard is a React/Vite application using Tailwind and CSS custom properties. Theme and localization expansion follow the [roadmap freeze](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#freeze-register); maintaining existing screens and translations remains part of normal changes. The replacement is specified in [Decision 0001](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0001-dashboard-ui-stack.md); until it lands, this application receives the security-driven dependency updates in [Decision 0003](../product/decisions/0003-dependency-baseline-2026-09.md) and no feature work.
 
 ## Styles
 

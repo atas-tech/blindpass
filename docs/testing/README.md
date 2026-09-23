@@ -1,6 +1,6 @@
 # Repository test setup
 
-This is the current command reference. The [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the Obsidian vault. A passing workspace suite does not establish the new broker, browser or deployment guarantees.
+This is the current command reference. The [Linux Fleet Pilot](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the Obsidian vault. A passing workspace suite does not establish the new broker, browser or deployment guarantees.
 
 The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are in this repository. The selected local QEMU/KVM profile passed on source SHA `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` on 2026-09-23; a shared self-hosted CI runner remains an explicit prerequisite and is never inferred from hosted CI.
 

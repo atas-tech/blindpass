@@ -1,6 +1,6 @@
 # Self-hosting the current SPS stack
 
-This guide covers the repository's existing source and application-container configuration. It does not establish production readiness, image availability, or the proposed native/container fleet-controller support. Those release requirements are in [W2/W3](../product/Roadmap.md#sequence-and-gates).
+This guide covers the repository's existing source and application-container configuration. It does not establish production readiness, image availability, or the proposed native/container fleet-controller support. Those release requirements are in [W2/W3](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#sequence-and-gates).
 
 ## Deployment choices in the repository
 

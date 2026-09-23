@@ -1,6 +1,6 @@
 # Quick start from source
 
-This starts the existing SPS, dashboard and encrypted secret-input page on an isolated development machine. It does not install the proposed Linux host broker or browser session-handoff pilot. See the [roadmap](../product/Roadmap.md) for that work.
+This starts the existing SPS, dashboard and encrypted secret-input page on an isolated development machine. It does not install the proposed Linux host broker or browser session-handoff pilot. See the [roadmap](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md) for that work.
 
 ## Prerequisites
 

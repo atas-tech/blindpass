@@ -3,8 +3,8 @@
 ## Scope and sources of truth
 
 - Read [docs/README.md](docs/README.md) for documentation ownership and current implementation limits.
-- Forward work follows [Roadmap](docs/product/Roadmap.md), [Specification](docs/product/Specification.md), and [Linux Fleet Pilot](docs/testing/Linux%20Fleet%20Pilot.md). The host broker, browser session handoff, and native/container fleet parity are proposed, not shipped. [Decision records](docs/product/decisions/README.md) fix the rebuilt dashboard stack, the Rust broker/controller direction and the dependency baseline.
-- Files under [docs/archive](docs/archive/README.md) are historical records. Their checkboxes, deadlines, and proposed work do not override the current roadmap or reactivate frozen features.
+- Forward work follows the [Roadmap](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md), [Specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md), and [Linux Fleet Pilot](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) in the Obsidian docs vault. The selected P01 broker profile has [execution evidence](docs/testing/p01-host-broker-evidence.md); browser session handoff and native/container fleet parity remain proposed. [Decision records](docs/product/decisions/README.md) track the dashboard stack, Rust broker/controller direction and dependency baseline.
+- [Historical records](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/archive/README.md) live in the Obsidian docs vault. Their checkboxes, deadlines, and proposed work do not override the current roadmap or reactivate frozen features.
 - Use source and executed tests to establish behavior. Do not turn a plan, source inspection, or skipped suite into a claim that a feature works.
 
 ## Workspace
@@ -27,7 +27,7 @@ Scripts and packaging live in `scripts/`; service templates live in `deploy/`. R
 
 - Follow surrounding TypeScript/JavaScript style; TypeScript is strict ESM/NodeNext. Keep `.js` suffixes on local TypeScript imports.
 - Use descriptive kebab-case filenames, camelCase values/functions, PascalCase types and UPPER_SNAKE_CASE environment variables. Avoid unrelated reformatting.
-- Use relative links and paths in documentation, never machine-specific checkout paths. Update inbound links when moving or deleting documents.
+- Use relative links within this repository and stable docs-vault URLs across repository boundaries; never use machine-specific checkout paths. Update inbound links when moving or deleting documents.
 - Keep credentials, `.env` files, private keys, live links and bearer tokens out of commits, chat, logs and test evidence. Use generated dummy canaries for exposure checks.
 - Identify the plaintext consumer honestly. Runtime memory, encrypted-at-rest storage, service delivery and a browser session have different exposure and lifetime limits.
 - For adding, upgrading, removing or reviewing software dependencies, **use the global `dependency-guard` skill before changing manifests or lockfiles** and evaluate its Socket risk signals. Stop for unresolved risk as the skill requires.
@@ -51,6 +51,6 @@ Run commands from the repository root. [Testing setup](docs/testing/README.md) c
 
 For implementation changes, run the workspace build/tests and relevant integration/E2E gates. Add meaningful regression coverage for behavior changes, especially authorization, secret handling, transport fallback, TTL and one-use retrieval. For documentation-only edits, check links, command accuracy and `git diff --check`; report which runtime checks were not run.
 
-**Phase testing rule:** When planning or implementing a phase/milestone, define comprehensive E2E and integration scenarios in the corresponding plan under `docs/testing/`, and implement them alongside feature code. Preserve scenario IDs and record actual execution evidence. The Linux pilot requires real systemd VM and stock-client tests; mocks cannot establish those guarantees.
+**Phase testing rule:** When planning or implementing a phase/milestone, define comprehensive E2E and integration scenarios in the paired plan under `blindpass/docs/testing/phases/` in the Obsidian docs vault, and implement them alongside feature code. Preserve scenario IDs and record actual execution evidence in repository-bound records. The Linux pilot requires real systemd VM and stock-client tests; mocks cannot establish those guarantees.
 
 Use Conventional Commit subjects. PRs should state the behavior change, affected packages, checks run and material limits; include screenshots or message samples for visible UI/chat changes. Do not include secret values in review artifacts.

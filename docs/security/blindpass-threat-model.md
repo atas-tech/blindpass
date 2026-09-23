@@ -8,7 +8,7 @@ Existing SPS, browser input, dashboard, gateway, agent runtime and OpenClaw path
 
 Protect source credentials, access/refresh tokens, bootstrap API keys, signing keys, secure-input links, recipient-key integrity, workspace policy and authorization/audit state. The browser handling input and the recipient decrypting it are plaintext endpoints. HPKE protects the relay path only when endpoint code and recipient-key binding are trustworthy.
 
-An authorized process receiving a credential can read/copy it. The proposed browser mode intentionally hands session authority to the agent. A short SPS retrieval TTL or broker grant does not shorten a static provider key's lifetime or revoke a website session. See [mode/revocation contracts](../product/Specification.md#consumption-modes).
+An authorized process receiving a credential can read/copy it. The proposed browser mode intentionally hands session authority to the agent. A short SPS retrieval TTL or broker grant does not shorten a static provider key's lifetime or revoke a website session. See [mode/revocation contracts](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#consumption-modes).
 
 ## Authentication storage
 
@@ -62,7 +62,7 @@ Other controls reported in historical audits—fail-closed signing configuration
 
 ## Evidence and follow-up
 
-The [pilot test catalog](../testing/Linux%20Fleet%20Pilot.md) owns scenario detail. S-series covers W5 regressions; B-series covers mode-1 browser handoff; fleet E/I/C/O/D covers identity, service delivery and deployment. Existing repository test locations and flags are in [testing setup](../testing/README.md).
+The [pilot test catalog](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) owns scenario detail. S-series covers W5 regressions; B-series covers mode-1 browser handoff; fleet E/I/C/O/D covers identity, service delivery and deployment. Existing repository test locations and flags are in [testing setup](../testing/README.md).
 
 Resolve audit items by identifier and evidence date. This update corrects F-7/F-8 documentation and v2 M-2/M-3's current interpretation; code/test/deployment follow-up remains explicit. Confirmation codes, storage cleanup, client timeouts, origin restrictions, deployment hygiene and active-path exposure risks stay in W5. Frozen guest/payment risks remain tracked rather than disappearing with the old roadmap.
 

@@ -39,4 +39,4 @@ Use the same frontend origin as the rest of your development setup. The helper p
 - `scripts/db-reset.mjs` drops/recreates database state. It is not a routine prerequisite and must only target a deliberately disposable database.
 - Tier-change and x402 demos exercise retained commercial code. They are outside the active pilot and must not imply current pricing or payment readiness. Consult the historical test plans in the Obsidian vault only when maintaining those paths under a concrete task.
 
-The [dashboard E2E suite](README.md#test-matrix) is the maintained automated browser-test entry point for existing app behavior. New host/browser guarantees require the separate [fleet pilot plan](Linux%20Fleet%20Pilot.md).
+The [dashboard E2E suite](README.md#test-matrix) is the maintained automated browser-test entry point for existing app behavior. New host/browser guarantees require the separate [fleet pilot plan](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md).

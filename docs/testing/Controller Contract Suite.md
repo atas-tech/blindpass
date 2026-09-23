@@ -4,9 +4,9 @@
 
 **Status:** P00 TypeScript baseline implemented and executed on 2026-09-22; Rust parity and fleet scenarios remain proposed.
 
-**Design:** [Decision 0002](../product/decisions/0002-rust-controller-and-broker.md) · [Specification](../product/Specification.md) · [Linux Fleet Pilot](Linux%20Fleet%20Pilot.md)
+**Design:** [Decision 0002](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0002-rust-controller-and-broker.md) · [Specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md) · [Linux Fleet Pilot](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md)
 
-The Rust controller is built test-first. The CT01–CT18 compatibility baseline is written and made green against the existing TypeScript SPS before any Rust endpoint exists, then run against the Rust scaffold and driven green endpoint by endpoint. It covers API compatibility for machine clients. It does not cover the OS, broker or deployment guarantees, which stay in the [pilot plan](Linux%20Fleet%20Pilot.md).
+The Rust controller is built test-first. The CT01–CT18 compatibility baseline is written and made green against the existing TypeScript SPS before any Rust endpoint exists, then run against the Rust scaffold and driven green endpoint by endpoint. It covers API compatibility for machine clients. It does not cover the OS, broker or deployment guarantees, which stay in the [pilot plan](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md).
 
 P00 owns the TypeScript baseline and P02 the Rust parity gate; their implementation and acceptance plans are maintained in the Obsidian vault. The cross-language portion of CV06 necessarily runs after Rust crypto exists. The compatibility envelope preserves selected machine behavior; frozen paid-tier/guest/hosted-signup branches have explicit exclusions, while new local administration and fleet APIs have separate phase tests.
 

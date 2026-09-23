@@ -12,7 +12,7 @@ python3 -m http.server 4173 --bind 127.0.0.1 --directory landing/dist
 
 Open `http://127.0.0.1:4173`. No dependency installation or build is required. The page can also be opened directly from [dist/index.html](dist/index.html).
 
-Product copy follows the [roadmap](../docs/product/Roadmap.md) and [specification](../docs/product/Specification.md). Edit the HTML, stylesheet and script directly in `dist/`; this directory contains authored source, not disposable build output. The font is the existing Inter asset reused from the browser UI.
+Product copy follows the [roadmap](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md) and [specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md). Edit the HTML, stylesheet and script directly in `dist/`; this directory contains authored source, not disposable build output. The font is the existing Inter asset reused from the browser UI.
 
 Current-flow copy is grounded in the [exchange policy guide](../docs/guides/policy.md), [OpenClaw integration contracts](../docs/plugins/openclaw-capability-extension.md), and their linked source. The Linux host broker, browser handoff and fleet-controller parity remain proposed; these illustrations do not establish deployment or stock-client compatibility.
 
@@ -27,7 +27,7 @@ These checks use DOM doubles to cover success, rejection, flow switching and the
 
 ## Machine-readable summary
 
-[dist/llms.txt](dist/llms.txt) publishes with the page and is the summary automated readers will quote. Keep it to claims the repository supports, and keep its implemented/proposed split identical to the page's. It separately records the boundaries that marketing copy tends to drop: the plaintext endpoints, that delivery limits are not revocation, and that approval does not constrain later use. Do not reintroduce archive-era terminology such as "zero-knowledge", named defensive-layer counts, TEE or egress filtering; [Specification](../docs/product/Specification.md#repository-findings) and the [threat model](../docs/security/blindpass-threat-model.md) correct those.
+[dist/llms.txt](dist/llms.txt) publishes with the page and is the summary automated readers will quote. Keep it to claims the repository supports, and keep its implemented/proposed split identical to the page's. It separately records the boundaries that marketing copy tends to drop: the plaintext endpoints, that delivery limits are not revocation, and that approval does not constrain later use. Do not reintroduce archive-era terminology such as "zero-knowledge", named defensive-layer counts, TEE or egress filtering; [Specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#repository-findings) and the [threat model](../docs/security/blindpass-threat-model.md) correct those.
 
 ## Analytics
 

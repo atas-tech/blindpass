@@ -23,7 +23,7 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 
 - The root workspace package is marked `private` and uses `SEE LICENSE IN LICENSES.md` because the repository contains packages under more than one license.
 - The six original application/integration packages include `LICENSE` files. The shared i18n package currently declares its license in `package.json` only; this documentation update does not add or change licensing terms.
-- The [original licensing proposal](docs/archive/Licensing_Proposal.md) is historical rationale; the package metadata/license files and this matrix describe the current repository.
+- The [original licensing proposal](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/archive/Licensing_Proposal.md) in the docs vault is historical rationale; the package metadata/license files and this matrix describe the current repository.
 
 ## Boundary Expectations
 

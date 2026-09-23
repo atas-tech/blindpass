@@ -59,4 +59,4 @@ export SPS_EXCHANGE_POLICY_JSON='[{"ruleId":"approve-staging-read","secretName":
 
 Do not copy a broad development allow rule into an unrelated workspace. Use the dashboard Policy page to inspect/save existing hosted policy. [Demos](../testing/Manual%20Demos.md) document their own dummy-data fixtures; the [API snapshot](../api/openapi.yaml) describes request envelopes.
 
-The fleet pilot needs workload/invocation identity, local authority ceilings and operation/session lifetime enforcement beyond this exchange engine. Its proposed contract is in the [specification](../product/Specification.md#identity-and-authorization).
+The fleet pilot needs workload/invocation identity, local authority ceilings and operation/session lifetime enforcement beyond this exchange engine. Its proposed contract is in the [specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#identity-and-authorization).

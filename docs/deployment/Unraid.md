@@ -40,4 +40,4 @@ Check `/healthz` and `/readyz`, including per-service results. Back up PostgreSQ
 
 If links point at the wrong page, check `SPS_UI_BASE_URL`. If frontends call the wrong API, rebuild with the correct `VITE_SPS_API_URL`. If browser requests fail, check exact CORS origins and HTTPS/cookie topology. If SPS cannot reach a backing service, check its configured container hostname, network and credentials.
 
-The [self-hosting guide](../guides/self-hosting.md) covers common configuration limits. New controller packaging and recovery support must pass [W2](../product/Roadmap.md#sequence-and-gates) and the [deployment tests](../testing/Linux%20Fleet%20Pilot.md#controller-packaging-persistence-and-migration).
+The [self-hosting guide](../guides/self-hosting.md) covers common configuration limits. New controller packaging and recovery support must pass [W2](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#sequence-and-gates) and the [deployment tests](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md#controller-packaging-persistence-and-migration).

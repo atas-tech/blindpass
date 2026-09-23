@@ -1,6 +1,6 @@
 # Current code architecture
 
-**Source inspection:** 2026-09-22. This page describes the existing repository, not a deployment certification. Forward design lives in the [product specification](../product/Specification.md); historical phases are in the Obsidian vault.
+**Source inspection:** 2026-09-22. This page describes the existing repository, not a deployment certification. Forward design lives in the [product specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md); historical phases are in the Obsidian vault.
 
 ## Components
 
@@ -38,6 +38,6 @@ Workspace policy is PostgreSQL-backed in hosted mode, with bootstrap seeding and
 - Receiving a secret into plugin memory does not make it available to unrelated shell/browser tools. The runtime store has no built-in TTL/use-count enforcement.
 - SOPS protects stored material; the resolver intentionally emits plaintext to its consuming runtime. Service/session authority cannot be revoked by expiring an SPS handoff alone.
 - Current Dockerfiles/Unraid templates package SPS and frontends. They do not implement the W2 controller's non-root, recovery, migration and two-host parity contract.
-- Billing, x402, guest intake and existing A2A code remain in the repository; new investment follows the [freeze register](../product/Roadmap.md#freeze-register).
+- Billing, x402, guest intake and existing A2A code remain in the repository; new investment follows the [freeze register](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#freeze-register).
 
-For current checks use [testing setup](../testing/README.md). The [fleet test plan](../testing/Linux%20Fleet%20Pilot.md) defines additional tests that existing suites cannot replace.
+For current checks use [testing setup](../testing/README.md). The [fleet test plan](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) defines additional tests that existing suites cannot replace.
