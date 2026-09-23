@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { startAdapter, type ServerAdapter } from "../src/adapter.js";
 import { httpRequest, jsonRequestBody, withBearer, withOrigin } from "../src/http.js";
-import { AGENT_IDS, CANARIES, SECRET_NAMES, type AgentId, type ContractFixture } from "../src/fixtures.js";
+import { addCanaries, AGENT_IDS, CANARIES, SECRET_NAMES, type AgentId, type ContractFixture } from "../src/fixtures.js";
 import { containsCanary } from "../src/normalization.js";
 import { SnapshotRecorder } from "../src/snapshots.js";
 import { expiredBrowserPayload, signBrowserPayload } from "../src/signing.js";
+import { verifyFulfillmentToken } from "../../sps-server/src/services/crypto.js";
+import { evaluatePolicyVectors } from "../src/vectors.js";
 
 const runContractSuite = Boolean(process.env.SUT);
 const describeContract = runContractSuite ? describe : describe.skip;
@@ -15,6 +17,12 @@ type Result = Awaited<ReturnType<typeof httpRequest>>;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function expectExpiresIn(expiresAt: number, ttlSeconds: number): void {
+  const remainingSeconds = expiresAt - Math.floor(Date.now() / 1000);
+  expect(remainingSeconds).toBeGreaterThanOrEqual(ttlSeconds - 1);
+  expect(remainingSeconds).toBeLessThanOrEqual(ttlSeconds);
 }
 
 function agent(fixture: ContractFixture, id: AgentId): { token: string; apiKey: string; agentId: string } {
@@ -91,6 +99,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(response.status).toBe(201);
     const body = requireBody(response);
     const parts = secretUrlParts(body.secret_url);
+    addCanaries(fixture, body.secret_url, parts.metadataSig, parts.submitSig);
     expect(parts.requestId).toMatch(/^[a-f0-9]{64}$/);
     return { ...parts, response };
   }
@@ -106,7 +115,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     secretName = SECRET_NAMES.allowed,
     snapshotName = "helper.exchange.request"
   ) {
-    return call<{
+    const response = await call<{
       exchange_id: string;
       status: string;
       expires_at: number;
@@ -120,6 +129,10 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
         fulfiller_hint: AGENT_IDS.fulfiller
       })
     }));
+    if (response.body?.fulfillment_token) {
+      addCanaries(fixture, response.body.fulfillment_token);
+    }
+    return response;
   }
 
   it("CT01 records health and readiness over HTTP", async () => {
@@ -137,7 +150,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
 
   it("CT02 preserves bootstrap-key auth, rotation, revocation, and throttling", async () => {
     const rotatable = agent(fixture, "rotatable");
-    const bearer = await call("CT02.token.bearer", "/api/v2/agents/token", {
+    const bearer = await call<{ access_token: string }>("CT02.token.bearer", "/api/v2/agents/token", {
       method: "POST",
       headers: {
         authorization: `Bearer ${rotatable.apiKey}`,
@@ -145,8 +158,9 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       }
     });
     expect(bearer.status).toBe(200);
+    addCanaries(fixture, requireBody(bearer).access_token);
 
-    const header = await call("CT02.token.header", "/api/v2/agents/token", {
+    const header = await call<{ access_token: string }>("CT02.token.header", "/api/v2/agents/token", {
       method: "POST",
       headers: {
         "x-agent-api-key": agent(fixture, "revocable").apiKey,
@@ -154,6 +168,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       }
     });
     expect(header.status).toBe(200);
+    addCanaries(fixture, requireBody(header).access_token);
 
     const missing = await call("CT02.token.missing", "/api/v2/agents/token", { method: "POST" });
     expect(missing.status).toBe(401);
@@ -175,6 +190,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     }));
     expect(rotate.status).toBe(200);
     const rotatedKey = requireBody(rotate).bootstrap_api_key;
+    addCanaries(fixture, rotatedKey);
 
     const oldKey = await call("CT02.key.rotated-old", "/api/v2/agents/token", {
       method: "POST",
@@ -182,11 +198,12 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     });
     expect(oldKey.status).toBe(401);
 
-    const newKey = await call("CT02.key.rotated-new", "/api/v2/agents/token", {
+    const newKey = await call<{ access_token: string }>("CT02.key.rotated-new", "/api/v2/agents/token", {
       method: "POST",
       headers: { authorization: `Bearer ${rotatedKey}`, "x-forwarded-for": "198.51.100.43" }
     });
     expect(newKey.status).toBe(200);
+    addCanaries(fixture, requireBody(newKey).access_token);
     fixture.agents.rotatable.apiKey = rotatedKey;
 
     const revoke = await call("CT02.key.revoke", `/api/v2/agents/${AGENT_IDS.revocable}`, withBearer(fixture.adminAccessToken, {
@@ -200,7 +217,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     });
     expect(revokedKey.status).toBe(401);
 
-    const limit = Number(process.env.CONTRACT_AGENT_TOKEN_RATE_LIMIT ?? 20);
+    const limit = 5;
     for (let index = 0; index < limit; index += 1) {
       await call(`CT02.rate.allowed.${index + 1}`, "/api/v2/agents/token", {
         method: "POST",
@@ -218,6 +235,8 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       }
     });
     expect(limited.status).toBe(429);
+    expect(requireBody<{ retry_after_seconds: number }>(limited).retry_after_seconds).toBeGreaterThan(0);
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 
   it("CT03 creates signed requests for hosted and external workload tokens", async () => {
@@ -231,6 +250,11 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       })
     }));
     expect(external.status).toBe(201);
+
+    const expiredExternal = await call("CT03.request.expired-external", "/api/v2/secret/request", withBearer(adapter.externalJwt({}, Math.floor(Date.now() / 1000) - 600), {
+      ...jsonRequestBody({ public_key: "Y29udHJhY3Q=", description: "expired external token" })
+    }));
+    expect(expiredExternal.status).toBe(401);
 
     const missing = await call("CT03.request.missing-auth", "/api/v2/secret/request", jsonRequestBody({
       public_key: "Y29udHJhY3Q=",
@@ -286,6 +310,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const created = await createSecretRequest("requester", "CT05 submit request");
     const submitted = await submitSecret(created.requestId, created.submitSig);
     expect(submitted.status).toBe(201);
+    expect(JSON.stringify(submitted.body)).not.toContain(CANARIES.ciphertext);
 
     const repeated = await call("CT05.submit.repeat", `/api/v2/secret/submit/${created.requestId}?sig=${encodeURIComponent(created.submitSig)}`, {
       ...jsonRequestBody({ enc: "ZW5jLXBvbGljeQ==", ciphertext: "Q0FOQVJZX0NJUEhFUl9QMDA" })
@@ -388,7 +413,11 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
   it("CT09 records allow, approval, deny, and unknown policy decisions", async () => {
     const allowed = await createExchange("CT09 allow", SECRET_NAMES.allowed, "CT09.exchange.allow");
     expect(allowed.status).toBe(201);
-    expect(requireBody(allowed).policy).toMatchObject({ mode: "allow", rule_id: "contract-allow" });
+    const allowedBody = requireBody(allowed);
+    expect(allowedBody.policy).toMatchObject({ mode: "allow", rule_id: "contract-allow" });
+    const allowedClaims = await verifyFulfillmentToken(allowedBody.fulfillment_token, fixture.hmacSecret);
+    const policyVectors = await evaluatePolicyVectors(fixture.workspaceId);
+    expect(allowedClaims.policy_hash).toBe(policyVectors[4]?.policy_hash);
 
     const approval = await createExchange("CT09 approval", SECRET_NAMES.approval, "CT09.exchange.approval");
     expect(approval.status).toBe(403);
@@ -407,11 +436,14 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(exchange.status).toBe(201);
     const exchangeId = requireBody(exchange).exchange_id;
     const fulfillmentToken = requireBody(exchange).fulfillment_token;
+    expectExpiresIn(requireBody(exchange).expires_at, Number(process.env.CONTRACT_REQUEST_TTL_SECONDS ?? 8));
 
     const pending = await call("CT10.status.pending", `/api/v2/secret/exchange/status/${exchangeId}`, withBearer(agent(fixture, "requester").token));
     expect(pending.status).toBe(200);
     const foreign = await call("CT10.status.foreign", `/api/v2/secret/exchange/status/${exchangeId}`, withBearer(agent(fixture, "fulfiller").token));
     expect(foreign.status).toBe(410);
+    const thirdParty = await call("CT10.status.third-party", `/api/v2/secret/exchange/status/${exchangeId}`, withBearer(agent(fixture, "observer").token));
+    expect(thirdParty.status).toBe(410);
 
     const reserved = await call("helper.exchange.fulfill", "/api/v2/secret/exchange/fulfill", withBearer(agent(fixture, "fulfiller").token, {
       ...jsonRequestBody({ fulfillment_token: fulfillmentToken })
@@ -431,12 +463,30 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(retrieved.status).toBe(200);
     const afterRetrieve = await call("CT10.status.after-retrieve", `/api/v2/secret/exchange/status/${exchangeId}`, withBearer(agent(fixture, "requester").token));
     expect(afterRetrieve.status).toBe(410);
+
+    const expiredExchange = await createExchange("CT10 expiry", SECRET_NAMES.allowed, "CT10.exchange.expiring");
+    const expiredExchangeId = requireBody(expiredExchange).exchange_id;
+    await sleep(Number(process.env.CONTRACT_REQUEST_TTL_SECONDS ?? 8) * 1000 + 250);
+    const expiredStatus = await call("CT10.status.expired", `/api/v2/secret/exchange/status/${expiredExchangeId}`, withBearer(agent(fixture, "requester").token));
+    expect(expiredStatus.status).toBe(410);
   });
 
   it("CT11 binds fulfillment and submission to the authorized fulfiller", async () => {
     const exchange = await createExchange("CT11 ownership");
     expect(exchange.status).toBe(201);
     const created = requireBody(exchange);
+    const claims = await verifyFulfillmentToken(created.fulfillment_token, fixture.hmacSecret);
+    expect(claims).toMatchObject({
+      exchange_id: created.exchange_id,
+      requester_id: agent(fixture, "requester").agentId,
+      workspace_id: fixture.workspaceId,
+      secret_name: SECRET_NAMES.allowed,
+      purpose: "CT11 ownership",
+      tokenKind: "agent"
+    });
+    const rawClaims = JSON.parse(Buffer.from(created.fulfillment_token.split(".")[1]!, "base64url").toString()) as Record<string, unknown>;
+    expect(rawClaims).toMatchObject({ iss: "sps", aud: "agent-fulfill" });
+    expectExpiresIn(Number(rawClaims.exp), Number(process.env.CONTRACT_REQUEST_TTL_SECONDS ?? 8));
 
     const wrongFulfiller = await call("CT11.fulfill.wrong-agent", "/api/v2/secret/exchange/fulfill", withBearer(agent(fixture, "observer").token, {
       ...jsonRequestBody({ fulfillment_token: created.fulfillment_token })
@@ -447,21 +497,45 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       ...jsonRequestBody({ fulfillment_token: created.fulfillment_token })
     }));
     expect(reserved.status).toBe(200);
+    const beforeSubmit = await call("CT11.retrieve.before-submit", `/api/v2/secret/exchange/retrieve/${created.exchange_id}`, withBearer(agent(fixture, "requester").token));
+    expect(beforeSubmit.status).toBe(409);
 
     const wrongSubmit = await call("CT11.submit.wrong-agent", `/api/v2/secret/exchange/submit/${created.exchange_id}`, withBearer(agent(fixture, "observer").token, {
-      ...jsonRequestBody({ enc: "ZW5j", ciphertext: "Y2lwaGVy" })
+      ...jsonRequestBody({ enc: "ZW5j", ciphertext: CANARIES.ciphertext })
     }));
     expect(wrongSubmit.status).toBe(409);
 
     const submitted = await call("CT11.submit.owner", `/api/v2/secret/exchange/submit/${created.exchange_id}`, withBearer(agent(fixture, "fulfiller").token, {
-      ...jsonRequestBody({ enc: "ZW5j", ciphertext: "Y2lwaGVy" })
+      ...jsonRequestBody({ enc: "ZW5j", ciphertext: CANARIES.ciphertext })
     }));
     expect(submitted.status).toBe(201);
+
+    const wrongRetrieve = await call("CT11.retrieve.wrong-agent", `/api/v2/secret/exchange/retrieve/${created.exchange_id}`, withBearer(agent(fixture, "observer").token));
+    expect(wrongRetrieve.status).toBe(410);
 
     const before = await call("CT11.retrieve.requester", `/api/v2/secret/exchange/retrieve/${created.exchange_id}`, withBearer(agent(fixture, "requester").token));
     expect(before.status).toBe(200);
     const replay = await call("CT11.retrieve.replay", `/api/v2/secret/exchange/retrieve/${created.exchange_id}`, withBearer(agent(fixture, "requester").token));
     expect(replay.status).toBe(410);
+
+    const racedExchange = await createExchange("CT11 parallel retrieve", SECRET_NAMES.allowed, "CT11.exchange.parallel");
+    const raced = requireBody(racedExchange);
+    const racedReserve = await call("helper.CT11.parallel.fulfill", "/api/v2/secret/exchange/fulfill", withBearer(agent(fixture, "fulfiller").token, {
+      ...jsonRequestBody({ fulfillment_token: raced.fulfillment_token })
+    }));
+    expect(racedReserve.status).toBe(200);
+    const racedSubmit = await call("helper.CT11.parallel.submit", `/api/v2/secret/exchange/submit/${raced.exchange_id}`, withBearer(agent(fixture, "fulfiller").token, {
+      ...jsonRequestBody({ enc: "ZW5j", ciphertext: CANARIES.ciphertext })
+    }));
+    expect(racedSubmit.status).toBe(201);
+    const raceResults = await Promise.all(Array.from({ length: 8 }, () => httpRequest(
+      fixture.baseUrl,
+      `/api/v2/secret/exchange/retrieve/${raced.exchange_id}`,
+      withBearer(agent(fixture, "requester").token)
+    )));
+    const raceStatuses = raceResults.map((result) => result.status).sort((left, right) => left - right);
+    snapshots.recordValue("CT11.retrieve.race", raceStatuses);
+    expect(raceStatuses).toEqual([200, 410, 410, 410, 410, 410, 410, 410]);
   });
 
   it("CT12 makes revocation requester/admin-authorized and idempotent", async () => {
@@ -469,6 +543,9 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const requesterId = requireBody(requesterExchange).exchange_id;
     const revoke = await call("CT12.revoke.requester", `/api/v2/secret/exchange/revoke/${requesterId}`, withBearer(agent(fixture, "requester").token, { method: "DELETE" }));
     expect(revoke.status).toBe(200);
+    expect(requireBody(revoke)).toEqual({ status: "revoked" });
+    const revokedStatus = await call("CT12.status.revoked", `/api/v2/secret/exchange/status/${requesterId}`, withBearer(agent(fixture, "requester").token));
+    expect(requireBody(revokedStatus)).toEqual({ status: "revoked" });
     const repeat = await call("CT12.revoke.repeat", `/api/v2/secret/exchange/revoke/${requesterId}`, withBearer(agent(fixture, "requester").token, { method: "DELETE" }));
     expect(repeat.status).toBe(200);
     const foreign = await call("CT12.revoke.foreign", `/api/v2/secret/exchange/revoke/${requesterId}`, withBearer(agent(fixture, "fulfiller").token, { method: "DELETE" }));
@@ -476,11 +553,32 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const revokedRetrieve = await call("CT12.retrieve.revoked", `/api/v2/secret/exchange/retrieve/${requesterId}`, withBearer(agent(fixture, "requester").token));
     expect(revokedRetrieve.status).toBe(409);
 
+    const reservedExchange = await createExchange("CT12 reserved revoke", SECRET_NAMES.allowed, "CT12.exchange.reserved");
+    const reservedBody = requireBody(reservedExchange);
+    const reserve = await call("CT12.fulfill.reserved", "/api/v2/secret/exchange/fulfill", withBearer(agent(fixture, "fulfiller").token, {
+      ...jsonRequestBody({ fulfillment_token: reservedBody.fulfillment_token })
+    }));
+    expect(reserve.status).toBe(200);
+    const reservedRevoke = await call("CT12.revoke.reserved", `/api/v2/secret/exchange/revoke/${reservedBody.exchange_id}`, withBearer(agent(fixture, "requester").token, { method: "DELETE" }));
+    expect(requireBody(reservedRevoke)).toEqual({ status: "revoked" });
+    const reservedStatus = await call("CT12.status.reserved-revoked", `/api/v2/secret/exchange/status/${reservedBody.exchange_id}`, withBearer(agent(fixture, "requester").token));
+    expect(requireBody(reservedStatus)).toEqual({ status: "revoked" });
+    const reservedRetrieve = await call("CT12.retrieve.reserved-revoked", `/api/v2/secret/exchange/retrieve/${reservedBody.exchange_id}`, withBearer(agent(fixture, "requester").token));
+    expect(reservedRetrieve.status).toBe(409);
+
     const adminExchange = await createExchange("CT12 admin revoke");
     const adminId = requireBody(adminExchange).exchange_id;
     const adminToken = adapter.externalJwt({ admin: true });
     const adminRevoke = await call("CT12.revoke.admin", `/api/v2/secret/exchange/revoke/${adminId}`, withBearer(adminToken, { method: "DELETE" }));
     expect(adminRevoke.status).toBe(200);
+    const adminRevokedStatus = await call("CT12.status.admin-revoked", `/api/v2/secret/exchange/status/${adminId}`, withBearer(agent(fixture, "requester").token));
+    expect(requireBody(adminRevokedStatus)).toEqual({ status: "revoked" });
+
+    await sleep(Number(process.env.CONTRACT_REVOKED_TTL_SECONDS ?? 4) * 1000 + 250);
+    const afterExpiry = await call("CT12.retrieve.revoked-expired", `/api/v2/secret/exchange/retrieve/${requesterId}`, withBearer(agent(fixture, "requester").token));
+    expect(afterExpiry.status).toBe(410);
+    const statusAfterExpiry = await call("CT12.status.revoked-expired", `/api/v2/secret/exchange/status/${requesterId}`, withBearer(agent(fixture, "requester").token));
+    expect(statusAfterExpiry.status).toBe(410);
   });
 
   it("CT13 keeps pending approval machine-visible and continues only after an admin decision", async () => {
@@ -519,11 +617,12 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     });
     expect(seeded.status).toBe(201);
     const oldRefresh = requireBody(seeded).refresh_token;
+    const refreshWorkspaceAccess = requireBody(seeded).access_token;
+    addCanaries(fixture, oldRefresh, refreshWorkspaceAccess);
     const rotated = await call<{ refresh_token: string; access_token: string }>("CT14.refresh.valid", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: oldRefresh }));
     expect(rotated.status).toBe(200);
     const rotatedBody = requireBody(rotated);
-    fixture.adminRefreshToken = rotatedBody.refresh_token;
-    fixture.adminAccessToken = rotatedBody.access_token;
+    addCanaries(fixture, rotatedBody.refresh_token, rotatedBody.access_token);
 
     const replay = await call("CT14.refresh.replay", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: oldRefresh }));
     expect(replay.status).toBe(401);
@@ -532,13 +631,13 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(absent.status).toBe(401);
 
     await sleep(Number(process.env.CONTRACT_REFRESH_TOKEN_TTL_SECONDS ?? 10) * 1000 + 250);
-    const expired = await call("CT14.refresh.expired", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: fixture.adminRefreshToken }));
+    const expired = await call("CT14.refresh.expired", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: rotatedBody.refresh_token }));
     expect(expired.status).toBe(401);
   });
 
   it("CT15 records rate-limit rejection and window reset without changing production defaults", async () => {
     await sleep(Number(process.env.CONTRACT_AGENT_TOKEN_RATE_WINDOW_MS ?? 1000) + 250);
-    const reset = await call("CT15.rate.reset", "/api/v2/agents/token", {
+    const reset = await call<{ access_token: string }>("CT15.rate.reset", "/api/v2/agents/token", {
       method: "POST",
       headers: {
         authorization: `Bearer ${fixture.agents.rotatable.apiKey}`,
@@ -546,6 +645,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       }
     });
     expect(reset.status).toBe(200);
+    addCanaries(fixture, requireBody(reset).access_token);
     expect(namedResults.get("CT02.rate.limited")?.status).toBe(429);
   });
 
@@ -566,12 +666,31 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       }
     }));
     expect(disallowed.headers.get("access-control-allow-origin")).toBeNull();
+
+    const allowedSimple = await call("CT16.cors.allowed-simple", "/healthz", withOrigin("http://allowed.contract.test"));
+    expect(allowedSimple.status).toBe(200);
+    expect(allowedSimple.headers.get("access-control-allow-origin")).toBe("http://allowed.contract.test");
+
+    const disallowedSimple = await call("CT16.cors.disallowed-simple", "/healthz", withOrigin("http://denied.contract.test"));
+    expect(disallowedSimple.status).toBe(200);
+    expect(disallowedSimple.headers.get("access-control-allow-origin")).toBeNull();
   });
 
   it("CT17 records metadata-only audit output and rejects canary leakage", async () => {
     const audit = await call<{ records: unknown[] }>("CT17.audit", "/api/v2/audit/?limit=200", withBearer(fixture.adminAccessToken));
     expect(audit.status).toBe(200);
-    expect(containsCanary(requireBody(audit), [CANARIES.plaintext, CANARIES.ciphertext, CANARIES.apiKey, CANARIES.signedLink])).toEqual([]);
+    const records = requireBody(audit).records;
+    expect(records.length).toBeGreaterThan(0);
+    const eventTypes = new Set(records.flatMap((record) => {
+      if (!record || typeof record !== "object" || !("event_type" in record)) return [];
+      return [String(record.event_type)];
+    }));
+    expect([...eventTypes]).toEqual(expect.arrayContaining([
+      "agent_token_minted",
+      "exchange_pending_approval",
+      "exchange_rejected"
+    ]));
+    expect(containsCanary(records, fixture.canaries)).toEqual([]);
   });
 
   it("CT18 preserves route-specific error bodies across representative status classes", async () => {
@@ -584,8 +703,9 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const unauthorized = await call("CT18.error.401", "/api/v2/secret/request", jsonRequestBody({ public_key: "YQ==", description: "bad" }));
     expect(unauthorized.status).toBe(401);
 
-    const forbidden = await call("CT18.error.403", `/api/v2/secret/metadata/${"d".repeat(64)}?sig=1.invalid`, { method: "GET" });
-    expect([400, 403]).toContain(forbidden.status);
+    const forbidden = namedResults.get("CT04.metadata.submit-scope");
+    expect(forbidden?.status).toBe(403);
+    snapshots.recordValue("CT18.error.403", { status: forbidden?.status, body: forbidden?.body });
 
     const notFound = await call("CT18.error.404", "/route-that-does-not-exist");
     expect(notFound.status).toBe(404);
@@ -601,6 +721,11 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const limited = namedResults.get("CT02.rate.limited");
     expect(limited?.status).toBe(429);
     snapshots.recordValue("CT18.error.429", { status: limited?.status, body: limited?.body });
+
+    const tooLarge = await call("CT18.error.413", "/api/v2/secret/request", withBearer(agent(fixture, "requester").token, {
+      ...jsonRequestBody({ public_key: "YQ==", description: "x".repeat(1024 * 1024) })
+    }));
+    expect(tooLarge.status).toBe(413);
 
     const oversized = namedResults.get("CT05.submit.oversized");
     expect(oversized?.status).toBe(400);

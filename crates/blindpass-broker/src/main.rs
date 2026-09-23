@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use blindpass_broker::{BrokerConfig, BrokerState, DeliveryFault, load_protected_credential, run};
+use blindpass_broker::{
+    BrokerConfig, BrokerState, DEFAULT_CREDENTIAL_LIFETIME, DEFAULT_CUSTODY_KEY_LIFETIME,
+    DeliveryFault, run,
+};
 use blindpass_core::delivery::{CredentialFormat, DeliveryPolicy};
 use blindpass_core::identity::WorkloadRegistration;
 use std::path::PathBuf;
@@ -18,11 +21,24 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
         delivery_fault: configured_delivery_fault()?,
         ..BrokerConfig::default()
     };
-    let mut state = BrokerState::new(DeliveryPolicy {
-        max_bytes: blindpass_core::MAX_CREDENTIAL_BYTES,
-        deadline: Duration::from_secs(2),
-        format: CredentialFormat::NonEmpty,
-    });
+    let key_lifetime = configured_test_lifetime(
+        "BLINDPASS_P01_CUSTODY_KEY_TTL_MS",
+        DEFAULT_CUSTODY_KEY_LIFETIME,
+    )?;
+    let credential_lifetime = configured_test_lifetime(
+        "BLINDPASS_P01_CREDENTIAL_TTL_MS",
+        DEFAULT_CREDENTIAL_LIFETIME,
+    )?;
+    config.identity_lookup_delay =
+        configured_test_lifetime("BLINDPASS_P01_IDENTITY_LOOKUP_DELAY_MS", Duration::ZERO)?;
+    let mut state = BrokerState::with_lifetimes(
+        DeliveryPolicy {
+            max_bytes: blindpass_core::MAX_CREDENTIAL_BYTES,
+            format: CredentialFormat::NonEmpty,
+        },
+        key_lifetime,
+        credential_lifetime,
+    );
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -32,6 +48,12 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
             "--workload-socket" => {
                 config.workload_socket = PathBuf::from(next(&args, &mut index)?);
             }
+            "--provision-socket" => {
+                config.provision_socket = PathBuf::from(next(&args, &mut index)?);
+            }
+            "--workload-group" => {
+                config.workload_group = Some(next(&args, &mut index)?);
+            }
             "--map" => {
                 let mapping = next(&args, &mut index)?;
                 let (unit, credential) = mapping
@@ -40,18 +62,6 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
                 state
                     .loader_policy
                     .map_unit(unit, credential)
-                    .map_err(|error| error.to_string())?;
-            }
-            "--credential" => {
-                let source = next(&args, &mut index)?;
-                let (name, path) = source
-                    .split_once('=')
-                    .ok_or("--credential requires NAME=/root-owned/file")?;
-                let value = load_protected_credential(PathBuf::from(path).as_path())
-                    .map_err(|error| error.to_string())?;
-                state
-                    .credentials
-                    .insert_secret(name, value)
                     .map_err(|error| error.to_string())?;
             }
             "--workload" => {
@@ -92,6 +102,42 @@ fn configured_delivery_fault() -> Result<Option<DeliveryFault>, String> {
     DeliveryFault::parse(value).map(Some).map_err(str::to_owned)
 }
 
+fn configured_test_lifetime(variable: &str, default: Duration) -> Result<Duration, String> {
+    let Some(value) = std::env::var_os(variable) else {
+        return Ok(default);
+    };
+    let text = value
+        .to_str()
+        .ok_or_else(|| format!("{variable} is not valid UTF-8"))?;
+    configured_test_lifetime_value(
+        variable,
+        Some(text),
+        std::env::var("BLINDPASS_P01_TEST_MODE").as_deref() == Ok("1"),
+        default,
+    )
+}
+
+fn configured_test_lifetime_value(
+    variable: &str,
+    value: Option<&str>,
+    test_mode: bool,
+    default: Duration,
+) -> Result<Duration, String> {
+    let Some(value) = value else {
+        return Ok(default);
+    };
+    if !test_mode {
+        return Err(format!("{variable} requires BLINDPASS_P01_TEST_MODE=1"));
+    }
+    let milliseconds = value
+        .parse::<u64>()
+        .map_err(|_| format!("{variable} must be an integer number of milliseconds"))?;
+    if milliseconds == 0 {
+        return Err(format!("{variable} must be greater than zero"));
+    }
+    Ok(Duration::from_millis(milliseconds))
+}
+
 fn next(args: &[String], index: &mut usize) -> Result<String, String> {
     *index += 1;
     args.get(*index)
@@ -102,7 +148,29 @@ fn next(args: &[String], index: &mut usize) -> Result<String, String> {
 fn print_help() {
     println!(
         "blindpass-broker --loader-socket PATH --workload-socket PATH \\
-         --map UNIT=CREDENTIAL --credential NAME=/root-owned/file \\
+         --map UNIT=CREDENTIAL --provision-socket PATH [--workload-group GROUP] \\
          [--workload NODE:WORKLOAD:UNIT:UID:INVOCATION]"
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::configured_test_lifetime_value;
+    use std::time::Duration;
+
+    #[test]
+    fn lifetime_test_overrides_are_gated_and_positive() {
+        let default = Duration::from_secs(30);
+        assert_eq!(
+            configured_test_lifetime_value("TTL", None, false, default).unwrap(),
+            default
+        );
+        assert!(configured_test_lifetime_value("TTL", Some("10"), false, default).is_err());
+        assert_eq!(
+            configured_test_lifetime_value("TTL", Some("250"), true, default).unwrap(),
+            Duration::from_millis(250)
+        );
+        assert!(configured_test_lifetime_value("TTL", Some("0"), true, default).is_err());
+        assert!(configured_test_lifetime_value("TTL", Some("NaN"), true, default).is_err());
+    }
 }

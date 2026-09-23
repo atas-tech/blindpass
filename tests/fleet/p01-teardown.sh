@@ -44,13 +44,14 @@ else
     cancel_log=
     marker_seen=no
     for _attempt in {1..180}; do
-        for candidate in /tmp/blindpass-p01.*/guest-result.log; do
+        overlay=$(sed -n 's/^P01-PROVISIONED overlay=\([^ ]*\) seed=.*/\1/p' "$log_file" | tail -n 1)
+        if [[ "$overlay" == */image/guest-overlay.qcow2 ]]; then
+            candidate=${overlay%/image/guest-overlay.qcow2}/guest-result.log
             if [[ -f "$candidate" ]] && grep -q 'P01-CANCEL-WINDOW' "$candidate"; then
                 cancel_log=$candidate
                 marker_seen=yes
-                break
             fi
-        done
+        fi
         if [[ "$marker_seen" == yes ]]; then
             break
         fi
@@ -88,12 +89,17 @@ fi
     printf 'runner did not retain an evidence directory\n' >&2
     exit 1
 }
+if [[ -f "$run_dir/serial.log" ]] && grep -Fq -- '-----BEGIN SSH HOST KEY KEYS-----' "$run_dir/serial.log"; then
+    cat "$log_file" >&2
+    printf 'ephemeral SSH host private keys survived serial-log redaction\n' >&2
+    exit 1
+fi
 [[ ! -e "$run_dir/image" ]] || {
     cat "$log_file" >&2
     printf 'guest disk artifacts survived %s teardown\n' "$mode" >&2
     exit 1
 }
-if pgrep -f '[b]lindpass-p01' >/dev/null 2>&1; then
+if pgrep -f '[q]emu-system-x86_64.*-name blindpass-p01' >/dev/null 2>&1; then
     cat "$log_file" >&2
     printf 'QEMU process survived %s teardown\n' "$mode" >&2
     exit 1

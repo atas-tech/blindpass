@@ -1,51 +1,33 @@
-import { createHash, createHmac, generateKeyPairSync, sign as signBytes } from "node:crypto";
+import { generateKeyPairSync, sign as signBytes } from "node:crypto";
+import { generateScopedSigs } from "../../sps-server/src/services/crypto.js";
+import {
+  deriveAgentFulfillmentTokenSecret,
+  deriveBrowserSigSecret,
+  deriveGuestAccessTokenSecret,
+  deriveGuestFulfillmentTokenSecret
+} from "../../sps-server/src/utils/signing-secrets.js";
 
 export function base64Url(value: Uint8Array | string): string {
   return Buffer.from(value).toString("base64url");
 }
 
 export function deriveSigningSecret(rootSecret: string, domain: string): string {
-  return createHmac("sha256", rootSecret).update(`blindpass:${domain}`).digest("base64url");
+  switch (domain) {
+    case "browser-sig": return deriveBrowserSigSecret(rootSecret);
+    case "agent-fulfillment": return deriveAgentFulfillmentTokenSecret(rootSecret);
+    case "guest-fulfillment": return deriveGuestFulfillmentTokenSecret(rootSecret);
+    case "guest-access": return deriveGuestAccessTokenSecret(rootSecret);
+    default: throw new Error(`Unsupported signing domain: ${domain}`);
+  }
 }
 
 export function signBrowserPayload(requestId: string, exp: number, scope: "metadata" | "submit", rootSecret: string): string {
-  const derived = deriveSigningSecret(rootSecret, "browser-sig");
-  const signature = createHmac("sha256", derived)
-    .update(`${requestId}.${exp}.${scope}`)
-    .digest("base64url");
-  return `${exp}.${signature}`;
+  const signatures = generateScopedSigs(requestId, exp, deriveBrowserSigSecret(rootSecret));
+  return scope === "metadata" ? signatures.metadataSig : signatures.submitSig;
 }
 
 export function expiredBrowserPayload(requestId: string, scope: "metadata" | "submit", rootSecret: string): string {
   return signBrowserPayload(requestId, Math.floor(Date.now() / 1000) - 10, scope, rootSecret);
-}
-
-export function policyHash(input: {
-  mode: "allow" | "pending_approval" | "deny";
-  approvalRequired: boolean;
-  ruleId: string;
-  reason: string;
-  approvalReference?: string | null;
-  requesterRing?: string | null;
-  fulfillerRing?: string | null;
-  secretName: string;
-  allowedFulfillerId: string | null;
-  workspaceId?: string | null;
-}): string {
-  return createHash("sha256")
-    .update(JSON.stringify({
-      mode: input.mode,
-      approvalRequired: input.approvalRequired,
-      ruleId: input.ruleId,
-      reason: input.reason,
-      approvalReference: input.approvalReference ?? null,
-      requesterRing: input.requesterRing ?? null,
-      fulfillerRing: input.fulfillerRing ?? null,
-      secretName: input.secretName,
-      allowedFulfillerId: input.allowedFulfillerId ?? null,
-      workspaceId: input.workspaceId ?? null
-    }))
-    .digest("hex");
 }
 
 export interface ExternalJwtIdentity {

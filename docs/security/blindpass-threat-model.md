@@ -1,10 +1,10 @@
 # BlindPass threat model
 
-**Aligned to source:** 2026-09-22. This replaces the March threat-model snapshot in the Obsidian vault as the current interpretation. Existing TM-001–TM-007 identifiers are retained. The update inspects selected code paths; it does not rerun the original audits, public deployment probes or proposed fleet tests.
+**Aligned to source:** 2026-09-23. This replaces the March threat-model snapshot in the Obsidian vault as the current interpretation. Existing TM-001–TM-007 identifiers are retained. The update inspects selected code paths; it does not rerun the original audits or public deployment probes.
 
 ## Scope and trusted endpoints
 
-Existing SPS, browser input, dashboard, gateway, agent runtime and OpenClaw paths are in scope. Hosted-style and local deployments have different exposure/configuration. Billing and guest code remains a maintenance surface despite frozen expansion. The new controller, host broker and browser operation are proposed boundaries, not implemented controls.
+Existing SPS, browser input, dashboard, gateway, agent runtime and OpenClaw paths are in scope. Hosted-style and local deployments have different exposure/configuration. Billing and guest code remains a maintenance surface despite frozen expansion. The host broker has a selected real-VM P01 profile; controller, fleet authorization and browser operation remain proposed boundaries. P01 evidence does not establish a complete supported-host matrix or product acceptance.
 
 Protect source credentials, access/refresh tokens, bootstrap API keys, signing keys, secure-input links, recipient-key integrity, workspace policy and authorization/audit state. The browser handling input and the recipient decrypting it are plaintext endpoints. HPKE protects the relay path only when endpoint code and recipient-key binding are trustworthy.
 
@@ -22,7 +22,7 @@ Source: [SPS auth routes](../../packages/sps-server/src/routes/auth.ts), [dashbo
 | Non-hosted mode | Returns the refresh token in JSON |
 | Refresh request parsing | A supplied body token takes precedence over the cookie, including in hosted mode; this is not cookie-only enforcement |
 | Dashboard | Access token in React memory/ref. A returned body refresh token is written to `localStorage`; refresh prefers that stored token with credentials omitted, otherwise uses cookies |
-| Browser input | The storage helper uses `localStorage`, and its refresh path supports a body token plus cookie credentials |
+| Browser input | The storage helper uses the `blindpass_refresh_token` key in `localStorage`, and its refresh path supports a body token plus cookie credentials |
 | Cleanup gap | Dashboard `clearAuth()` clears memory but does not remove the stored refresh token; changing to hosted cookie responses does not itself clear existing browser storage |
 
 The earlier claim that refresh tokens were uniformly in `sessionStorage` is incorrect for this checkout. Hosted cookies reduce direct JavaScript token readability on their intended path, but legacy/test body-token storage remains readable. XSS can also exercise an authenticated user's authority even without reading an HttpOnly cookie. Browser-session/CSRF-origin behavior and storage migration/cleanup need explicit testing; do not claim frontend compromise is contained by cookies alone.

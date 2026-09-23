@@ -257,7 +257,7 @@ describe("dashboard milestone 2", () => {
     });
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
-      "http://localhost:3100/api/v2/workspace",
+      "http://127.0.0.1:3100/api/v2/workspace",
       expect.objectContaining({ credentials: "include" })
     );
   });

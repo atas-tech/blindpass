@@ -13,10 +13,7 @@ export const SECRET_NAMES = {
 } as const;
 
 export const CANARIES = {
-  plaintext: "CANARY_PLAINTEXT_P00",
-  ciphertext: "Q0FOQVJZX0NJUEhFUl9QMDA",
-  apiKey: "ak_CANARY_P00",
-  signedLink: "https://canary.invalid/signed-link"
+  ciphertext: "Q0FOQVJZX0NJUEhFUl9QMDA"
 } as const;
 
 export const POLICY_DOCUMENT = {
@@ -87,4 +84,12 @@ export interface ContractFixture {
 
 export function fixtureCanaries(): string[] {
   return Object.values(CANARIES);
+}
+
+export function addCanaries(fixture: ContractFixture, ...values: Array<string | null | undefined>): void {
+  for (const value of values) {
+    if (value && !fixture.canaries.includes(value)) {
+      fixture.canaries.push(value);
+    }
+  }
 }

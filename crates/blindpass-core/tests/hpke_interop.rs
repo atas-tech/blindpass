@@ -35,6 +35,24 @@ fn opens_hpke_js_vector_and_matches_js_seal_output() {
     assert_eq!(sealed.ciphertext, ciphertext);
 }
 
+#[test]
+fn opens_rfc_9180_appendix_a_2_1_1_base_mode_vector() {
+    let recipient_private =
+        decode_hex("8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb");
+    let enc = decode_hex("1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a");
+    let info = decode_hex("4f6465206f6e2061204772656369616e2055726e");
+    let aad = decode_hex("436f756e742d30");
+    let ciphertext = decode_hex(
+        "1c5250d8034ec2b784ba2cfd69dbdb8af406cfe3ff938e131f0def8c8b60b4db21993c62ce81883d2dd1b51a28",
+    );
+    let recipient = RecipientKeyPair::from_private_key(&recipient_private).unwrap();
+
+    let opened = recipient
+        .open_with_info(&enc, &ciphertext, &info, &aad)
+        .unwrap();
+    assert_eq!(opened.as_bytes(), b"Beauty is truth, truth beauty");
+}
+
 fn decode(input: &str) -> Vec<u8> {
     let mut output = Vec::with_capacity(input.len() * 3 / 4);
     let mut buffer = 0u32;
@@ -60,4 +78,17 @@ fn decode(input: &str) -> Vec<u8> {
         }
     }
     output
+}
+
+fn decode_hex(input: &str) -> Vec<u8> {
+    let (pairs, remainder) = input.as_bytes().as_chunks::<2>();
+    assert!(remainder.is_empty());
+    pairs
+        .iter()
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16).unwrap();
+            let low = (pair[1] as char).to_digit(16).unwrap();
+            ((high << 4) | low) as u8
+        })
+        .collect()
 }

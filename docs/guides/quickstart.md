@@ -4,7 +4,7 @@ This starts the existing SPS, dashboard and encrypted secret-input page on an is
 
 ## Prerequisites
 
-- Node.js 22+ and npm compatible with the committed lockfile.
+- Node.js 26.x and npm compatible with the committed lockfile.
 - Docker Engine with Compose for the supplied PostgreSQL/Redis harness, or equivalent services configured separately.
 - Run the commands below from the repository root. Use dummy credentials and a development database.
 

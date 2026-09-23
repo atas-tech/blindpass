@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createPrivateKey, randomBytes } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { spawn, type ChildProcess } from "node:child_process";
 import net from "node:net";
@@ -14,21 +14,33 @@ const REPO_ROOT = path.resolve(PACKAGE_DIR, "../../..");
 
 type SupportedSut = "ts" | "base" | "rust";
 
+interface ExternalPrivateJwk {
+  [key: string]: string;
+  kty: string;
+}
+
 interface PgPoolLike {
   query<T = unknown>(text: string, values?: unknown[]): Promise<{ rows: T[] }>;
+  connect(): Promise<PgClientLike>;
   end(): Promise<void>;
+}
+
+interface PgClientLike {
+  query<T = unknown>(text: string, values?: unknown[]): Promise<{ rows: T[] }>;
+  release(): void;
 }
 
 interface RedisLike {
   ping(): Promise<string>;
-  flushdb(): Promise<string>;
+  scan(cursor: string, match: "MATCH", pattern: string, count: "COUNT", size: number): Promise<[string, string[]]>;
+  unlink(...keys: string[]): Promise<number>;
   quit(): Promise<string>;
 }
 
 interface ServerAdapter {
   baseUrl: string;
   fixture: ContractFixture;
-  externalJwt(claims?: Record<string, unknown>): string;
+  externalJwt(claims?: Record<string, unknown>, nowSeconds?: number): string;
   close(): Promise<void>;
 }
 
@@ -53,9 +65,9 @@ function quoteIdentifier(identifier: string): string {
   return `"${identifier.replaceAll('"', '""')}"`;
 }
 
-function withSearchPath(databaseUrl: string, schema: string): string {
+export function withSearchPath(databaseUrl: string, schema: string): string {
   const url = new URL(databaseUrl);
-  url.searchParams.set("options", `-c search_path=${schema},public`);
+  url.searchParams.set("options", `-c search_path=${schema}`);
   return url.toString();
 }
 
@@ -86,10 +98,20 @@ async function loadPgPool(connectionString: string, max: number): Promise<PgPool
   return new pg.Pool({ connectionString, max }) as unknown as PgPoolLike;
 }
 
+function schemaLockKey(schema: string): string {
+  return `blindpass-contract-schema:${schema}`;
+}
+
 async function loadRedis(connectionString: string): Promise<RedisLike> {
   const redisModule = await import("ioredis");
   const RedisConstructor = redisModule.Redis;
-  return new RedisConstructor(connectionString) as unknown as RedisLike;
+  const client = new RedisConstructor(connectionString, {
+    maxRetriesPerRequest: 1,
+    retryStrategy: () => null,
+    connectTimeout: 1_000
+  });
+  client.on("error", () => undefined);
+  return client as unknown as RedisLike;
 }
 
 function childExit(child: ChildProcess): Promise<void> {
@@ -182,6 +204,12 @@ async function seedFixture(
     };
   }
 
+  const canaries = fixtureCanaries();
+  canaries.push(adminAccessToken, seed.body.refresh_token);
+  for (const value of Object.values(agents)) {
+    canaries.push(value.apiKey, value.accessToken);
+  }
+
   return {
     workspaceId: seed.body.workspace_id,
     userId: seed.body.user_id,
@@ -191,21 +219,35 @@ async function seedFixture(
     baseUrl,
     hmacSecret,
     seedToken,
-    canaries: fixtureCanaries()
+    canaries: [...canaries, hmacSecret, seedToken]
   };
 }
+
+const CONTRACT_SCHEMA_COMMENT_PREFIX = "blindpass-contract-schema:v1:";
+const STALE_SCHEMA_AGE_MS = 60 * 60 * 1000;
 
 class TsServerAdapter implements ServerAdapter {
   baseUrl = "";
   fixture!: ContractFixture;
   private child: ChildProcess | null = null;
   private adminPool: PgPoolLike | null = null;
+  private schemaLockClient: PgClientLike | null = null;
   private redis: RedisLike | null = null;
+  private redisKeyPrefix = "";
   private schema = "";
   private tempDir = "";
   private externalIdentity!: ExternalJwtIdentity;
 
   async start(): Promise<void> {
+    try {
+      await this.startIsolated();
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
+  }
+
+  private async startIsolated(): Promise<void> {
     const databaseUrl = process.env.CONTRACT_DATABASE_URL?.trim() || process.env.DATABASE_URL?.trim();
     if (!databaseUrl) {
       throw new Error("SUT=ts requires CONTRACT_DATABASE_URL or DATABASE_URL");
@@ -218,12 +260,21 @@ class TsServerAdapter implements ServerAdapter {
     }
 
     this.schema = randomIdentifier("contract");
-    this.adminPool = await loadPgPool(databaseUrl, 1);
+    this.adminPool = await loadPgPool(databaseUrl, 3);
+    this.schemaLockClient = await this.adminPool.connect();
+    await this.schemaLockClient.query(
+      "SELECT pg_advisory_lock(hashtextextended($1, 0))",
+      [schemaLockKey(this.schema)]
+    );
+    await this.removeStaleSchemas();
     await this.adminPool.query(`CREATE SCHEMA ${quoteIdentifier(this.schema)}`);
+    await this.adminPool.query(
+      `COMMENT ON SCHEMA ${quoteIdentifier(this.schema)} IS '${CONTRACT_SCHEMA_COMMENT_PREFIX}${Date.now()}'`
+    );
 
+    this.redisKeyPrefix = `${randomIdentifier("contract")}:`;
     this.redis = await loadRedis(withRedisDatabase(redisUrl, redisDb));
     await this.redis.ping();
-    await this.redis.flushdb();
 
     this.tempDir = await mkdtemp(path.join(os.tmpdir(), "blindpass-contract-"));
     this.externalIdentity = createExternalJwtIdentity();
@@ -244,6 +295,7 @@ class TsServerAdapter implements ServerAdapter {
       SPS_CORS_ALLOWED_ORIGINS: "http://allowed.contract.test",
       DATABASE_URL: withSearchPath(databaseUrl, this.schema),
       REDIS_URL: withRedisDatabase(redisUrl, redisDb),
+      SPS_REDIS_KEY_PREFIX: this.redisKeyPrefix,
       SPS_RUN_MIGRATIONS: "1",
       SPS_USE_IN_MEMORY: "0",
       SPS_HOSTED_MODE: "1",
@@ -265,7 +317,7 @@ class TsServerAdapter implements ServerAdapter {
       ]),
       SPS_SECRET_REGISTRY_JSON: JSON.stringify(POLICY_DOCUMENT.secret_registry),
       SPS_EXCHANGE_POLICY_JSON: JSON.stringify(POLICY_DOCUMENT.exchange_policy),
-      SPS_AGENT_TOKEN_RATE_LIMIT: process.env.CONTRACT_AGENT_TOKEN_RATE_LIMIT ?? "20",
+      SPS_AGENT_TOKEN_RATE_LIMIT: "5",
       SPS_AGENT_LIMIT_FREE: "20",
       SPS_EXCHANGE_LIMIT_STANDARD: "1000",
       SPS_TEST_REQUEST_TTL_SECONDS: process.env.CONTRACT_REQUEST_TTL_SECONDS ?? "8",
@@ -303,14 +355,20 @@ class TsServerAdapter implements ServerAdapter {
     }
   }
 
-  externalJwt(claims: Record<string, unknown> = {}): string {
-    return signExternalJwt(this.externalIdentity, {
+  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number): string {
+    const token = signExternalJwt(this.externalIdentity, {
       role: "gateway",
       sub: "contract-external/ring/blue",
       workspace_id: this.fixture.workspaceId,
       workload_mode: "external",
       ...claims
-    });
+    }, nowSeconds);
+    this.fixture?.canaries.push(token);
+    return token;
+  }
+
+  exportExternalJwtPrivateJwk(): JsonWebKey {
+    return this.externalIdentity.privateKey.export({ format: "jwk" }) as JsonWebKey;
   }
 
   async close(): Promise<void> {
@@ -320,7 +378,7 @@ class TsServerAdapter implements ServerAdapter {
     }
 
     if (this.redis) {
-      await this.redis.flushdb().catch(() => undefined);
+      await this.cleanupRedisKeys().catch(() => undefined);
       await this.redis.quit().catch(() => undefined);
       this.redis = null;
     }
@@ -329,6 +387,14 @@ class TsServerAdapter implements ServerAdapter {
       if (this.schema) {
         await this.adminPool.query(`DROP SCHEMA IF EXISTS ${quoteIdentifier(this.schema)} CASCADE`).catch(() => undefined);
       }
+      if (this.schemaLockClient) {
+        await this.schemaLockClient.query(
+          "SELECT pg_advisory_unlock(hashtextextended($1, 0))",
+          [schemaLockKey(this.schema)]
+        ).catch(() => undefined);
+        this.schemaLockClient.release();
+        this.schemaLockClient = null;
+      }
       await this.adminPool.end().catch(() => undefined);
       this.adminPool = null;
     }
@@ -336,6 +402,54 @@ class TsServerAdapter implements ServerAdapter {
     if (this.tempDir) {
       await rm(this.tempDir, { recursive: true, force: true });
       this.tempDir = "";
+    }
+  }
+
+  private async cleanupRedisKeys(): Promise<void> {
+    if (!this.redis || !this.redisKeyPrefix) return;
+    let cursor = "0";
+    const matching = new Set<string>();
+    do {
+      const [next, keys] = await this.redis.scan(cursor, "MATCH", `${this.redisKeyPrefix}*`, "COUNT", 100);
+      for (const key of keys) matching.add(key);
+      cursor = next;
+    } while (cursor !== "0");
+    const keys = [...matching];
+    for (let index = 0; index < keys.length; index += 100) {
+      await this.redis.unlink(...keys.slice(index, index + 100));
+    }
+  }
+
+  private async removeStaleSchemas(): Promise<void> {
+    if (!this.adminPool) return;
+    const lockClient = await this.adminPool.connect();
+    try {
+      const result = await lockClient.query<{ nspname: string; schema_comment: string | null }>(
+        "SELECT nspname, obj_description(oid, 'pg_namespace') AS schema_comment FROM pg_namespace WHERE left(nspname, 9) = 'contract_' ORDER BY nspname"
+      );
+      for (const { nspname, schema_comment } of result.rows) {
+        if (!schema_comment?.startsWith(CONTRACT_SCHEMA_COMMENT_PREFIX)) continue;
+        const createdAt = Number(schema_comment.slice(CONTRACT_SCHEMA_COMMENT_PREFIX.length));
+        if (!Number.isFinite(createdAt) || Date.now() - createdAt < STALE_SCHEMA_AGE_MS) continue;
+
+        const lockKey = schemaLockKey(nspname);
+        const lock = await lockClient.query<{ acquired: boolean }>(
+          "SELECT pg_try_advisory_lock(hashtextextended($1, 0)) AS acquired",
+          [lockKey]
+        );
+        if (!lock.rows[0]?.acquired) continue;
+
+        try {
+          await this.adminPool.query(`DROP SCHEMA IF EXISTS ${quoteIdentifier(nspname)} CASCADE`);
+        } finally {
+          await lockClient.query(
+            "SELECT pg_advisory_unlock(hashtextextended($1, 0))",
+            [lockKey]
+          );
+        }
+      }
+    } finally {
+      lockClient.release();
     }
   }
 }
@@ -355,6 +469,14 @@ class BaseUrlAdapter implements ServerAdapter {
     const fixtureFile = process.env.CONTRACT_FIXTURE_FILE?.trim();
     if (fixtureFile) {
       this.fixture = JSON.parse(await readFile(fixtureFile, "utf8")) as ContractFixture;
+      const externalPrivateJwk = (this.fixture as ContractFixture & { externalJwtPrivateJwk?: ExternalPrivateJwk })
+        .externalJwtPrivateJwk;
+      if (externalPrivateJwk) {
+        this.externalIdentity = {
+          privateKey: createPrivateKey({ key: externalPrivateJwk, format: "jwk" }),
+          publicJwk: {}
+        };
+      }
       return;
     }
 
@@ -367,14 +489,16 @@ class BaseUrlAdapter implements ServerAdapter {
     this.fixture = await seedFixture(this.baseUrl, seedToken, hmacSecret);
   }
 
-  externalJwt(claims: Record<string, unknown> = {}): string {
-    return signExternalJwt(this.externalIdentity, {
+  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number): string {
+    const token = signExternalJwt(this.externalIdentity, {
       role: "gateway",
       sub: "contract-external/ring/blue",
       workspace_id: this.fixture.workspaceId,
       workload_mode: "external",
       ...claims
-    });
+    }, nowSeconds);
+    this.fixture?.canaries.push(token);
+    return token;
   }
 
   async close(): Promise<void> {
@@ -408,6 +532,22 @@ export async function startAdapter(): Promise<ServerAdapter | null> {
   }
 
   throw new Error("SUT=rust is reserved for P02; provide RUST_BASE_URL until the Rust launcher is implemented");
+}
+
+export async function startTsServerForBaseContract(): Promise<{
+  baseUrl: string;
+  fixture: ContractFixture;
+  externalJwtPrivateJwk: JsonWebKey;
+  close(): Promise<void>;
+}> {
+  const adapter = new TsServerAdapter();
+  await adapter.start();
+  return {
+    baseUrl: adapter.baseUrl,
+    fixture: adapter.fixture,
+    externalJwtPrivateJwk: adapter.exportExternalJwtPrivateJwk(),
+    close: () => adapter.close()
+  };
 }
 
 export type { ServerAdapter, SupportedSut };

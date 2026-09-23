@@ -50,6 +50,6 @@ deploy/          Platform templates
 
 ## Development and licensing
 
-Use Node.js 22+ and the committed npm lockfile. Follow the [quick start](docs/guides/quickstart.md) for environment setup before starting workspace scripts. `npm run build` builds the workspaces; `npm test` runs their default suites. Integration suites have additional service and environment prerequisites.
+Use Node.js 26.x and the committed npm lockfile. Follow the [quick start](docs/guides/quickstart.md) for environment setup before starting workspace scripts. `npm run build` builds the workspaces; `npm test` runs their default suites. Integration suites have additional service and environment prerequisites.
 
 [AGENTS.md](AGENTS.md) contains repository contribution instructions. [LICENSES.md](LICENSES.md) records package licensing; the roadmap does not change licenses or establish a commercial entitlement.

@@ -6,21 +6,17 @@ After=blindpass-broker.service
 
 [Service]
 Type=oneshot
-# This sample stays root so the root-only loader handoff is explicit. A
-# non-root consumer must use a reviewed file-ownership handoff or systemd's
-# native credential directory; it must not weaken the loader socket policy.
-User=root
-Group=root
+User=blindpass-consumer
+Group=blindpass-consumer
 RuntimeDirectory=blindpass-consumer
 RuntimeDirectoryMode=0700
-ExecStartPre=/usr/libexec/blindpass-credential-loader --socket /run/blindpass/loader.sock --unit blindpass-consumer.service --credential api-key --output /run/blindpass-consumer/api-key
-ExecStart=/usr/libexec/blindpass-consumer --credential-file /run/blindpass-consumer/api-key --prefix P01-
+LoadCredential=api-key:/run/blindpass/loader.sock
+ExecStart=/usr/libexec/blindpass-consumer --credential-file %d/api-key --prefix P01-
 RemainAfterExit=yes
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadOnlyPaths=/etc/blindpass
 ReadWritePaths=/run/blindpass-consumer
 RestrictAddressFamilies=AF_UNIX
 LockPersonality=yes

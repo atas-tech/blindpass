@@ -16,11 +16,16 @@ concurrency:
 env:
   DATABASE_URL: postgresql://blindpass:localdev@127.0.0.1:5433/blindpass
   REDIS_URL: redis://127.0.0.1:6380
+  SPS_HMAC_SECRET: ci-only-hmac-canary
+  SPS_USER_JWT_SECRET: ci-only-user-jwt-canary
+  SPS_AGENT_JWT_SECRET: ci-only-agent-jwt-canary
 
 jobs:
   workspace:
     name: Build and workspace tests
     runs-on: ubuntu-latest
+    env:
+      SUT: ts
     services:
       postgres:
         image: postgres:16-alpine
@@ -51,7 +56,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "26"
           cache: npm
 
       - name: Install lockfile dependencies
@@ -59,6 +64,9 @@ jobs:
 
       - name: Build workspace
         run: npm run build
+
+      - name: Check landing workflow demos
+        run: npm run test:landing
 
       - name: Run default workspace tests
         run: npm test
@@ -68,6 +76,15 @@ jobs:
 
       - name: Run PostgreSQL SPS tests
         run: SPS_PG_INTEGRATION=1 npm test --workspace=packages/sps-server
+
+      - name: Run PostgreSQL SPS E2E suite
+        run: npm run test:e2e --workspace=packages/sps-server
+
+      - name: Install Playwright Chromium
+        run: npm exec --workspace=packages/dashboard -- playwright install --with-deps chromium
+
+      - name: Run dashboard Playwright E2E
+        run: npm run test:e2e
 
   contract:
     name: P00 HTTP contract suite
@@ -102,7 +119,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "26"
           cache: npm
 
       - name: Install lockfile dependencies
@@ -116,7 +133,60 @@ jobs:
           SUT: ts
           CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
           CONTRACT_REDIS_URL: ${{ env.REDIS_URL }}
-        run: npm test --workspace=@blindpass/contract-tests
+        run: |
+          npm test --workspace=@blindpass/contract-tests -- --reporter=json --outputFile=/tmp/p00-contract-results.json
+          node scripts/tests/assert-no-vitest-skips.mjs /tmp/p00-contract-results.json
+
+  base-contract:
+    name: P00 external HTTP adapter
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: blindpass
+          POSTGRES_USER: blindpass
+          POSTGRES_PASSWORD: localdev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U blindpass -d blindpass"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+    env:
+      DATABASE_URL: postgresql://blindpass:localdev@127.0.0.1:5433/blindpass
+      REDIS_URL: redis://127.0.0.1:6380
+      SPS_HMAC_SECRET: ci-only-hmac-canary
+      SPS_USER_JWT_SECRET: ci-only-user-jwt-canary
+      SPS_AGENT_JWT_SECRET: ci-only-agent-jwt-canary
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: npm
+
+      - name: Install lockfile dependencies
+        run: npm ci
+
+      - name: Build workspace and contract harness
+        run: npm run build
+
+      - name: Run P00 contract suite through SUT=base
+        run: node --import tsx scripts/tests/p00-base-contract.mjs
 
   rust:
     name: Rust broker checks

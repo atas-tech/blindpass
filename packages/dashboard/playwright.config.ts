@@ -25,6 +25,9 @@ export default defineConfig({
   use: {
     /* Base URL to use in actions like `await page.goto('/')`. */
     baseURL: "http://127.0.0.1:5173",
+    launchOptions: process.env.BLINDPASS_PLAYWRIGHT_EXECUTABLE_PATH
+      ? { executablePath: process.env.BLINDPASS_PLAYWRIGHT_EXECUTABLE_PATH }
+      : undefined,
 
     /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: "on-first-retry",

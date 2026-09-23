@@ -659,8 +659,10 @@ export class InMemoryRequestStore implements RequestStore {
 }
 
 export function createRedisClient(url = process.env.REDIS_URL ?? "redis://127.0.0.1:6379"): Redis {
+  const testKeyPrefix = process.env.NODE_ENV === "test" ? process.env.SPS_REDIS_KEY_PREFIX : undefined;
   return new Redis(url, {
     lazyConnect: true,
-    maxRetriesPerRequest: 1
+    maxRetriesPerRequest: 1,
+    keyPrefix: testKeyPrefix || undefined
   });
 }

@@ -1,16 +1,19 @@
 {
   "registry": [
     {"secretName": "finance.api_key", "classification": "finance"},
-    {"secretName": "restricted.secret", "classification": "sensitive"}
+    {"secretName": "restricted.secret", "classification": "sensitive"},
+    {"secretName": "stripe.api_key.prod", "classification": "finance"}
   ],
   "rules": [
     {"ruleId": "allow-finance", "secretName": "finance.api_key", "requesterIds": ["agent-a"], "fulfillerIds": ["agent-b"], "mode": "allow"},
-    {"ruleId": "approve-restricted", "secretName": "restricted.secret", "requesterRings": ["blue"], "fulfillerRings": ["blue"], "sameRing": true, "mode": "pending_approval"}
+    {"ruleId": "approve-restricted", "secretName": "restricted.secret", "requesterRings": ["blue"], "fulfillerRings": ["blue"], "sameRing": true, "mode": "pending_approval"},
+    {"ruleId": "contract-allow", "secretName": "stripe.api_key.prod", "requesterIds": ["contract-requester"], "fulfillerIds": ["contract-fulfiller"], "mode": "allow", "reason": "contract allow fixture"}
   ],
   "cases": [
     {"requesterId": "agent-a", "secretName": "finance.api_key", "purpose": "deploy", "fulfillerHint": "agent-b", "expectedMode": "allow", "expectedRuleId": "allow-finance"},
     {"requesterId": "agent-a/ring/blue", "secretName": "restricted.secret", "purpose": "support", "fulfillerHint": "agent-b/ring/blue", "expectedMode": "pending_approval", "expectedRuleId": "approve-restricted"},
     {"requesterId": "agent-a/ring/red", "secretName": "restricted.secret", "purpose": "support", "fulfillerHint": "agent-b/ring/blue", "expectedMode": "none", "expectedRuleId": null},
-    {"requesterId": "agent-a", "secretName": "unknown.secret", "purpose": "deploy", "fulfillerHint": "agent-b", "expectedMode": "none", "expectedRuleId": null}
+    {"requesterId": "agent-a", "secretName": "unknown.secret", "purpose": "deploy", "fulfillerHint": "agent-b", "expectedMode": "none", "expectedRuleId": null},
+    {"requesterId": "contract-requester", "secretName": "stripe.api_key.prod", "purpose": "CT09 allow", "fulfillerHint": "contract-fulfiller", "expectedMode": "allow", "expectedRuleId": "contract-allow"}
   ]
 }

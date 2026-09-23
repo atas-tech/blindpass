@@ -42,12 +42,12 @@ jobs:
           cargo test --workspace --locked
 
       - name: Run P01 disposable guest
-        run: sudo -E ./tests/fleet/p01-vm.sh
+        run: ./tests/fleet/p01-vm.sh
 
       - name: Verify P01 failure and cancellation teardown
         run: |
-          sudo -E ./tests/fleet/p01-teardown.sh failure
-          sudo -E ./tests/fleet/p01-teardown.sh cancel
+          ./tests/fleet/p01-teardown.sh failure
+          ./tests/fleet/p01-teardown.sh cancel
 
       - name: Collect VM harness artifacts
         if: always()

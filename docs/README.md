@@ -1,6 +1,6 @@
 # BlindPass documentation
 
-**Aligned:** 2026-09-23. Current guides describe source behavior; project-tied contracts remain here. Planning, design and historical notes are maintained in the `blindpass/` area of the Obsidian vault. P01 has a portable Rust broker implementation and a real Ubuntu 24.04/QEMU-KVM execution record for the selected profile; W0 remains open for the explicitly unsupported or unrun matrices recorded in the evidence.
+**Aligned:** 2026-09-23. Current guides describe source behavior; project-tied contracts remain here. Planning, design and historical notes are maintained in the `blindpass/` area of the Obsidian vault. P01 includes live HPKE provisioning and dedicated non-root consumers. The updated path passed a disposable Ubuntu 24.04/QEMU-KVM run and both teardown gates; its technical W0 disposition is NARROW for that selected profile, with product acceptance and broader matrices still open.
 
 ## Product direction
 

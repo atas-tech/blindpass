@@ -1,12 +1,12 @@
 # 0003: Dependency baseline, September 2026
 
-**Status:** Proposed 2026-09-22. The existing npm upgrade set remains unapplied. P01 adds a dependency-free Cargo workspace; it does not resolve or add the candidate Rust crates below. The authenticated Socket CLI now reaches `api.socket.dev` outside the sandbox, but full repository report creation is access-limited by the logged-in token (`full-scans:create` is missing); see the [P01 execution record](../../testing/p01-host-broker-evidence.md).
+**Status:** Partially implemented 2026-09-23. The user approved the reviewed Vitest 4.1.11, Vite 7.3.6, Fastify 5.12.5 and react-router-dom 7.18.4 upgrade slice; those four direct dependencies and their resolved lockfile entries are updated. Other proposed maintenance upgrades remain unapplied. P01 adds a dependency-free Cargo workspace. See the [P01 execution record](../../testing/p01-host-broker-evidence.md).
 
 **Companions:** [Decision 0001](0001-dashboard-ui-stack.md) · [Decision 0002](0002-rust-controller-and-broker.md) · [Security documentation](../../security/README.md) · [Repository instructions](../../../AGENTS.md)
 
 ## Context
 
-`package-lock.json` was last changed on 2026-03-31. `npm audit` against that lockfile on 2026-09-22 reports 17 advisories: 1 critical, 11 high, 3 moderate, 2 low. The affected direct dependencies and where they are used:
+The pre-upgrade `package-lock.json` was last changed on 2026-03-31. `npm audit` against that lockfile on 2026-09-22 reported 17 advisories: 1 critical, 11 high, 3 moderate, 2 low. The original affected direct dependencies and where they are used:
 
 | Advisory severity | Package | Pinned | Used by | Fixed in | Notes |
 |---|---|---|---|---|---|
@@ -38,7 +38,7 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 | react, react-dom, @types/react, @types/react-dom | 19.2.x | 19.3.0 | dashboard; optional, minor |
 | i18next, react-i18next | 26.0.1, 17.0.1 | 26.4.2, 17.0.15 | dashboard; optional, minor |
 
-`@vitejs/plugin-react` stays at 5.2.0 because 6.x requires Vite 8. TypeScript stays at 5.9.3. Node runtime stays at 22 in CI and the Docker images.
+`@vitejs/plugin-react` stays at 5.2.0 because 6.x requires Vite 8. TypeScript stays at 5.9.3. CI and the Node-based Docker build/runtime images use Node 26.x to match the recorded P00 runtime; the root `engines` field and `.npmrc` reject a different major during npm install.
 
 **Tier B: baseline for the rebuilt dashboard package only** ([Decision 0001](0001-dashboard-ui-stack.md)).
 
@@ -61,7 +61,7 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 
 ## Process
 
-1. Authenticate the Socket CLI (`socket login`, interactive) or expose MCP `depscore`. The CLI is installed (1.1.176); the current login can discover scan files and read supported types but cannot create a full scan without `full-scans:create`.
+1. Authenticate the Socket CLI (`socket login`, interactive) or expose MCP `depscore`. The 2026-09-23 credential update enabled full scan creation; the current scan ID is `0d2bc0fb-57d3-41ce-bea7-ed4ac29703ee`.
 2. For each Tier A package run the dependency-guard `check_dependency.sh` helper in `deep` mode with the target version, classify with the decision matrix, and record the outcome in the pull request. Version upgrades of previously allowed packages may use the fast path only if no new alerts appear.
 3. Run the skill's `discover_scan_targets.sh` on the repository, then `socket scan create` over `package.json` and `package-lock.json` after the manifest edits, and carry forward any partial-coverage warning.
 4. Edit the manifests, run `npm install` to refresh the lockfile, then `npm audit`.
@@ -70,7 +70,7 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 
 ## Consequences
 
-- Until step 1 happens, the advisories above remain open in the lockfile. The runtime-relevant ones are `react-router` in the dashboard and `fastify` in the SPS; neither service is deployed for users at this date.
+- The approved slice removes the pre-upgrade Vitest critical advisory and updates Fastify and react-router. Ten advisories remain in the lockfile, including PostCSS and viem; `npm audit` is a package advisory inventory, not proof that a deployed service is exploitable or safe.
 - The rebuilt dashboard starts on Tier B and never inherits the Tailwind or PostCSS toolchain.
 - New Rust crates for [Decision 0002](0002-rust-controller-and-broker.md) follow the same skill with the `cargo` ecosystem.
 
@@ -78,4 +78,7 @@ The repository had no installed `node_modules` when checked, so `npm outdated` r
 
 - `npm audit --json` and `npm view` against the public registry on 2026-09-22 with npm 11.19.1 and Node 26.9.0 on the development host.
 - Lockfile history from `git log -- package-lock.json`.
-- Socket CLI 1.1.176 installed globally; on 2026-09-23 the read-only repository scan reached `api.socket.dev` and discovered 20 files, while full report creation returned HTTP 403 for missing `full-scans:create`.
+- Socket full scan on 2026-09-23 covered 16 JS/Cargo manifests and lockfiles and failed policy for Vitest 3.2.4 `criticalCVE`. A previous read-only discovery found 20 candidate files; the earlier HTTP 403 was resolved by the credential update.
+- Broad candidate deep scores: Vitest 4.1.11 has 399 direct/transitive packages, minimum overall 37, high CVE/obfuscation/ownership alerts and install-script warnings; Vite 7.3.6 has 203 packages, minimum overall 37 and a high upgrade alert plus installer/native-code warnings. Those broad graphs classify as `block`. Fastify 5.12.5 scores minimum 73 with medium network/eval alerts; react-router-dom 7.18.4 scores minimum 64 with medium network alerts. Broad package scores can include optional dependencies absent from this workspace.
+- A temporary lockfile with only those four direct upgrades resolved 34 added, removed or changed package entries. Socket scan `32dd9991-31a0-4f0a-b381-4658299ea009` covered its 10 npm manifests/lockfiles and **passed organization policy**. None of the changed entries had an install script; their overall scores ranged from 64 to 99. The exact changed set still contains medium `usesEval`, `networkAccess`, `shellAccess` and related alerts, and `react-router-dom` scores 64. Under the repository's dependency-guard decision matrix this was `block_pending_human_review`, despite the organization-policy pass. The user approved this exact slice on 2026-09-23; the repository manifests and lockfile now contain it. No other direct upgrade was applied.
+- `npm ci` on the updated lockfile succeeded. Final repository Socket scan `2f43843e-a3d2-4aee-90bd-0eac5eb0e731` covered 20 manifests/lockfiles and passed organization policy. `npm audit` now reports 10 advisories: 0 critical, 6 high, 2 moderate and 2 low. Remaining direct advisories include PostCSS and viem; their separate upgrades require fresh Socket review before manifest changes. Workspace build/tests, Redis integration, TypeScript contract (27), PostgreSQL SPS suite (177 enabled), SPS E2E (9) and dashboard browser E2E (31) passed after this slice.

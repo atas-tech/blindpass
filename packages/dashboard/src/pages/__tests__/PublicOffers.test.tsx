@@ -231,7 +231,7 @@ describe("PublicOffersPage", () => {
     render(<PublicOffersPage />);
 
     expect((await screen.findAllByText("Charge order 784")).length).toBeGreaterThan(0);
-    await userEvent.click(screen.getByRole("button", { name: /approve/i }));
+    await userEvent.click(await screen.findByRole("button", { name: /approve/i }));
     await userEvent.click(await screen.findByTestId("confirm-dialog-btn"));
 
     await waitFor(() => {

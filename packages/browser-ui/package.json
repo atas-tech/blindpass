@@ -14,7 +14,7 @@
     "hpke-js": "^1.7.0"
   },
   "devDependencies": {
-    "vite": "^7.3.1",
+    "vite": "^7.3.6",
     "@blindpass/i18n": "*"
   }
 }

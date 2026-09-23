@@ -1,7 +1,8 @@
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY .npmrc ./
 COPY packages/browser-ui/package.json packages/browser-ui/package.json
 COPY packages/dashboard/package.json packages/dashboard/package.json
 COPY packages/sps-server/package.json packages/sps-server/package.json

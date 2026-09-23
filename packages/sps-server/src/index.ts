@@ -31,6 +31,7 @@ import {
 import { HttpX402Provider, type X402Provider, x402ConfigFromEnv } from "./services/x402.js";
 import type { RequestStore } from "./types.js";
 import { resolveRequiredSecret } from "./utils/secrets.js";
+import { requestLogSummary } from "./utils/request-logging.js";
 import {
   approvalTtlSeconds,
   assertTestOnlyTimingOverridesSafe,
@@ -170,7 +171,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
 
   const app = Fastify({
-    logger: process.env.NODE_ENV !== "test",
+    logger: process.env.NODE_ENV === "test" ? false : {
+      serializers: { req: requestLogSummary }
+    },
     bodyLimit: Number(process.env.SPS_BODY_LIMIT ?? 1024 * 1024),
     trustProxy: options.trustProxy ?? trustProxyFromEnv(),
     ajv: {

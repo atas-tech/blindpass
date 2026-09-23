@@ -4,10 +4,12 @@ Description=BlindPass native encrypted-credential baseline consumer
 
 [Service]
 Type=oneshot
-User=root
-Group=root
+User=blindpass-consumer
+Group=blindpass-consumer
+RuntimeDirectory=blindpass-consumer-native
+RuntimeDirectoryMode=0700
 LoadCredentialEncrypted=api-key:/etc/blindpass/api-key.cred
-ExecStart=/usr/libexec/blindpass-consumer --credential-file ${CREDENTIALS_DIRECTORY}/api-key --prefix P01-
+ExecStart=/usr/libexec/blindpass-consumer --credential-file %d/api-key --prefix P01-
 RemainAfterExit=yes
 LimitCORE=0
 

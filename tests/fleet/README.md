@@ -18,12 +18,29 @@ export BLINDPASS_FLEET_GUEST_IMAGE_SHA256=replace-with-the-reviewed-sha256
 export BLINDPASS_FLEET_SSH_KEY=/srv/blindpass-runner/ed25519
 export BLINDPASS_FLEET_GUEST_USER=blindpass
 export BLINDPASS_FLEET_RUNNER_OWNER=platform-team
-sudo -E ./tests/fleet/p01-vm.sh
+./tests/fleet/p01-vm.sh
 ```
+
+For a user-owned persistent local image store, set the image path from XDG
+data storage:
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+export BLINDPASS_FLEET_GUEST_IMAGE="${XDG_DATA_HOME:-$HOME/.local/share}/blindpass/vm-images/noble-server-cloudimg-amd64.img"
+export BLINDPASS_FLEET_GUEST_IMAGE_SHA256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+```
+
+The local copy is reusable across runs and is accompanied by `.sha256` and
+`.source.txt` sidecars. `cloud-localds` and the `genisoimage` wrapper are
+retained in `~/.local/bin`; the wrapper uses the installed `xorriso`. The image
+remains outside the repository.
 
 `BLINDPASS_FLEET_GUEST_IMAGE_SHA256` is mandatory. The guest image, SSH key,
 and QEMU artifacts are never committed. The guest uses synthetic
 `P01-*-CANARY` values only.
+`cloud-localds` also needs a `genisoimage`-compatible ISO writer; the current
+local run used `xorriso` in mkisofs compatibility mode. The host account must
+have read/write access to `/dev/kvm` and the configured SSH key.
 
 The default profile has no TPM device. To exercise the optional emulated TPM
 profile, provide a runner-local `swtpm` binary and a directory containing the
@@ -34,7 +51,7 @@ export BLINDPASS_FLEET_TPM_MODE=emulated
 export BLINDPASS_FLEET_SWTPM=/srv/blindpass-runner/swtpm
 export BLINDPASS_FLEET_SWTPM_LD_LIBRARY_PATH=/srv/blindpass-runner/swtpm-libs
 export BLINDPASS_FLEET_TPM_DEB_DIR=/srv/blindpass-runner/ubuntu-noble-tpm2-debs
-sudo -E ./tests/fleet/p01-vm.sh
+./tests/fleet/p01-vm.sh
 ```
 
 The host harness prints SHA-256 values for every supplied package, installs
@@ -47,8 +64,11 @@ The script exits `78` with an `UNSUPPORTED` record when QEMU, KVM, the pinned
 image, cloud-localds, or the named runner owner is missing. That is an
 infrastructure block, not a passing or skipped P01 gate.
 
-The guest exercises the portable loader/workload path, root-only socket
-boundaries, real user-manager denial, registered fixed-account and
+The guest exercises direct helper delivery and stock system-scope
+`LoadCredential=` delivery through the broker. For native delivery it verifies
+the peer's root UID and pidfd-derived target unit/invocation against the
+abstract route before applying the protected mapping. It also exercises
+root-only socket boundaries, real user-manager denial, registered fixed-account and
 `DynamicUser` workloads, stale and repeated loader/workload
 pidfd-to-invocation restart races, empty/partial/malformed/oversized/corrupt
 delivery, a bounded stalled frame, unauthorized unit routing, API-removal
@@ -72,31 +92,31 @@ The local KVM runner used on 2026-09-23 reported QEMU 11.1.1, `qemu-img`
 pinned Ubuntu 24.04 image, recorded guest kernel 6.8.0-139-generic and
 systemd 255, and removed the QEMU process, guest broker sockets, and guest
 disk artifacts after the run. The positive run owner was explicitly supplied
-as `local-kvm-p01-final`; separate `failure` and `cancel` teardown runs also
-passed with named local owners. This is disposable runtime evidence, not a
-claim that the manual VM job is already configured as a shared GitHub
-self-hosted runner.
+as `local-kvm-p01-full-final-20260923`. The final profile passed the complete
+guest gate, including native `LoadCredential=` peer binding, live HPKE
+provisioning failures and expiry, API-removal fail-closed behavior, account
+isolation, rotation, canary scans and cleanup. Separate `failure` and `cancel`
+teardown runs also passed with owner `local-kvm-p01-teardown-final-20260923`.
+This is disposable runtime evidence, not a claim that the manual VM job is
+already configured as a shared GitHub self-hosted runner.
 
 A Debian 12 candidate-minimum attempt (kernel 6.1.0-53, systemd 252) was
-recorded as `P01-UNSUPPORTED` because the broker binary requires the
-`LIBSYSTEMD_253` pidfd API; it failed before delivery and did not become a
-pass or silent skip.
+recorded for an earlier broker build that dynamically imported
+`sd_pidfd_get_unit` and failed to load `LIBSYSTEMD_253`. The current build no
+longer imports that symbol: it uses `GetUnitByPIDFD` and reports missing
+`SO_PEERPIDFD` or D-Bus method support as an explicit `unsupported_host`
+denial. The current runtime behavior has not been exercised on systemd 252;
+that host matrix remains open.
 
-The run passed the exercised loader/workload boundaries, recorded real
-UID/GID/pidfd/unit/invocation traces, user-manager denial,
-stale-invocation rejection and re-registration, repeated loader and
-workload pidfd/invocation restart races, `DynamicUser` registration,
-bounded stalled-frame denial, broker delivery fault matrix,
-consumer validation, ephemeral custody restart/expiry/one-use checks, canary
-exposure and apport crash-report checks, backup write/restore and controlled
-rotation, uninstall cleanup, system-bus and `getsockopt` API-removal fail-closed
-behavior, and native host-key `LoadCredentialEncrypted=` comparison including
-missing-key denial. The default no-TPM profile rejects explicit `tpm2` mode.
-The opt-in `local-kvm-p01-tpm-pass` run attached a real QEMU/swtpm TPM device,
-installed the pinned tpm2-tss runtime bundle, and passed the explicit TPM2
-credential round-trip; `systemd-creds has-tpm2` correctly reported `partial`
-because the emulated profile has no firmware-measured TPM state. This is an
-emulated TPM-present result, not a physical TPM or measured-boot claim. The
-alternate kernel/systemd, guest-version and persistent broker-custody matrices
-remain explicitly outside this narrow profile. See
+The successful guest run measured a stalled-frame denial at 2.023 seconds,
+tested empty/partial/malformed/oversized/corrupt delivery, stale invocation
+rejection, two loader restart races, three workload restart races, registered
+`DynamicUser`, live wrong-key/tamper/AAD/replay and shortened-TTL expiry
+probes, host-key encrypted `LoadCredentialEncrypted=` rotation, and
+system-bus/`getsockopt` removal. Generated canaries were absent from selected
+process arguments, journals, and scanned runtime/log/crash paths. The default
+no-TPM profile rejected explicit `tpm2` mode. Forced reuse of the same numeric
+PID, the systemd 252 host matrix, and physical TPM/measured boot remain open.
+The earlier opt-in `local-kvm-p01-tpm-pass` run tested the emulated TPM
+comparison only; it did not close those exclusions. See
 `docs/testing/p01-host-broker-evidence.md` for the dated evidence record.

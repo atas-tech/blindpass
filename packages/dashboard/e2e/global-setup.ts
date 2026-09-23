@@ -8,11 +8,10 @@ export default async function globalSetup() {
     await client.connect();
     await client.query("SELECT 1");
     console.log("[E2E globalSetup] PostgreSQL is reachable.");
-  } catch (err) {
+  } catch {
     throw new Error(
-      `[E2E Pre-flight FAILED] Cannot connect to PostgreSQL at ${DB_URL}.\n` +
-      `Ensure Docker is running: docker compose -f docker-compose.test.yml up -d\n` +
-      `Original error: ${err instanceof Error ? err.message : err}`
+      "[E2E Pre-flight FAILED] Cannot connect to the configured PostgreSQL test database. " +
+      "Ensure the disposable service is running and DATABASE_URL is correct."
     );
   } finally {
     await client.end();

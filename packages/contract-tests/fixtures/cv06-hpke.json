@@ -5,5 +5,20 @@
     "aead": "ChaCha20-Poly1305",
     "rfc": "RFC 9180 Appendix A.2"
   },
-  "typescript_status": "round-trip executable; RFC interoperability vector file is prepared for the Rust P02 gate"
+  "interop_fixture": {
+    "recipient_private_key": "c1e8cObDnJ+zNIi2N4w2pij9W+7zyLjZ1uPzXl9rtiQ=",
+    "enc": "EEXh6QK3jX90xmhxawIr1RM3jVUqUm1lM+8W4oZ0nD0=",
+    "ciphertext": "MSOUZWLXTrV7x7IOHQzp0BE+xE4gU+ux2c1rMq9gdfhEbp5Azgfm3g==",
+    "aad": "UDAxLUFBRA==",
+    "plaintext": "P01-CROSS-RUNTIME-CANARY"
+  },
+  "rfc_a2_1_base_sequence_0": {
+    "source": "https://www.rfc-editor.org/rfc/rfc9180.html#appendix-A.2.1.1",
+    "recipient_private_key_hex": "8057991eef8f1f1af18f4a9491d16a1ce333f695d4db8e38da75975c4478e0fb",
+    "enc_hex": "1afa08d3dec047a643885163f1180476fa7ddb54c6a8029ea33f95796bf2ac4a",
+    "info_hex": "4f6465206f6e2061204772656369616e2055726e",
+    "aad_hex": "436f756e742d30",
+    "ciphertext_hex": "1c5250d8034ec2b784ba2cfd69dbdb8af406cfe3ff938e131f0def8c8b60b4db21993c62ce81883d2dd1b51a28",
+    "plaintext_hex": "4265617574792069732074727574682c20747275746820626561757479"
+  }
 }

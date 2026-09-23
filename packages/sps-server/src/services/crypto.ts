@@ -6,7 +6,7 @@ import {
   deriveGuestFulfillmentTokenSecret
 } from "../utils/signing-secrets.js";
 
-const ADJECTIVES = [
+export const CONFIRMATION_CODE_ADJECTIVES = [
   "BLUE",
   "GREEN",
   "SILVER",
@@ -17,7 +17,7 @@ const ADJECTIVES = [
   "NOBLE"
 ];
 
-const NOUNS = [
+export const CONFIRMATION_CODE_NOUNS = [
   "FOX",
   "RIVER",
   "MOUNTAIN",
@@ -67,8 +67,8 @@ export function generateRequestId(): string {
 }
 
 export function generateConfirmationCode(): string {
-  const adjective = ADJECTIVES[randomBytes(1)[0] % ADJECTIVES.length];
-  const noun = NOUNS[randomBytes(1)[0] % NOUNS.length];
+  const adjective = CONFIRMATION_CODE_ADJECTIVES[randomBytes(1)[0] % CONFIRMATION_CODE_ADJECTIVES.length];
+  const noun = CONFIRMATION_CODE_NOUNS[randomBytes(1)[0] % CONFIRMATION_CODE_NOUNS.length];
   const number = randomBytes(1)[0] % 100;
   return `${adjective}-${noun}-${number.toString().padStart(2, "0")}`;
 }

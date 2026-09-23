@@ -113,7 +113,7 @@ describe("MailerService", () => {
     expect(body.subject).toBe("Xác minh địa chỉ email của bạn");
     expect(body.html).toContain('<html lang="vi">');
     expect(body.html).toContain("Xác minh email");
-    expect(body.html).toContain("Liên kết này sẽ hết hạn sau 7 ngày.");
+    expect(body.html).toContain("Liên kết này sẽ hết hạn sau 1 ngày.");
     expect(body.text).toContain("Xin chào,");
   });
 

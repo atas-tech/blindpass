@@ -204,6 +204,16 @@ impl RecipientKeyPair {
         ciphertext: &[u8],
         aad: &[u8],
     ) -> Result<SecretBytes, CryptoError> {
+        self.open_with_info(enc, ciphertext, &[], aad)
+    }
+
+    pub fn open_with_info(
+        &self,
+        enc: &[u8],
+        ciphertext: &[u8],
+        info: &[u8],
+        aad: &[u8],
+    ) -> Result<SecretBytes, CryptoError> {
         if enc.len() != N_SECRET {
             return Err(CryptoError::InvalidEncapsulation);
         }
@@ -211,7 +221,7 @@ impl RecipientKeyPair {
             return Err(CryptoError::InvalidCiphertext);
         }
         let mut shared_secret = derive_shared(&self.private_key, enc)?;
-        let key_schedule_result = key_schedule(&shared_secret, enc, &self.public_key);
+        let key_schedule_result = key_schedule(&shared_secret, enc, &self.public_key, info);
         wipe(&mut shared_secret);
         let (mut key, mut nonce) = key_schedule_result?;
         let plaintext_result = aead_decrypt(&key, &nonce, ciphertext, aad);
@@ -226,13 +236,22 @@ impl RecipientKeyPair {
         plaintext: &[u8],
         aad: &[u8],
     ) -> Result<SealedMessage, CryptoError> {
+        Self::seal_with_info(recipient_public_key, plaintext, &[], aad)
+    }
+
+    pub fn seal_with_info(
+        recipient_public_key: &[u8],
+        plaintext: &[u8],
+        info: &[u8],
+        aad: &[u8],
+    ) -> Result<SealedMessage, CryptoError> {
         if recipient_public_key.len() != N_SECRET {
             return Err(CryptoError::InvalidKeyLength);
         }
         let ephemeral = Self::generate()?;
         let enc = ephemeral.public_key.clone();
         let mut shared_secret = derive_shared(&ephemeral.private_key, recipient_public_key)?;
-        let key_schedule_result = key_schedule(&shared_secret, &enc, recipient_public_key);
+        let key_schedule_result = key_schedule(&shared_secret, &enc, recipient_public_key, info);
         wipe(&mut shared_secret);
         let (mut key, mut nonce) = key_schedule_result?;
         let ciphertext_result = aead_encrypt(&key, &nonce, plaintext, aad);
@@ -251,13 +270,29 @@ impl RecipientKeyPair {
         plaintext: &[u8],
         aad: &[u8],
     ) -> Result<SealedMessage, CryptoError> {
+        Self::seal_with_ephemeral_private_and_info(
+            recipient_public_key,
+            ephemeral_private_key,
+            plaintext,
+            &[],
+            aad,
+        )
+    }
+
+    pub fn seal_with_ephemeral_private_and_info(
+        recipient_public_key: &[u8],
+        ephemeral_private_key: &[u8],
+        plaintext: &[u8],
+        info: &[u8],
+        aad: &[u8],
+    ) -> Result<SealedMessage, CryptoError> {
         if recipient_public_key.len() != N_SECRET {
             return Err(CryptoError::InvalidKeyLength);
         }
         let ephemeral = Self::from_private_key(ephemeral_private_key)?;
         let enc = ephemeral.public_key.clone();
         let mut shared_secret = derive_shared(&ephemeral.private_key, recipient_public_key)?;
-        let key_schedule_result = key_schedule(&shared_secret, &enc, recipient_public_key);
+        let key_schedule_result = key_schedule(&shared_secret, &enc, recipient_public_key, info);
         wipe(&mut shared_secret);
         let (mut key, mut nonce) = key_schedule_result?;
         let ciphertext_result = aead_encrypt(&key, &nonce, plaintext, aad);
@@ -450,6 +485,7 @@ fn key_schedule(
     shared_secret: &[u8; N_SECRET],
     enc: &[u8],
     recipient_public_key: &[u8],
+    info: &[u8],
 ) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
     let kem_suite_id = kem_suite_id();
     let mut kem_context = enc.to_vec();
@@ -467,7 +503,7 @@ fn key_schedule(
 
     let hpke_suite_id = hpke_suite_id();
     let mut psk_id_hash = labeled_extract(&[], &hpke_suite_id, b"psk_id_hash", &[])?;
-    let mut info_hash = labeled_extract(&[], &hpke_suite_id, b"info_hash", &[])?;
+    let mut info_hash = labeled_extract(&[], &hpke_suite_id, b"info_hash", info)?;
     let mut key_schedule_context = vec![0];
     key_schedule_context.extend_from_slice(&psk_id_hash);
     key_schedule_context.extend_from_slice(&info_hash);

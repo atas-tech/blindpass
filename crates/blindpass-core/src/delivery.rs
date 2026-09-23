@@ -4,7 +4,6 @@ use crate::MAX_CREDENTIAL_BYTES;
 use crate::secret::SecretBytes;
 use std::fmt;
 use std::io::{self, Write};
-use std::time::Duration;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CredentialFormat {
@@ -41,7 +40,6 @@ impl std::error::Error for DeliveryError {}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliveryPolicy {
     pub max_bytes: usize,
-    pub deadline: Duration,
     pub format: CredentialFormat,
 }
 
@@ -49,7 +47,6 @@ impl Default for DeliveryPolicy {
     fn default() -> Self {
         Self {
             max_bytes: MAX_CREDENTIAL_BYTES,
-            deadline: Duration::from_secs(2),
             format: CredentialFormat::NonEmpty,
         }
     }
@@ -147,7 +144,6 @@ pub fn validate_consumer_bytes(
 ) -> Result<(), DeliveryError> {
     DeliveryPolicy {
         max_bytes,
-        deadline: Duration::from_secs(2),
         format: format.clone(),
     }
     .validate(value)
@@ -165,7 +161,6 @@ mod tests {
     fn registry_rejects_empty_partial_and_oversized_material() {
         let mut registry = CredentialRegistry::new(DeliveryPolicy {
             max_bytes: 8,
-            deadline: std::time::Duration::from_millis(20),
             format: CredentialFormat::Prefix(b"key_".to_vec()),
         });
         assert_eq!(registry.insert("api-key", b""), Err(DeliveryError::Empty));

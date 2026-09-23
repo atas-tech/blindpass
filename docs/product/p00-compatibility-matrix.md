@@ -1,6 +1,6 @@
 # P00 compatibility matrix
 
-**Date:** 2026-09-22
+**Date:** 2026-09-23
 
 This matrix is the implementation boundary for the baseline contract. It records what the existing TypeScript SPS keeps stable while the later Rust controller and host-broker phases are built. A row marked “excluded” is not an implementation claim.
 
@@ -14,7 +14,7 @@ This matrix is the implementation boundary for the baseline contract. It records
 | Workspace policy and admin session | Keep as the TypeScript fixture/provisioning path | Contract adapter seed + policy PATCH |
 | Redis request/exchange state | Keep TTL, atomic one-use and lifecycle semantics | CT05–CT12, CT17 |
 | PostgreSQL management/audit state | Keep tenant, role, policy and audit mapping | CT01, CT09–CT17 and SPS integration tests |
-| Rust controller/broker | Not present; no parity claim | P02 contract gate |
+| Rust controller/broker | Controller scaffold and local broker are present; no controller parity claim | P01 broker evidence; P02 contract gate |
 | Native/container host fleet | Not present; no deployment claim | Linux Fleet Pilot W0–W6 |
 | Hosted paid-tier billing branches | Excluded from the P00 controller envelope | Explicit freeze; existing SPS code remains |
 | Guest intake, x402 and public-offer surfaces | Excluded from the P00 controller envelope | Existing SPS code remains; later scope decision required |
@@ -56,4 +56,6 @@ The browser receives only the public key and description before submission. Encr
 
 ## P00 execution evidence
 
-On 2026-09-22, the TS adapter ran the contract suite over real HTTP against a child SPS process with isolated PostgreSQL schema and Redis logical database fixtures. CT01–CT18 and CC01 passed (19 tests), and CV01–CV06 passed (6 tests). The committed normalized snapshot is [ts-baseline.json](../../packages/contract-tests/fixtures/snapshots/ts-baseline.json). This is TypeScript-baseline evidence only; it is not Rust, VM, production or fleet evidence.
+Earlier 2026-09-23 evidence recorded CT01–CT18 and CC01 over real HTTP (19 tests), CV01–CV06 (6 tests), two adapter cleanup/isolation tests, the health/readiness behavior after Redis outage/recovery, and dashboard browser E2E against spawned and base-URL SPS servers. That run preceded the review corrections below.
+
+After the review corrections, the TypeScript adapter completed 32/32 contract, vector, normalization, snapshot-fault and adapter-isolation tests against the disposable PostgreSQL 16 and Redis 7 stack. The regenerated [ts-baseline.json](../../packages/contract-tests/fixtures/snapshots/ts-baseline.json) then passed a second comparison run with no skipped tests. The P00-I06 intentional snapshot mismatch case passed, and the skip gate correctly failed an otherwise successful no-SUT run that skipped the HTTP and adapter suites. The PostgreSQL-gated SPS suite passed 178 tests with 2 Redis-gated cases skipped; `npm run test:landing` passed. The dedicated `SUT=base` contract adapter and hosted PR-CI execution remain open. These are TypeScript-baseline checks, not controller parity or fleet evidence.

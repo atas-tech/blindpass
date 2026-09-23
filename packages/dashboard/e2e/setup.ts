@@ -81,8 +81,7 @@ export async function setupWorkspace(
 
   if (process.env.E2E_DEBUG) {
     page.on("console", msg => {
-      const text = msg.text();
-      console.log(`[Browser ${msg.type()}] ${text}`);
+      console.log(`[Browser console event] type=${msg.type()}`);
     });
   }
 

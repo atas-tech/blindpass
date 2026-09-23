@@ -64,6 +64,11 @@ function mockSummary(tier: "free" | "standard") {
         active_members: 1
       },
       quota: {
+        exchange_requests: {
+          used: 2,
+          limit: 10,
+          reset_at: 1_773_619_200
+        },
         secret_requests: {
           used: 4,
           limit: 10,

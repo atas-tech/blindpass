@@ -13,6 +13,7 @@ coverage/
 /test-results/
 /playwright-report/
 /blob-report/
+tmp/socket-reports/
 **/test-results/
 **/playwright-report/
 *.log

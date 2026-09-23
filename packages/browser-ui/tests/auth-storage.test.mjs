@@ -22,7 +22,7 @@ test.afterEach(() => {
   delete global.window;
 });
 
-test("stores refresh tokens in sessionStorage only", () => {
+test("stores refresh tokens in localStorage for the compatibility flow", () => {
   const sessionStorage = createStorage();
   const localStorage = createStorage();
   global.window = { sessionStorage, localStorage };
@@ -30,16 +30,17 @@ test("stores refresh tokens in sessionStorage only", () => {
   setStoredRefreshToken("refresh-1");
 
   assert.equal(getStoredRefreshToken(), "refresh-1");
-  assert.equal(sessionStorage.getItem("sps_refresh_token"), "refresh-1");
-  assert.equal(localStorage.getItem("sps_refresh_token"), null);
+  assert.equal(localStorage.getItem("blindpass_refresh_token"), "refresh-1");
+  assert.equal(sessionStorage.getItem("blindpass_refresh_token"), null);
 });
 
 test("clears the stored refresh token when set to null", () => {
-  const sessionStorage = createStorage();
-  global.window = { sessionStorage };
+  const localStorage = createStorage();
+  global.window = { localStorage };
 
   setStoredRefreshToken("refresh-1");
   setStoredRefreshToken(null);
 
   assert.equal(getStoredRefreshToken(), null);
+  assert.equal(localStorage.getItem("blindpass_refresh_token"), null);
 });

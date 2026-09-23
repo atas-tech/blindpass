@@ -143,7 +143,10 @@ describePg("database foundation", () => {
         "011_guest_intents.sql",
         "012_guest_payments.sql",
         "013_audit_guest_actor.sql",
-        "014_guest_agent_delivery_state.sql"
+        "014_guest_agent_delivery_state.sql",
+        "015_user_tokens.sql",
+        "016_drop_users_verification_token.sql",
+        "017_user_preferred_locale.sql"
       ]);
       expect(secondRun).toEqual([]);
 

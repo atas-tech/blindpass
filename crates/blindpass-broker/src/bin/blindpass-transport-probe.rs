@@ -74,16 +74,15 @@ fn run(args: Vec<String>) -> Result<(), String> {
     reader_thread
         .join()
         .map_err(|_| "reader thread panicked".to_owned())?;
-    if !response.starts_with(b"ERR ") {
+    if !response.is_empty() {
         return Err(format!(
-            "broker did not reject stalled frame: {:?}",
+            "broker wrote credential bytes while rejecting a stalled frame: {:?}",
             String::from_utf8_lossy(&response)
         ));
     }
     println!(
-        "STALL_DENIED elapsed_ms={} response_code={}",
-        started.elapsed().as_millis(),
-        String::from_utf8_lossy(&response).trim()
+        "STALL_DENIED elapsed_ms={} response=closed_without_payload",
+        started.elapsed().as_millis()
     );
     Ok(())
 }

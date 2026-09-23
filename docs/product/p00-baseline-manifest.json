@@ -1,9 +1,9 @@
 {
   "phase": "P00",
   "title": "Baseline and contracts",
-  "generated_at": "2026-09-22",
+  "generated_at": "2026-09-23",
   "source_revision": "e2112c4",
-  "source_revision_note": "Inventory started from the documentation-alignment commit; the implementation is intentionally left uncommitted for review.",
+  "source_revision_note": "Historical baseline anchor; the P00/P01 closure commit and exact execution revision are recorded in the testing execution records.",
   "package_manager": "npm workspaces",
   "packages": [
     {
@@ -102,9 +102,9 @@
         "docker-compose.yml",
         "docker-compose.test.yml"
       ],
-      "rust_controller": "not present in this source revision",
-      "host_broker": "not present in this source revision",
-      "linux_vm_fleet": "not audited by this repository inventory"
+      "rust_controller": "scaffold present; HTTP/database parity not implemented",
+      "host_broker": "P01 local broker with live ephemeral HPKE provisioning and dedicated non-root consumers has a pre-commit selected disposable Ubuntu VM run; final committed-SHA VM evidence is pending; W0 technical disposition NARROW",
+      "linux_vm_fleet": "pre-commit disposable Ubuntu 24.04/systemd 255 KVM run and teardown checks passed; final committed-SHA VM evidence is pending; alternate guest matrix and stock-client evidence remain open"
     }
   },
   "dependencies": {
@@ -118,11 +118,13 @@
       "jose",
       "hpke-js"
     ],
-    "socket_review": "Authenticated Socket CLI was present, but the repository scan could not reach api.socket.dev from the execution environment. No manifest or lockfile dependency was added."
+    "socket_review": "Pre-upgrade full scan of 16 JS/Cargo manifests and lockfiles (0d2bc0fb-57d3-41ce-bea7-ed4ac29703ee) failed on Vitest 3.2.4 criticalCVE. Exact four-package candidate lockfile scan (32dd9991-31a0-4f0a-b381-4658299ea009) passed organization policy but triggered dependency-guard human review for medium capability alerts and a 64/100 score. The user approved that slice; Vitest, Vite, Fastify and react-router-dom manifests and lockfile are updated. Final repository Socket scan (2f43843e-a3d2-4aee-90bd-0eac5eb0e731) passed organization policy over 20 manifests/lockfiles. Post-upgrade npm audit reports 10 advisories, none critical."
   },
   "evidence_gaps": [
     "No production database, backup, installation or live-link inventory was accessed.",
     "The Linux Fleet Pilot still requires real systemd VM and stock-client evidence.",
-    "Rust parity, broker identity and native/container fleet parity remain unimplemented."
+    "Rust controller parity and native/container fleet parity remain unimplemented.",
+    "P01 W0 selected-profile VM passed before commit; rerun against a committed SHA is pending. Product acceptance and broader guest, physical TPM and crash collector matrices remain open.",
+    "P00 SUT=base browser handoff and hosted PR-CI execution remain open. Local P00-I06 snapshot-mismatch and skipped-suite gate fault injections passed on 2026-09-23."
   ]
 }

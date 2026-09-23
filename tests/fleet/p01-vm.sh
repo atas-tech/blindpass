@@ -7,6 +7,8 @@ unsupported() {
     exit 78
 }
 
+[[ "$(id -u)" != 0 ]] || unsupported 'run the host harness as the runner owner, not through sudo'
+command -v cargo >/dev/null 2>&1 || unsupported 'cargo is unavailable in the runner-owner PATH'
 command -v qemu-system-x86_64 >/dev/null 2>&1 || unsupported 'qemu-system-x86_64 is unavailable'
 command -v qemu-img >/dev/null 2>&1 || unsupported 'qemu-img is unavailable'
 command -v ssh >/dev/null 2>&1 || unsupported 'ssh is unavailable'
@@ -106,6 +108,24 @@ cleanup() {
         kill -KILL "$swtpm_pid" 2>/dev/null || true
     fi
     if [[ "$keep_artifacts" == 1 ]]; then
+        # cloud-init prints ephemeral SSH host private keys to the serial
+        # console on this image. Redact that block before retaining logs.
+        if [[ -f "$serial_log" ]]; then
+            local sanitized_serial_log=$run_dir/serial.log.sanitized
+            awk '
+                /-----BEGIN SSH HOST KEY KEYS-----/ {
+                    in_private_keys = 1
+                    print "[ephemeral SSH host private keys redacted]"
+                    next
+                }
+                /-----END SSH HOST KEY KEYS-----/ {
+                    in_private_keys = 0
+                    next
+                }
+                !in_private_keys { print }
+            ' "$serial_log" >"$sanitized_serial_log"
+            mv -- "$sanitized_serial_log" "$serial_log"
+        fi
         # Retain only sanitized text evidence. Guest disks and seed media are
         # disposable state, even when logs are kept for CI review.
         rm -rf -- "$run_dir/image"
@@ -181,11 +201,13 @@ scp "${scp_options[@]}" \
     target/release/blindpass-custody-probe \
     target/release/blindpass-crash-probe \
     target/release/blindpass-credential-loader \
+    target/release/blindpass-provision \
     target/release/blindpass-transport-probe \
     target/release/blindpass-workload-client \
     tests/fleet/p01-guest.sh \
     "$guest_target:/tmp/"
 scp "${scp_options[@]}" deploy/native/*.service "$guest_target:/tmp/"
+scp "${scp_options[@]}" deploy/native/blindpass-workload.sysusers "$guest_target:/tmp/"
 if ((${#tpm_debs[@]} > 0)); then
     ssh "${ssh_options[@]}" "$guest_target" 'mkdir -m 0700 -p /tmp/p01-tpm-debs'
     scp "${scp_options[@]}" "${tpm_debs[@]}" "$guest_target:/tmp/p01-tpm-debs/"

@@ -6,18 +6,17 @@ After=blindpass-broker.service
 
 [Service]
 Type=oneshot
-User=root
-Group=root
+User=blindpass-backup
+Group=blindpass-backup
 RuntimeDirectory=blindpass-backup
 RuntimeDirectoryMode=0700
-ExecStartPre=/usr/libexec/blindpass-credential-loader --socket /run/blindpass/loader.sock --unit blindpass-backup.service --credential api-key --output /run/blindpass-backup/api-key
-ExecStart=/usr/libexec/blindpass-backup-probe --credential-file /run/blindpass-backup/api-key --artifact /run/blindpass-backup/artifact --mode write
+LoadCredential=api-key:/run/blindpass/loader.sock
+ExecStart=/usr/libexec/blindpass-backup-probe --credential-file %d/api-key --artifact /run/blindpass-backup/artifact --mode write
 RemainAfterExit=yes
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadOnlyPaths=/etc/blindpass
 ReadWritePaths=/run/blindpass-backup
 RestrictAddressFamilies=AF_UNIX
 LockPersonality=yes

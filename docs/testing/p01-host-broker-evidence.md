@@ -3,8 +3,97 @@
 **Recorded:** 2026-09-23
 
 This is the repository-side execution record for the P01 plan in the docs
-vault. It does not replace the required W0 review; disposable VM artifacts
-remain runner-local and are not committed.
+vault. The live-HPKE/non-root profile, including stock systemd
+`LoadCredential=` delivery, has a pre-commit VM run recorded below. That run
+does not count as phase evidence because it did not identify a committed
+source SHA. The final committed-SHA VM result will be recorded here after the
+closure commit. Earlier root-consumer/file-loaded evidence is historical
+context. Disposable VM artifacts remain runner-local and are not committed.
+
+## Pre-commit verification (not final acceptance evidence)
+
+| Check | Result | Limit |
+|---|---|---|
+| `cargo fmt`, locked Clippy, locked workspace tests | Passed before commit | Includes route-to-pidfd authorization, binary credentials, RFC 9180 HPKE vector, live-state destination binding and bounded request deadlines; rerun evidence must cite the committed SHA |
+| `cargo check --workspace --locked` | Passed before commit | Does not execute systemd identity or service handoff |
+| `bash -n tests/fleet/p01-guest.sh tests/fleet/p01-vm.sh tests/fleet/p01-teardown.sh` | Passed before commit | Syntax checked on the pre-commit harness revision |
+| Live provisioning + native and direct delivery in QEMU guest | Pre-commit run passed | Named local KVM run on pinned Ubuntu 24.04/systemd 255; rerun on a committed SHA is pending |
+| `p01-teardown.sh failure` and `cancel` | Passed before commit | Injected guest failure and SIGTERM cancellation removed QEMU and guest disks; rerun evidence must cite a committed SHA |
+
+The selected ephemeral profile now has a root-only `provision.sock` at mode
+`0600`. `blindpass-provision` reads administrator input from stdin, seals it to
+the broker's fresh X25519 recipient key with unit/credential AAD, and sends
+only encapsulation plus ciphertext. Each mapped destination has its own
+in-memory credential entry. Pending recipient keys expire after 30 seconds;
+accepted credentials expire after one hour and are purged, or disappear on
+broker restart. Loader delivery retains the root/pidfd/systemd invocation
+authorization. The direct helper writes a mode-`0600` runtime file and hands
+its ownership to the dedicated service account. Stock `LoadCredential=` sends
+no request frame, so the broker parses the abstract route as an untrusted hint
+and requires root UID, a pidfd-derived unit equal to the route unit, a present
+invocation, and the protected unit/credential mapping. On the tested
+systemd 255 guest, the credential-setup peer resolved to the target consumer
+unit and invocation, not `init.scope`. The current guest verified both
+dedicated service accounts and mode-`0600` credential ownership.
+
+The revised guest harness provisions dummy bytes from a root-only tmpfs source,
+tests absent-key failure after restart, then reprovisions and retries. It
+also checks both dedicated service accounts, credential-file ownership and a
+backup restore run as the backup account. The persistent plaintext
+`--credential NAME=/root-owned/file` broker option was removed. The source
+tmpfs file is a disposable guest fixture, not persistent broker custody.
+
+## Pre-commit disposable VM run (not final acceptance evidence)
+
+The passing run used owner `local-kvm-p01-full-final-20260923`, QEMU
+11.1.1, writable `/dev/kvm`, a locally extracted `cloud-localds` 0.33-3 and
+`xorriso` for the seed ISO. The Ubuntu 24.04 cloud image matched SHA-256
+`612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`.
+The guest reported kernel 6.8.0-139-generic and systemd 255 as PID 1.
+`./tests/fleet/p01-vm.sh` exited 0. Separate runs with owner
+`local-kvm-p01-teardown-final-20260923` made `./tests/fleet/p01-teardown.sh
+failure` and `cancel` each report `P01-I07 ... teardown: PASS`. The cancellation
+check binds its marker to the current guest, so retained logs from earlier
+runs cannot satisfy it. The guest overlay and seed were removed. Retained
+serial logs redact the ephemeral SSH host private-key block. No live
+credential was used.
+The verified base image is now retained under the local user's XDG data
+directory at `blindpass/vm-images/noble-server-cloudimg-amd64.img`, with
+`.sha256` and `.source.txt` sidecars. `cloud-localds` 0.33-3 and its
+`genisoimage` compatibility wrapper are also retained in the local user's
+`~/.local/bin` and passed a seed-ISO smoke check. The repository VM setup guide
+includes the reusable environment settings; no image bytes are stored in Git.
+
+| Scenario | Pre-commit VM observation | Profile limit |
+|---|---|---|
+| P01-I01 | Pass: two direct-loader and three workload pidfd/invocation restart races, native credential re-request, stale invocation denial and re-registration | PIDs differed in the exercised races; forced reuse of the same numeric PID remains untested |
+| P01-I02 | Pass: native `LoadCredential=` traced UID 0 plus exact target unit/invocation, direct loader, user-manager and non-root denial, forged/unregistered routing, `DynamicUser` and fixed-account workloads | User-manager execution remains unsupported |
+| P01-I03 | Pass: system-bus removal and `getsockopt` seccomp removal fail closed without credential delivery; broker remains active | Broader kernel/systemd API matrix open; systemd 252 not rerun on this build |
+| P01-I04 | Pass: 2023 ms stalled-frame denial and empty/partial/malformed/oversized/corrupt delivery rejection | Selected transport profile only |
+| P01-I05 | Pass: live HPKE wrong-key/tamper/AAD/replay, mapped destination, one-use lifecycle, shortened-TTL expiry, restart absent-key denial and explicit reprovisioning | Ephemeral custody only; shortened test TTLs exercise expiry branches, not a full 30-second/one-hour wait |
+| P01-I06 | Pass for no-TPM profile: generated initial/rotated canaries absent from scanned process args, journals, runtime/log/crash paths; one crash report inspected; explicit TPM2 mode rejected with no device | `coredumpctl` unavailable; firmware measurement and broader crash-collector matrix open |
+| P01-I07 | Pass: pinned guest boot, metadata, uninstall, injected failure and cancellation teardown; serial private keys redacted before retention | Shared self-hosted CI runner and alternate guest versions remain open |
+| P01-E01 | Pass: dedicated non-root consumer and backup restore, controlled rotation, runtime ownership and uninstall cleanup | Backup probe stores a checksum only |
+| P01-E02 | Runtime pass: native host-key encrypted credstore initial delivery, rotation and missing-key denial | Operational approval/audit benefit not demonstrated in P01; no superiority claim |
+
+For the operational comparison, the broker profile requires a root-only HPKE
+provision operation, consumer start, and explicit reprovisioning after broker
+memory loss. Rotation uses a new provision operation and controlled service
+restart. The native host-key profile requires `systemd-creds setup`, encrypting
+and installing the credential file, then starting or restarting the consumer;
+rotation repeats encryption and file replacement. Removing the host key denied
+native recovery. Neither P01 profile includes a controller approval or audit
+workflow, so an approval/audit benefit and operational superiority remain
+unmeasured pending later phases and product review.
+
+The initial native-delivery attempt exposed an incorrect assumption that the
+socket peer was PID 1; the live systemd 255 trace showed the root credential
+setup process resolves to the target unit and invocation. The broker now
+compares that pidfd identity with the abstract route. Further runs corrected
+the `ExecStart` argument syntax, invocation-trace assertion, API-removal
+drop-in ordering, and teardown process matcher. The final complete guest and
+both teardown runs passed. The sandbox had hidden `/dev/kvm` during the
+initial availability check, while the host device was present and usable.
 
 ## Portable checks
 
@@ -15,7 +104,7 @@ remain runner-local and are not committed.
 | `cargo test --workspace --locked` | Pass outside the development sandbox | Broker socket-mode/path-boundary tests, bounded frame tests, identity/delivery/custody units, and the Rust ↔ `hpke-js` vector |
 | `cargo build --release --workspace --locked` | Pass outside the development sandbox | Release probes copied into the disposable guest, including the core-artifact probe |
 | HPKE suite | Pass | DHKEM(X25519, HKDF-SHA256) + HKDF-SHA256 + ChaCha20-Poly1305; exact `enc` and ciphertext match the generated `hpke-js` fixture |
-| Socket dependency scan | Partial / access-limited | Outside the sandbox, Socket reached `api.socket.dev` and discovered 20 files in read-only mode. Creating the full report returned HTTP 403 because the logged-in `SocketDemo` token lacks `full-scans:create`. No dependency was added on that basis. |
+| Socket dependency scan | Completed after credential update | Pre-upgrade scan `0d2bc0fb-57d3-41ce-bea7-ed4ac29703ee` failed on Vitest 3.2.4. After the user-approved four-package npm upgrade, scan `2f43843e-a3d2-4aee-90bd-0eac5eb0e731` covered 20 manifests/lockfiles and passed organization policy. No Cargo dependency was added. |
 
 The sandbox denied Unix socket operations with `EPERM`; the transport tests
 were therefore rerun outside it. No test fixture contains a live credential.
@@ -30,11 +119,10 @@ socket scan create --cwd . --no-set-as-alerts-page --report --markdown .
 # HTTP 403: required scope full-scans:create
 ```
 
-This is evidence that the scan can reach the Socket service outside the
-sandbox, not a completed full-scan result. A token with the required scope is
-still needed for the full repository report.
+Those commands document the earlier access-limited attempt. The authenticated
+full scan listed above supersedes that access limitation.
 
-## Implemented portable boundary
+## Earlier portable boundary (historical)
 
 - The root broker has separate loader and workload Unix sockets. The loader
   requires UID 0, `SO_PEERPIDFD`, systemd unit lookup, invocation lookup, an
@@ -57,7 +145,7 @@ still needed for the full repository report.
   QEMU/swtpm profile exercises native systemd TPM2 credential protection with
   a pinned tpm2-tss runtime bundle.
 
-## VM and W0 status
+## Earlier VM run and W0 status (historical)
 
 The live disposable run completed on 2026-09-23 using the explicitly named
 `local-kvm-p01-final` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
@@ -84,11 +172,12 @@ remained root-owned mode `0600`. No live credential was used.
 
 A separate Debian 12 candidate-minimum attempt used kernel 6.1.0-53-amd64,
 systemd 252 and image SHA-256
-`5b842b549629637613f1770ad749b868b08c6e16c437a5940f21178816f3d7e9`.
-It stopped at broker startup with the dynamic-linker error that the guest
-`libsystemd` lacked `LIBSYSTEMD_253`; the harness recorded
-`P01-UNSUPPORTED` and delivered no credential. This is an explicit
-fail-closed version result, not a skipped or passing Debian profile.
+`5b842b549629637613f1770ad749b868b08c6e16c437a5940f21178816f3d7e9` with an
+earlier binary that imported `sd_pidfd_get_unit`; that build failed to load
+`LIBSYSTEMD_253` and delivered no credential. This result is historical and
+does not describe the current binary, which no longer imports that symbol.
+The current systemd-252 unsupported-host path has not been exercised on that
+guest image, so the version matrix remains unclaimed.
 
 The optional emulated-TPM run completed with owner
 `local-kvm-p01-tpm-pass`. It used the same pinned Ubuntu image and attached a
@@ -126,7 +215,7 @@ libtss2-tctildr0t64_4.0.1-7.1ubuntu5.1_amd64.deb a1a82302972894447398b3dfcee3a4d
 tpm-udev_0.6ubuntu1_all.deb 7ff6b02368f0db0589a509209383e8a875934bc92f3cca737633dbffaf186023
 ```
 
-| Scenario | Current evidence | Acceptance status |
+| Scenario | Earlier VM evidence | Status for that earlier profile |
 |---|---|---|
 | P01-I01 | Guest restarted the root consumer and re-resolved its invocation; it rejected a stale workload invocation, exercised two root-loader restart races and three workload restart races, and re-registered each replacement before delivery | VM pass for exercised restart paths; broader fault-injection matrix remains open |
 | P01-I02 | Root loader delivery, non-root and real user-manager socket access, forged loader routing, registered fixed-account and `DynamicUser` workloads, and an unregistered workload were exercised; the broker journal recorded actual UID/GID, pidfd, unit and invocation values; user-manager/shared-UID execution remains denied/out of scope | VM pass for supported system-unit profile and explicit user-manager denial |
@@ -140,8 +229,10 @@ tpm-udev_0.6ubuntu1_all.deb 7ff6b02368f0db0589a509209383e8a875934bc92f3cca737633
 
 ## W0 go/narrow/stop review
 
-**Recorded:** 2026-09-23. **Disposition:** NARROW for the evidenced profile;
-this is not a full-matrix go decision.
+**Recorded:** 2026-09-23. **Historical disposition:** NARROW for the earlier
+profile. **Current technical disposition:** NARROW for the selected live HPKE,
+dedicated non-root, Ubuntu 24.04/systemd 255 profile after the passing VM run.
+This is not a full-matrix go decision; product acceptance remains pending.
 
 The selected P01 profile is x86_64 Linux with system-scope systemd, kernel
 6.8.0-139-generic, systemd 255, root-only loader socket `0600`, workload socket
@@ -154,7 +245,8 @@ profile only; it is not a claim that broker custody survives restart.
 The narrow disposition explicitly excludes user-manager execution and shared
 desktop-UID isolation, physical TPM/firmware-measured boot, persistent broker
 custody/unlock or recovery, unsupported alternate kernel/systemd guest
-versions, and a complete crash-dump collector matrix. The default Ubuntu
+versions, a forced same-numeric-PID reuse scenario, and a complete crash-dump
+collector matrix. The default Ubuntu
 guest profile has no TPM device and rejects explicit `--with-key=tpm2`; the
 opt-in QEMU/swtpm profile passes the TPM-present native systemd round-trip but
 reports firmware as absent. The harness records missing prerequisites as

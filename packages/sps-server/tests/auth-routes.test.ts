@@ -595,12 +595,12 @@ describePg("auth routes", () => {
 
       expect(registerResponse.statusCode).toBe(201);
       const registered = registerResponse.json() as { access_token: string; refresh_token?: string };
-      expect(registered.refresh_token).toBeUndefined();
+      expect(registered.refresh_token).toEqual(expect.any(String));
 
       const registerSetCookie = String(registerResponse.headers["set-cookie"] ?? "");
       expect(registerSetCookie).toContain("sps_refresh_token=");
       expect(registerSetCookie).toContain("HttpOnly");
-      expect(registerSetCookie).toContain("SameSite=Strict");
+      expect(registerSetCookie).toContain("SameSite=Lax");
       expect(registerSetCookie).toContain("Domain=blindpass.test");
 
       const firstCookie = extractCookiePair(registerResponse.headers["set-cookie"]);
@@ -615,7 +615,7 @@ describePg("auth routes", () => {
 
       expect(refreshResponse.statusCode).toBe(200);
       const refreshed = refreshResponse.json() as { access_token: string; refresh_token?: string };
-      expect(refreshed.refresh_token).toBeUndefined();
+      expect(refreshed.refresh_token).toEqual(expect.any(String));
 
       const rotatedCookie = extractCookiePair(refreshResponse.headers["set-cookie"]);
       expect(rotatedCookie).not.toBe(firstCookie);
@@ -965,12 +965,8 @@ describePg("auth routes", () => {
         url: `/api/v2/auth/verify-email/${token}`
       });
 
-      expect(verifyResponse.statusCode).toBe(200);
-      expect(verifyResponse.json()).toMatchObject({
-        user: {
-          email_verified: true
-        }
-      });
+      expect(verifyResponse.statusCode).toBe(302);
+      expect(verifyResponse.headers.location).toMatch(/\/login\?verified=true$/);
 
       await app.close();
     } finally {

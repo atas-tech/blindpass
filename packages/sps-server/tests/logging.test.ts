@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { logAudit } from "../src/services/audit.js";
 import { logVerificationUrl } from "../src/services/user.js";
+import { requestLogSummary } from "../src/utils/request-logging.js";
 
 const originalNodeEnv = process.env.NODE_ENV;
 const originalAuditFlag = process.env.SPS_LOG_AUDIT_EVENTS;
@@ -16,6 +17,16 @@ afterEach(() => {
 });
 
 describe("sensitive logging defaults", () => {
+  it("does not put signed query strings or path tokens in request logs", () => {
+    const summary = requestLogSummary({
+      method: "GET",
+      routeOptions: { url: "/api/v2/secret/metadata/:id" },
+      url: "/api/v2/secret/metadata/secret-id?sig=live-link-canary"
+    } as Parameters<typeof requestLogSummary>[0]);
+    expect(summary).toEqual({ method: "GET", route: "/api/v2/secret/metadata/:id" });
+    expect(JSON.stringify(summary)).not.toContain("live-link-canary");
+    expect(JSON.stringify(summary)).not.toContain("secret-id");
+  });
   it("suppresses audit payload logging unless explicitly enabled", async () => {
     delete process.env.SPS_LOG_AUDIT_EVENTS;
     const info = vi.spyOn(console, "info").mockImplementation(() => {});

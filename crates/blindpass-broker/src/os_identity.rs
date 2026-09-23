@@ -7,6 +7,7 @@ use std::io;
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
 use std::os::raw::{c_char, c_int, c_void};
 use std::os::unix::net::UnixStream;
+use std::time::{Duration, Instant};
 
 const SOL_SOCKET: c_int = 1;
 const SO_PEERCRED: c_int = 17;
@@ -60,9 +61,9 @@ impl std::error::Error for OsIdentityError {}
 
 #[link(name = "systemd")]
 unsafe extern "C" {
-    fn sd_pidfd_get_unit(pidfd: c_int, ret_unit: *mut *mut c_char) -> c_int;
     fn sd_bus_open_system(ret: *mut *mut sd_bus) -> c_int;
     fn sd_bus_unref(bus: *mut sd_bus) -> *mut sd_bus;
+    fn sd_bus_set_method_call_timeout(bus: *mut sd_bus, usec: u64) -> c_int;
     fn sd_bus_call_method(
         bus: *mut sd_bus,
         destination: *const c_char,
@@ -74,16 +75,6 @@ unsafe extern "C" {
         types: *const c_char,
         ...
     ) -> c_int;
-    fn sd_bus_get_property(
-        bus: *mut sd_bus,
-        destination: *const c_char,
-        path: *const c_char,
-        interface: *const c_char,
-        member: *const c_char,
-        error: *mut c_void,
-        reply: *mut *mut sd_bus_message,
-        types: *const c_char,
-    ) -> c_int;
     fn sd_bus_message_unref(message: *mut sd_bus_message) -> *mut sd_bus_message;
     fn sd_bus_message_read(message: *mut sd_bus_message, types: *const c_char, ...) -> c_int;
     fn sd_bus_message_read_array(
@@ -92,13 +83,15 @@ unsafe extern "C" {
         data: *mut *const c_void,
         length: *mut usize,
     ) -> c_int;
-    fn free(pointer: *mut c_void);
 }
 
-pub fn resolve_peer(stream: &UnixStream) -> Result<PeerIdentity, OsIdentityError> {
+pub fn resolve_peer(
+    stream: &UnixStream,
+    deadline: Instant,
+) -> Result<PeerIdentity, OsIdentityError> {
     let credentials = peer_credentials(stream.as_raw_fd())?;
     let pidfd = peer_pidfd(stream.as_raw_fd())?;
-    let (unit, invocation_id) = resolve_unit_and_invocation(pidfd.as_raw_fd())?;
+    let (unit, invocation_id) = resolve_unit_and_invocation(pidfd.as_raw_fd(), deadline)?;
     Ok(PeerIdentity {
         uid: credentials.uid,
         gid: credentials.gid,
@@ -107,6 +100,17 @@ pub fn resolve_peer(stream: &UnixStream) -> Result<PeerIdentity, OsIdentityError
         invocation_id: Some(invocation_id),
         account: Some(format!("uid:{}", credentials.uid)),
     })
+}
+
+/// Provisioning is a local root administration operation, independent of a
+/// systemd workload identity. The protected socket is checked again here.
+pub fn require_root_peer(stream: &UnixStream) -> Result<(), OsIdentityError> {
+    if peer_credentials(stream.as_raw_fd())?.uid != 0 {
+        return Err(OsIdentityError::PermissionDenied(
+            "provisioning requires uid 0",
+        ));
+    }
+    Ok(())
 }
 
 fn peer_credentials(fd: RawFd) -> Result<Ucred, OsIdentityError> {
@@ -126,7 +130,12 @@ fn peer_credentials(fd: RawFd) -> Result<Ucred, OsIdentityError> {
         )
     };
     if result != 0 {
-        return Err(OsIdentityError::System(io::Error::last_os_error().kind()));
+        let error = io::Error::last_os_error();
+        return if matches!(error.raw_os_error(), Some(92 | 38)) {
+            Err(OsIdentityError::UnsupportedHost("SO_PEERCRED unavailable"))
+        } else {
+            Err(OsIdentityError::System(error.kind()))
+        };
     }
     Ok(credentials)
 }
@@ -155,31 +164,38 @@ fn peer_pidfd(fd: RawFd) -> Result<OwnedFd, OsIdentityError> {
     Ok(unsafe { OwnedFd::from_raw_fd(pidfd) })
 }
 
-fn resolve_unit_and_invocation(pidfd: RawFd) -> Result<(String, String), OsIdentityError> {
-    let mut unit_pointer = std::ptr::null_mut();
-    let result = unsafe { sd_pidfd_get_unit(pidfd, &mut unit_pointer) };
-    if result < 0 || unit_pointer.is_null() {
-        return Err(OsIdentityError::LookupFailed("sd_pidfd_get_unit"));
-    }
-    let unit = unsafe { CStr::from_ptr(unit_pointer) }.to_bytes().to_vec();
-    unsafe { free(unit_pointer.cast::<c_void>()) };
-    let unit =
-        String::from_utf8(unit).map_err(|_| OsIdentityError::LookupFailed("unit is not utf8"))?;
-    let invocation_id = resolve_invocation_id(pidfd)?;
-    Ok((unit, invocation_id))
-}
-
-fn resolve_invocation_id(pidfd: RawFd) -> Result<String, OsIdentityError> {
+fn resolve_unit_and_invocation(
+    pidfd: RawFd,
+    deadline: Instant,
+) -> Result<(String, String), OsIdentityError> {
+    remaining(deadline)?;
     let mut bus = std::ptr::null_mut();
     if unsafe { sd_bus_open_system(&mut bus) } < 0 || bus.is_null() {
         return Err(OsIdentityError::UnsupportedHost("system bus unavailable"));
     }
-    let result = resolve_invocation_id_on_bus(bus, pidfd);
+    let result = resolve_unit_and_invocation_on_bus(bus, pidfd, deadline);
     unsafe { sd_bus_unref(bus) };
     result
 }
 
-fn resolve_invocation_id_on_bus(bus: *mut sd_bus, pidfd: RawFd) -> Result<String, OsIdentityError> {
+fn resolve_unit_and_invocation_on_bus(
+    bus: *mut sd_bus,
+    pidfd: RawFd,
+    deadline: Instant,
+) -> Result<(String, String), OsIdentityError> {
+    let timeout = remaining(deadline)?;
+    let timeout_usec = u64::try_from(timeout.as_micros())
+        .ok()
+        .filter(|usec| *usec > 0)
+        .ok_or(OsIdentityError::UnsupportedHost(
+            "identity lookup deadline elapsed",
+        ))?;
+    if unsafe { sd_bus_set_method_call_timeout(bus, timeout_usec) } < 0 {
+        return Err(OsIdentityError::UnsupportedHost(
+            "system bus timeout configuration unavailable",
+        ));
+    }
+
     let destination = CString::new("org.freedesktop.systemd1").unwrap();
     let manager_path = CString::new("/org/freedesktop/systemd1").unwrap();
     let manager_interface = CString::new("org.freedesktop.systemd1.Manager").unwrap();
@@ -199,67 +215,70 @@ fn resolve_invocation_id_on_bus(bus: *mut sd_bus, pidfd: RawFd) -> Result<String
             pidfd,
         )
     };
+    if Instant::now() >= deadline {
+        if !reply.is_null() {
+            unsafe { sd_bus_message_unref(reply) };
+        }
+        return Err(OsIdentityError::System(io::ErrorKind::TimedOut));
+    }
     if call_result < 0 || reply.is_null() {
+        if call_result == -110 {
+            return Err(OsIdentityError::System(io::ErrorKind::TimedOut));
+        }
         return Err(OsIdentityError::UnsupportedHost(
             "systemd GetUnitByPIDFD unavailable",
         ));
     }
-    let object_type = CString::new("o").unwrap();
+    let object_and_unit_types = CString::new("os").unwrap();
     let mut object_path: *const c_char = std::ptr::null();
-    let read_result = unsafe { sd_bus_message_read(reply, object_type.as_ptr(), &mut object_path) };
-    if read_result <= 0 || object_path.is_null() {
-        unsafe { sd_bus_message_unref(reply) };
-        return Err(OsIdentityError::LookupFailed("unit object path"));
-    }
-    let object_path = unsafe { CStr::from_ptr(object_path) }.to_bytes().to_vec();
-    unsafe { sd_bus_message_unref(reply) };
-    let object_path = String::from_utf8(object_path)
-        .map_err(|_| OsIdentityError::LookupFailed("unit object path is not utf8"))?;
-
-    let unit_interface = CString::new("org.freedesktop.systemd1.Unit").unwrap();
-    let property = CString::new("InvocationID").unwrap();
-    let object_path =
-        CString::new(object_path).map_err(|_| OsIdentityError::LookupFailed("unit path"))?;
-    let property_type = CString::new("ay").unwrap();
-    let mut property_reply = std::ptr::null_mut();
-    let property_result = unsafe {
-        sd_bus_get_property(
-            bus,
-            destination.as_ptr(),
-            object_path.as_ptr(),
-            unit_interface.as_ptr(),
-            property.as_ptr(),
-            std::ptr::null_mut(),
-            &mut property_reply,
-            property_type.as_ptr(),
+    let mut unit_id: *const c_char = std::ptr::null();
+    let read_result = unsafe {
+        sd_bus_message_read(
+            reply,
+            object_and_unit_types.as_ptr(),
+            &mut object_path,
+            &mut unit_id,
         )
     };
-    if property_result < 0 || property_reply.is_null() {
-        return Err(OsIdentityError::UnsupportedHost(
-            "systemd invocation lookup unavailable",
-        ));
+    if read_result <= 0 || object_path.is_null() || unit_id.is_null() {
+        unsafe { sd_bus_message_unref(reply) };
+        return Err(OsIdentityError::LookupFailed("unit identity reply"));
     }
+    // The manager returns the unit path, unit name, and InvocationID in the
+    // same pidfd-bound reply. Keep that identity atomic; a second property
+    // request could observe a replacement invocation.
+    let unit = unsafe { CStr::from_ptr(unit_id) }.to_bytes().to_vec();
     let mut invocation_data: *const c_void = std::ptr::null();
     let mut invocation_length = 0;
     let read_result = unsafe {
         sd_bus_message_read_array(
-            property_reply,
+            reply,
             b'y' as c_char,
             &mut invocation_data,
             &mut invocation_length,
         )
     };
     if read_result <= 0 || invocation_data.is_null() {
-        unsafe { sd_bus_message_unref(property_reply) };
+        unsafe { sd_bus_message_unref(reply) };
         return Err(OsIdentityError::LookupFailed("invocation id array"));
     }
-    // SAFETY: systemd owns this array for the lifetime of the reply message. Copy it before
-    // releasing that message so the returned identity has no borrowed D-Bus state.
+    // SAFETY: systemd owns these reply fields for the lifetime of the message.
+    // Copy them before releasing it so no borrowed D-Bus state escapes.
     let invocation_bytes = unsafe {
         std::slice::from_raw_parts(invocation_data.cast::<u8>(), invocation_length).to_vec()
     };
-    unsafe { sd_bus_message_unref(property_reply) };
-    format_invocation_id(&invocation_bytes)
+    unsafe { sd_bus_message_unref(reply) };
+    let unit = String::from_utf8(unit)
+        .map_err(|_| OsIdentityError::LookupFailed("unit name is not utf8"))?;
+    let invocation_id = format_invocation_id(&invocation_bytes)?;
+    Ok((unit, invocation_id))
+}
+
+fn remaining(deadline: Instant) -> Result<Duration, OsIdentityError> {
+    deadline
+        .checked_duration_since(Instant::now())
+        .filter(|duration| !duration.is_zero())
+        .ok_or(OsIdentityError::System(io::ErrorKind::TimedOut))
 }
 
 fn format_invocation_id(bytes: &[u8]) -> Result<String, OsIdentityError> {

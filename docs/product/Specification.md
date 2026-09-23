@@ -77,20 +77,19 @@ New grants fail closed when the controller is unavailable. Existing grants canno
 
 ### Service credential-loader authentication
 
-The credential loader is a pre-exec service process, not necessarily PID 1 or the final service account. The proposed system-scope authentication sequence is:
+P01 has two socket profiles. Both authenticate the connecting process with root `SO_PEERCRED`, `SO_PEERPIDFD`, and a single pidfd-bound systemd lookup that returns the unit and invocation together. The direct helper sends a framed unit and credential claim. Stock `LoadCredential=` sends no frame; systemd places `unit/<unit>/<credential>` in the abstract client address as a routing hint.
 
-1. Accept on a root-owned filesystem Unix socket with mode `0600`.
-2. Read `SO_PEERCRED` and require UID 0; reject user-manager peers.
-3. Obtain `SO_PEERPIDFD`; unsupported kernels fail explicitly.
-4. Resolve the pinned peer to its system unit and invocation using the appropriate pidfd-based libsystemd APIs or `GetUnitByPIDFD` plus a verified invocation lookup. Confirm invocation binding remains valid across exit/restart; do not assume a unit-name lookup alone supplies an invocation ID.
-5. Read the abstract peer socket name only as a credential-routing hint. Require its claimed unit to match the authenticated unit.
-6. Enforce the administrator-controlled unit-to-credential mapping and grant/delivery policy, and release only the authorized value.
+For the direct helper profile, accept on a root-owned filesystem Unix socket with mode `0600`, require root `SO_PEERCRED`, obtain `SO_PEERPIDFD`, and resolve unit ID plus invocation ID in one pidfd-bound systemd `GetUnitByPIDFD` reply. Require the helper's claimed unit to match that identity, then enforce the root-controlled unit-to-credential mapping. Missing pidfd or systemd lookup support is an explicit unsupported-host result. Do not use raw PIDs or `/proc` parsing.
+
+For native `LoadCredential=`, the pidfd-derived identity must be root and its unit must exactly match the route's unit; the resolved invocation must be present. The broker then checks the exact unit/credential pair against its root-controlled mapping. The route is never authorization by itself. The disposable Ubuntu 24.04/systemd 255 run confirmed that the credential-setup caller resolves to the consuming service unit and invocation, not `init.scope`; hosts with different behavior fail closed. Denials close the stream without writing error text because systemd would treat any written bytes as credential contents. Empty and malformed values must still be rejected by the consumer.
+
+The native and direct-helper routes both fail closed for user-manager peers. Direct helper requests are bounded by one deadline covering identity resolution and frame reading. The native path is exercised with real `LoadCredential=` units; protect its socket and mapping files as privileged configuration.
 
 Do not authorize using raw PID fields, `/proc` parsing, the `sd_peer_get_*` family, a random socket-name prefix, or the claimed unit alone. Use protected system-unit registration and dedicated accounts; user-manager credential delivery and shared-desktop-UID isolation are excluded from the supported pilot profile.
 
 The September 12 probe on Omarchy 4.0.3, systemd 261.2, and kernel 7.2.3 tested **user scope only**. A normal process fabricated `\0deadbeefdeadbeef/unit/postgresql.service/db-password`; a naive server delivered the dummy credential. Genuine and forged peers shared UID 1000, while cgroup context differed. The random prefix was per connection and was not an authentication signal. `SO_PEERPIDFD` availability was observed locally. These findings demonstrate the routing-name flaw; they are not evidence of a working secure broker or system-scope implementation.
 
-System-scope UID behavior, `DynamicUser=`, cross-account socket access, encrypted credential socket semantics, invocation races, and timeout behavior remain disposable-VM gates. Pidfd handling must be verified end to end; adopting an API name alone is not proof of race-free authorization. [Systemd credential implementation](https://raw.githubusercontent.com/systemd/systemd/main/src/core/exec-credential.c), [pid/unit API and race warning](https://raw.githubusercontent.com/systemd/systemd/main/man/sd_pid_get_owner_uid.xml), [Unix sockets](https://man7.org/linux/man-pages/man7/unix.7.html)
+Systemd versions other than the pinned systemd 255 profile, `DynamicUser=`, cross-account socket access, encrypted credential socket semantics, forced numeric PID reuse, and timeout behavior remain disposable-VM gates. Pidfd handling must be verified end to end; adopting an API name alone is not proof of race-free authorization. [Systemd credential implementation](https://raw.githubusercontent.com/systemd/systemd/main/src/core/exec-credential.c), [pid/unit API and race warning](https://raw.githubusercontent.com/systemd/systemd/main/man/sd_pid_get_owner_uid.xml), [Unix sockets](https://man7.org/linux/man-pages/man7/unix.7.html)
 
 ### Identity backend decision
 
@@ -152,7 +151,7 @@ CI fixtures with full browser access treat test code as trusted. Existing enviro
 
 ## Native service delivery and custody
 
-Use `LoadCredential=` with a protected broker socket and administrator-owned unit-to-credential mapping. The service consumes a credential file through its supported file option; environment-only applications need a separately documented adapter. Pre-provision the backup credential before activation so boot does not wait indefinitely for an interactive approval.
+Use native `LoadCredential=name:/path/to/broker.sock` with a protected broker socket and administrator-owned unit-to-credential mapping. The service consumes the staged credential file through its supported file option; environment-only applications need a separately documented adapter. Provision broker custody before activation so boot does not wait indefinitely for an interactive approval.
 
 Each consuming service must validate presence, non-empty content, completeness, and expected syntax before reporting successful startup. The September research records that a socket returning no data can leave an empty credential file; do not assume systemd alone turns every broker error into failed activation. Test denial, crash, stall, partial delivery, size limits, binary values, and one connection per credential. [Empty credential behavior](https://github.com/systemd/systemd/issues/27373), [per-credential connections](https://github.com/systemd/systemd/issues/34223)
 

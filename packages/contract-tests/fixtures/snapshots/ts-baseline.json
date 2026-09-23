@@ -4,6 +4,9 @@
     "content_type": "application/json",
     "body": {
       "ok": true
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT01.readyz.up": {
@@ -15,6 +18,9 @@
         "redis": "up"
       },
       "ok": true
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.token.bearer": {
@@ -32,6 +38,9 @@
         "status": "active",
         "workspace_id": "<uuid>"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.token.header": {
@@ -49,6 +58,9 @@
         "status": "active",
         "workspace_id": "<uuid>"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.token.missing": {
@@ -57,6 +69,9 @@
     "body": {
       "code": "missing_api_key",
       "error": "Missing agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.token.malformed": {
@@ -65,6 +80,9 @@
     "body": {
       "code": "missing_api_key",
       "error": "Missing agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.token.unknown": {
@@ -73,6 +91,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.key.rotate": {
@@ -89,6 +110,9 @@
         "workspace_id": "<uuid>"
       },
       "bootstrap_api_key": "<bootstrap-api-key>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.key.rotated-old": {
@@ -97,6 +121,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.key.rotated-new": {
@@ -114,6 +141,9 @@
         "status": "active",
         "workspace_id": "<uuid>"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.key.revoke": {
@@ -129,6 +159,9 @@
         "status": "revoked",
         "workspace_id": "<uuid>"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.key.revoked": {
@@ -137,6 +170,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.rate.allowed.1": {
@@ -145,6 +181,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.rate.allowed.2": {
@@ -153,6 +192,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.rate.allowed.3": {
@@ -161,6 +203,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.rate.allowed.4": {
@@ -169,6 +214,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.rate.allowed.5": {
@@ -177,126 +225,9 @@
     "body": {
       "code": "invalid_api_key",
       "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.6": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.7": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.8": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.9": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.10": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.11": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.12": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.13": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.14": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.15": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.16": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.17": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.18": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.19": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
-    }
-  },
-  "CT02.rate.allowed.20": {
-    "status": 401,
-    "content_type": "application/json",
-    "body": {
-      "code": "invalid_api_key",
-      "error": "Invalid agent API key"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT02.rate.limited": {
@@ -305,9 +236,13 @@
     "body": {
       "code": "rate_limited",
       "error": "Too many token requests",
-      "limit": 20,
-      "retry_after_seconds": 1,
-      "used": 21
+      "limit": 5,
+      "retry_after_seconds": "<seconds>",
+      "used": 6
+    },
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "retry-after": "<seconds>"
     }
   },
   "helper.secret.requester.CT03 hosted request": {
@@ -317,6 +252,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT03.request.external-jwks": {
@@ -326,6 +264,19 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT03.request.expired-external": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT03.request.missing-auth": {
@@ -333,6 +284,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Missing bearer token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT03.request.wrong-issuer": {
@@ -340,6 +294,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Invalid token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT03.request.wrong-audience": {
@@ -347,6 +304,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Invalid token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT03.request.invalid-public-key": {
@@ -357,6 +317,9 @@
       "error": "Bad Request",
       "message": "body/public_key must match pattern \"^[A-Za-z0-9+/]+={0,2}$\"",
       "statusCode": 400
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT04 metadata request": {
@@ -366,6 +329,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT04.metadata.correct": {
@@ -376,6 +342,9 @@
       "description": "CT04 metadata request",
       "expiry": "<timestamp>",
       "public_key": "<public-key>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT04.metadata.submit-scope": {
@@ -383,6 +352,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Invalid signature"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT04.metadata.tampered": {
@@ -390,6 +362,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Invalid signature"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT04.metadata.expired": {
@@ -397,6 +372,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Request expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT04.metadata.unknown": {
@@ -404,6 +382,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Request expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT05 submit request": {
@@ -413,6 +394,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.submit.<id>": {
@@ -420,6 +404,9 @@
     "content_type": "application/json",
     "body": {
       "status": "submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT05.submit.repeat": {
@@ -427,6 +414,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Already submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT05 wrong scope request": {
@@ -436,6 +426,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT05 oversized request": {
@@ -445,6 +438,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT05.submit.oversized": {
@@ -455,6 +451,9 @@
       "error": "Bad Request",
       "message": "body/ciphertext must NOT have more than 524288 characters",
       "statusCode": 400
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT06 pending": {
@@ -464,6 +463,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT06.pending": {
@@ -471,6 +473,9 @@
     "content_type": "application/json",
     "body": {
       "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT06 submitted": {
@@ -480,6 +485,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT06.submitted": {
@@ -487,6 +495,9 @@
     "content_type": "application/json",
     "body": {
       "status": "submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT06.unknown": {
@@ -494,6 +505,9 @@
     "content_type": "application/json",
     "body": {
       "status": "expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT06.foreign": {
@@ -501,6 +515,9 @@
     "content_type": "application/json",
     "body": {
       "status": "expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT06 consumed": {
@@ -510,6 +527,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.retrieve.consumed": {
@@ -518,6 +538,9 @@
     "body": {
       "ciphertext": "<ciphertext>",
       "enc": "<enc>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT06.consumed": {
@@ -525,6 +548,9 @@
     "content_type": "application/json",
     "body": {
       "status": "expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT06 expired": {
@@ -534,6 +560,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT06.expired": {
@@ -541,6 +570,9 @@
     "content_type": "application/json",
     "body": {
       "status": "expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT07 before submit": {
@@ -550,6 +582,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT07.retrieve.before-submit": {
@@ -557,6 +592,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Not submitted yet"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT07.retrieve.owner": {
@@ -565,6 +603,9 @@
     "body": {
       "ciphertext": "<ciphertext>",
       "enc": "<enc>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT07.retrieve.replay": {
@@ -572,6 +613,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT07 foreign": {
@@ -581,6 +625,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT07.retrieve.foreign": {
@@ -588,6 +635,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT07.retrieve.owner-after-foreign": {
@@ -596,6 +646,9 @@
     "body": {
       "ciphertext": "<ciphertext>",
       "enc": "<enc>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT07 race": {
@@ -605,6 +658,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT07.retrieve.race": [
@@ -624,6 +680,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT08.pending.expired": {
@@ -631,6 +690,9 @@
     "content_type": "application/json",
     "body": {
       "status": "expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.secret.requester.CT08 submitted expiry": {
@@ -640,6 +702,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT08.submitted.expired": {
@@ -647,6 +712,9 @@
     "content_type": "application/json",
     "body": {
       "status": "expired"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT08.submitted.retrieve-expired": {
@@ -654,6 +722,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.exchange.request": {
@@ -671,9 +742,12 @@
         "reason": "contract allow fixture",
         "requester_ring": null,
         "rule_id": "contract-allow",
-        "secret_name": "<jwt>"
+        "secret_name": "stripe.api_key.prod"
       },
       "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT08.revoked": {
@@ -681,6 +755,9 @@
     "content_type": "application/json",
     "body": {
       "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT08.revoked.expired": {
@@ -688,6 +765,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT09.exchange.allow": {
@@ -705,9 +785,12 @@
         "reason": "contract allow fixture",
         "requester_ring": null,
         "rule_id": "contract-allow",
-        "secret_name": "<jwt>"
+        "secret_name": "stripe.api_key.prod"
       },
       "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT09.exchange.approval": {
@@ -726,6 +809,9 @@
         "rule_id": "contract-approval",
         "secret_name": "restricted.secret"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT09.exchange.deny": {
@@ -744,6 +830,9 @@
         "rule_id": "contract-deny",
         "secret_name": "denied.secret"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT09.exchange.unknown": {
@@ -751,6 +840,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Exchange not allowed"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT10.status.pending": {
@@ -758,6 +850,9 @@
     "content_type": "application/json",
     "body": {
       "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT10.status.foreign": {
@@ -765,6 +860,19 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT10.status.third-party": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.exchange.fulfill": {
@@ -782,13 +890,16 @@
         "reason": "contract allow fixture",
         "requester_ring": null,
         "rule_id": "contract-allow",
-        "secret_name": "<jwt>"
+        "secret_name": "stripe.api_key.prod"
       },
       "purpose": "CT10 lifecycle",
       "requester_id": "contract-requester",
       "requester_public_key": "<requester-public-key>",
-      "secret_name": "<jwt>",
+      "secret_name": "stripe.api_key.prod",
       "status": "reserved"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT10.status.reserved": {
@@ -796,6 +907,9 @@
     "content_type": "application/json",
     "body": {
       "status": "reserved"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.exchange.submit": {
@@ -805,6 +919,9 @@
       "fulfilled_by": "contract-fulfiller",
       "retrieve_by": "<timestamp>",
       "status": "submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT10.status.submitted": {
@@ -812,6 +929,9 @@
     "content_type": "application/json",
     "body": {
       "status": "submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "helper.exchange.retrieve": {
@@ -821,7 +941,10 @@
       "ciphertext": "<ciphertext>",
       "enc": "<enc>",
       "fulfilled_by": "contract-fulfiller",
-      "secret_name": "<jwt>"
+      "secret_name": "stripe.api_key.prod"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT10.status.after-retrieve": {
@@ -829,6 +952,42 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT10.exchange.expiring": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfillment_token": "<fulfillment-token>",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "stripe.api_key.prod"
+      },
+      "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT10.status.expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT11.fulfill.wrong-agent": {
@@ -836,6 +995,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Exchange policy no longer allows fulfillment"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT11.fulfill.owner": {
@@ -853,13 +1015,26 @@
         "reason": "contract allow fixture",
         "requester_ring": null,
         "rule_id": "contract-allow",
-        "secret_name": "<jwt>"
+        "secret_name": "stripe.api_key.prod"
       },
       "purpose": "CT11 ownership",
       "requester_id": "contract-requester",
       "requester_public_key": "<requester-public-key>",
-      "secret_name": "<jwt>",
+      "secret_name": "stripe.api_key.prod",
       "status": "reserved"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT11.retrieve.before-submit": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": "Exchange is not ready"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT11.submit.wrong-agent": {
@@ -867,6 +1042,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Exchange is reserved for a different fulfiller"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT11.submit.owner": {
@@ -876,6 +1054,19 @@
       "fulfilled_by": "contract-fulfiller",
       "retrieve_by": "<timestamp>",
       "status": "submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT11.retrieve.wrong-agent": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT11.retrieve.requester": {
@@ -885,7 +1076,10 @@
       "ciphertext": "<ciphertext>",
       "enc": "<enc>",
       "fulfilled_by": "contract-fulfiller",
-      "secret_name": "<jwt>"
+      "secret_name": "stripe.api_key.prod"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT11.retrieve.replay": {
@@ -893,13 +1087,101 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
+  "CT11.exchange.parallel": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfillment_token": "<fulfillment-token>",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "stripe.api_key.prod"
+      },
+      "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "helper.CT11.parallel.fulfill": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfilled_by": "contract-fulfiller",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "stripe.api_key.prod"
+      },
+      "purpose": "CT11 parallel retrieve",
+      "requester_id": "contract-requester",
+      "requester_public_key": "<requester-public-key>",
+      "secret_name": "stripe.api_key.prod",
+      "status": "reserved"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "helper.CT11.parallel.submit": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "fulfilled_by": "contract-fulfiller",
+      "retrieve_by": "<timestamp>",
+      "status": "submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT11.retrieve.race": [
+    200,
+    410,
+    410,
+    410,
+    410,
+    410,
+    410,
+    410
+  ],
   "CT12.revoke.requester": {
     "status": 200,
     "content_type": "application/json",
     "body": {
       "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.status.revoked": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT12.revoke.repeat": {
@@ -907,6 +1189,9 @@
     "content_type": "application/json",
     "body": {
       "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT12.revoke.foreign": {
@@ -914,6 +1199,9 @@
     "content_type": "application/json",
     "body": {
       "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT12.retrieve.revoked": {
@@ -921,6 +1209,89 @@
     "content_type": "application/json",
     "body": {
       "error": "Exchange is not ready"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.exchange.reserved": {
+    "status": 201,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfillment_token": "<fulfillment-token>",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "stripe.api_key.prod"
+      },
+      "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.fulfill.reserved": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "exchange_id": "<id>",
+      "expires_at": "<timestamp>",
+      "fulfilled_by": "contract-fulfiller",
+      "policy": {
+        "approval_reference": null,
+        "approval_required": false,
+        "fulfiller_ring": null,
+        "mode": "allow",
+        "reason": "contract allow fixture",
+        "requester_ring": null,
+        "rule_id": "contract-allow",
+        "secret_name": "stripe.api_key.prod"
+      },
+      "purpose": "CT12 reserved revoke",
+      "requester_id": "contract-requester",
+      "requester_public_key": "<requester-public-key>",
+      "secret_name": "stripe.api_key.prod",
+      "status": "reserved"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.revoke.reserved": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.status.reserved-revoked": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.retrieve.reserved-revoked": {
+    "status": 409,
+    "content_type": "application/json",
+    "body": {
+      "error": "Exchange is not ready"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT12.revoke.admin": {
@@ -928,6 +1299,39 @@
     "content_type": "application/json",
     "body": {
       "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.status.admin-revoked": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "status": "revoked"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.retrieve.revoked-expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT12.status.revoked-expired": {
+    "status": 410,
+    "content_type": "application/json",
+    "body": {
+      "error": "Not available"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT13.exchange.approve.pending": {
@@ -946,6 +1350,9 @@
         "rule_id": "contract-approval",
         "secret_name": "restricted.secret"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT13.approval.approve": {
@@ -956,6 +1363,9 @@
       "decided_at": "<timestamp>",
       "decided_by": "<uuid>",
       "status": "approved"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT13.exchange.approve.continued": {
@@ -976,6 +1386,9 @@
         "secret_name": "restricted.secret"
       },
       "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT13.exchange.reject.pending": {
@@ -994,6 +1407,9 @@
         "rule_id": "contract-approval",
         "secret_name": "restricted.secret"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT13.approval.reject": {
@@ -1004,6 +1420,9 @@
       "decided_at": "<timestamp>",
       "decided_by": "<uuid>",
       "status": "rejected"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT13.exchange.reject.rejected": {
@@ -1022,6 +1441,9 @@
         "rule_id": "contract-approval",
         "secret_name": "restricted.secret"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT14.refresh.valid": {
@@ -1054,6 +1476,9 @@
         "tier": "free",
         "updated_at": "<timestamp>"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT14.refresh.replay": {
@@ -1062,6 +1487,9 @@
     "body": {
       "code": "invalid_refresh_token",
       "error": "Invalid refresh token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT14.refresh.absent": {
@@ -1070,6 +1498,9 @@
     "body": {
       "code": "invalid_refresh_token",
       "error": "Invalid refresh token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT14.refresh.expired": {
@@ -1078,6 +1509,9 @@
     "body": {
       "code": "invalid_refresh_token",
       "error": "Invalid refresh token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT15.rate.reset": {
@@ -1095,12 +1529,21 @@
         "status": "active",
         "workspace_id": "<uuid>"
       }
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT16.cors.allowed": {
     "status": 204,
     "content_type": null,
-    "body": null
+    "body": null,
+    "headers": {
+      "access-control-allow-origin": "http://allowed.contract.test",
+      "access-control-allow-methods": "GET,HEAD,PUT,PATCH,POST,DELETE",
+      "access-control-allow-headers": "Content-Type, Authorization, Payment-Signature, Payment-Identifier, Payment-Required, Accept",
+      "access-control-allow-credentials": "true"
+    }
   },
   "CT16.cors.disallowed": {
     "status": 404,
@@ -1111,12 +1554,1189 @@
       "statusCode": 404
     }
   },
+  "CT16.cors.allowed-simple": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ok": true
+    },
+    "headers": {
+      "access-control-allow-origin": "http://allowed.contract.test",
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT16.cors.disallowed-simple": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "ok": true
+    }
+  },
   "CT17.audit": {
     "status": 200,
     "content_type": "application/json",
     "body": {
       "next_cursor": null,
-      "records": []
+      "records": [
+        {
+          "actor_id": "contract-rotatable",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "203.0.113.220",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_pending_approval",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request_pending_approval",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "<uuid>",
+          "actor_type": "user",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_rejected",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_approval_reject",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "purpose": "CT13 reject",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_pending_approval",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request_pending_approval",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_approval_requested",
+          "id": "<uuid>",
+          "ip_address": null,
+          "metadata": {
+            "action": "exchange_approval_request",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "purpose": "CT13 reject",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "approval_reference": "<approval-reference>",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-approval",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "<uuid>",
+          "actor_type": "user",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_approved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_approval_approve",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "purpose": "CT13 approve",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_pending_approval",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request_pending_approval",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_approval_requested",
+          "id": "<uuid>",
+          "ip_address": null,
+          "metadata": {
+            "action": "exchange_approval_request",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "purpose": "CT13 approve",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-external/ring/blue",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_revoked",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_revoke",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_revoked",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_revoke",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_reserved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_reserve",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_revoked",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_revoke",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_retrieved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_retrieve",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_submit",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_reserved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_reserve",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_retrieved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_retrieve",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_submit",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_reserved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_reserve",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_retrieved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_retrieve",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_submit",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_reserved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_reserve",
+            "exchange_id": "<id>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_denied",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request_denied",
+            "fulfilled_by": "contract-fulfiller",
+            "requester_id": "contract-requester",
+            "secret_name": "unknown.secret"
+          },
+          "resource_id": null,
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_denied",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request_denied",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-deny",
+            "requester_id": "contract-requester",
+            "secret_name": "denied.secret"
+          },
+          "resource_id": null,
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_pending_approval",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request_pending_approval",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_approval_requested",
+          "id": "<uuid>",
+          "ip_address": null,
+          "metadata": {
+            "action": "exchange_approval_request",
+            "approval_reference": "<approval-reference>",
+            "fulfilled_by": "contract-fulfiller",
+            "policy_rule_id": "contract-approval",
+            "purpose": "CT09 approval",
+            "requester_id": "contract-requester",
+            "secret_name": "restricted.secret"
+          },
+          "resource_id": "<approval-id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_revoked",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_revoke",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "exchange_requested",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "exchange_request",
+            "exchange_id": "<id>",
+            "policy_rule_id": "contract-allow",
+            "requester_id": "contract-requester",
+            "secret_name": "stripe.api_key.prod"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": null,
+          "actor_type": null,
+          "created_at": "<timestamp>",
+          "event_type": "secret_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "submit",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "secret_retrieved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "retrieve",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": null,
+          "actor_type": null,
+          "created_at": "<timestamp>",
+          "event_type": "secret_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "submit",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "secret_retrieved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "retrieve",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": null,
+          "actor_type": null,
+          "created_at": "<timestamp>",
+          "event_type": "secret_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "submit",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "secret_retrieved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "retrieve",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": null,
+          "actor_type": null,
+          "created_at": "<timestamp>",
+          "event_type": "secret_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "submit",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "secret_retrieved",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "retrieve",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": null,
+          "actor_type": null,
+          "created_at": "<timestamp>",
+          "event_type": "secret_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "submit",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": null,
+          "actor_type": null,
+          "created_at": "<timestamp>",
+          "event_type": "secret_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "submit",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": null,
+          "actor_type": null,
+          "created_at": "<timestamp>",
+          "event_type": "secret_submitted",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "submit",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-external/ring/blue",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "request_created",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "request",
+            "request_id": "<id>"
+          },
+          "resource_id": "<id>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "<uuid>",
+          "actor_type": "user",
+          "created_at": "<timestamp>",
+          "event_type": "agent_revoked",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "agent_revoke",
+            "agent_id": "contract-revocable"
+          },
+          "resource_id": "contract-revocable",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-rotatable",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.43",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "<uuid>",
+          "actor_type": "user",
+          "created_at": "<timestamp>",
+          "event_type": "agent_api_key_rotated",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "agent_rotate_api_key",
+            "agent_id": "contract-rotatable"
+          },
+          "resource_id": "contract-rotatable",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-revocable",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.41",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-rotatable",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.40",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-revocable",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.14",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-rotatable",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.13",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-observer",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.12",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-fulfiller",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.11",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "contract-requester",
+          "actor_type": "agent",
+          "created_at": "<timestamp>",
+          "event_type": "agent_token_minted",
+          "id": "<uuid>",
+          "ip_address": "198.51.100.10",
+          "metadata": {
+            "action": "agent_token_mint",
+            "minted_via": "bootstrap_api_key"
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        },
+        {
+          "actor_id": "<uuid>",
+          "actor_type": "user",
+          "created_at": "<timestamp>",
+          "event_type": "workspace_policy_updated",
+          "id": "<uuid>",
+          "ip_address": "127.0.0.1",
+          "metadata": {
+            "action": "workspace_policy_update",
+            "exchange_rule_count": 3,
+            "secret_registry_count": 3,
+            "source": "manual",
+            "version": 2
+          },
+          "resource_id": "<uuid>",
+          "workspace_id": "<uuid>"
+        }
+      ]
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT18.error.400": {
@@ -1127,6 +2747,9 @@
       "error": "Bad Request",
       "message": "body/public_key must match pattern \"^[A-Za-z0-9+/]+={0,2}$\"",
       "statusCode": 400
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT18.error.401": {
@@ -1134,16 +2757,15 @@
     "content_type": "application/json",
     "body": {
       "error": "Missing bearer token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT18.error.403": {
-    "status": 400,
-    "content_type": "application/json",
+    "status": 403,
     "body": {
-      "code": "FST_ERR_VALIDATION",
-      "error": "Bad Request",
-      "message": "querystring/sig must match pattern \"^[0-9]{10,13}\\.[A-Za-z0-9_-]{43}$\"",
-      "statusCode": 400
+      "error": "Invalid signature"
     }
   },
   "CT18.error.404": {
@@ -1153,6 +2775,9 @@
       "error": "Not Found",
       "message": "Route GET:/route-that-does-not-exist not found",
       "statusCode": 404
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT18.error.409": {
@@ -1172,9 +2797,22 @@
     "body": {
       "error": "Too many token requests",
       "code": "rate_limited",
-      "retry_after_seconds": 1,
-      "limit": 20,
-      "used": 21
+      "retry_after_seconds": "<seconds>",
+      "limit": 5,
+      "used": 6
+    }
+  },
+  "CT18.error.413": {
+    "status": 413,
+    "content_type": "application/json",
+    "body": {
+      "code": "FST_ERR_CTP_BODY_TOO_LARGE",
+      "error": "Payload Too Large",
+      "message": "Request body is too large",
+      "statusCode": 413
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CT18.error.validation": {
@@ -1193,6 +2831,9 @@
       "confirmation_code": "<confirmation-code>",
       "request_id": "<id>",
       "secret_url": "<secret-url>"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   },
   "CC01.secret-status": {
@@ -1200,6 +2841,9 @@
     "content_type": "application/json",
     "body": {
       "status": "pending"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
     }
   }
 }

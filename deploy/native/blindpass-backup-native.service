@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass native encrypted-credential baseline backup probe
+
+[Service]
+Type=oneshot
+User=blindpass-backup
+Group=blindpass-backup
+RuntimeDirectory=blindpass-backup-native
+RuntimeDirectoryMode=0700
+LoadCredentialEncrypted=api-key:/etc/blindpass/api-key.cred
+ExecStart=/usr/libexec/blindpass-backup-probe --credential-file %d/api-key --artifact /run/blindpass-backup-native/artifact --mode write
+RemainAfterExit=yes
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target
