@@ -19,6 +19,7 @@ install -m 0755 /tmp/blindpass-broker /usr/libexec/blindpass-broker
 install -m 0755 /tmp/blindpass-consumer /usr/libexec/blindpass-consumer
 install -m 0755 /tmp/blindpass-credential-loader /usr/libexec/blindpass-credential-loader
 install -m 0755 /tmp/blindpass-workload-client /usr/libexec/blindpass-workload-client
+install -m 0755 /tmp/blindpass-transport-probe /usr/libexec/blindpass-transport-probe
 install -m 0644 /tmp/blindpass-broker.service /etc/systemd/system/blindpass-broker.service
 install -m 0644 /tmp/blindpass-consumer.service /etc/systemd/system/blindpass-consumer.service
 install -m 0644 /tmp/blindpass-consumer-native.service /etc/systemd/system/blindpass-consumer-native.service
@@ -62,8 +63,12 @@ workload_uid=$(id -u blindpass-agent)
 [[ -n "$workload_uid" ]] || { printf 'P01-FAIL workload uid unavailable\n' >&2; exit 1; }
 
 install -d -m 0755 /etc/systemd/system/blindpass-broker.service.d
-printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:workload-a:blindpass-workload.service:%s:%s\n' \
-    "$workload_uid" "$invocation" >/etc/systemd/system/blindpass-broker.service.d/p01-workload.conf
+write_workload_registration() {
+    printf '[Service]\nExecStart=\nExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --map blindpass-consumer.service=api-key --credential api-key=/etc/blindpass/api-key --workload node-a:workload-a:blindpass-workload.service:%s:%s\n' \
+        "$workload_uid" "$invocation" \
+        >/etc/systemd/system/blindpass-broker.service.d/p01-workload.conf
+}
+write_workload_registration
 systemctl daemon-reload
 if ! systemctl start blindpass-broker.service; then
     printf 'P01-FAIL broker start command failed\n' >&2
@@ -93,9 +98,135 @@ journalctl -u blindpass-workload.service --no-pager -n 20 | grep -q 'WORKLOAD_RE
 }
 printf 'P01-I02 registered non-root workload: PASS\n'
 
+cat >/etc/systemd/system/blindpass-loader-nonroot.service <<'UNIT'
+[Unit]
+Description=BlindPass P01 non-root loader probe
+After=blindpass-broker.service
+[Service]
+Type=oneshot
+User=blindpass-agent
+Group=blindpass-workload
+ExecStart=/usr/libexec/blindpass-credential-loader --socket /run/blindpass/loader.sock --unit blindpass-consumer.service --credential api-key --output /run/blindpass-nonroot.key
+UNIT
+systemctl daemon-reload
+if systemctl start blindpass-loader-nonroot.service >/dev/null 2>&1; then
+    printf 'P01-FAIL non-root loader reached the root-only socket\n' >&2
+    exit 1
+fi
+printf 'P01-I02 non-root loader denied by socket boundary: PASS\n'
+
+cat >/etc/systemd/system/blindpass-stall.service <<'UNIT'
+[Unit]
+Description=BlindPass P01 stalled loader probe
+After=blindpass-broker.service
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/libexec/blindpass-transport-probe --socket /run/blindpass/loader.sock --hold-ms 8000
+UNIT
+systemctl daemon-reload
+if ! systemctl start blindpass-stall.service >/dev/null 2>&1; then
+    printf 'P01-FAIL broker stalled-frame probe did not complete\n' >&2
+    journalctl -u blindpass-stall.service --no-pager -n 40 >&2 || true
+    journalctl -u blindpass-broker.service --no-pager -n 80 >&2 || true
+    exit 1
+fi
+stall_probe=$(journalctl -u blindpass-stall.service --no-pager -o cat -n 20 | grep 'STALL_DENIED' | tail -n 1)
+[[ "$stall_probe" == STALL_DENIED\ * ]] || {
+    printf 'P01-FAIL broker did not enforce its bounded stalled-frame response\n' >&2
+    exit 1
+}
+printf 'P01-I04 stalled loader frame within broker deadline: PASS (%s)\n' "$stall_probe"
+
 systemctl start blindpass-consumer.service
 systemctl is-active --quiet blindpass-consumer.service || { printf 'P01-FAIL consumer did not activate\n' >&2; exit 1; }
 printf 'P01-E01 initial native consumer: PASS\n'
+systemctl restart blindpass-consumer.service
+systemctl is-active --quiet blindpass-consumer.service || {
+    printf 'P01-FAIL consumer restart could not re-resolve loader identity\n' >&2
+    exit 1
+}
+printf 'P01-I01 loader restart re-resolved current invocation: PASS\n'
+
+old_invocation=$invocation
+systemctl stop blindpass-workload.service >/dev/null 2>&1 || true
+systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
+systemctl start --no-block blindpass-workload.service
+replacement_invocation=
+for _attempt in {1..30}; do
+    replacement_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+    if [[ -n "$replacement_invocation" && "$replacement_invocation" != "$old_invocation" ]]; then
+        break
+    fi
+    sleep 0.2
+done
+[[ -n "$replacement_invocation" && "$replacement_invocation" != "$old_invocation" ]] || {
+    printf 'P01-FAIL workload restart did not receive a new invocation\n' >&2
+    exit 1
+}
+stale_workload_denied=no
+for _attempt in {1..30}; do
+    if journalctl -u blindpass-broker.service --no-pager -n 80 | grep -q 'unknown_registration'; then
+        stale_workload_denied=yes
+        break
+    fi
+    sleep 0.2
+done
+systemctl stop blindpass-workload.service >/dev/null 2>&1 || true
+systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
+[[ "$stale_workload_denied" == yes ]] || {
+    printf 'P01-FAIL replacement workload invocation was accepted\n' >&2
+    exit 1
+}
+install -d -m 0755 /etc/systemd/system/blindpass-workload.service.d
+cat >/etc/systemd/system/blindpass-workload.service.d/p01-delay.conf <<'UNIT'
+[Service]
+ExecStart=
+ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node node-a --workload workload-a --unit blindpass-workload.service --operation health --startup-delay-ms 5000 --hold-seconds 3600
+UNIT
+systemctl daemon-reload
+systemctl reset-failed blindpass-workload.service >/dev/null 2>&1 || true
+workload_started_at=$(date --iso-8601=seconds)
+systemctl start --no-block blindpass-workload.service
+re_registered_invocation=
+for _attempt in {1..30}; do
+    re_registered_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+    if [[ -n "$re_registered_invocation" && "$re_registered_invocation" != "$replacement_invocation" ]]; then
+        break
+    fi
+    sleep 0.2
+done
+[[ -n "$re_registered_invocation" && "$re_registered_invocation" != "$replacement_invocation" ]] || {
+    printf 'P01-FAIL delayed replacement workload did not receive a fresh invocation\n' >&2
+    exit 1
+}
+invocation=$re_registered_invocation
+write_workload_registration
+systemctl daemon-reload
+systemctl restart blindpass-broker.service
+workload_recovered=no
+for _attempt in {1..30}; do
+    current_invocation=$(systemctl show --property=InvocationID --value blindpass-workload.service)
+    if systemctl is-active --quiet blindpass-workload.service \
+        && [[ "$current_invocation" == "$re_registered_invocation" ]] \
+        && journalctl -u blindpass-workload.service --since "$workload_started_at" --no-pager \
+            | grep -q 'WORKLOAD_READY'; then
+        workload_recovered=yes
+        break
+    fi
+    sleep 0.2
+done
+rm -f /etc/systemd/system/blindpass-workload.service.d/p01-delay.conf
+systemctl daemon-reload
+[[ "$workload_recovered" == yes ]] || {
+    printf 'P01-FAIL replacement workload did not recover after re-registration\n' >&2
+    systemctl status blindpass-workload.service --no-pager -l >&2 || true
+    journalctl -u blindpass-workload.service --no-pager -n 60 >&2 || true
+    journalctl -u blindpass-broker.service --no-pager -n 60 >&2 || true
+    exit 1
+}
+printf 'P01-I01 stale workload invocation denied and re-registration required: PASS\n'
 
 command -v systemd-creds >/dev/null 2>&1 || {
     printf 'P01-UNSUPPORTED systemd-creds is unavailable for the mandatory native credential comparison\n' >&2
@@ -179,20 +310,62 @@ for case_name in empty partial malformed oversized; do
 done
 printf 'P01-I04 empty/partial/malformed/oversized consumer material: PASS\n'
 
+for canary in P01-INITIAL-CANARY; do
+    if ps axww -o args= | awk -v needle="$canary" \
+        '$0 !~ /awk/ && index($0, needle) { found = 1 } END { exit found ? 0 : 1 }'; then
+        printf 'P01-FAIL %s appeared in a process argument\n' "$canary" >&2
+        exit 1
+    fi
+    if journalctl --no-pager -u blindpass-broker.service -u blindpass-consumer.service \
+        -u blindpass-workload.service -u blindpass-loader-nonroot.service \
+        | grep -F -- "$canary" >/dev/null 2>&1; then
+        printf 'P01-FAIL %s appeared in a service journal\n' "$canary" >&2
+        exit 1
+    fi
+done
+printf 'P01-I06 initial canary absent from process arguments and service journals: PASS\n'
+
 systemctl stop blindpass-consumer.service
 printf '%s' 'P01-ROTATED-CANARY' >/etc/blindpass/api-key
 chmod 0600 /etc/blindpass/api-key
 systemctl restart blindpass-broker.service
 systemctl start blindpass-consumer.service
 printf 'P01-E01 controlled restart rotation: PASS\n'
+if ps axww -o args= | awk -v needle='P01-ROTATED-CANARY' \
+    '$0 !~ /awk/ && index($0, needle) { found = 1 } END { exit found ? 0 : 1 }' \
+    || journalctl --no-pager -u blindpass-broker.service -u blindpass-consumer.service \
+        -u blindpass-workload.service | grep -F -- 'P01-ROTATED-CANARY' >/dev/null 2>&1; then
+    printf 'P01-FAIL rotated canary appeared in process arguments or service journals\n' >&2
+    exit 1
+fi
+printf 'P01-I06 rotated canary absent from process arguments and service journals: PASS\n'
 
-printf 'P01-I01 pidfd restart race: NOT_CLAIMED (requires repeated VM fault injection)\n'
-printf 'P01-I03 API-removal fail-closed: NOT_CLAIMED (requires boot-profile mutation)\n'
+systemctl stop blindpass-consumer.service blindpass-broker.service >/dev/null 2>&1 || true
+cat >/etc/systemd/system/blindpass-broker.service.d/p01-api-removed.conf <<'UNIT'
+[Service]
+InaccessiblePaths=/run/dbus/system_bus_socket
+UNIT
+systemctl daemon-reload
+systemctl start blindpass-broker.service
+rm -f /run/blindpass-consumer/api-key
+if systemctl start blindpass-consumer.service >/dev/null 2>&1; then
+    printf 'P01-FAIL broker delivered after system-bus API removal\n' >&2
+    exit 1
+fi
+[[ ! -e /run/blindpass-consumer/api-key ]] || {
+    printf 'P01-FAIL consumer material remained after system-bus API removal\n' >&2
+    exit 1
+}
+printf 'P01-I03 system-bus API removal failed closed: PASS\n'
+rm -f /etc/systemd/system/blindpass-broker.service.d/p01-api-removed.conf
+systemctl daemon-reload
+systemctl restart blindpass-broker.service
+systemctl reset-failed blindpass-consumer.service >/dev/null 2>&1 || true
+
 printf 'P01-I05 HPKE restart/absent-key VM path: NOT_CLAIMED (portable vector covered separately)\n'
-printf 'P01-I06 TPM/temp/argv/journal inspection: NOT_CLAIMED\n'
-printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key\n'
+printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key /etc/blindpass/api-key.cred\n'
 
-systemctl stop blindpass-unregistered.service blindpass-unauthorized.service blindpass-consumer.service blindpass-consumer-native.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
+systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-consumer.service blindpass-consumer-native.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
 rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
 [[ ! -e /run/blindpass/loader.sock && ! -e /run/blindpass/workload.sock ]] || {
     printf 'P01-FAIL broker sockets remained after cleanup\n' >&2
@@ -202,4 +375,28 @@ rm -f /run/blindpass/loader.sock /run/blindpass/workload.sock
     printf 'P01-FAIL protected material was not retained with root-only mode\n' >&2
     exit 1
 }
-printf 'P01-GUEST-CLEANUP sockets_removed=yes protected_material_retained=yes\n'
+[[ -f /etc/blindpass/api-key.cred && "$(stat -c '%a:%u' /etc/blindpass/api-key.cred)" == 600:0 ]] || {
+    printf 'P01-FAIL encrypted native credential was not retained with root-only mode\n' >&2
+    exit 1
+}
+rm -f /run/blindpass-unauthorized.key /run/blindpass-nonroot.key
+rm -rf -- /run/blindpass-faults /run/blindpass-consumer
+rm -f /etc/systemd/system/blindpass-broker.service \
+    /etc/systemd/system/blindpass-consumer.service \
+    /etc/systemd/system/blindpass-consumer-native.service \
+    /etc/systemd/system/blindpass-workload.service \
+    /etc/systemd/system/blindpass-stall.service \
+    /etc/systemd/system/blindpass-loader-nonroot.service \
+    /etc/systemd/system/blindpass-unauthorized.service \
+    /etc/systemd/system/blindpass-unregistered.service
+rm -rf -- /etc/systemd/system/blindpass-broker.service.d
+rm -rf -- /etc/systemd/system/blindpass-workload.service.d
+rm -f /usr/libexec/blindpass-broker /usr/libexec/blindpass-consumer \
+    /usr/libexec/blindpass-credential-loader /usr/libexec/blindpass-workload-client \
+    /usr/libexec/blindpass-transport-probe
+systemctl daemon-reload
+[[ ! -e /etc/systemd/system/blindpass-broker.service && ! -e /run/blindpass/loader.sock ]] || {
+    printf 'P01-FAIL broker installation remained after uninstall\n' >&2
+    exit 1
+}
+printf 'P01-GUEST-CLEANUP sockets_removed=yes units_removed=yes protected_material_retained=yes\n'

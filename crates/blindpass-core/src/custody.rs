@@ -745,6 +745,9 @@ impl EphemeralCustody {
             return Err(CryptoError::OpenSsl("invalid recipient id"));
         }
         self.purge_expired();
+        if self.entries.contains_key(recipient_id) {
+            return Err(CryptoError::OpenSsl("recipient already provisioned"));
+        }
         let key_pair = RecipientKeyPair::generate()?;
         let public_key = key_pair.public_key().to_vec();
         self.entries.insert(
@@ -804,10 +807,19 @@ mod tests {
             .unwrap();
         assert_eq!(opened.as_bytes(), b"P01-CANARY");
 
-        let mut tampered = message.ciphertext;
+        let mut tampered = message.ciphertext.clone();
         tampered[0] ^= 1;
         assert!(matches!(
             recipient.open(&message.enc, &tampered, b"aad"),
+            Err(CryptoError::AuthenticationFailed)
+        ));
+        let wrong_recipient = RecipientKeyPair::generate().unwrap();
+        assert!(matches!(
+            wrong_recipient.open(&message.enc, &message.ciphertext, b"aad"),
+            Err(CryptoError::AuthenticationFailed)
+        ));
+        assert!(matches!(
+            recipient.open(&message.enc, &message.ciphertext, b"wrong-aad"),
             Err(CryptoError::AuthenticationFailed)
         ));
     }
@@ -816,6 +828,10 @@ mod tests {
     fn ephemeral_custody_is_single_use_and_expires() {
         let mut custody = EphemeralCustody::new(Duration::from_secs(2));
         let public_key = custody.provision("recipient-a").unwrap();
+        assert_eq!(
+            custody.provision("recipient-a"),
+            Err(CryptoError::OpenSsl("recipient already provisioned"))
+        );
         let sealed = RecipientKeyPair::seal(&public_key, b"P01-CANARY", &[]).unwrap();
         let opened = custody
             .open_once("recipient-a", &sealed.enc, &sealed.ciphertext, &[])
@@ -825,6 +841,18 @@ mod tests {
             custody.open_once("recipient-a", &sealed.enc, &sealed.ciphertext, &[]),
             Err(CryptoError::OpenSsl("recipient key missing or expired"))
         ));
+    }
+
+    #[test]
+    fn ephemeral_custody_expires_without_a_plaintext_fallback() {
+        let mut custody = EphemeralCustody::new(Duration::ZERO);
+        let public_key = custody.provision("recipient-expiring").unwrap();
+        let sealed = RecipientKeyPair::seal(&public_key, b"P01-CANARY", &[]).unwrap();
+        assert!(matches!(
+            custody.open_once("recipient-expiring", &sealed.enc, &sealed.ciphertext, &[]),
+            Err(CryptoError::OpenSsl("recipient key missing or expired"))
+        ));
+        assert!(custody.is_empty());
     }
 
     #[test]

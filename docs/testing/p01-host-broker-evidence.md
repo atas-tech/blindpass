@@ -54,32 +54,34 @@ still needed for the full repository report.
 ## VM and W0 status
 
 The live disposable run completed on 2026-09-23 using the explicitly named
-`local-kvm` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
+`local-kvm-followup` runner owner. Host evidence was QEMU 11.1.1, `qemu-img` 11.1.1,
 read/write `/dev/kvm`, and `cloud-localds`; the pinned Ubuntu cloud image had
 SHA-256
 `612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`.
 Guest evidence was Ubuntu 24.04, kernel 6.8.0-139-generic, systemd 255 as
 PID 1. The guest recorded directory `0751` root-owned, loader socket `0600`
 root-owned, and workload socket `0660` with the dedicated workload group.
-The runner stopped QEMU and the guest reported both broker sockets removed;
-the protected dummy material remained root-owned mode `0600`. No live
-credential was used.
+The guest measured stalled-loader rejection at 2.025 seconds, stopped QEMU,
+removed the broker units/binaries and sockets, and retained only text evidence
+on the host; the guest disk overlay and seed media were removed. The protected
+dummy material remained root-owned mode `0600`. No live credential was used.
 
 | Scenario | Current evidence | Acceptance status |
 |---|---|---|
-| P01-I01 | Portable invocation-bound model exists; the current guest run did not include repeated pidfd/unit fault injection | Not run; VM gate open |
-| P01-I02 | Root loader delivery, forged loader routing, registered non-root workload and unregistered workload were exercised in the guest; user-manager/shared-UID profiles remain out of scope | VM partial pass; inherited user-manager evidence open |
-| P01-I03 | Unsupported pidfd/systemd results fail closed in the implementation; API-removal boot profile is not available here | Not run; VM gate open |
-| P01-I04 | Bounded frame/delivery tests and the guest consumer reject empty, partial, malformed and oversized material; broker stall/truncate timing is not separately injected | VM partial pass; timing/stall evidence open |
+| P01-I01 | Guest restarted the root consumer and re-resolved its invocation; it rejected a stale workload invocation and re-registered the currently running replacement before delivery | VM pass for exercised restart paths; repeated fault-injection loop remains open |
+| P01-I02 | Root loader delivery, non-root loader socket access, forged loader routing, registered non-root workload and unregistered workload were exercised in the guest; user-manager/shared-UID profiles remain out of scope | VM pass for supported system-unit profile |
+| P01-I03 | Guest hid the system bus socket inside the broker service namespace; an otherwise authorized native consumer failed closed and produced no credential file | VM pass for exercised API-removal profile; kernel API-removal matrix remains open |
+| P01-I04 | Guest measured a stalled root-system-unit loader denial at 2.025 seconds and rejected empty, partial, malformed and oversized consumer material; broker truncate/corrupt delivery is not separately injected | VM pass for exercised cases; remaining fault profiles open |
 | P01-I05 | Ephemeral one-use custody and Rust ↔ `hpke-js` ciphertext parity pass | Portable pass; VM restart/absent-key evidence open |
-| P01-I06 | Wipe-on-drop and metadata-only debug behavior are tested; TPM/temp/argv/journal inspection is not run | Not run; VM gate open |
-| P01-I07 | Rust format/lint/test checks pass; the named local runner booted the pinned guest, collected metadata and removed QEMU/guest sockets after the run | Runner/harness pass; failure/cancel and matrix coverage remain open |
-| P01-E01 | Guest harness delivered the dummy value, validated the native consumer, performed controlled broker restart rotation and retained protected material | VM pass for exercised path; uninstall/recovery path remains open |
+| P01-I06 | Guest found both canaries absent from process arguments and service journals; TPM, crash-artifact and deeper temporary-file inspection profiles are not run | VM partial pass; custody-mode/exposure review remains open |
+| P01-I07 | Rust format/lint/test checks pass; the named local runner booted the pinned guest, collected metadata, removed QEMU/guest disks and retained text logs | Runner/harness pass; failure/cancel and matrix coverage remain open |
+| P01-E01 | Guest delivered the dummy value, validated the native consumer, performed controlled broker restart rotation, removed installed units/binaries and retained protected material | VM pass for exercised path; recovery procedure remains open |
 | P01-E02 | Guest harness used an explicit host-key `LoadCredentialEncrypted=` profile and exercised initial delivery plus controlled rotation | VM pass for host-key profile; no TPM or superiority claim |
 
-The live run does not close every W0 scenario: P01-I01, P01-I03, the VM half
-of P01-I05, and P01-I06 still require explicit fault-injection, API-removal,
-recovery, TPM, and exposure-review profiles. W0 therefore remains **open for
-go/narrow/stop review**, rather than being represented as a full acceptance
-pass. The executable harness records unsupported prerequisites with exit 78
-and must not convert those profiles into skips or passes.
+The live run does not close every W0 scenario: the VM half of P01-I05 and the
+unrun portions of P01-I06 still require explicit absent/wrong-key recovery,
+TPM, crash-artifact and deeper exposure-review profiles; the kernel API-removal
+matrix also remains open. W0 therefore remains **open for go/narrow/stop
+review**, rather than being represented as a full acceptance pass. The
+executable harness records unsupported prerequisites with exit 78 and must
+not convert those profiles into skips or passes.

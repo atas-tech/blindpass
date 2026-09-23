@@ -22,6 +22,7 @@ fn run(args: Vec<String>) -> Result<(), String> {
     let mut invocation = std::env::var("INVOCATION_ID").ok();
     let mut operation = "health".to_owned();
     let mut hold_seconds = 0u64;
+    let mut startup_delay = Duration::ZERO;
     let mut index = 0;
 
     while index < args.len() {
@@ -37,10 +38,18 @@ fn run(args: Vec<String>) -> Result<(), String> {
                     .parse()
                     .map_err(|_| "--hold-seconds must be an integer".to_owned())?;
             }
+            "--startup-delay-ms" => {
+                startup_delay = Duration::from_millis(
+                    next(&args, &mut index)?
+                        .parse()
+                        .map_err(|_| "--startup-delay-ms must be an integer".to_owned())?,
+                );
+            }
             "--help" | "-h" => {
                 println!(
                     "blindpass-workload-client --node NODE --workload ID --unit UNIT \\
-                     [--invocation ID] [--operation NAME] [--hold-seconds N]"
+                     [--invocation ID] [--operation NAME] [--hold-seconds N] \\
+                     [--startup-delay-ms N]"
                 );
                 return Ok(());
             }
@@ -54,6 +63,10 @@ fn run(args: Vec<String>) -> Result<(), String> {
     let unit = unit.ok_or("--unit is required")?;
     let invocation = invocation.ok_or("--invocation or INVOCATION_ID is required")?;
     let frame = format!("WORK {node} {workload} {unit} {invocation} {operation}\n");
+
+    if !startup_delay.is_zero() {
+        std::thread::sleep(startup_delay);
+    }
 
     let mut last_error = None;
     // The VM harness starts this unit first so that it can read the systemd

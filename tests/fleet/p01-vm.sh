@@ -41,6 +41,9 @@ cleanup() {
         kill -KILL "$qemu_pid" 2>/dev/null || true
     fi
     if [[ "$keep_artifacts" == 1 ]]; then
+        # Retain only sanitized text evidence. Guest disks and seed media are
+        # disposable state, even when logs are kept for CI review.
+        rm -rf -- "$run_dir/image"
         printf 'P01-ARTIFACTS-RETAINED %s\n' "$run_dir" >&2
     else
         rm -rf -- "$run_dir"
@@ -79,6 +82,7 @@ scp "${scp_options[@]}" \
     target/release/blindpass-broker \
     target/release/blindpass-consumer \
     target/release/blindpass-credential-loader \
+    target/release/blindpass-transport-probe \
     target/release/blindpass-workload-client \
     tests/fleet/p01-guest.sh \
     "$guest_target:/tmp/"

@@ -328,6 +328,7 @@ fn write_error(stream: &mut UnixStream, error: &BrokerError) {
         })
         .collect();
     let _ = stream.write_all(&error_frame(&safe_code));
+    let _ = stream.shutdown(std::net::Shutdown::Both);
 }
 
 pub fn bind_socket(

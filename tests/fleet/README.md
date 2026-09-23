@@ -43,13 +43,17 @@ their absence into a pass.
 The local KVM runner used on 2026-09-23 reported QEMU 11.1.1, `qemu-img`
 11.1.1, readable/writable `/dev/kvm`, and `cloud-localds`. It booted the
 pinned Ubuntu 24.04 image, recorded guest kernel 6.8.0-139-generic and
-systemd 255, and removed the QEMU process and guest broker sockets after the
-run. The run owner was explicitly supplied as `local-kvm`; this is disposable
+systemd 255, and removed the QEMU process, guest broker sockets, and guest
+disk artifacts after the run. The run owner was explicitly supplied as
+`local-kvm-followup`; this is disposable
 runtime evidence, not a claim that the manual VM job is already configured as
 a shared GitHub self-hosted runner.
 
-The run passed the exercised loader/workload boundaries, consumer validation,
-controlled rotation, and native host-key `LoadCredentialEncrypted=` comparison.
-P01-I01, P01-I03, the VM half of P01-I05, and P01-I06 remain explicit
-additional profiles for the W0 go/narrow/stop review. See
+The run passed the exercised loader/workload boundaries, stale-invocation
+rejection and re-registration, bounded stalled-frame denial, consumer
+validation, canary exposure checks, controlled rotation, uninstall cleanup,
+system-bus API-removal fail-closed behavior, and native host-key
+`LoadCredentialEncrypted=` comparison. The VM half of P01-I05, kernel API
+matrix, and unrun TPM/crash/deeper-exposure portions of P01-I06 remain
+explicit additional profiles for the W0 go/narrow/stop review. See
 `docs/testing/p01-host-broker-evidence.md` for the dated evidence record.
