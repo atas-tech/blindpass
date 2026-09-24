@@ -1,6 +1,6 @@
 # BlindPass documentation
 
-**Aligned:** 2026-09-24. Source-bound guides, contracts and execution evidence remain here. Product direction, implementation plans, design and history are maintained in the [Obsidian docs vault](https://github.com/tuthan/docs-vault/tree/main/blindpass/docs). P01 includes live HPKE provisioning and dedicated non-root consumers. Revised P01-I01 and P01-I06 checks passed in a clean committed-SHA Ubuntu 24.04/QEMU-KVM run; W0 acceptance and the remaining profile review are open.
+**Aligned:** 2026-09-24. Source-bound guides, contracts and execution evidence remain here. Product direction, implementation plans, design and history are maintained in the [Obsidian docs vault](https://github.com/tuthan/docs-vault/tree/main/blindpass/docs). P01 includes live HPKE provisioning and dedicated non-root consumers. Revised P01-I01 and P01-I06 checks passed in a clean committed-SHA Ubuntu 24.04/QEMU-KVM run. The user accepted W0 as NARROW for that tested systemd 255, no-TPM profile only; other profiles and named evidence gaps remain open.
 
 ## Product direction
 

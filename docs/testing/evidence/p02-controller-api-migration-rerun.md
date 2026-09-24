@@ -2,7 +2,7 @@
 
 **Date:** 2026-09-24
 
-**Scope:** P02 controller/API implementation through provisioning, exchanges, approvals, local administration, generated OpenAPI types, browser-status CT19 and I03 process crash/restart recovery. This is partial execution evidence; it is not a P02 acceptance or cutover record.
+**Scope:** P02 controller/API implementation through provisioning, exchanges, approvals, local administration, generated OpenAPI types, browser-status CT19, I03 process crash/restart recovery and the 2026-09-24 CLI, clock, schema and administration follow-up. Every local P02.6 gate passes on both stores; hosted clean-checkout CI has not run, so this is not a P02 acceptance or cutover record.
 
 ## Environment and contract matrix
 
@@ -88,11 +88,79 @@ The first crash run exposed a stale Unix admin-socket path after abrupt exit. St
 
 P02-I08 failure-path probes passed locally for SQLite and PostgreSQL. In the latest run, each CI-style JSON suite had no skipped tests; the injected `CT01.healthz` status mismatch caused the progress checker to reject `CT01` as an unexpected failure. A separate generated-type probe appended a stale declaration marker and confirmed `node scripts/generate-controller-types.mjs --check` exited nonzero, then restored the generated file. These checks verify the local negative paths; the clean-checkout GitHub Actions workflow has not run in this task.
 
+## 2026-09-24 follow-up: CLI, clock, schema and administration
+
+The follow-up landed as eight commits on top of `a396b40`, one per slice:
+
+| Commit | Change |
+|---|---|
+| `ab9a83e` | P02-D9 persisted database clock high-water mark (migration 0003) with per-statement regression guards; P02-I07 base-table verification before migration |
+| `3030bde` | `blindpass migrate`, `blindpass admin seed --fixture <file>`, `blindpass admin reset-password <id>`; one shared HTTP/CLI fixture function with policy, rotated/revoked agents and an opt-in local administrator; OpenAPI test-seed response corrected to the exercised 200 shape |
+| `e6b498f` | Forced password change: an operator holding a temporary password gets 403 `password_change_required` on every admin route except session read, refresh, logout and change-password |
+| `76d1f56` | Schema version follows the migration files (now 3); per-version table verification, forward migration of older versions, fail-closed on damaged schemas; lock-free clock checkpoint that advances the mark at most once per second |
+| `31ff537` | `blindpass admin reconcile-clock` recovery for a detected clock regression |
+| `847603b` | P02-I07 PostgreSQL outage and reconnection test; the admin HTTP suite now runs per backend in CI |
+| `1bc142e` | P02-I06 admin/operator/viewer role matrix over HTTP |
+| `0196f80` | OpenAPI admin-session description of the forced password change gate |
+
+Tests were written before each behavior change and failed first where the behavior was new. The forced password change case first saw a temporary-password session list agents with 200. The schema cases first reported version 1 after a forward migration and silently recreated a dropped clock table. The reconciliation shell and CLI cases first failed on an unknown subcommand. The outage and role-matrix cases pin behavior that already existed. A mutation that let operators list agents made the role-matrix case fail, and it passed again after the mutation was reverted.
+
+Clock design (P02-D9). The checkpoint reads the database wall clock and the persisted mark without a write lock and fails closed on regression. It advances the mark with one guarded statement at most once per second. Every expiry predicate and transition timestamp still evaluates to NULL when the database clock is behind the mark. A regression larger than one second therefore fails closed. A smaller one can go undetected and extend a deadline by at most one second. After a larger regression the controller refuses to start. `reconcile-clock` then deletes secret requests, exchanges, pending and approved approvals, bootstrap tokens, rate windows and idempotency keys, because their deadlines came from the faster clock and expired rows would otherwise become readable again. It also revokes operator sessions, resets the mark and writes one `clock_reconciled` audit event. Operators, agents, policy, rejected approvals, lifecycle and audit history are kept.
+
+## Final local execution on `0196f80`
+
+All commands ran on the development host with host access, against the local PostgreSQL 16 service on port 5433 and Redis on port 6380. Only documentation files were uncommitted during the run.
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --all -- --check`, workspace Clippy with `-D warnings` | Pass |
+| `cargo test --workspace --locked` (SQLite) | 98 passed, 0 failed; the PostgreSQL-only outage case reports ignored |
+| Controller and CLI suites with `P02_TEST_BACKEND=postgres` | 56 passed, 0 failed |
+| Store transitions | 24/24 on each store |
+| Shell/config, including migrate, seed, damaged schema and `reconcile-clock` | 11/11 on each store |
+| Admin HTTP: bootstrap race and sessions, forced password change, role matrix | 3/3 on each store |
+| CLI dispatch and socket tests | 5/5 |
+| P02-I07 PostgreSQL outage and reconnection (`--ignored`) | 1/1: sanitized 503 during the outage, fail-closed store calls, 200 and intact state after recovery without a restart |
+| Rust HTTP contract, SQLite and PostgreSQL | 38/38 each with no skips; progress gate 18/18 required, zero pending |
+| P02-I08 injected CT01 mismatch, both stores | Suite exits nonzero with 37/38 and no skips; progress gate rejects it with "Unexpected failure for CT01" |
+| TypeScript SPS baseline | 39/39 with no skips; `ts-baseline.json` byte-identical to its committed version |
+| `npm run build`; `npm test` | Pass; SPS 80 passed with 101 default database-gated skips |
+| OpenAPI generation, drift and type checks | `generate:api` leaves no diff; `--check` passes; 8/8 schema tests, 1/1 generated-type test, 6/6 progress-script tests |
+| CC02 client flows | Pass on both stores |
+| P02-I03 failpoint crash/restart matrix | Pass on both stores |
+| CC02/CC03 browser, development page | 3/3 on each store |
+| CC02/CC03 browser, packaged nginx image | 4/4 on each store, including delivered security headers |
+
+## Decisions recorded 2026-09-24
+
+- **W0.** The user accepted W0 as NARROW for the tested Ubuntu 24.04/systemd 255, no-TPM profile only. This satisfies the W0 prerequisite for P02.6 and P03 within that profile. Details are in [P01 VM evidence](../p01-host-broker-evidence.md).
+- **CT15 local quota scope.** The user closed CT15 at the accepted compatibility envelope: per-IP agent token mint and per-agent request/exchange rate windows. The `quota_counters` table stays reserved and unused. Paid-tier and daily quota behavior remains a P00 exclusion.
+- **P02-D7 TLS.** The user accepted plain HTTP behind a reverse proxy as the only P02 profile. Built-in TLS stays unimplemented after `axum-server@0.8.0` was blocked by dependency review. P06 re-evaluates native TLS with a fresh dependency review.
+- **Hosted CI.** The user chose not to push the branch in this session, so the clean-checkout GitHub Actions run is not available.
+- CT14 remains a TypeScript-only hosted-user case, and P02-D11 issuer-admin authority stands as accepted earlier the same day.
+
 ## Remaining work and limits
 
-- The P02.1 review originally counted hosted-user CT14 among the Rust routes. On 2026-09-24 the user accepted the corrected 12-plus-2 Rust inventory under the roadmap's hosted-auth freeze; the earlier review remains in the vault history. CT14 remains green in the TypeScript SPS run.
-- On 2026-09-24 the user accepted P02-D11: a configured external issuer's tenant-scoped `admin: true` claim may revoke an exchange in its asserted workspace. The claim grants no local or fleet administration. CT12 positive and negative cases pass on both Rust backends.
-- The latest packaged nginx Playwright run enforces the page's CSP with the controller on port 3100 and passes 4/4 on both stores, including the delivered security headers. Production reverse-proxy deployment remains unverified.
-- P02-I03 crash/restart coverage passes eight transaction-boundary scenarios on both backends. P02-I07 fail-closed tests cover unsupported schema versions, missing/unsafe keys, inaccessible database, production test-route/override rejection and readiness loss after an active pool closes; a network outage and reconnection remain untested. Clean-checkout hosted CI evidence remains pending even though the scenarios are wired into the Rust matrix.
-- The P01 VM harness passed on clean committed SHA `6d41a1f6df8d90d283b53b3c7241281937702ac2` on the pinned Ubuntu 24.04/systemd 255 profile, including the revised P01-I01 and P01-I06 checks. W0 still requires the product go/narrow/stop review; forced numeric PID reuse, `coredumpctl` metadata inspection, alternate host profiles and a shared runner remain open. Details are in [P01 VM evidence](../p01-host-broker-evidence.md).
-- Full P02.6 cutover remains gated by the P01 W0 review and hosted CI evidence. The local Rust contract parity gate is green for the accepted 18-case scope; hosted CI evidence is not inferred from these local checks.
+- **Hosted clean-checkout CI is the last open P02.6 gate.** The workflow runs the TypeScript baseline, both Rust backends, the admin HTTP suite per backend, the PostgreSQL outage case, crash, client and browser flows and the mismatch probe. None of it has executed on GitHub Actions from this branch.
+- Production reverse-proxy deployment is unverified and belongs to P06.1, together with native and container recovery and database migration support.
+- Stateless agent JWTs and signed browser links are checked against the controller host clock, not the database clock. A host clock step back extends them by the step, bounded by their short lifetimes. Secret requests behind signed links are still checked and purged against the database clock.
+- Test fixtures check agent IDs before writing, but two concurrent fixture writers can still race. Fixtures must use isolated test databases.
+- HTTP race coverage includes first bootstrap, approve/reject and submit/revoke. Other concurrent permutations rely on store-level tests.
+- Commit `3c41289` consolidated planned slices 3–8, which deviates from the one-commit-per-slice sequence. The follow-up above uses one commit per slice.
+- Earlier attempts on this follow-up inside a restricted sandbox could not bind local sockets. The host-access run above supersedes them.
+
+## Acceptance audit
+
+| Plan item | Status on `0196f80` |
+|---|---|
+| CT01–CT13, CT15–CT19 | 18/18 required cases pass on both stores; CT14 excluded as hosted-user auth and green in the TypeScript run |
+| CV01–CV06 | Pass in the Rust contract run on both stores; the Rust workspace also passes the cross-language HPKE vectors |
+| CC01–CC03 | CC01 live-response client check runs in the contract suite; CC02 client and CC03 browser flows pass on both stores, including packaged nginx |
+| P02-I01/I02 | Store races, expiry before sweep and after restart, and lock-wait expiry pass on both stores; HTTP races as listed above |
+| P02-I03 | Eight process-kill scenarios pass on both stores |
+| P02-I04–I06 | Bootstrap race and replay, session CSRF and refresh replay, forced password change, local reset and the full role matrix pass on both stores |
+| P02-I07 | Key, database, schema-version, damaged-schema, seed/override, pool-loss, clock-regression and PostgreSQL outage/reconnection cases pass |
+| P02-I08 | Local mismatch and drift probes reject correctly on both stores; hosted CI not run |
+| P02-E01/E02 | Client and generated-type checks pass with no schema drift |
+| P01 W0 | Accepted NARROW for the tested profile |
+| Hosted clean-checkout CI | Not run; required before P02 acceptance |

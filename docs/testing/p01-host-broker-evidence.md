@@ -84,9 +84,10 @@ overlay and seed after the successful exit; `BLINDPASS_FLEET_KEEP_ARTIFACTS=0`
 was used.
 
 This closes the revised P01-I01 and P01-I06 checks on the named committed
-SHA. W0 still needs the product go/narrow/stop review; forced PID reuse,
-`coredumpctl`-backed metadata inspection, alternate host versions, TPM/firmware
-profiles and a shared self-hosted runner remain outside this run.
+SHA. The user accepted W0 as NARROW on 2026-09-24 for this tested profile
+only. Forced PID reuse, `coredumpctl`-backed metadata inspection, alternate
+host versions, TPM/firmware profiles and a shared self-hosted runner remain
+outside this run and outside the accepted W0 scope.
 
 ## Pre-commit verification (not final acceptance evidence)
 
@@ -311,6 +312,15 @@ tpm-udev_0.6ubuntu1_all.deb 7ff6b02368f0db0589a509209383e8a875934bc92f3cca737633
 | P01-E02 | Guest harness used an explicit host-key `LoadCredentialEncrypted=` profile, exercised initial delivery plus controlled rotation, and denied decrypt when the protected host key was temporarily absent | VM pass for host-key comparison profile; no broker-custody superiority claim |
 
 ## W0 go/narrow/stop review
+
+**2026-09-24 product decision:** The user accepted **NARROW** for the clean
+committed-SHA Ubuntu 24.04, x86_64, kernel 6.8.0-139-generic, systemd 255,
+no-TPM, dedicated non-root, ephemeral-custody profile above. This satisfies
+the W0 product-review prerequisite for P02.6 and P03 only within that exact
+profile and the tested invocation/cleanup path. It does not supply hosted CI
+evidence or expand the supported host matrix. The exclusions and unmeasured
+checks below remain explicit limitations and require new evidence before a
+broader rollout.
 
 **Recorded:** 2026-09-23. **Historical disposition:** NARROW for the earlier
 profile. **Current technical disposition:** NARROW as a scope boundary only;
