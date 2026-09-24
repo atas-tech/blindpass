@@ -37,6 +37,10 @@ npm run build
 
 The harness maps PostgreSQL to `127.0.0.1:5433` and Redis to `127.0.0.1:6380`. `make up` starts the same services without waiting; `npm run redis:up` starts only Redis. Both Compose files use the same explicit container names/ports, so do not start them as independent simultaneous stacks.
 
+For the local Rust controller, install `blindpass` and `blindpass-controller` together. With the controller's file-backed database and key environment configured, run `blindpass migrate` to apply its schema before service startup. In an isolated test profile only, `BLINDPASS_TEST_MODE=1 blindpass admin seed --fixture <file>` accepts a JSON object with an `agents` array. Optional `policy`, `rotated_agents`, `revoked_agents` and `local_admin: true` fields create richer VM fixtures. It prints generated test credentials and agent keys; keep that output out of logs. `blindpass admin reset-password <operator-id>` uses the private local administration socket and returns a one-time temporary password.
+
+The isolated test harness consumes fixture plaintext from the seed command's stdout in memory and should discard it after the run; the controller does not write agent keys, refresh tokens or temporary passwords in plaintext to its database. The seed access token lasts 15 minutes, an opt-in local browser session lasts at most 30 days with a 12-hour idle limit, and agent keys remain usable until rotation or revocation. The session's CSRF secret is stored in controller state for validation. The reset command likewise exposes its temporary password once on stdout; deliver it directly to the intended local operator and require a password change at login.
+
 The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build script](../../scripts/build_bundle.sh) currently invokes esbuild through `npx`; missing tooling/network access can block that step. This is not evidence of an application test failure.
 
 ## Test matrix
@@ -63,6 +67,8 @@ The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build
 | `cargo fmt --all -- --check` | P01/P02 Rust formatting gate | Rust toolchain pinned by `rust-toolchain.toml` |
 | `cargo clippy --workspace --all-targets --locked -- -D warnings` | P01/P02 Rust lint gate | Native `libsystemd`/OpenSSL development libraries |
 | `cargo test --workspace --locked` | P01/P02 portable unit, store, transport-boundary and HPKE interop tests | Unix-socket operations; rerun outside restricted sandboxes if required |
+| `cargo test -p blindpass-controller --test shell_config --locked` | Production config, migration and test fixture CLI shell checks | Some cases bind localhost and require socket permission |
+| `cargo test -p blindpass-cli --locked` | CLI dispatch for migration and test fixture seeding | The controller executable must be installed beside the CLI in deployed environments |
 | `./tests/fleet/p01-vm.sh` | P01 real systemd guest harness | Named QEMU/KVM runner with writable `/dev/kvm`, pinned image hash, SSH key, cloud-localds and an ISO writer; exit 78 means unsupported/blocking infrastructure |
 
 For the packaged P02 browser check, build `packages/browser-ui/Dockerfile`, run the image on a disposable loopback port and set `P02_PACKAGED_BROWSER_UI_URL` to that origin when invoking `test:p02-browser`. The suite then serves the page from nginx and adds a response-header check; it still starts the Rust controller at port 3100 and runs CC02/CC03. Stop the container after the run.

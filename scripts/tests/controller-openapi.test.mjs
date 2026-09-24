@@ -184,3 +184,16 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.match(statusRoute.description, /no request metadata, key, ciphertext or identity/i);
   assert.match(statusRoute.description, /wrong-scope credentials return 410/i);
 });
+
+test("test seed schema matches the exercised compatibility fixture response", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const operation = schema.paths["/api/v3/admin/test/seed"].post;
+  assert.ok(operation.responses["200"]);
+  assert.ok(!operation.responses["201"]);
+  const input = schema.components.schemas.TestSeedInput;
+  assert.deepEqual(input.required, ["agents"]);
+  assert.deepEqual(Object.keys(input.properties), ["agents", "policy", "rotated_agents", "revoked_agents", "local_admin"]);
+  const response = schema.components.schemas.TestSeedResponse;
+  assert.deepEqual(response.required, ["access_token", "workspace_id", "user_id", "agents"]);
+  assert.equal(response.properties.local_admin.$ref, "#/components/schemas/TestSeedLocalAdmin");
+});

@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::PathBuf;
-use std::process::ExitCode;
+use std::process::{Command as ProcessCommand, ExitCode};
 
 const DEFAULT_ADMIN_SOCKET: &str = "/run/blindpass-controller/admin.sock";
 
@@ -19,6 +19,8 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Admin(AdminCommand),
+    /// Apply controller database migrations and exit.
+    Migrate,
 }
 
 #[derive(Debug, Args)]
@@ -43,6 +45,17 @@ enum AdminAction {
         #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
         socket: PathBuf,
     },
+    /// Seed agents from a JSON fixture in controller test mode.
+    Seed {
+        #[arg(long)]
+        fixture: PathBuf,
+    },
+    /// Reset an operator password through the local administration socket.
+    ResetPassword {
+        id: String,
+        #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
+        socket: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -56,7 +69,10 @@ fn main() -> ExitCode {
 }
 
 fn run(cli: Cli) -> Result<(), String> {
-    let Command::Admin(AdminCommand { command }) = cli.command;
+    let command = match cli.command {
+        Command::Migrate => return run_migrate(),
+        Command::Admin(AdminCommand { command }) => command,
+    };
     let (socket, request) = match command {
         AdminAction::Bootstrap {
             username,
@@ -67,6 +83,10 @@ fn run(cli: Cli) -> Result<(), String> {
             json!({"command":"bootstrap","username":username,"display_name":display_name}),
         ),
         AdminAction::BootstrapToken { socket } => (socket, json!({"command":"bootstrap-token"})),
+        AdminAction::Seed { fixture } => return run_seed(&fixture),
+        AdminAction::ResetPassword { id, socket } => {
+            (socket, json!({"command":"reset-password","id":id}))
+        }
     };
     let response = call_admin_socket(&socket, &request)?;
     if response.get("error").is_some() {
@@ -80,6 +100,33 @@ fn run(cli: Cli) -> Result<(), String> {
         .map_err(|_| "could not format administration response".to_owned())?;
     println!("{output}");
     Ok(())
+}
+
+fn run_migrate() -> Result<(), String> {
+    run_controller(&[std::ffi::OsStr::new("migrate")])
+}
+
+fn run_seed(fixture: &std::path::Path) -> Result<(), String> {
+    run_controller(&[
+        std::ffi::OsStr::new("seed"),
+        std::ffi::OsStr::new("--fixture"),
+        fixture.as_os_str(),
+    ])
+}
+
+fn run_controller(args: &[&std::ffi::OsStr]) -> Result<(), String> {
+    let controller = std::env::current_exe()
+        .map_err(|_| "cannot locate installed CLI binary".to_owned())?
+        .with_file_name("blindpass-controller");
+    let status = ProcessCommand::new(controller)
+        .args(args)
+        .status()
+        .map_err(|_| "cannot run colocated controller binary".to_owned())?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("controller command failed".to_owned())
+    }
 }
 
 fn call_admin_socket(socket_path: &PathBuf, request: &Value) -> Result<Value, String> {

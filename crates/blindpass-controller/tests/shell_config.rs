@@ -322,6 +322,162 @@ async fn damaged_existing_schema_prevents_startup_without_recreation() {
     pool.close().await;
 }
 
+#[test]
+fn migrate_command_initializes_database_without_starting_listener() {
+    let files = TestFiles::new();
+    let database_path = files.0.join("migrated.db");
+    let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
+    let database = files.credential("database.url", database_url.as_bytes());
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let output = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
+        .arg("migrate")
+        .env_clear()
+        .env("BLINDPASS_DATABASE_URL_FILE", &database)
+        .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
+        .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+        .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
+        .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example")
+        .output()
+        .expect("run migration command");
+    assert!(
+        output.status.success(),
+        "migration command failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(database_path.exists());
+    let stdout = String::from_utf8(output.stdout).expect("UTF-8 migration output");
+    assert!(stdout.contains("migrations complete"));
+    assert!(!stdout.contains(&database_url));
+}
+
+#[tokio::test]
+async fn seed_command_uses_test_fixture_and_rejects_production_mode() {
+    let files = TestFiles::new();
+    let database_path = files.0.join("seeded.db");
+    let (database_url, postgres_schema): (String, Option<(PgPool, String)>) =
+        if std::env::var("P02_TEST_BACKEND").as_deref() == Ok("postgres") {
+            let parent_url = std::env::var("P02_TEST_POSTGRES_URL")
+                .or_else(|_| std::env::var("CONTRACT_DATABASE_URL"))
+                .expect("PostgreSQL test URL is required");
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos();
+            let schema = format!("p02_seed_{}_{nonce}", std::process::id());
+            let pool = PgPoolOptions::new()
+                .max_connections(2)
+                .connect(&parent_url)
+                .await
+                .expect("connect PostgreSQL seed fixture");
+            sqlx::query(&format!("CREATE SCHEMA \"{schema}\""))
+                .execute(&pool)
+                .await
+                .expect("create isolated seed schema");
+            let separator = if parent_url.contains('?') { '&' } else { '?' };
+            (
+                format!("{parent_url}{separator}options=-c%20search_path%3D{schema}"),
+                Some((pool, schema)),
+            )
+        } else {
+            assert!(matches!(
+                std::env::var("P02_TEST_BACKEND").as_deref(),
+                Ok("sqlite") | Err(_)
+            ));
+            (
+                format!("sqlite://{}?mode=rwc", database_path.display()),
+                None,
+            )
+        };
+    let database = files.credential("database.url", database_url.as_bytes());
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let fixture = files.credential(
+        "fixture.json",
+        br#"{"agents":["seed-agent","rotated-agent","revoked-agent"],"policy":{"secret_registry":[],"exchange_policy":[]},"rotated_agents":["rotated-agent"],"revoked_agents":["revoked-agent"],"local_admin":true}"#,
+    );
+    let run = |test_mode: bool| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"));
+        command
+            .arg("seed")
+            .arg("--fixture")
+            .arg(&fixture)
+            .env_clear()
+            .env("BLINDPASS_DATABASE_URL_FILE", &database)
+            .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
+            .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+            .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
+            .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example");
+        if test_mode {
+            command.env("BLINDPASS_TEST_MODE", "1");
+        }
+        command.output().expect("run seed command")
+    };
+    let denied = run(false);
+    assert!(!denied.status.success());
+    if let Some((pool, schema)) = &postgres_schema {
+        let tables: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = $1",
+        )
+        .bind(schema)
+        .fetch_one(pool)
+        .await
+        .expect("inspect denied PostgreSQL seed");
+        assert_eq!(tables, 0, "production denial must precede migration");
+    } else {
+        assert!(
+            !database_path.exists(),
+            "production denial must precede database access"
+        );
+    }
+    let allowed = run(true);
+    assert!(
+        allowed.status.success(),
+        "test seed failed: {}",
+        String::from_utf8_lossy(&allowed.stderr)
+    );
+    let response: Value = serde_json::from_slice(&allowed.stdout).expect("seed JSON response");
+    assert!(response["access_token"].as_str().is_some());
+    assert!(response["agents"]["seed-agent"].as_str().is_some());
+    assert!(response["agents"]["rotated-agent"].as_str().is_some());
+    assert!(response["agents"]["revoked-agent"].as_str().is_some());
+    assert!(
+        response["local_admin"]["temporary_password"]
+            .as_str()
+            .is_some()
+    );
+    assert!(response["local_admin"]["session_id"].as_str().is_some());
+    if postgres_schema.is_none() {
+        assert!(database_path.exists());
+    }
+    let store = Store::connect(&database_url)
+        .await
+        .expect("reopen seeded controller store");
+    assert_eq!(store.list_admin_agents().await.unwrap().len(), 3);
+    let rotated = store
+        .agent_by_agent_id("rotated-agent")
+        .await
+        .unwrap()
+        .expect("rotated agent");
+    assert_eq!(rotated.key_version, 2);
+    let revoked = store
+        .agent_by_agent_id("revoked-agent")
+        .await
+        .unwrap()
+        .expect("revoked agent");
+    assert_eq!(revoked.status, "revoked");
+    assert!(store.policy_document().await.unwrap().is_some());
+    assert!(store.has_active_admin().await.unwrap());
+    store.close().await;
+    if let Some((pool, schema)) = postgres_schema {
+        sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE"))
+            .execute(&pool)
+            .await
+            .expect("drop isolated seed schema");
+        pool.close().await;
+    }
+}
+
 #[tokio::test]
 async fn production_shell_has_no_seed_route_or_test_override() {
     let files = TestFiles::new();

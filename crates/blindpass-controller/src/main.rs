@@ -5,9 +5,12 @@ use blindpass_controller::{
     app::build_app,
     config::Config,
     observability,
+    seed::{SeedRequest, seed_fixture},
     store::Store,
 };
 use std::future::IntoFuture;
+use std::io::Read;
+use std::path::Path;
 use std::process::ExitCode;
 use tokio::net::TcpListener;
 
@@ -29,6 +32,10 @@ async fn run(args: Vec<String>) -> Result<(), String> {
             println!("Controller configuration is valid.");
             Ok(())
         }
+        [command] if command == "migrate" => migrate().await,
+        [command, flag, path] if command == "seed" && flag == "--fixture" => {
+            seed(Path::new(path)).await
+        }
         [command] if command == "serve" => serve().await,
         [command] if command == "--help" || command == "-h" => {
             print_help();
@@ -40,9 +47,46 @@ async fn run(args: Vec<String>) -> Result<(), String> {
         }
         _ => {
             print_help();
-            Err("expected `serve` or `check-config`".to_owned())
+            Err("expected `serve`, `migrate`, `seed --fixture <file>` or `check-config`".to_owned())
         }
     }
+}
+
+async fn seed(path: &Path) -> Result<(), String> {
+    let config = Config::from_env().map_err(|error| error.to_string())?;
+    if !config.is_test_mode() {
+        return Err("fixture seeding requires BLINDPASS_TEST_MODE=1".to_owned());
+    }
+    let file = std::fs::File::open(path).map_err(|_| "cannot open test fixture".to_owned())?;
+    let mut contents = Vec::new();
+    file.take(8 * 1024 + 1)
+        .read_to_end(&mut contents)
+        .map_err(|_| "cannot read test fixture".to_owned())?;
+    if contents.len() > 8 * 1024 {
+        return Err("test fixture is too large".to_owned());
+    }
+    let request: SeedRequest =
+        serde_json::from_slice(&contents).map_err(|_| "test fixture is invalid".to_owned())?;
+    let store = Store::connect(config.database_url())
+        .await
+        .map_err(|_| "controller database initialization failed".to_owned())?;
+    let result = seed_fixture(&store, config.agent_jwt_secret(), request).await;
+    store.close().await;
+    let response = result.map_err(|_| "test fixture seeding failed".to_owned())?;
+    let output = serde_json::to_string(&response)
+        .map_err(|_| "test fixture response could not be encoded".to_owned())?;
+    println!("{output}");
+    Ok(())
+}
+
+async fn migrate() -> Result<(), String> {
+    let config = Config::from_env().map_err(|error| error.to_string())?;
+    let store = Store::connect(config.database_url())
+        .await
+        .map_err(|_| "controller database migration failed".to_owned())?;
+    store.close().await;
+    println!("Controller database migrations complete.");
+    Ok(())
 }
 
 async fn serve() -> Result<(), String> {
@@ -126,6 +170,6 @@ async fn shutdown_signal() {
 
 fn print_help() {
     println!(
-        "blindpass-controller <command>\n\nCommands:\n  serve        Run the local controller\n  check-config Validate configuration without starting the server"
+        "blindpass-controller <command>\n\nCommands:\n  serve                  Run the local controller\n  migrate               Apply database migrations and exit\n  seed --fixture <file>  Seed a test-mode fixture\n  check-config          Validate configuration without starting the server"
     );
 }

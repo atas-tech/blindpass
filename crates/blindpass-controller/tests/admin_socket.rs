@@ -83,6 +83,34 @@ async fn admin_socket_is_private_and_bootstraps_only_once() {
     );
     assert!(store.has_active_admin().await.expect("bootstrap persisted"));
 
+    let operator_id = store
+        .list_local_operators()
+        .await
+        .expect("list bootstrap operator")[0]
+        .id
+        .clone();
+    let mut reset = UnixStream::connect(&path)
+        .await
+        .expect("connect password reset request");
+    reset
+        .write_all(
+            format!("{{\"command\":\"reset-password\",\"id\":\"{operator_id}\"}}\n").as_bytes(),
+        )
+        .await
+        .expect("write password reset command");
+    reset
+        .shutdown()
+        .await
+        .expect("finish password reset command");
+    let mut reset_response = Vec::new();
+    reset
+        .read_to_end(&mut reset_response)
+        .await
+        .expect("read password reset response");
+    let reset_response: Value =
+        serde_json::from_slice(&reset_response).expect("password reset response is JSON");
+    assert!(reset_response["temporary_password"].as_str().is_some());
+
     let mut second = UnixStream::connect(&path)
         .await
         .expect("connect second request");

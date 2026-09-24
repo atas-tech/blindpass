@@ -167,6 +167,24 @@ async fn handle_admin_request(store: &Store, body: &Value) -> Value {
                 Err(_) => json!({"error":"bootstrap_token_failed"}),
             }
         }
+        Some("reset-password") => {
+            let Some(id) = body.get("id").and_then(Value::as_str) else {
+                return json!({"error":"invalid_operator_id"});
+            };
+            if !valid_account_name(id) {
+                return json!({"error":"invalid_operator_id"});
+            }
+            let password = random_token();
+            let hash = match hash_api_key(&password) {
+                Ok(hash) => hash,
+                Err(_) => return json!({"error":"reset_password_failed"}),
+            };
+            match store.reset_local_operator_password(id, &hash).await {
+                Ok(true) => json!({"temporary_password":password,"must_change_password":true}),
+                Ok(false) => json!({"error":"operator_not_found"}),
+                Err(_) => json!({"error":"reset_password_failed"}),
+            }
+        }
         _ => json!({"error":"unsupported_command"}),
     }
 }
@@ -212,13 +230,32 @@ fn random_uuid() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bind_admin_socket, serve_admin_socket};
+    use super::{bind_admin_socket, handle_admin_request, serve_admin_socket};
     use crate::store::Store;
     use serde_json::Value;
     use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::UnixStream;
+
+    #[tokio::test]
+    async fn local_password_reset_rotates_password_and_requires_change() {
+        let store = Store::connect("sqlite::memory:").await.unwrap();
+        let bootstrap =
+            handle_admin_request(&store, &serde_json::json!({"command":"bootstrap"})).await;
+        assert!(bootstrap["temporary_password"].as_str().is_some());
+        let operator = store.list_local_operators().await.unwrap().remove(0);
+        let response = handle_admin_request(
+            &store,
+            &serde_json::json!({"command":"reset-password","id":operator.id}),
+        )
+        .await;
+        assert!(response["temporary_password"].as_str().is_some());
+        let updated = store.list_local_operators().await.unwrap().remove(0);
+        assert!(updated.must_change_password);
+        assert_ne!(updated.password_hash, operator.password_hash);
+        store.close().await;
+    }
 
     #[tokio::test]
     async fn cli_socket_bootstrap_is_private_and_one_time() {

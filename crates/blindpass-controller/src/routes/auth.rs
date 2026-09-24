@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use crate::app::AppState;
+use crate::seed::{SeedError, SeedRequest, SeedResponse, seed_fixture};
 use crate::store::{AgentCredential, Store};
 use argon2::Argon2;
 use argon2::password_hash::{PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -180,7 +181,7 @@ pub(crate) fn mint_agent_token(
 }
 
 pub(crate) fn mint_seed_admin_token(
-    state: &AppState,
+    jwt_secret: &[u8],
     operator_id: &str,
     tenant_id: &str,
 ) -> Result<String, &'static str> {
@@ -203,7 +204,7 @@ pub(crate) fn mint_seed_admin_token(
     encode(
         &Header::new(Algorithm::HS256),
         &claims,
-        &EncodingKey::from_secret(state.agent_jwt_secret.as_bytes()),
+        &EncodingKey::from_secret(jwt_secret),
     )
     .map_err(|_| "test administrator token could not be minted")
 }
@@ -388,19 +389,6 @@ pub(crate) async fn authenticate_api_key(
     Ok(agent)
 }
 
-#[derive(Deserialize)]
-pub(crate) struct SeedRequest {
-    pub(crate) agents: Vec<String>,
-}
-
-#[derive(Serialize)]
-pub(crate) struct SeedResponse {
-    pub(crate) access_token: String,
-    pub(crate) workspace_id: String,
-    pub(crate) user_id: String,
-    pub(crate) agents: std::collections::BTreeMap<String, String>,
-}
-
 pub(crate) async fn test_seed(
     axum::extract::State(state): axum::extract::State<AppState>,
     headers: HeaderMap,
@@ -425,54 +413,24 @@ pub(crate) async fn test_seed(
             axum::Json(serde_json::json!({"error":"not_found"})),
         ));
     }
-    if body.agents.is_empty() || body.agents.len() > 64 {
-        return Err((
-            axum::http::StatusCode::BAD_REQUEST,
-            axum::Json(serde_json::json!({"error":"invalid_agents"})),
-        ));
-    }
-    let mut agents = std::collections::BTreeMap::new();
-    for agent_id in body.agents {
-        let row_id = random_uuid();
-        let api_key = new_api_key(&row_id);
-        let hash = hash_api_key(&api_key).map_err(|_| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(serde_json::json!({"error":"seed_failed"})),
-            )
-        })?;
-        let created = store
-            .create_agent_with_id(
-                &row_id,
-                &agent_id,
-                &format!("{agent_id} Display"),
-                ring_from_id(&agent_id),
-                &hash,
-            )
-            .await
-            .map_err(|_| {
-                (
-                    axum::http::StatusCode::CONFLICT,
-                    axum::Json(serde_json::json!({"error":"seed_failed"})),
-                )
-            })?;
-        let _ = created;
-        agents.insert(agent_id, api_key);
-    }
-    let user_id = random_uuid();
-    let access_token =
-        mint_seed_admin_token(&state, &user_id, store.tenant_id()).map_err(|_| {
-            (
-                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                axum::Json(serde_json::json!({"error":"seed_failed"})),
-            )
-        })?;
-    Ok(axum::Json(SeedResponse {
-        access_token,
-        workspace_id: store.tenant_id().to_owned(),
-        user_id,
-        agents,
-    }))
+    seed_fixture(store, state.agent_jwt_secret.as_bytes(), body)
+        .await
+        .map(axum::Json)
+        .map_err(|error| {
+            let status = match error {
+                SeedError::InvalidAgents | SeedError::InvalidPolicy => {
+                    axum::http::StatusCode::BAD_REQUEST
+                }
+                SeedError::Conflict => axum::http::StatusCode::CONFLICT,
+                SeedError::Internal => axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            let code = match error {
+                SeedError::InvalidAgents => "invalid_agents",
+                SeedError::InvalidPolicy => "invalid_policy",
+                SeedError::Conflict | SeedError::Internal => "seed_failed",
+            };
+            (status, axum::Json(serde_json::json!({"error":code})))
+        })
 }
 
 pub(crate) fn current_seconds() -> u64 {
@@ -521,11 +479,11 @@ fn value_bool(value: &Value, names: &[&str]) -> bool {
     })
 }
 
-fn ring_from_id(agent_id: &str) -> Option<&str> {
+pub(crate) fn ring_from_id(agent_id: &str) -> Option<&str> {
     agent_id.split_once("/ring/")?.1.split('/').next()
 }
 
-fn random_uuid() -> String {
+pub(crate) fn random_uuid() -> String {
     let mut bytes = [0_u8; 16];
     OsRng.fill_bytes(&mut bytes);
     bytes[6] = (bytes[6] & 0x0f) | 0x40;

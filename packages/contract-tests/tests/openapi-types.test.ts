@@ -9,6 +9,8 @@ type BrowserCapabilityOperation = NonNullable<paths["/api/v2/secret/browser-stat
 type BrowserCapabilityResponse = BrowserCapabilityOperation["responses"]["200"]["content"]["application/json"];
 type BrowserStatusOperation = NonNullable<paths["/api/v2/secret/browser-status/{id}"]["get"]>;
 type BrowserStatusResponse = BrowserStatusOperation["responses"]["200"]["content"]["application/json"];
+type TestSeedOperation = NonNullable<paths["/api/v3/admin/test/seed"]["post"]>;
+type TestSeedResponse = TestSeedOperation["responses"]["200"]["content"]["application/json"];
 
 const encryptedPayload: SubmitPayload = {
   enc: "dummy-enc",
@@ -25,6 +27,20 @@ const capabilities: CapabilitiesResponse = {
 
 const browserCapability: BrowserCapabilityResponse = { status_sig: "exp.status-signature" };
 const browserStatus: BrowserStatusResponse = { status: "submitted" };
+const testSeed: TestSeedResponse = {
+  access_token: "dummy-token",
+  workspace_id: "dummy-workspace",
+  user_id: "dummy-user",
+  agents: { "dummy-agent": "dummy-key" },
+  local_admin: {
+    operator_id: "dummy-operator",
+    username: "admin",
+    temporary_password: "dummy-password",
+    session_id: "dummy-session",
+    csrf_token: "dummy-csrf",
+    refresh_token: "dummy-refresh"
+  }
+};
 
 it("generated operation and component types describe the controller wire shapes", () => {
   const payload: components["schemas"]["EncryptedPayload"] = encryptedPayload;
@@ -32,6 +48,8 @@ it("generated operation and component types describe the controller wire shapes"
   expect(capabilities.features.browser_status).toBe(true);
   expect(browserCapability.status_sig).toMatch(/^exp\./);
   expect(browserStatus.status).toBe("submitted");
+  expect(testSeed.agents["dummy-agent"]).toBe("dummy-key");
+  expect(testSeed.local_admin?.username).toBe("admin");
 
   if (false) {
     // @ts-expect-error ciphertext is required by the generated schema type.

@@ -260,15 +260,28 @@ export interface components {
       "next_cursor": string | null;
     };
     "TestSeedInput": {
-      "agents"?: Array<string>;
+      "agents": Array<string>;
       "policy"?: components["schemas"]["PolicyDocumentInput"];
+      "rotated_agents"?: Array<string>;
+      "revoked_agents"?: Array<string>;
+      "local_admin"?: boolean;
     };
     "TestSeedResponse": {
+      "access_token": string;
       "workspace_id": string;
-      "operator": components["schemas"]["Operator"];
+      "user_id": string;
       "agents": {
         [key: string]: string;
       };
+      "local_admin"?: components["schemas"]["TestSeedLocalAdmin"];
+    };
+    "TestSeedLocalAdmin": {
+      "operator_id": string;
+      "username": string;
+      "temporary_password": string;
+      "session_id": string;
+      "csrf_token": string;
+      "refresh_token": string;
     };
   };
 }
@@ -1656,12 +1669,32 @@ export interface operations {
     };
   };
   responses: {
-    "201": {
+    "200": {
       content: {
         "application/json": components["schemas"]["TestSeedResponse"];
       };
     };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "500": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };

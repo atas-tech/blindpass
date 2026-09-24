@@ -246,6 +246,12 @@ jobs:
           P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
         run: cargo test -p blindpass-controller --test store_transitions --locked
 
+      - name: Run Rust shell and rich fixture tests
+        env:
+          P02_TEST_BACKEND: ${{ matrix.backend }}
+          P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: cargo test -p blindpass-controller --test shell_config --locked
+
       - name: Build controller with P02 crash failpoints
         run: CARGO_TARGET_DIR=target/p02-failpoints cargo build -p blindpass-controller --features p02-test-failpoints --locked
 

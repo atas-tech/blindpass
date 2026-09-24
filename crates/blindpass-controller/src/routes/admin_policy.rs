@@ -37,6 +37,14 @@ impl PolicyDocumentInput {
     }
 }
 
+pub(crate) fn validated_seed_policy_json(value: Value) -> Option<String> {
+    let document: PolicyDocumentInput = serde_json::from_value(value).ok()?;
+    if !validate_policy(&document).is_empty() {
+        return None;
+    }
+    serde_json::to_string(&document.to_value()).ok()
+}
+
 async fn get_policy(State(state): State<AppState>, headers: HeaderMap) -> Response {
     let session = match authenticated_session(state.store.as_ref(), &headers).await {
         Some(session) => session,

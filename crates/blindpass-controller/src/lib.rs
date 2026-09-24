@@ -7,6 +7,7 @@ pub mod app;
 pub mod config;
 pub mod observability;
 pub(crate) mod routes;
+pub mod seed;
 pub mod store;
 
 /// Abruptly terminate at a persistence boundary in the dedicated P02 crash
