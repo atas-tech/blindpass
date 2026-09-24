@@ -197,3 +197,11 @@ test("test seed schema matches the exercised compatibility fixture response", as
   assert.deepEqual(response.required, ["access_token", "workspace_id", "user_id", "agents"]);
   assert.equal(response.properties.local_admin.$ref, "#/components/schemas/TestSeedLocalAdmin");
 });
+
+test("admin session scheme documents the forced password change gate", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const scheme = schema.components.securitySchemes.adminSession;
+  assert.equal(scheme.in, "cookie");
+  assert.match(scheme.description, /password_change_required/);
+  assert.match(scheme.description, /403/);
+});

@@ -569,7 +569,7 @@
       "agentApiKey": { "type": "apiKey", "in": "header", "name": "x-agent-api-key" },
       "browserSignedLink": { "type": "apiKey", "in": "query", "name": "sig", "description": "Expiry-bound HMAC signature scoped to the route operation" },
       "bootstrapCapability": { "type": "apiKey", "in": "header", "name": "x-blindpass-bootstrap-token" },
-      "adminSession": { "type": "apiKey", "in": "cookie", "name": "bp_session" },
+      "adminSession": { "type": "apiKey", "in": "cookie", "name": "bp_session", "description": "Local operator session cookie. While the operator must change a temporary password (bootstrap, local reset or test fixture), every administrative route other than session read, refresh, logout and change-password answers 403 with error password_change_required." },
       "adminRefresh": { "type": "apiKey", "in": "cookie", "name": "bp_refresh" },
       "csrfCookie": { "type": "apiKey", "in": "cookie", "name": "bp_csrf" },
       "seedToken": { "type": "apiKey", "in": "header", "name": "x-blindpass-test-seed-token" }
