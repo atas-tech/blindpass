@@ -1,0 +1,639 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "BlindPass Local Controller API",
+    "version": "0.1.0",
+    "description": "P02 controller contract. This file uses JSON-compatible YAML 1.2 syntax so the checked-in type generator can use Node's standard library without installing a YAML parser.",
+    "x-blindpass-ct19": "adopted",
+    "x-blindpass-legacy-route-count": 13
+  },
+  "servers": [
+    { "url": "http://127.0.0.1:8080", "description": "Local controller" }
+  ],
+  "tags": [
+    { "name": "Health" },
+    { "name": "Compatibility" },
+    { "name": "Capabilities" },
+    { "name": "Local administration" }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "healthz",
+        "tags": ["Health"],
+        "summary": "Check process liveness",
+        "responses": {
+          "200": { "description": "The controller process is alive", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthResponse" } } } }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "operationId": "readyz",
+        "tags": ["Health"],
+        "summary": "Check configured persistence readiness",
+        "responses": {
+          "200": { "description": "The configured store is ready", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReadinessResponse" } } } },
+          "503": { "description": "The configured store is unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ReadinessResponse" } } } }
+        }
+      }
+    },
+    "/api/v2/agents/token": {
+      "post": {
+        "operationId": "mintAgentToken",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Exchange an agent bootstrap key for a short-lived agent token",
+        "description": "Accepts the bootstrap key as a Bearer credential or in x-agent-api-key. Keys are hashed at rest and invalidated on rotation or revocation. The retained IP rate limit defaults to five requests per minute; hosted paid-tier quota behavior is excluded.",
+        "security": [{ "agentBearer": [] }, { "agentApiKey": [] }],
+        "responses": {
+          "200": { "description": "Agent token minted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentTokenResponse" } } } },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "429": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/request": {
+      "post": {
+        "operationId": "createSecretRequest",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Create a human-to-agent secret request",
+        "description": "The response carries separate signed metadata and submit scopes in secret_url. The controller never receives plaintext.",
+        "security": [{ "agentBearer": [] }, { "externalWorkloadBearer": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SecretRequestInput" } } } },
+        "responses": {
+          "201": { "description": "Secret request created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SecretRequestCreated" } } } },
+          "400": { "$ref": "#/components/responses/LegacyError" },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "404": { "$ref": "#/components/responses/LegacyError" },
+          "429": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/metadata/{id}": {
+      "get": {
+        "operationId": "getSecretMetadata",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Read browser metadata using the metadata signature",
+        "security": [{ "browserSignedLink": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "sig", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Public-key metadata only", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SecretMetadata" } } } },
+          "403": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/submit/{id}": {
+      "post": {
+        "operationId": "submitSecret",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Submit an encrypted secret using the submit signature",
+        "security": [{ "browserSignedLink": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "sig", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EncryptedPayload" } } } },
+        "responses": {
+          "201": { "description": "Encrypted payload accepted; the payload is not echoed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SubmittedResponse" } } } },
+          "400": { "$ref": "#/components/responses/LegacyError" },
+          "403": { "$ref": "#/components/responses/LegacyError" },
+          "409": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" },
+          "413": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/status/{id}": {
+      "get": {
+        "operationId": "getSecretStatus",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Read secret status using the owning agent token",
+        "security": [{ "agentBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Only pending or submitted is returned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SecretStatus" } } } },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "description": "Unknown, foreign, consumed, or expired request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExpiredStatus" } } } }
+        }
+      }
+    },
+    "/api/v2/secret/browser-status/{id}/capability": {
+      "post": {
+        "operationId": "issueBrowserStatusCapability",
+        "tags": ["Compatibility"],
+        "summary": "Exchange the metadata signature for a status-only capability",
+        "description": "Issuance is idempotent for the same live metadata signature. The resulting capability expires no later than that signature or the request deadline; retries never extend authority. It cannot submit, retrieve, or call the agent-authenticated status route.",
+        "security": [{ "browserSignedLink": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "sig", "required": true, "schema": { "type": "string" }, "description": "The original metadata-scoped exp.sig credential" }
+        ],
+        "responses": {
+          "200": { "description": "Status-only signature bound to the same request and no later than the source expiry", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BrowserStatusCapabilityResponse" } } } },
+          "410": { "description": "Missing, invalid, wrong-scope, unknown or expired source capability", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExpiredStatus" } } } }
+        }
+      }
+    },
+    "/api/v2/secret/browser-status/{id}": {
+      "get": {
+        "operationId": "getBrowserAuthorizedSecretStatus",
+        "tags": ["Compatibility"],
+        "summary": "Read pending or submitted using the separate status-only signature",
+        "description": "Returns no request metadata, key, ciphertext or identity. Unknown, consumed, expired, invalid, foreign-request and wrong-scope credentials return 410 with {status: expired}. Reads do not consume the request.",
+        "security": [{ "browserSignedLink": [] }],
+        "parameters": [
+          { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } },
+          { "in": "query", "name": "sig", "required": true, "schema": { "type": "string" }, "description": "The status-scoped exp.sig credential" }
+        ],
+        "responses": {
+          "200": { "description": "Minimal browser-authorized request status", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SecretStatus" } } } },
+          "410": { "description": "Unknown, consumed, expired, invalid, foreign or wrong-scope capability", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExpiredStatus" } } } }
+        }
+      }
+    },
+    "/api/v2/secret/retrieve/{id}": {
+      "get": {
+        "operationId": "retrieveSecret",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Retrieve and consume an encrypted secret once",
+        "security": [{ "agentBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Encrypted payload for the owning agent", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EncryptedPayload" } } } },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "409": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/exchange/request": {
+      "post": {
+        "operationId": "createExchangeRequest",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Request an agent-to-agent secret exchange",
+        "security": [{ "agentBearer": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeRequestInput" } } } },
+        "responses": {
+          "201": { "description": "Exchange created or awaiting approval", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeRequestCreated" } } } },
+          "400": { "$ref": "#/components/responses/LegacyError" },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "403": { "description": "Policy denial or pending approval; no exchange is created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangePolicyDenial" } } } },
+          "409": { "$ref": "#/components/responses/LegacyError" },
+          "429": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/exchange/status/{id}": {
+      "get": {
+        "operationId": "getExchangeStatus",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Read requester-owned exchange status",
+        "security": [{ "agentBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Current exchange state", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeStatus" } } } },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/exchange/fulfill": {
+      "post": {
+        "operationId": "fulfillExchange",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Reserve an eligible exchange using its fulfillment token",
+        "security": [{ "agentBearer": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FulfillExchangeInput" } } } },
+        "responses": {
+          "200": { "description": "Exchange reserved for this fulfiller", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeReserved" } } } },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "409": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/exchange/submit/{id}": {
+      "post": {
+        "operationId": "submitExchange",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Submit an encrypted exchange payload",
+        "security": [{ "agentBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EncryptedPayload" } } } },
+        "responses": {
+          "201": { "description": "Encrypted payload accepted; the payload is not echoed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeSubmitted" } } } },
+          "400": { "$ref": "#/components/responses/LegacyError" },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "409": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" },
+          "413": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/exchange/retrieve/{id}": {
+      "get": {
+        "operationId": "retrieveExchange",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Retrieve and consume a submitted exchange once",
+        "security": [{ "agentBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Encrypted payload for the requester", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangeRetrieved" } } } },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "409": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v2/secret/exchange/revoke/{id}": {
+      "delete": {
+        "operationId": "revokeExchange",
+        "tags": ["Compatibility"],
+        "x-blindpass-contract": "legacy-machine",
+        "summary": "Revoke an exchange within the requester's authorized scope",
+        "description": "CT12 issuer-admin behavior remains a product decision; the P02 implementation must use the accepted controller policy and preserve the recorded requester behavior.",
+        "security": [{ "agentBearer": [] }, { "externalWorkloadBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Exchange revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RevokedResponse" } } } },
+          "401": { "$ref": "#/components/responses/LegacyError" },
+          "410": { "$ref": "#/components/responses/LegacyError" }
+        }
+      }
+    },
+    "/api/v3/capabilities": {
+      "get": {
+        "operationId": "getCapabilities",
+        "tags": ["Capabilities"],
+        "summary": "Report enabled controller API groups and local setup state",
+        "responses": {
+          "200": { "description": "Controller API capabilities", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CapabilitiesResponse" } } } }
+        }
+      }
+    },
+    "/api/v3/admin/bootstrap": {
+      "post": {
+        "operationId": "bootstrapAdministrator",
+        "tags": ["Local administration"],
+        "summary": "Create the first local administrator",
+        "description": "Requires the explicit local bootstrap capability. Returns 409 once an administrator exists; never enables unauthenticated first-visitor setup.",
+        "security": [{ "bootstrapCapability": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BootstrapInput" } } } },
+        "responses": {
+          "201": { "description": "First administrator created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionResponse" } } } },
+          "400": { "$ref": "#/components/responses/AdminError" },
+          "409": { "$ref": "#/components/responses/AdminError" }
+        }
+      }
+    },
+    "/api/v3/admin/session/login": {
+      "post": {
+        "operationId": "loginAdministrator",
+        "tags": ["Local administration"],
+        "summary": "Authenticate a local operator",
+        "description": "Validates Origin and pre-session CSRF. Successful sessions use an HttpOnly Secure SameSite=Strict cookie scoped to /.",
+        "parameters": [{ "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginInput" } } } },
+        "responses": {
+          "200": { "description": "Local session established", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionResponse" } } } },
+          "401": { "$ref": "#/components/responses/AdminError" },
+          "403": { "$ref": "#/components/responses/AdminError" }
+        }
+      }
+    },
+    "/api/v3/admin/session/logout": {
+      "post": {
+        "operationId": "logoutAdministrator",
+        "tags": ["Local administration"],
+        "summary": "Revoke the current local session",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "responses": { "204": { "description": "Session revoked and cookies cleared" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/session/refresh": {
+      "post": {
+        "operationId": "refreshAdministratorSession",
+        "tags": ["Local administration"],
+        "summary": "Rotate the local refresh session",
+        "description": "The server revokes the whole rotation family when replay or recovery is detected.",
+        "security": [{ "adminRefresh": [], "csrfCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "responses": { "200": { "description": "Session rotated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionResponse" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/session": {
+      "get": {
+        "operationId": "getAdministratorSession",
+        "tags": ["Local administration"],
+        "summary": "Read the current local session and CSRF value",
+        "security": [{ "adminSession": [] }],
+        "responses": { "200": { "description": "Current session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSession" } } } }, "401": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/session/change-password": {
+      "post": {
+        "operationId": "changeAdministratorPassword",
+        "tags": ["Local administration"],
+        "summary": "Change the current operator password",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ChangePasswordInput" } } } },
+        "responses": { "204": { "description": "Password changed and other sessions revoked" }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/operators": {
+      "get": {
+        "operationId": "listOperators",
+        "tags": ["Local administration"],
+        "summary": "List local operators",
+        "security": [{ "adminSession": [] }],
+        "responses": { "200": { "description": "Operators", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperatorList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+      },
+      "post": {
+        "operationId": "createOperator",
+        "tags": ["Local administration"],
+        "summary": "Create a local operator or viewer",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateOperatorInput" } } } },
+        "responses": { "201": { "description": "Operator created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operator" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/operators/{id}": {
+      "patch": {
+        "operationId": "updateOperator",
+        "tags": ["Local administration"],
+        "summary": "Change an operator role or display name",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateOperatorInput" } } } },
+        "responses": { "200": { "description": "Operator updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operator" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+      },
+      "delete": {
+        "operationId": "deleteOperator",
+        "tags": ["Local administration"],
+        "summary": "Remove an operator without removing the final administrator",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "responses": { "204": { "description": "Operator removed" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/operators/{id}/reset-password": {
+      "post": {
+        "operationId": "resetOperatorPassword",
+        "tags": ["Local administration"],
+        "summary": "Issue a one-time temporary password",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "responses": { "200": { "description": "Temporary password returned once", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TemporaryPassword" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/agents": {
+      "get": {
+        "operationId": "listLocalAgents",
+        "tags": ["Local administration"],
+        "summary": "List enrolled local agents",
+        "security": [{ "adminSession": [] }],
+        "responses": { "200": { "description": "Agents", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+      },
+      "post": {
+        "operationId": "enrollLocalAgent",
+        "tags": ["Local administration"],
+        "summary": "Enroll an agent and return its bootstrap key once",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateAgentInput" } } } },
+        "responses": { "201": { "description": "Agent and one-time bootstrap key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentCreated" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/agents/{id}/rotate-key": {
+      "post": {
+        "operationId": "rotateAgentKey",
+        "tags": ["Local administration"],
+        "summary": "Rotate an agent bootstrap key and return it once",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "responses": { "200": { "description": "New key returned once; old key revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AgentCreated" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/agents/{id}": {
+      "delete": {
+        "operationId": "revokeLocalAgent",
+        "tags": ["Local administration"],
+        "summary": "Revoke an enrolled agent",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "responses": { "200": { "description": "Agent revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Agent" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/policy": {
+      "get": {
+        "operationId": "getLocalPolicy",
+        "tags": ["Local administration"],
+        "summary": "Read local policy and its version",
+        "security": [{ "adminSession": [] }],
+        "responses": { "200": { "description": "Current policy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PolicyDocument" } } } }, "401": { "$ref": "#/components/responses/AdminError" } }
+      },
+      "put": {
+        "operationId": "replaceLocalPolicy",
+        "tags": ["Local administration"],
+        "summary": "Replace policy with optimistic concurrency",
+        "description": "If-Match must equal the current policy version. A stale version returns 409.",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PolicyDocumentInput" } } } },
+        "responses": { "200": { "description": "Policy replaced", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PolicyDocument" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/policy/validate": {
+      "post": {
+        "operationId": "validateLocalPolicy",
+        "tags": ["Local administration"],
+        "summary": "Validate a policy document without saving it",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PolicyDocumentInput" } } } },
+        "responses": { "200": { "description": "Validation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PolicyValidation" } } } }, "400": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/approvals": {
+      "get": {
+        "operationId": "listApprovals",
+        "tags": ["Local administration"],
+        "summary": "List approval records using stable cursor pagination",
+        "description": "Requires the admin or operator role. Results contain request metadata only.",
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "status", "required": false, "schema": { "type": "string", "enum": ["pending", "approved", "rejected"] } }, { "in": "query", "name": "cursor", "required": false, "schema": { "type": "string" } }, { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
+        "responses": { "200": { "description": "Approval page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/approvals/count": {
+      "get": {
+        "operationId": "countPendingApprovals",
+        "tags": ["Local administration"],
+        "summary": "Count pending approvals",
+        "description": "Requires the admin or operator role.",
+        "security": [{ "adminSession": [] }],
+        "responses": { "200": { "description": "Pending count", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalCount" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/approvals/{reference}": {
+      "get": {
+        "operationId": "getApproval",
+        "tags": ["Local administration"],
+        "summary": "Read an approval and its metadata timeline",
+        "description": "Requires the admin or operator role.",
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "reference", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Approval metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Approval" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/approvals/{reference}/approve": {
+      "post": {
+        "operationId": "approveApproval",
+        "tags": ["Local administration"],
+        "summary": "Approve a pending request within the assigned scope",
+        "description": "Requires the admin or operator role; the server also checks the approval's assigned identity and scope.",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "in": "path", "name": "reference", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalDecisionInput" } } } },
+        "responses": { "200": { "description": "Approval decision recorded", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalDecision" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/approvals/{reference}/reject": {
+      "post": {
+        "operationId": "rejectApproval",
+        "tags": ["Local administration"],
+        "summary": "Reject a pending request within the assigned scope",
+        "description": "Requires the admin or operator role; the server also checks the approval's assigned identity and scope.",
+        "security": [{ "adminSession": [], "csrfCookie": [] }],
+        "parameters": [{ "in": "path", "name": "reference", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalDecisionInput" } } } },
+        "responses": { "200": { "description": "Approval decision recorded", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalDecision" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/audit": {
+      "get": {
+        "operationId": "listAuditEvents",
+        "tags": ["Local administration"],
+        "summary": "List metadata-only audit events",
+        "description": "Available to all authenticated local roles. Audit output excludes plaintext, ciphertext, credentials, signed links and private keys.",
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "cursor", "required": false, "schema": { "type": "string" } }, { "in": "query", "name": "limit", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
+        "responses": { "200": { "description": "Audit event page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuditList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/audit/exchange/{id}": {
+      "get": {
+        "operationId": "getExchangeAudit",
+        "tags": ["Local administration"],
+        "summary": "Read one exchange's metadata timeline",
+        "description": "Available to all authenticated local roles.",
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Exchange audit timeline", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AuditList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+      }
+    },
+    "/api/v3/admin/test/seed": {
+      "post": {
+        "operationId": "seedContractFixture",
+        "tags": ["Local administration"],
+        "summary": "Create isolated contract-test fixtures",
+        "description": "Available only when BLINDPASS_TEST_MODE=1. Production returns 404 even if seed credentials are configured.",
+        "security": [{ "seedToken": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestSeedInput" } } } },
+        "responses": { "201": { "description": "Test-only administrator and agent fixture", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestSeedResponse" } } } }, "404": { "$ref": "#/components/responses/AdminError" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "agentBearer": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" },
+      "externalWorkloadBearer": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT", "description": "Configured external issuer with pinned issuer, audience and JWKS validation" },
+      "agentApiKey": { "type": "apiKey", "in": "header", "name": "x-agent-api-key" },
+      "browserSignedLink": { "type": "apiKey", "in": "query", "name": "sig", "description": "Expiry-bound HMAC signature scoped to the route operation" },
+      "bootstrapCapability": { "type": "apiKey", "in": "header", "name": "x-blindpass-bootstrap-token" },
+      "adminSession": { "type": "apiKey", "in": "cookie", "name": "bp_session" },
+      "adminRefresh": { "type": "apiKey", "in": "cookie", "name": "bp_refresh" },
+      "csrfCookie": { "type": "apiKey", "in": "cookie", "name": "bp_csrf" },
+      "seedToken": { "type": "apiKey", "in": "header", "name": "x-blindpass-test-seed-token" }
+    },
+    "parameters": {
+      "Origin": { "name": "Origin", "in": "header", "required": true, "schema": { "type": "string", "format": "uri" } },
+      "CsrfHeader": { "name": "X-CSRF-Token", "in": "header", "required": true, "schema": { "type": "string" }, "description": "Must match the authenticated session's server-side CSRF value and bp_csrf cookie." },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 16, "maxLength": 128 } }
+    },
+    "responses": {
+      "LegacyError": { "description": "Legacy route-specific response body preserved from the SPS snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LegacyError" } } } },
+      "AdminError": { "description": "Local administration error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminError" } } } }
+    },
+    "schemas": {
+      "HealthResponse": { "type": "object", "properties": { "ok": { "type": "boolean", "const": true } }, "required": ["ok"], "additionalProperties": false },
+      "ReadinessResponse": { "type": "object", "properties": { "ok": { "type": "boolean" }, "checks": { "type": "object", "properties": { "database": { "type": "string", "enum": ["up", "down"] } }, "required": ["database"], "additionalProperties": false } }, "required": ["ok", "checks"], "additionalProperties": false },
+      "LegacyError": { "type": "object", "properties": { "code": { "type": "string" }, "error": { "type": "string" }, "message": { "type": "string" }, "statusCode": { "type": "integer" } }, "additionalProperties": true },
+      "AdminError": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } }, "required": ["error"], "additionalProperties": false },
+      "Agent": { "type": "object", "properties": { "id": { "type": "string" }, "agent_id": { "type": "string" }, "workspace_id": { "type": "string" }, "display_name": { "type": "string" }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "string", "format": "date-time" }, "revoked_at": { "type": ["string", "null"], "format": "date-time" } }, "required": ["id", "agent_id", "workspace_id", "display_name", "status", "created_at", "revoked_at"], "additionalProperties": false },
+      "AgentTokenResponse": { "type": "object", "properties": { "access_token": { "type": "string" }, "access_token_expires_at": { "type": "integer" }, "agent": { "$ref": "#/components/schemas/Agent" } }, "required": ["access_token", "access_token_expires_at", "agent"], "additionalProperties": false },
+      "SecretRequestInput": { "type": "object", "properties": { "public_key": { "type": "string", "minLength": 4, "maxLength": 2048, "pattern": "^[A-Za-z0-9+/]+={0,2}$" }, "description": { "type": "string", "minLength": 1, "maxLength": 512 } }, "required": ["public_key", "description"], "additionalProperties": false },
+      "SecretRequestCreated": { "type": "object", "properties": { "request_id": { "type": "string" }, "confirmation_code": { "type": "string" }, "secret_url": { "type": "string", "format": "uri" } }, "required": ["request_id", "confirmation_code", "secret_url"], "additionalProperties": false },
+      "SecretMetadata": { "type": "object", "properties": { "public_key": { "type": "string" }, "description": { "type": "string" }, "confirmation_code": { "type": "string" }, "expiry": { "type": "integer" } }, "required": ["public_key", "description", "confirmation_code", "expiry"], "additionalProperties": false },
+      "EncryptedPayload": { "type": "object", "properties": { "enc": { "type": "string", "minLength": 4, "maxLength": 4096, "pattern": "^[A-Za-z0-9+/]+={0,2}$" }, "ciphertext": { "type": "string", "minLength": 4, "maxLength": 524288, "pattern": "^[A-Za-z0-9+/]+={0,2}$" } }, "required": ["enc", "ciphertext"], "additionalProperties": false },
+      "SubmittedResponse": { "type": "object", "properties": { "status": { "type": "string", "const": "submitted" } }, "required": ["status"], "additionalProperties": false },
+      "SecretStatus": { "type": "object", "properties": { "status": { "type": "string", "enum": ["pending", "submitted"] } }, "required": ["status"], "additionalProperties": false },
+      "ExpiredStatus": { "type": "object", "properties": { "status": { "type": "string", "const": "expired" } }, "required": ["status"], "additionalProperties": false },
+      "ExchangeRequestInput": { "type": "object", "properties": { "public_key": { "type": "string", "minLength": 4, "maxLength": 2048, "pattern": "^[A-Za-z0-9+/]+={0,2}$" }, "secret_name": { "type": "string", "minLength": 3, "maxLength": 256 }, "purpose": { "type": "string", "minLength": 1, "maxLength": 256 }, "fulfiller_hint": { "type": "string", "minLength": 1, "maxLength": 512 }, "prior_exchange_id": { "type": "string" } }, "required": ["public_key", "secret_name", "purpose", "fulfiller_hint"], "additionalProperties": false },
+      "PolicyDecision": { "type": "object", "properties": { "mode": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "reason": { "type": "string" }, "rule_id": { "type": ["string", "null"] }, "secret_name": { "type": "string" }, "requester_ring": { "type": ["string", "null"] }, "fulfiller_ring": { "type": ["string", "null"] }, "approval_required": { "type": "boolean" }, "approval_reference": { "type": ["string", "null"] } }, "required": ["mode", "reason", "rule_id", "secret_name", "requester_ring", "fulfiller_ring", "approval_required", "approval_reference"], "additionalProperties": false },
+      "ExchangeRequestCreated": { "type": "object", "properties": { "exchange_id": { "type": "string" }, "status": { "type": "string", "const": "pending" }, "expires_at": { "type": "integer" }, "fulfillment_token": { "type": "string" }, "policy": { "$ref": "#/components/schemas/PolicyDecision" } }, "required": ["exchange_id", "status", "expires_at", "fulfillment_token", "policy"], "additionalProperties": false },
+      "ExchangePolicyDenial": { "type": "object", "properties": { "error": { "type": "string" }, "approval_status": { "type": ["string", "null"], "enum": ["pending", null] }, "policy": { "$ref": "#/components/schemas/PolicyDecision" } }, "required": ["error"], "additionalProperties": false },
+      "ExchangeStatus": { "type": "object", "properties": { "status": { "type": "string", "enum": ["pending", "reserved", "submitted", "revoked"] } }, "required": ["status"], "additionalProperties": false },
+      "FulfillExchangeInput": { "type": "object", "properties": { "fulfillment_token": { "type": "string", "minLength": 32, "maxLength": 4096 } }, "required": ["fulfillment_token"], "additionalProperties": false },
+      "ExchangeReserved": { "type": "object", "properties": { "exchange_id": { "type": "string" }, "status": { "type": "string", "const": "reserved" }, "fulfilled_by": { "type": "string" }, "requester_id": { "type": "string" }, "requester_public_key": { "type": "string" }, "secret_name": { "type": "string" }, "purpose": { "type": "string" }, "expires_at": { "type": "integer" }, "policy": { "$ref": "#/components/schemas/PolicyDecision" } }, "required": ["exchange_id", "status", "fulfilled_by", "requester_id", "requester_public_key", "secret_name", "purpose", "expires_at", "policy"], "additionalProperties": false },
+      "ExchangeSubmitted": { "type": "object", "properties": { "status": { "type": "string", "const": "submitted" }, "fulfilled_by": { "type": "string" }, "retrieve_by": { "type": "integer" } }, "required": ["status", "fulfilled_by", "retrieve_by"], "additionalProperties": false },
+      "ExchangeRetrieved": { "type": "object", "properties": { "enc": { "type": "string" }, "ciphertext": { "type": "string" }, "secret_name": { "type": "string" }, "fulfilled_by": { "type": ["string", "null"] } }, "required": ["enc", "ciphertext", "secret_name", "fulfilled_by"], "additionalProperties": false },
+      "RevokedResponse": { "type": "object", "properties": { "status": { "type": "string", "const": "revoked" } }, "required": ["status"], "additionalProperties": false },
+      "BrowserStatusCapabilityResponse": { "type": "object", "properties": { "status_sig": { "type": "string", "minLength": 16 } }, "required": ["status_sig"], "additionalProperties": false },
+      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer" }, "setup_required": { "type": "boolean" }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true } }, "required": ["browser_status"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
+      "BootstrapInput": { "type": "object", "properties": { "username": { "type": "string", "minLength": 3, "maxLength": 128 }, "password": { "type": "string", "minLength": 12, "maxLength": 1024 }, "display_name": { "type": "string", "minLength": 1, "maxLength": 160 } }, "required": ["username", "password", "display_name"], "additionalProperties": false },
+      "LoginInput": { "type": "object", "properties": { "username": { "type": "string" }, "password": { "type": "string" } }, "required": ["username", "password"], "additionalProperties": false },
+      "AdminSession": { "type": "object", "properties": { "operator": { "$ref": "#/components/schemas/Operator" }, "csrf_token": { "type": "string" }, "expires_at": { "type": "integer" }, "must_change_password": { "type": "boolean" } }, "required": ["operator", "csrf_token", "expires_at", "must_change_password"], "additionalProperties": false },
+      "AdminSessionResponse": { "type": "object", "properties": { "operator": { "$ref": "#/components/schemas/Operator" }, "csrf_token": { "type": "string" }, "expires_at": { "type": "integer" }, "must_change_password": { "type": "boolean" } }, "required": ["operator", "csrf_token", "expires_at", "must_change_password"], "additionalProperties": false },
+      "ChangePasswordInput": { "type": "object", "properties": { "current_password": { "type": "string" }, "new_password": { "type": "string", "minLength": 12, "maxLength": 1024 } }, "required": ["current_password", "new_password"], "additionalProperties": false },
+      "Operator": { "type": "object", "properties": { "id": { "type": "string" }, "username": { "type": "string" }, "display_name": { "type": "string" }, "role": { "type": "string", "enum": ["admin", "operator", "viewer"] }, "disabled_at": { "type": ["string", "null"], "format": "date-time" } }, "required": ["id", "username", "display_name", "role", "disabled_at"], "additionalProperties": false },
+      "OperatorList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Operator" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
+      "CreateOperatorInput": { "type": "object", "properties": { "username": { "type": "string", "minLength": 3, "maxLength": 128 }, "display_name": { "type": "string", "minLength": 1, "maxLength": 160 }, "role": { "type": "string", "enum": ["admin", "operator", "viewer"] }, "password": { "type": "string", "minLength": 12, "maxLength": 1024 } }, "required": ["username", "display_name", "role", "password"], "additionalProperties": false },
+      "UpdateOperatorInput": { "type": "object", "properties": { "display_name": { "type": "string", "minLength": 1, "maxLength": 160 }, "role": { "type": "string", "enum": ["admin", "operator", "viewer"] } }, "minProperties": 1, "additionalProperties": false },
+      "TemporaryPassword": { "type": "object", "properties": { "temporary_password": { "type": "string" } }, "required": ["temporary_password"], "additionalProperties": false },
+      "AgentList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Agent" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
+      "CreateAgentInput": { "type": "object", "properties": { "agent_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "display_name": { "type": "string", "minLength": 1, "maxLength": 160 } }, "required": ["agent_id", "display_name"], "additionalProperties": false },
+      "AgentCreated": { "type": "object", "properties": { "agent": { "$ref": "#/components/schemas/Agent" }, "bootstrap_api_key": { "type": "string" } }, "required": ["agent", "bootstrap_api_key"], "additionalProperties": false },
+      "PolicyDocument": { "type": "object", "properties": { "version": { "type": "integer" }, "policy": { "$ref": "#/components/schemas/PolicyDocumentInput" } }, "required": ["version", "policy"], "additionalProperties": false },
+      "PolicyDocumentInput": { "type": "object", "properties": { "secret_registry": { "type": "array", "items": { "type": "object", "properties": { "secretName": { "type": "string" }, "classification": { "type": "string" }, "description": { "type": "string" } }, "required": ["secretName", "classification"], "additionalProperties": true } }, "exchange_policy": { "type": "array", "items": { "type": "object", "properties": { "ruleId": { "type": "string" }, "secretName": { "type": "string" }, "mode": { "type": "string", "enum": ["allow", "pending_approval", "deny"] } }, "required": ["ruleId", "secretName"], "additionalProperties": true } } }, "required": ["secret_registry", "exchange_policy"], "additionalProperties": false },
+      "PolicyValidation": { "type": "object", "properties": { "valid": { "type": "boolean" }, "errors": { "type": "array", "items": { "type": "string" } } }, "required": ["valid", "errors"], "additionalProperties": false },
+      "Approval": { "type": "object", "properties": { "reference": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }, "requester_id": { "type": "string" }, "secret_name": { "type": "string" }, "purpose": { "type": "string" }, "created_at": { "type": "integer" }, "timeline": { "type": "array", "items": { "type": "object", "additionalProperties": true } } }, "required": ["reference", "status", "requester_id", "secret_name", "purpose", "created_at", "timeline"], "additionalProperties": false },
+      "ApprovalList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Approval" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
+      "ApprovalCount": { "type": "object", "properties": { "count": { "type": "integer", "minimum": 0 } }, "required": ["count"], "additionalProperties": false },
+      "ApprovalDecisionInput": { "type": "object", "properties": { "expected_status": { "type": "string", "const": "pending" } }, "required": ["expected_status"], "additionalProperties": false },
+      "ApprovalDecision": { "type": "object", "properties": { "approval_reference": { "type": "string" }, "status": { "type": "string", "enum": ["approved", "rejected"] }, "decided_at": { "type": "integer" }, "decided_by": { "type": "string" } }, "required": ["approval_reference", "status", "decided_at", "decided_by"], "additionalProperties": false },
+      "AuditEvent": { "type": "object", "properties": { "id": { "type": "string" }, "event": { "type": "string" }, "actor_id": { "type": ["string", "null"] }, "resource_id": { "type": ["string", "null"] }, "created_at": { "type": "integer" }, "metadata": { "type": "object", "additionalProperties": true } }, "required": ["id", "event", "created_at", "metadata"], "additionalProperties": false },
+      "AuditList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEvent" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
+      "TestSeedInput": { "type": "object", "properties": { "agents": { "type": "array", "items": { "type": "string" } }, "policy": { "$ref": "#/components/schemas/PolicyDocumentInput" } }, "additionalProperties": false },
+      "TestSeedResponse": { "type": "object", "properties": { "workspace_id": { "type": "string" }, "operator": { "$ref": "#/components/schemas/Operator" }, "agents": { "type": "object", "additionalProperties": { "type": "string" } } }, "required": ["workspace_id", "operator", "agents"], "additionalProperties": false }
+    }
+  }
+}

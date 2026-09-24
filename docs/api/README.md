@@ -8,6 +8,10 @@ The snapshot covers liveness/readiness, user auth and locale preferences, worksp
 
 The local server entry is an example endpoint. Configure your deployment's API URL explicitly; this documentation does not verify hosted service availability.
 
+## Rust controller contract
+
+[controller.openapi.yaml](controller.openapi.yaml) is the P02 contract for the Rust controller. It records the 12 retained machine routes, the two adopted CT19 browser-status routes, the local administration API, readiness and capability discovery. Hosted user auth, including `/api/v2/auth/refresh`, stays in the TypeScript SPS. It is separate from the SPS snapshot above and does not claim that controller behavior is implemented. Its YAML document uses JSON-compatible YAML 1.2 syntax so the repository-owned Node generator can produce TypeScript declarations without an added parser dependency. `npm run generate:api` updates `packages/contract-tests/src/generated/controller.d.ts`; the OpenAPI drift CI check verifies the generated file.
+
 ## Authentication modes
 
 - Dashboard administration uses user bearer access tokens.

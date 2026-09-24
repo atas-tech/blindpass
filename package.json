@@ -10,6 +10,11 @@
     "packages/*"
   ],
   "scripts": {
+    "generate:api": "node scripts/generate-controller-types.mjs",
+    "test:controller-openapi": "node scripts/tests/controller-openapi.test.mjs",
+    "test:contract-progress": "node --test scripts/tests/assert-contract-progress.test.mjs",
+    "test:p02:clients": "node --import=tsx scripts/tests/p02-rust-client-flows.mjs",
+    "test:p02:crash": "node --import=tsx scripts/tests/p02-rust-crash-recovery.mjs",
     "build:i18n": "npm run build --workspace=@blindpass/i18n",
     "build": "npm run build:i18n && npm run build --workspaces --if-present",
     "build:skill": "bash scripts/build_bundle.sh",
