@@ -16,8 +16,8 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `packages/contract-tests` | `AGPL-3.0-only` | Black-box compatibility and acceptance harness; private test package |
 | `crates/blindpass-core` | `AGPL-3.0-only` | Shared identity, delivery, custody and protocol contracts |
 | `crates/blindpass-broker` | `AGPL-3.0-only` | Root host broker and native consumer probes |
-| `crates/blindpass-controller` | `AGPL-3.0-only` | Future local controller scaffold |
-| `crates/blindpass-cli` | `AGPL-3.0-only` | Future enrollment and administration CLI scaffold |
+| `crates/blindpass-controller` | `AGPL-3.0-only` | Rust controller implementation in progress |
+| `crates/blindpass-cli` | `AGPL-3.0-only` | Local controller administration CLI implementation in progress |
 
 ## Repository Notes
 

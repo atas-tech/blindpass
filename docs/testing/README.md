@@ -2,9 +2,9 @@
 
 This is the current command reference. The [Linux Fleet Pilot](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) defines proposed W0–W6 acceptance scenarios; historical phase cases remain in the Obsidian vault. A passing workspace suite does not establish the new broker, browser or deployment guarantees.
 
-The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are in this repository. The selected local QEMU/KVM profile passed its original harness on source SHA `a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` on 2026-09-23, but P01-I01 and P01-I06 were not established by that harness. A revised committed-SHA VM run is required. A shared self-hosted CI runner remains an explicit prerequisite and is never inferred from hosted CI.
+The phase acceptance index and P00–P10 plans are maintained in the Obsidian vault. P01's portable Rust checks and disposable-VM harness are in this repository. Revised P01-I01 and P01-I06 checks passed on clean committed SHA `6d41a1f6df8d90d283b53b3c7241281937702ac2` in the selected local Ubuntu 24.04/QEMU-KVM profile on 2026-09-24. W0 acceptance and remaining profile review are open. A shared self-hosted CI runner remains an explicit prerequisite and is never inferred from hosted CI.
 
-The proposed landing-aligned dashboard rebuild and secret-input acceptance plans are maintained in the Obsidian vault. The proposed Rust controller port is gated by the [Controller Contract Suite](Controller%20Contract%20Suite.md), an HTTP-level compatibility suite run against both servers; it is not implemented.
+The proposed landing-aligned dashboard rebuild and secret-input acceptance plans are maintained in the Obsidian vault. The Rust controller implementation is in progress and remains gated by the [Controller Contract Suite](Controller%20Contract%20Suite.md), an HTTP-level compatibility suite run against both servers. Current P02 execution and open acceptance items are recorded in the [P02 evidence report](evidence/p02-controller-api-migration-rerun.md) and the paired vault plan.
 
 The secret-input redesign plan covers the companion input-page mockup's proposed SI scenarios and keeps prototype inspection separate from product E2E evidence in the vault.
 
@@ -55,9 +55,14 @@ The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build
 | `npm run test:audience-packaging` | Audience packaging paths | See script prerequisites and generated bundle |
 | `npm run test:openclaw-activation` | OpenClaw activation contract harness | Defined local harness, not proof of every released OpenClaw version |
 | `SUT=ts CONTRACT_DATABASE_URL=... CONTRACT_REDIS_URL=... npm test --workspace=@blindpass/contract-tests` | P00 CT01–CT18, CC01 and CV01–CV06 against a child TypeScript SPS over HTTP | Disposable PostgreSQL and Redis; run `npm run build` first |
-| `cargo fmt --all -- --check` | P01 Rust formatting gate | Rust toolchain pinned by `rust-toolchain.toml` |
-| `cargo clippy --workspace --all-targets --locked -- -D warnings` | P01 Rust lint gate | Native `libsystemd`/OpenSSL development libraries |
-| `cargo test --workspace --locked` | P01 portable unit, transport-boundary and HPKE interop tests | Unix-socket operations; rerun outside restricted sandboxes if required |
+| `SUT=rust CONTRACT_RUST_BACKEND=sqlite npm test --workspace=@blindpass/contract-tests` | Rust HTTP contract suite, including adopted CT19 | Adapter starts the controller with an isolated SQLite database; hosted-user CT14 runs only against TypeScript SPS |
+| `SUT=rust CONTRACT_RUST_BACKEND=postgres CONTRACT_DATABASE_URL=... npm test --workspace=@blindpass/contract-tests` | Same Rust HTTP contract suite against PostgreSQL | Adapter creates and removes an isolated schema in a disposable PostgreSQL database |
+| `SUT=rust CONTRACT_RUST_BACKEND=sqlite npm run test:p02:clients` | P02 CC02 gateway, agent-skill and OpenClaw request/exchange flows against Rust | Node.js `tsx` loader; set `CONTRACT_RUST_BACKEND=postgres CONTRACT_DATABASE_URL=...` to use PostgreSQL |
+| `npm run test:p02:crash` | P02-I03 process termination/restart cases for compatibility and exchange retrieval, policy CAS and approval/audit transactions | Build a separate binary with `CARGO_TARGET_DIR=target/p02-failpoints cargo build -p blindpass-controller --features p02-test-failpoints --locked`; set `CONTRACT_RUST_BIN`, `SUT=rust` and backend vars. Uses localhost and an isolated SQLite DB or disposable PostgreSQL schema |
+| `NODE_OPTIONS=--import=tsx SUT=rust CONTRACT_RUST_BACKEND=sqlite npm run test:p02-browser --workspace=@blindpass/dashboard` | P02 CC02 `e2e-human.mjs` browser flow and CC03 signed/expired browser-link flows | Chromium and isolated SQLite controller; use `CONTRACT_RUST_BACKEND=postgres CONTRACT_DATABASE_URL=...` for PostgreSQL |
+| `cargo fmt --all -- --check` | P01/P02 Rust formatting gate | Rust toolchain pinned by `rust-toolchain.toml` |
+| `cargo clippy --workspace --all-targets --locked -- -D warnings` | P01/P02 Rust lint gate | Native `libsystemd`/OpenSSL development libraries |
+| `cargo test --workspace --locked` | P01/P02 portable unit, store, transport-boundary and HPKE interop tests | Unix-socket operations; rerun outside restricted sandboxes if required |
 | `./tests/fleet/p01-vm.sh` | P01 real systemd guest harness | Named QEMU/KVM runner with writable `/dev/kvm`, pinned image hash, SSH key, cloud-localds and an ISO writer; exit 78 means unsupported/blocking infrastructure |
 
 Inspect skipped-test counts. `npm run test:e2e` at the root is **dashboard E2E**, while the workspace-qualified SPS command is the PostgreSQL API suite. `npm run test:e2e:full` starts infrastructure and runs dashboard E2E; it does not mean every repository or proposed fleet suite.
@@ -72,7 +77,7 @@ The [Playwright config](../../packages/dashboard/playwright.config.ts) starts SP
 
 ## CI ownership
 
-`.github/workflows/ci.yml` runs the workspace build, landing workflow checks, default tests, Redis integration, PostgreSQL SPS tests, a separate P00 contract job, and the pinned Rust format/lint/test gates. The P00 job writes a Vitest JSON report and fails if any contract case or suite was skipped. The PostgreSQL job checks that every gated SPS test file executed passing cases. `.github/workflows/fleet-vm.yml` is manual-only and requires the labeled disposable QEMU/KVM runner; hosted CI and a successful Rust job do not establish systemd VM, stock-client or fleet evidence.
+`.github/workflows/ci.yml` runs the workspace build, landing workflow checks, default tests, Redis integration, PostgreSQL SPS tests, a separate P00 contract job, the Rust SQLite/PostgreSQL contract matrix and a separately built P02-I03 crash-failpoint matrix, plus the pinned Rust format/lint/test gates. The P00 job writes a Vitest JSON report and fails if any contract case or suite was skipped. The PostgreSQL job checks that every gated SPS test file executed passing cases. `.github/workflows/fleet-vm.yml` is manual-only and requires the labeled disposable QEMU/KVM runner; hosted CI and a successful Rust job do not establish systemd VM, stock-client or fleet evidence.
 
 ## Evidence and troubleshooting
 

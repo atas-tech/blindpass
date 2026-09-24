@@ -1,6 +1,6 @@
 # BlindPass documentation
 
-**Aligned:** 2026-09-23. Source-bound guides, contracts and execution evidence remain here. Product direction, implementation plans, design and history are maintained in the [Obsidian docs vault](https://github.com/tuthan/docs-vault/tree/main/blindpass/docs). P01 includes live HPKE provisioning and dedicated non-root consumers. A disposable Ubuntu 24.04/QEMU-KVM run passed its original harness, but review found that P01-I01 and P01-I06 were not established. W0 acceptance remains open; NARROW describes the selected profile boundary.
+**Aligned:** 2026-09-24. Source-bound guides, contracts and execution evidence remain here. Product direction, implementation plans, design and history are maintained in the [Obsidian docs vault](https://github.com/tuthan/docs-vault/tree/main/blindpass/docs). P01 includes live HPKE provisioning and dedicated non-root consumers. Revised P01-I01 and P01-I06 checks passed in a clean committed-SHA Ubuntu 24.04/QEMU-KVM run; W0 acceptance and the remaining profile review are open.
 
 ## Product direction
 
@@ -12,7 +12,7 @@
 | [Decision records](product/decisions/README.md) | Vault-owned forward design decisions and the repository-bound dependency baseline |
 | [Controller Contract Suite](testing/Controller%20Contract%20Suite.md) | Test-first HTTP compatibility scenarios (CT/CV/CC) that gate the Rust controller port |
 | [P00 baseline manifest](product/p00-baseline-manifest.json) | Source/package/data inventory and dependency/licensing review boundary |
-| [P00 compatibility matrix](product/p00-compatibility-matrix.md) | Retained 13-route envelope, identity mapping, exclusions and executed baseline evidence |
+| [P00 compatibility matrix](product/p00-compatibility-matrix.md) | Retained 12-route machine envelope, hosted-auth exclusion, identity mapping and executed baseline evidence |
 
 The implementation-phase plans and their paired acceptance plans are in the Obsidian vault under `blindpass/docs/product/phases/` and `blindpass/docs/testing/phases/`. The dashboard and secret-input redesign plans are under `blindpass/docs/product/`, `blindpass/docs/design/` and `blindpass/docs/testing/`. The P00 baseline artifacts and P01 execution record stay here because they describe this checkout and its executed tests.
 

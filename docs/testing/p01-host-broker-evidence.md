@@ -1,6 +1,6 @@
 # P01 execution record
 
-**Recorded:** 2026-09-23
+**Recorded:** 2026-09-24
 
 This is the repository-side execution record for the P01 plan in the docs
 vault. The live-HPKE/non-root profile, including stock systemd
@@ -41,7 +41,7 @@ before process exit. Thus P01-I01 and full P01-I06 acceptance remain open even
 though this selected VM run passed. The sandbox had hidden `/dev/kvm`; the
 approved host run confirmed the device was usable.
 
-## Final committed-SHA VM run
+## Historical committed-SHA VM run (2026-09-23)
 
 | Source SHA | Runner owner | Guest and host profile | Outcome |
 |---|---|---|---|
@@ -61,6 +61,32 @@ unsupported.
 
 The complete P01 scenario output is retained as sanitized text on the named
 runner; VM disk and seed artifacts were removed. No live credential was used.
+
+## Revised committed-SHA VM run (2026-09-24)
+
+| Source SHA | Runner owner | Guest and host profile | Outcome |
+|---|---|---|---|
+| `6d41a1f6df8d90d283b53b3c7241281937702ac2` | `local-kvm-p02-commit-6d41a1f-20260924` | Clean detached checkout; QEMU 11.1.1 with read/write KVM; pinned Ubuntu 24.04 image SHA-256 `612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`; guest kernel 6.8.0-139-generic; systemd 255; no TPM device | `./tests/fleet/p01-vm.sh` exited 0; release workspace build passed; guest overlay and seed were removed |
+
+The run used generated canaries and a disposable SSH key. P01-I01 checks
+denied both captured loader peers after process exit and delivered to each
+replacement; the stale workload invocation was denied and required
+reregistration. Three additional workload rounds verified restart recovery.
+Forced numeric PID reuse remains untested.
+
+P01-I06's scanner positive control passed. Initial, rotated and final scans
+reported no canary in process arguments, journals or scanned runtime/core
+artifacts. One core report was inspected; `coredumpctl` was unavailable in the
+guest. The no-TPM profile explicitly rejected required-TPM mode. Guest cleanup
+reported units and sockets removed while retaining only the protected dummy
+material required by the fixture. The host removed the temporary SSH key,
+overlay and seed after the successful exit; `BLINDPASS_FLEET_KEEP_ARTIFACTS=0`
+was used.
+
+This closes the revised P01-I01 and P01-I06 checks on the named committed
+SHA. W0 still needs the product go/narrow/stop review; forced PID reuse,
+`coredumpctl`-backed metadata inspection, alternate host versions, TPM/firmware
+profiles and a shared self-hosted runner remain outside this run.
 
 ## Pre-commit verification (not final acceptance evidence)
 
