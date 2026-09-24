@@ -252,6 +252,18 @@ jobs:
           P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
         run: cargo test -p blindpass-controller --test shell_config --locked
 
+      - name: Run Rust admin HTTP session, role and forced password change tests
+        env:
+          P02_TEST_BACKEND: ${{ matrix.backend }}
+          P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: cargo test -p blindpass-controller --test admin_session --locked
+
+      - name: Run P02 I07 PostgreSQL outage and reconnection test
+        if: matrix.backend == 'postgres'
+        env:
+          P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: cargo test -p blindpass-controller --test postgres_outage --locked -- --ignored
+
       - name: Build controller with P02 crash failpoints
         run: CARGO_TARGET_DIR=target/p02-failpoints cargo build -p blindpass-controller --features p02-test-failpoints --locked
 
