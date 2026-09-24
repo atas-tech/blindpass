@@ -33,6 +33,7 @@ async fn run(args: Vec<String>) -> Result<(), String> {
             Ok(())
         }
         [command] if command == "migrate" => migrate().await,
+        [command] if command == "reconcile-clock" => reconcile_clock().await,
         [command, flag, path] if command == "seed" && flag == "--fixture" => {
             seed(Path::new(path)).await
         }
@@ -47,7 +48,10 @@ async fn run(args: Vec<String>) -> Result<(), String> {
         }
         _ => {
             print_help();
-            Err("expected `serve`, `migrate`, `seed --fixture <file>` or `check-config`".to_owned())
+            Err(
+                "expected `serve`, `migrate`, `reconcile-clock`, `seed --fixture <file>` or `check-config`"
+                    .to_owned(),
+            )
         }
     }
 }
@@ -75,6 +79,17 @@ async fn seed(path: &Path) -> Result<(), String> {
     let response = result.map_err(|_| "test fixture seeding failed".to_owned())?;
     let output = serde_json::to_string(&response)
         .map_err(|_| "test fixture response could not be encoded".to_owned())?;
+    println!("{output}");
+    Ok(())
+}
+
+async fn reconcile_clock() -> Result<(), String> {
+    let config = Config::from_env().map_err(|error| error.to_string())?;
+    let summary = Store::reconcile_clock(config.database_url())
+        .await
+        .map_err(|_| "controller clock reconciliation failed".to_owned())?;
+    let output = serde_json::to_string(&summary)
+        .map_err(|_| "clock reconciliation summary could not be encoded".to_owned())?;
     println!("{output}");
     Ok(())
 }
@@ -170,6 +185,6 @@ async fn shutdown_signal() {
 
 fn print_help() {
     println!(
-        "blindpass-controller <command>\n\nCommands:\n  serve                  Run the local controller\n  migrate               Apply database migrations and exit\n  seed --fixture <file>  Seed a test-mode fixture\n  check-config          Validate configuration without starting the server"
+        "blindpass-controller <command>\n\nCommands:\n  serve                  Run the local controller\n  migrate                Apply database migrations and exit\n  reconcile-clock        Recover from a detected database clock regression\n  seed --fixture <file>  Seed a test-mode fixture\n  check-config           Validate configuration without starting the server"
     );
 }

@@ -92,6 +92,42 @@ fn admin_seed_dispatches_fixture_to_colocated_controller_binary() {
 }
 
 #[test]
+fn admin_reconcile_clock_dispatches_to_colocated_controller_binary() {
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("time after Unix epoch")
+        .as_nanos();
+    let directory = std::env::temp_dir().join(format!(
+        "blindpass-cli-clock-{}-{nonce}",
+        std::process::id()
+    ));
+    std::fs::create_dir_all(&directory).expect("create CLI fixture directory");
+    let cli = directory.join("blindpass");
+    std::fs::copy(env!("CARGO_BIN_EXE_blindpass"), &cli).expect("copy CLI binary");
+    let controller = directory.join("blindpass-controller");
+    let marker = directory.join("invocation.txt");
+    std::fs::write(
+        &controller,
+        "#!/bin/sh\nprintf '%s' \"$1\" > \"$BLINDPASS_TEST_MARKER\"\n",
+    )
+    .expect("write controller fixture");
+    std::fs::set_permissions(&controller, std::fs::Permissions::from_mode(0o700))
+        .expect("make controller fixture executable");
+    let output = Command::new(&cli)
+        .args(["admin", "reconcile-clock"])
+        .env("BLINDPASS_TEST_MARKER", &marker)
+        .output()
+        .expect("run CLI clock reconciliation");
+    assert!(
+        output.status.success(),
+        "CLI clock reconciliation failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(std::fs::read_to_string(marker).unwrap(), "reconcile-clock");
+    std::fs::remove_dir_all(&directory).expect("remove fixture directory");
+}
+
+#[test]
 fn local_password_reset_is_exposed_by_cli() {
     let output = Command::new(env!("CARGO_BIN_EXE_blindpass"))
         .args(["admin", "reset-password", "--help"])

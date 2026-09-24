@@ -1640,3 +1640,197 @@ async fn older_schema_version_migrates_forward_and_records_current_version() {
     assert!(clock_present && idempotency_present);
     fixture.close().await;
 }
+
+#[tokio::test]
+async fn clock_reconciliation_purges_expiring_state_and_restores_startup() {
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store();
+    let request_id = store
+        .create_secret_request("clock-agent", "dummy-public-key", "reconcile", "123456", 60)
+        .await
+        .expect("create request before regression");
+    let exchange = store
+        .create_exchange(exchange_record(&"e".repeat(64)), 60)
+        .await
+        .expect("create exchange before regression");
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after Unix epoch")
+        .as_millis() as i64;
+    let approval = ApprovalRecord {
+        approval_reference: "apr_clock_reconcile_pending".to_owned(),
+        requester_id: "requester".to_owned(),
+        workspace_id: store.tenant_id().to_owned(),
+        secret_name: "restricted.secret".to_owned(),
+        purpose: "clock reconciliation".to_owned(),
+        fulfiller_hint: "fulfiller".to_owned(),
+        rule_id: Some("approval-rule".to_owned()),
+        reason: "requires approval".to_owned(),
+        requester_ring: None,
+        fulfiller_ring: None,
+        approver_ids: vec!["approver".to_owned()],
+        approver_rings: Vec::new(),
+        status: "pending".to_owned(),
+        created_at_ms: now_ms,
+        expires_at_ms: now_ms + 60_000,
+        decided_at_ms: None,
+        decided_by: None,
+    };
+    store
+        .create_approval(&approval)
+        .await
+        .expect("create pending approval before regression");
+    let mut approved = approval.clone();
+    approved.approval_reference = "apr_clock_reconcile_approved".to_owned();
+    store
+        .create_approval(&approved)
+        .await
+        .expect("create approval to approve");
+    store
+        .decide_approval(&approved.approval_reference, "approved", "approver")
+        .await
+        .expect("approve before regression")
+        .expect("pending approval is decided");
+    let mut rejected = approval.clone();
+    rejected.approval_reference = "apr_clock_reconcile_rejected".to_owned();
+    store
+        .create_approval(&rejected)
+        .await
+        .expect("create approval to reject");
+    store
+        .decide_approval(&rejected.approval_reference, "rejected", "approver")
+        .await
+        .expect("reject before regression")
+        .expect("pending approval is decided");
+    assert!(
+        store
+            .issue_bootstrap_token("dummy-token-hash", 900)
+            .await
+            .expect("issue bootstrap token")
+    );
+    assert!(
+        store
+            .bootstrap_local_operator("op-clock", "admin", "Local Admin", "dummy-hash")
+            .await
+            .expect("bootstrap operator")
+    );
+    let session = store
+        .create_browser_session("op-clock", "dummy-refresh-hash", 3_600)
+        .await
+        .expect("create session")
+        .expect("operator is active");
+
+    let healthy = Store::reconcile_clock(&fixture.url)
+        .await
+        .expect("reconciliation on a healthy clock");
+    assert!(!healthy.regression_detected);
+    assert_eq!(healthy.removed_secret_requests, 0);
+    assert!(
+        store
+            .secret_request_metadata(&request_id)
+            .await
+            .expect("read request")
+            .is_some(),
+        "a healthy clock leaves state untouched"
+    );
+
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = $1 WHERE id = 1")
+            .bind(i64::MAX / 2)
+            .execute(&pool)
+            .await
+            .expect("simulate persisted future clock");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1")
+            .bind(i64::MAX / 2)
+            .execute(&pool)
+            .await
+            .expect("simulate persisted future clock");
+        pool.close().await;
+    }
+    assert!(matches!(
+        Store::connect(&fixture.url).await,
+        Err(StoreError::ClockRegression)
+    ));
+
+    let repaired = Store::reconcile_clock(&fixture.url)
+        .await
+        .expect("reconcile the regressed clock");
+    assert!(repaired.regression_detected);
+    assert_eq!(repaired.removed_secret_requests, 1);
+    assert_eq!(repaired.removed_exchanges, 1);
+    assert_eq!(repaired.removed_approvals, 2);
+    assert_eq!(repaired.removed_bootstrap_tokens, 1);
+    assert_eq!(repaired.revoked_sessions, 1);
+
+    let reopened = Store::connect(&fixture.url)
+        .await
+        .expect("startup succeeds after reconciliation");
+    assert!(
+        reopened
+            .secret_request_metadata(&request_id)
+            .await
+            .expect("read request")
+            .is_none()
+    );
+    assert!(
+        reopened
+            .get_exchange(&exchange.exchange_id)
+            .await
+            .expect("read exchange")
+            .is_none()
+    );
+    assert!(
+        reopened
+            .get_approval(&approval.approval_reference)
+            .await
+            .expect("read approval")
+            .is_none()
+    );
+    assert!(
+        reopened
+            .get_approval(&approved.approval_reference)
+            .await
+            .expect("read approved approval")
+            .is_none(),
+        "an approved approval must not keep authorizing exchanges after a regression"
+    );
+    assert_eq!(
+        reopened
+            .get_approval(&rejected.approval_reference)
+            .await
+            .expect("read rejected approval")
+            .expect("rejected approval is kept")
+            .status,
+        "rejected"
+    );
+    assert!(
+        reopened
+            .browser_session_by_id(&session.session_id)
+            .await
+            .expect("read session")
+            .is_none()
+    );
+    assert!(
+        reopened
+            .has_active_admin()
+            .await
+            .expect("operators survive reconciliation")
+    );
+    let audit = reopened.list_audit(20).await.expect("list audit");
+    let event = audit
+        .iter()
+        .find(|event| event.event_type == "clock_reconciled")
+        .expect("reconciliation is audited");
+    assert_eq!(event.metadata["removed_secret_requests"], 1);
+    assert!(event.metadata.get("persisted_ms").is_some());
+    drop(reopened);
+    fixture.close().await;
+}

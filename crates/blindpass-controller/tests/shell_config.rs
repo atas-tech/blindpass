@@ -479,6 +479,125 @@ async fn seed_command_uses_test_fixture_and_rejects_production_mode() {
 }
 
 #[tokio::test]
+async fn reconcile_clock_command_repairs_a_regressed_database_without_test_mode() {
+    let files = TestFiles::new();
+    let database_path = files.0.join("regressed.db");
+    let (database_url, postgres_schema): (String, Option<(PgPool, String)>) =
+        if std::env::var("P02_TEST_BACKEND").as_deref() == Ok("postgres") {
+            let parent_url = std::env::var("P02_TEST_POSTGRES_URL")
+                .or_else(|_| std::env::var("CONTRACT_DATABASE_URL"))
+                .expect("PostgreSQL test URL is required");
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock after epoch")
+                .as_nanos();
+            let schema = format!("p02_clock_{}_{nonce}", std::process::id());
+            let pool = PgPoolOptions::new()
+                .max_connections(2)
+                .connect(&parent_url)
+                .await
+                .expect("connect PostgreSQL clock fixture");
+            sqlx::query(&format!("CREATE SCHEMA \"{schema}\""))
+                .execute(&pool)
+                .await
+                .expect("create isolated clock schema");
+            let separator = if parent_url.contains('?') { '&' } else { '?' };
+            (
+                format!("{parent_url}{separator}options=-c%20search_path%3D{schema}"),
+                Some((pool, schema)),
+            )
+        } else {
+            (
+                format!("sqlite://{}?mode=rwc", database_path.display()),
+                None,
+            )
+        };
+    let store = Store::connect(&database_url)
+        .await
+        .expect("initialize disposable controller database");
+    let request_id = store
+        .create_secret_request("clock-agent", "dummy-public-key", "reconcile", "123456", 60)
+        .await
+        .expect("create request before regression");
+    store.close().await;
+    if postgres_schema.is_some() {
+        let pool = PgPool::connect(&database_url)
+            .await
+            .expect("connect PostgreSQL clock fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = $1 WHERE id = 1")
+            .bind(i64::MAX / 2)
+            .execute(&pool)
+            .await
+            .expect("simulate persisted future clock");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&database_url)
+            .await
+            .expect("connect SQLite clock fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1")
+            .bind(i64::MAX / 2)
+            .execute(&pool)
+            .await
+            .expect("simulate persisted future clock");
+        pool.close().await;
+    }
+    assert!(Store::connect(&database_url).await.is_err());
+
+    let database = files.credential("database.url", database_url.as_bytes());
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let run = || {
+        Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
+            .arg("reconcile-clock")
+            .env_clear()
+            .env("BLINDPASS_DATABASE_URL_FILE", &database)
+            .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
+            .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+            .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
+            .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example")
+            .output()
+            .expect("run clock reconciliation")
+    };
+    let repaired = run();
+    assert!(
+        repaired.status.success(),
+        "reconciliation failed: {}",
+        String::from_utf8_lossy(&repaired.stderr)
+    );
+    let stdout = String::from_utf8(repaired.stdout).expect("UTF-8 reconciliation output");
+    assert!(!stdout.contains(&database_url));
+    let summary: Value = serde_json::from_str(stdout.trim()).expect("JSON reconciliation summary");
+    assert_eq!(summary["regression_detected"], true);
+    assert_eq!(summary["removed_secret_requests"], 1);
+
+    let reopened = Store::connect(&database_url)
+        .await
+        .expect("controller starts after reconciliation");
+    assert!(
+        reopened
+            .secret_request_metadata(&request_id)
+            .await
+            .expect("read request after reconciliation")
+            .is_none(),
+        "expiring state created under the regressed clock is removed"
+    );
+    reopened.close().await;
+
+    let healthy = run();
+    assert!(healthy.status.success());
+    let summary: Value =
+        serde_json::from_slice(&healthy.stdout).expect("JSON summary for a healthy clock");
+    assert_eq!(summary["regression_detected"], false);
+    if let Some((pool, schema)) = postgres_schema {
+        sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE"))
+            .execute(&pool)
+            .await
+            .expect("drop isolated clock schema");
+        pool.close().await;
+    }
+}
+
+#[tokio::test]
 async fn production_shell_has_no_seed_route_or_test_override() {
     let files = TestFiles::new();
     let database = files.credential("database.url", b"sqlite::memory:");

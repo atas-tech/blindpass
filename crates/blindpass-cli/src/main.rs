@@ -50,6 +50,9 @@ enum AdminAction {
         #[arg(long)]
         fixture: PathBuf,
     },
+    /// Recover from a detected database clock regression. Removes expiring
+    /// state created under the regressed clock and revokes operator sessions.
+    ReconcileClock,
     /// Reset an operator password through the local administration socket.
     ResetPassword {
         id: String,
@@ -84,6 +87,9 @@ fn run(cli: Cli) -> Result<(), String> {
         ),
         AdminAction::BootstrapToken { socket } => (socket, json!({"command":"bootstrap-token"})),
         AdminAction::Seed { fixture } => return run_seed(&fixture),
+        AdminAction::ReconcileClock => {
+            return run_controller(&[std::ffi::OsStr::new("reconcile-clock")]);
+        }
         AdminAction::ResetPassword { id, socket } => {
             (socket, json!({"command":"reset-password","id":id}))
         }

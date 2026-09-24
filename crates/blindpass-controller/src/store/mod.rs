@@ -51,9 +51,11 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     (2, &["idempotency_keys"]),
     (3, &["controller_clock"]),
 ];
-/// The persisted clock high-water mark advances at most this often. Every
-/// statement still fails closed against the mark, so a regression smaller
-/// than this interval cannot make expiring state readable.
+/// The persisted clock high-water mark advances at most this often, so
+/// ordinary reads never take a write lock. Every expiry predicate still
+/// compares against the mark: a regression larger than this interval fails
+/// closed, while a smaller one can go undetected and extend a deadline by
+/// at most this amount.
 const CLOCK_ADVANCE_INTERVAL_MS: i64 = 1_000;
 
 #[derive(Debug)]
@@ -148,6 +150,21 @@ pub struct PolicyDocumentRecord {
     pub document_json: String,
     pub updated_at_ms: i64,
     pub updated_by: Option<String>,
+}
+
+/// Outcome of an operator-initiated clock reconciliation (P02-D9).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ClockReconciliation {
+    pub regression_detected: bool,
+    pub persisted_ms: i64,
+    pub database_now_ms: i64,
+    pub removed_secret_requests: u64,
+    pub removed_exchanges: u64,
+    pub removed_approvals: u64,
+    pub removed_bootstrap_tokens: u64,
+    pub removed_rate_windows: u64,
+    pub removed_idempotency_keys: u64,
+    pub revoked_sessions: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -339,6 +356,233 @@ impl Store {
             }
         }
         Ok(())
+    }
+
+    /// Recover a database whose persisted clock high-water mark is ahead of
+    /// the database wall clock, for example after a snapshot restore or a
+    /// host clock step. Nothing changes unless a regression is present. When
+    /// it is, every deadline was computed from a clock ahead of the current
+    /// one, so live records would outlive their intended lifetime and
+    /// already-expired records would become readable again. Those records
+    /// are removed rather than trusted: secret requests, exchanges, pending
+    /// and approved approvals, bootstrap tokens, rate windows and
+    /// idempotency keys are deleted, operator sessions are revoked, the mark
+    /// is reset to the current database clock and one audit event records
+    /// the counts. Operators, agents, policy, rejected approvals, lifecycle
+    /// and audit history are kept. Run this from the CLI while the
+    /// controller is stopped; startup fails closed until it has run.
+    pub async fn reconcile_clock(url: &str) -> Result<ClockReconciliation, StoreError> {
+        let database = Database::connect(url).await?;
+        database.validate_existing_schema_version().await?;
+        if !database.table_exists("controller_clock").await? {
+            return Err(StoreError::MissingState("controller clock"));
+        }
+        let summary = match &database {
+            Database::Sqlite(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                sqlx::query(
+                    "UPDATE controller_clock SET last_observed_ms = last_observed_ms WHERE id = 1",
+                )
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                let sql = format!(
+                    "SELECT last_observed_ms, {SQLITE_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
+                );
+                let row = sqlx::query(&sql)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let persisted_ms: i64 = row.try_get(0).map_err(StoreError::Database)?;
+                let database_now_ms: i64 = row.try_get(1).map_err(StoreError::Database)?;
+                let mut summary = ClockReconciliation {
+                    regression_detected: database_now_ms < persisted_ms,
+                    persisted_ms,
+                    database_now_ms,
+                    removed_secret_requests: 0,
+                    removed_exchanges: 0,
+                    removed_approvals: 0,
+                    removed_bootstrap_tokens: 0,
+                    removed_rate_windows: 0,
+                    removed_idempotency_keys: 0,
+                    revoked_sessions: 0,
+                };
+                if !summary.regression_detected {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(summary);
+                }
+                summary.removed_secret_requests = sqlx::query("DELETE FROM secret_requests")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_exchanges = sqlx::query("DELETE FROM exchanges")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_approvals =
+                    sqlx::query("DELETE FROM approvals WHERE status IN ('pending', 'approved')")
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                summary.removed_bootstrap_tokens = sqlx::query("DELETE FROM bootstrap_tokens")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_rate_windows = sqlx::query("DELETE FROM rate_windows")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_idempotency_keys = sqlx::query("DELETE FROM idempotency_keys")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let sql = format!(
+                    "UPDATE operator_sessions SET revoked_at = {SQLITE_WALL_NOW_MS} WHERE revoked_at IS NULL"
+                );
+                summary.revoked_sessions = sqlx::query(&sql)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let sql = format!(
+                    "UPDATE controller_clock SET last_observed_ms = {SQLITE_WALL_NOW_MS} WHERE id = 1"
+                );
+                sqlx::query(&sql)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let tenant_id: String =
+                    sqlx::query_scalar("SELECT tenant_id FROM controller_meta WHERE id = 1")
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                let metadata = serde_json::to_string(&summary)
+                    .map_err(|_| StoreError::InvalidInput("reconciliation metadata"))?;
+                let sql = format!(
+                    "INSERT INTO audit_events
+                     (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+                     VALUES (?, ?, 'system', NULL, 'clock_reconciled', 'controller', NULL, ?, {SQLITE_WALL_NOW_MS})"
+                );
+                sqlx::query(&sql)
+                    .bind(new_hex_id())
+                    .bind(tenant_id)
+                    .bind(metadata)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
+                summary
+            }
+            Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                let row = sqlx::query(
+                    "SELECT last_observed_ms FROM controller_clock WHERE id = 1 FOR UPDATE",
+                )
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                let persisted_ms: i64 = row.try_get(0).map_err(StoreError::Database)?;
+                let sql = format!("SELECT {POSTGRES_WALL_NOW_MS}");
+                let database_now_ms: i64 = sqlx::query_scalar(&sql)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let mut summary = ClockReconciliation {
+                    regression_detected: database_now_ms < persisted_ms,
+                    persisted_ms,
+                    database_now_ms,
+                    removed_secret_requests: 0,
+                    removed_exchanges: 0,
+                    removed_approvals: 0,
+                    removed_bootstrap_tokens: 0,
+                    removed_rate_windows: 0,
+                    removed_idempotency_keys: 0,
+                    revoked_sessions: 0,
+                };
+                if !summary.regression_detected {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(summary);
+                }
+                summary.removed_secret_requests = sqlx::query("DELETE FROM secret_requests")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_exchanges = sqlx::query("DELETE FROM exchanges")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_approvals =
+                    sqlx::query("DELETE FROM approvals WHERE status IN ('pending', 'approved')")
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                summary.removed_bootstrap_tokens = sqlx::query("DELETE FROM bootstrap_tokens")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_rate_windows = sqlx::query("DELETE FROM rate_windows")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                summary.removed_idempotency_keys = sqlx::query("DELETE FROM idempotency_keys")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let sql = format!(
+                    "UPDATE operator_sessions SET revoked_at = {POSTGRES_WALL_NOW_MS} WHERE revoked_at IS NULL"
+                );
+                summary.revoked_sessions = sqlx::query(&sql)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let sql = format!(
+                    "UPDATE controller_clock SET last_observed_ms = {POSTGRES_WALL_NOW_MS} WHERE id = 1"
+                );
+                sqlx::query(&sql)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let tenant_id: String =
+                    sqlx::query_scalar("SELECT tenant_id FROM controller_meta WHERE id = 1")
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                let metadata = serde_json::to_string(&summary)
+                    .map_err(|_| StoreError::InvalidInput("reconciliation metadata"))?;
+                let sql = format!(
+                    "INSERT INTO audit_events
+                     (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+                     VALUES ($1, $2, 'system', NULL, 'clock_reconciled', 'controller', NULL, $3, {POSTGRES_WALL_NOW_MS})"
+                );
+                sqlx::query(&sql)
+                    .bind(new_hex_id())
+                    .bind(tenant_id)
+                    .bind(metadata)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
+                summary
+            }
+        };
+        match &database {
+            Database::Sqlite(pool) => pool.close().await,
+            Database::Postgres(pool) => pool.close().await,
+        }
+        Ok(summary)
     }
 
     pub async fn policy_document(&self) -> Result<Option<PolicyDocumentRecord>, StoreError> {
