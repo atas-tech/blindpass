@@ -1194,3 +1194,423 @@ async fn forced_password_change_blocks_administration_until_completed() {
         pool.close().await;
     }
 }
+
+struct AdminServer {
+    address: std::net::SocketAddr,
+    store: Store,
+    server: tokio::task::JoinHandle<std::io::Result<()>>,
+    postgres_schema: Option<(PgPool, String)>,
+    _directory: TestDirectory,
+}
+
+impl AdminServer {
+    async fn start(label: &str) -> Self {
+        let directory = TestDirectory::new();
+        let (database_url, postgres_schema): (String, Option<(PgPool, String)>) =
+            if std::env::var("P02_TEST_BACKEND").as_deref() == Ok("postgres") {
+                let parent_url = std::env::var("P02_TEST_POSTGRES_URL")
+                    .or_else(|_| std::env::var("CONTRACT_DATABASE_URL"))
+                    .expect("P02_TEST_POSTGRES_URL or CONTRACT_DATABASE_URL is required");
+                let nonce = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .expect("system clock after Unix epoch")
+                    .as_nanos();
+                let schema = format!("p02_{label}_{}_{nonce}", std::process::id());
+                let pool = PgPoolOptions::new()
+                    .max_connections(2)
+                    .connect(&parent_url)
+                    .await
+                    .expect("connect PostgreSQL admin fixture");
+                sqlx::query(&format!("CREATE SCHEMA \"{schema}\""))
+                    .execute(&pool)
+                    .await
+                    .expect("create isolated PostgreSQL schema");
+                let separator = if parent_url.contains('?') { '&' } else { '?' };
+                (
+                    format!("{parent_url}{separator}options=-c%20search_path%3D{schema}"),
+                    Some((pool, schema)),
+                )
+            } else {
+                (
+                    format!(
+                        "sqlite://{}?mode=rwc",
+                        directory.file("controller.db").display()
+                    ),
+                    None,
+                )
+            };
+        for (name, value) in [
+            ("database.url", database_url.clone()),
+            ("root.secret", "R".repeat(32)),
+            ("agent.secret", "A".repeat(32)),
+        ] {
+            let path = directory.file(name);
+            std::fs::write(&path, value).expect("write test credential");
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+                .expect("protect test credential");
+        }
+        let config = Config::from_variables([
+            ("BLINDPASS_LISTEN", "127.0.0.1:0"),
+            ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
+            ("BLINDPASS_UI_BASE_URL", "http://127.0.0.1:5175"),
+            (
+                "BLINDPASS_DATABASE_URL_FILE",
+                directory.file("database.url").to_str().unwrap(),
+            ),
+            (
+                "BLINDPASS_ROOT_SECRET_FILE",
+                directory.file("root.secret").to_str().unwrap(),
+            ),
+            (
+                "BLINDPASS_AGENT_JWT_SECRET_FILE",
+                directory.file("agent.secret").to_str().unwrap(),
+            ),
+        ])
+        .expect("valid local test config");
+        let store = Store::connect(&database_url)
+            .await
+            .expect("connect admin HTTP test database");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind local HTTP test listener");
+        let address = listener.local_addr().expect("resolve test address");
+        let app: Router = build_app(config, Some(store.clone()));
+        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        Self {
+            address,
+            store,
+            server,
+            postgres_schema,
+            _directory: directory,
+        }
+    }
+
+    async fn stop(self) {
+        self.server.abort();
+        let _ = self.server.await;
+        self.store.close().await;
+        if let Some((pool, schema)) = self.postgres_schema {
+            sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE"))
+                .execute(&pool)
+                .await
+                .expect("drop isolated PostgreSQL schema");
+            pool.close().await;
+        }
+    }
+}
+
+struct Session {
+    cookies: String,
+    csrf: String,
+}
+
+impl Session {
+    fn from_response(response: &HttpResponse) -> Self {
+        Self {
+            cookies: format!(
+                "{}; {}",
+                cookie_header(response, "bp_session"),
+                cookie_header(response, "bp_csrf")
+            ),
+            csrf: response.body["csrf_token"]
+                .as_str()
+                .expect("session CSRF token")
+                .to_owned(),
+        }
+    }
+}
+
+async fn login(address: std::net::SocketAddr, username: &str, password: &str) -> Session {
+    let response = request(
+        address,
+        "POST",
+        "/api/v3/admin/session/login",
+        &[
+            ("content-type", "application/json"),
+            ("origin", "http://127.0.0.1:5175"),
+            ("cookie", "bp_csrf=role-matrix-pre-session"),
+            ("x-csrf-token", "role-matrix-pre-session"),
+        ],
+        Some(&json!({"username": username, "password": password})),
+    )
+    .await;
+    assert_eq!(
+        response.status, 200,
+        "{username} login: {:?}",
+        response.body
+    );
+    Session::from_response(&response)
+}
+
+async fn write_as(
+    address: std::net::SocketAddr,
+    session: &Session,
+    method: &str,
+    path: &str,
+    body: Option<&Value>,
+) -> HttpResponse {
+    request(
+        address,
+        method,
+        path,
+        &[
+            ("origin", "http://127.0.0.1:5175"),
+            ("cookie", &session.cookies),
+            ("x-csrf-token", &session.csrf),
+            ("content-type", "application/json"),
+            ("if-match", "1"),
+            ("idempotency-key", "role-matrix-idempotency-key"),
+        ],
+        body,
+    )
+    .await
+}
+
+#[tokio::test]
+async fn admin_operator_and_viewer_role_matrix_is_enforced_without_side_effects() {
+    let server = AdminServer::start("roles").await;
+    let address = server.address;
+    let store = server.store.clone();
+    let bootstrap_token = "role-matrix-bootstrap-token-with-enough-bytes";
+    assert!(
+        store
+            .issue_bootstrap_token(&token_hash(bootstrap_token), 900)
+            .await
+            .expect("issue bootstrap token")
+    );
+    let bootstrap = request(
+        address,
+        "POST",
+        "/api/v3/admin/bootstrap",
+        &[
+            ("content-type", "application/json"),
+            ("origin", "http://127.0.0.1:5175"),
+            ("x-blindpass-bootstrap-token", bootstrap_token),
+        ],
+        Some(&json!({
+            "username": "admin",
+            "password": "admin-password-long-enough",
+            "display_name": "Local Admin"
+        })),
+    )
+    .await;
+    assert_eq!(bootstrap.status, 201, "bootstrap: {:?}", bootstrap.body);
+    let admin_id = bootstrap.body["operator"]["id"]
+        .as_str()
+        .expect("administrator id")
+        .to_owned();
+    let admin = Session::from_response(&bootstrap);
+    let mut operator_ids = std::collections::BTreeMap::new();
+    for role in ["operator", "viewer"] {
+        let created = write_as(
+            address,
+            &admin,
+            "POST",
+            "/api/v3/admin/operators",
+            Some(&json!({
+                "username": role,
+                "display_name": format!("Local {role}"),
+                "role": role,
+                "password": format!("{role}-password-long-enough")
+            })),
+        )
+        .await;
+        assert_eq!(created.status, 201, "create {role}: {:?}", created.body);
+        operator_ids.insert(
+            role,
+            created.body["id"].as_str().expect("operator id").to_owned(),
+        );
+    }
+    let operator = login(address, "operator", "operator-password-long-enough").await;
+    let viewer = login(address, "viewer", "viewer-password-long-enough").await;
+    let agent = write_as(
+        address,
+        &admin,
+        "POST",
+        "/api/v3/admin/agents",
+        Some(&json!({"agent_id": "matrix-agent", "display_name": "Matrix Agent"})),
+    )
+    .await;
+    assert_eq!(agent.status, 201, "create agent: {:?}", agent.body);
+    let agent_row_id = agent.body["agent"]["id"]
+        .as_str()
+        .expect("agent row id")
+        .to_owned();
+    let reference = "apr_role_matrix_pending";
+    store
+        .create_approval(&approval_record(
+            reference,
+            vec![operator_ids["operator"].clone()],
+        ))
+        .await
+        .expect("create pending approval");
+
+    let sessions = [
+        ("admin", &admin),
+        ("operator", &operator),
+        ("viewer", &viewer),
+    ];
+    let reads = [
+        ("/api/v3/admin/agents".to_owned(), [200, 403, 403]),
+        ("/api/v3/admin/operators".to_owned(), [200, 403, 403]),
+        ("/api/v3/admin/policy".to_owned(), [200, 200, 200]),
+        (
+            "/api/v3/admin/approvals?status=pending".to_owned(),
+            [200, 200, 403],
+        ),
+        ("/api/v3/admin/approvals/count".to_owned(), [200, 200, 403]),
+        (
+            format!("/api/v3/admin/approvals/{reference}"),
+            [200, 200, 403],
+        ),
+        ("/api/v3/admin/audit".to_owned(), [200, 200, 200]),
+    ];
+    for (path, expected) in &reads {
+        for ((role, session), status) in sessions.iter().zip(expected) {
+            let response =
+                request(address, "GET", path, &[("cookie", &session.cookies)], None).await;
+            assert_eq!(
+                response.status, *status,
+                "{role} GET {path}: {:?}",
+                response.body
+            );
+        }
+        let anonymous = request(address, "GET", path, &[], None).await;
+        assert_eq!(anonymous.status, 401, "anonymous GET {path}");
+    }
+
+    let policy = json!({"secret_registry": [], "exchange_policy": []});
+    let admin_only_writes = [
+        (
+            "POST",
+            "/api/v3/admin/agents".to_owned(),
+            Some(json!({"agent_id": "denied-agent", "display_name": "Denied"})),
+        ),
+        (
+            "POST",
+            format!("/api/v3/admin/agents/{agent_row_id}/rotate-key"),
+            None,
+        ),
+        (
+            "DELETE",
+            format!("/api/v3/admin/agents/{agent_row_id}"),
+            None,
+        ),
+        (
+            "PUT",
+            "/api/v3/admin/policy".to_owned(),
+            Some(policy.clone()),
+        ),
+        (
+            "POST",
+            "/api/v3/admin/policy/validate".to_owned(),
+            Some(policy.clone()),
+        ),
+        (
+            "POST",
+            "/api/v3/admin/operators".to_owned(),
+            Some(json!({
+                "username": "intruder",
+                "display_name": "Intruder",
+                "role": "admin",
+                "password": "intruder-password-long-enough"
+            })),
+        ),
+        (
+            "PATCH",
+            format!("/api/v3/admin/operators/{}", operator_ids["viewer"]),
+            Some(json!({"role": "admin"})),
+        ),
+        (
+            "DELETE",
+            format!("/api/v3/admin/operators/{admin_id}"),
+            None,
+        ),
+        (
+            "POST",
+            format!(
+                "/api/v3/admin/operators/{}/reset-password",
+                operator_ids["viewer"]
+            ),
+            None,
+        ),
+    ];
+    for (method, path, body) in &admin_only_writes {
+        for (role, session) in [("operator", &operator), ("viewer", &viewer)] {
+            let response = write_as(address, session, method, path, body.as_ref()).await;
+            assert_eq!(
+                response.status, 403,
+                "{role} {method} {path}: {:?}",
+                response.body
+            );
+        }
+    }
+    for action in ["approve", "reject"] {
+        let response = write_as(
+            address,
+            &viewer,
+            "POST",
+            &format!("/api/v3/admin/approvals/{reference}/{action}"),
+            Some(&json!({"expected_status": "pending"})),
+        )
+        .await;
+        assert_eq!(response.status, 403, "viewer {action}: {:?}", response.body);
+    }
+
+    let agents = store.list_admin_agents().await.expect("list agents");
+    assert_eq!(agents.len(), 1, "denied agent writes left no rows");
+    let matrix_agent = store
+        .agent_by_agent_id("matrix-agent")
+        .await
+        .expect("read agent")
+        .expect("agent exists");
+    assert_eq!(matrix_agent.status, "active");
+    assert_eq!(matrix_agent.key_version, 1);
+    let operators = store.list_local_operators().await.expect("list operators");
+    assert_eq!(operators.len(), 3);
+    for operator_record in &operators {
+        let expected_role = match operator_record.username.as_str() {
+            "admin" => "admin",
+            "operator" => "operator",
+            "viewer" => "viewer",
+            other => panic!("unexpected operator {other}"),
+        };
+        assert_eq!(operator_record.role, expected_role);
+        assert!(!operator_record.must_change_password);
+        assert!(operator_record.disabled_at_ms.is_none());
+    }
+    assert!(
+        store
+            .policy_document()
+            .await
+            .expect("read policy")
+            .is_none(),
+        "denied policy writes left the default policy in place"
+    );
+    assert_eq!(
+        store
+            .get_approval(reference)
+            .await
+            .expect("read approval")
+            .expect("approval exists")
+            .status,
+        "pending"
+    );
+
+    let approved = write_as(
+        address,
+        &operator,
+        "POST",
+        &format!("/api/v3/admin/approvals/{reference}/approve"),
+        Some(&json!({"expected_status": "pending"})),
+    )
+    .await;
+    assert_eq!(
+        approved.status, 200,
+        "assigned operator approves: {:?}",
+        approved.body
+    );
+    assert_eq!(approved.body["status"], "approved");
+
+    server.stop().await;
+}
