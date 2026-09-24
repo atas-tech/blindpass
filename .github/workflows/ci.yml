@@ -191,6 +191,137 @@ jobs:
       - name: Run P00 contract suite through SUT=base
         run: node --import tsx scripts/tests/p00-base-contract.mjs
 
+  contract-rust:
+    name: P02 Rust HTTP contract (${{ matrix.backend }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: blindpass
+          POSTGRES_USER: blindpass
+          POSTGRES_PASSWORD: localdev
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U blindpass -d blindpass"
+          --health-interval 1s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: npm
+
+      - name: Install lockfile dependencies
+        run: npm ci
+
+      - name: Install native controller libraries
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libssl-dev
+
+      - name: Set up pinned Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+
+      - name: Build the controller executable
+        run: cargo build -p blindpass-controller --locked
+
+      - name: Build the workspace
+        run: npm run build
+
+      - name: Run Rust store transition tests
+        env:
+          P02_TEST_BACKEND: ${{ matrix.backend }}
+          P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: cargo test -p blindpass-controller --test store_transitions --locked
+
+      - name: Build controller with P02 crash failpoints
+        run: CARGO_TARGET_DIR=target/p02-failpoints cargo build -p blindpass-controller --features p02-test-failpoints --locked
+
+      - name: Run P02 I03 process crash and restart scenarios
+        env:
+          SUT: rust
+          CONTRACT_RUST_BACKEND: ${{ matrix.backend }}
+          CONTRACT_RUST_BIN: target/p02-failpoints/debug/blindpass-controller
+          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
+          CONTRACT_REQUEST_TTL_SECONDS: "180"
+          CONTRACT_SUBMITTED_TTL_SECONDS: "180"
+          CONTRACT_APPROVAL_TTL_SECONDS: "180"
+        run: npm run test:p02:crash
+
+      - name: Run P02 CC02 agent and gateway client flows
+        env:
+          SUT: rust
+          CONTRACT_RUST_BACKEND: ${{ matrix.backend }}
+          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npm run test:p02:clients
+
+      - name: Install Chromium for P02 browser flows
+        run: npm exec --workspace=packages/dashboard -- playwright install --with-deps chromium
+
+      - name: Run P02 CC02 human and CC03 browser flows
+        env:
+          NODE_OPTIONS: --import=tsx
+          SUT: rust
+          CONTRACT_RUST_BACKEND: ${{ matrix.backend }}
+          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: npm run test:p02-browser --workspace=packages/dashboard
+
+      - name: Prove a Rust response mismatch fails the contract gate
+        env:
+          SUT: rust
+          CONTRACT_RUST_BACKEND: ${{ matrix.backend }}
+          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
+          P02_INJECT_RESPONSE_MISMATCH: CT01.healthz
+        run: |
+          set +e
+          npm test --workspace=@blindpass/contract-tests -- --reporter=json --outputFile=/tmp/p02-rust-${{ matrix.backend }}-mismatch.json
+          test_status=$?
+          set -e
+          if [ "$test_status" -eq 0 ]; then
+            echo "The injected CT01 response mismatch unexpectedly passed."
+            exit 1
+          fi
+          node scripts/tests/assert-no-vitest-skips.mjs /tmp/p02-rust-${{ matrix.backend }}-mismatch.json
+          set +e
+          node scripts/tests/assert-contract-progress.mjs /tmp/p02-rust-${{ matrix.backend }}-mismatch.json packages/contract-tests/fixtures/rust-pending.json >/tmp/p02-rust-${{ matrix.backend }}-mismatch-gate.log 2>&1
+          progress_status=$?
+          set -e
+          if [ "$progress_status" -eq 0 ] || ! grep -Fq "Unexpected failure for CT01" /tmp/p02-rust-${{ matrix.backend }}-mismatch-gate.log; then
+            cat /tmp/p02-rust-${{ matrix.backend }}-mismatch-gate.log
+            echo "The progress gate did not reject the injected CT01 mismatch as expected."
+            exit 1
+          fi
+          cat /tmp/p02-rust-${{ matrix.backend }}-mismatch-gate.log
+
+      - name: Run Rust contract progress and skip gates
+        env:
+          SUT: rust
+          CONTRACT_RUST_BACKEND: ${{ matrix.backend }}
+          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: |
+          set +e
+          npm test --workspace=@blindpass/contract-tests -- --reporter=json --outputFile=/tmp/p02-rust-${{ matrix.backend }}-results.json
+          test_status=$?
+          node scripts/tests/assert-no-vitest-skips.mjs /tmp/p02-rust-${{ matrix.backend }}-results.json
+          skip_status=$?
+          node scripts/tests/assert-contract-progress.mjs /tmp/p02-rust-${{ matrix.backend }}-results.json packages/contract-tests/fixtures/rust-pending.json
+          progress_status=$?
+          if [ "$test_status" -ne 0 ] || [ "$skip_status" -ne 0 ] || [ "$progress_status" -ne 0 ]; then
+            exit 1
+          fi
+
   openapi-drift:
     name: P02 controller OpenAPI and generated types
     runs-on: ubuntu-latest

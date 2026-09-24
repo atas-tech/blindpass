@@ -8,7 +8,8 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:p02-browser": "playwright test --config=e2e/controller-browser.config.ts"
   },
   "dependencies": {
     "i18next": "^26.0.1",

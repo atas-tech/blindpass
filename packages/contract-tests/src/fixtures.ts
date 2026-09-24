@@ -74,7 +74,6 @@ export interface ContractFixture {
   workspaceId: string;
   userId: string;
   adminAccessToken: string;
-  adminRefreshToken: string;
   agents: Record<AgentId, ContractAgent>;
   baseUrl: string;
   hmacSecret: string;

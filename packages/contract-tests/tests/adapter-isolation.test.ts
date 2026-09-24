@@ -4,9 +4,8 @@ import { Pool } from "pg";
 import Redis from "ioredis";
 import { startAdapter, withSearchPath } from "../src/adapter.js";
 
-const describeTs = process.env.SUT === "ts" ? describe : describe.skip;
-
-describeTs("P00 adapter isolation", () => {
+if (process.env.SUT === "ts") {
+  describe("P00 adapter isolation", () => {
   const databaseUrl = process.env.CONTRACT_DATABASE_URL || process.env.DATABASE_URL;
   const redisUrl = process.env.CONTRACT_REDIS_URL || process.env.REDIS_URL || "redis://127.0.0.1:6380";
   const redisDb = Number(process.env.CONTRACT_REDIS_DB ?? 15);
@@ -123,4 +122,35 @@ describeTs("P00 adapter isolation", () => {
       await redis.quit();
     }
   }, 30_000);
-});
+  });
+}
+
+if (process.env.SUT === "rust") {
+  describe("P02 Rust adapter isolation", () => {
+    it("P02-I07 starts isolated Rust instances with live readiness and the adopted browser-status feature", async () => {
+      const first = await startAdapter();
+      const second = await startAdapter();
+      expect(first).not.toBeNull();
+      expect(second).not.toBeNull();
+      expect(first?.baseUrl).not.toBe(second?.baseUrl);
+      try {
+        for (const adapter of [first, second]) {
+          const health = await fetch(`${adapter?.baseUrl}/healthz`);
+          expect(health.status).toBe(200);
+          expect(await health.json()).toEqual({ ok: true });
+
+          const readiness = await fetch(`${adapter?.baseUrl}/readyz`);
+          expect(readiness.status).toBe(200);
+          expect(await readiness.json()).toEqual({ ok: true, checks: { database: "up" } });
+
+          const capabilities = await fetch(`${adapter?.baseUrl}/api/v3/capabilities`);
+          expect(capabilities.status).toBe(200);
+          expect(await capabilities.json()).toMatchObject({ features: { browser_status: true } });
+        }
+      } finally {
+        await second?.close();
+        await first?.close();
+      }
+    }, 60_000);
+  });
+}

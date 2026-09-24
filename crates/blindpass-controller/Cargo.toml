@@ -6,6 +6,9 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
+[features]
+p02-test-failpoints = []
+
 [dependencies]
 blindpass-core = { path = "../blindpass-core" }
 argon2 = "0.5.3"

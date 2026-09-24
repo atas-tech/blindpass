@@ -203,7 +203,11 @@ async function run() {
         console.log(`${BOLD}  📋 Instructions for the human tester${RESET}`);
         console.log(`${BOLD}───────────────────────────────────────────────────────${RESET}`);
         console.log();
-        console.log(`  1. Your browser should open automatically.`);
+        if (process.env.SPS_E2E_SKIP_BROWSER === "1") {
+            console.log(`  1. Browser launch is disabled for this automated run.`);
+        } else {
+            console.log(`  1. Your browser should open automatically.`);
+        }
         console.log(`     If not, open this URL manually:`);
         console.log();
         console.log(`     ${CYAN}${secretUrl}${RESET}`);
@@ -220,7 +224,9 @@ async function run() {
         console.log();
 
         // 8. Open the browser
-        openBrowser(secretUrl);
+        if (process.env.SPS_E2E_SKIP_BROWSER !== "1") {
+            openBrowser(secretUrl);
+        }
 
         // 9. Poll for submission (agent-side)
         const agentToken = externalBearerToken ?? await issueJwt(identity, "e2e-human-agent");

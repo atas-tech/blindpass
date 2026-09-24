@@ -41,7 +41,14 @@ interface ServerAdapter {
   baseUrl: string;
   fixture: ContractFixture;
   externalJwt(claims?: Record<string, unknown>, nowSeconds?: number): string;
+  restartController?(): Promise<void>;
   close(): Promise<void>;
+}
+
+export interface RustCrashTestAdapter extends ServerAdapter {
+  startWithFailpoint(name: string): Promise<void>;
+  assertCrashAndRestart(): Promise<void>;
+  bootstrapAdminSession(): Promise<{ cookie: string; csrfToken: string }>;
 }
 
 function sutFromEnvironment(): SupportedSut | null {
@@ -121,6 +128,15 @@ function childExit(child: ChildProcess): Promise<void> {
       return;
     }
     child.once("exit", () => resolve());
+  });
+}
+
+function childExitStatus(child: ChildProcess): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return Promise.resolve({ code: child.exitCode, signal: child.signalCode });
+  }
+  return new Promise((resolve) => {
+    child.once("exit", (code, signal) => resolve({ code, signal }));
   });
 }
 
@@ -214,12 +230,73 @@ async function seedFixture(
     workspaceId: seed.body.workspace_id,
     userId: seed.body.user_id,
     adminAccessToken,
-    adminRefreshToken: seed.body.refresh_token,
     agents,
     baseUrl,
     hmacSecret,
     seedToken,
     canaries: [...canaries, hmacSecret, seedToken]
+  };
+}
+
+async function seedRustFixture(
+  baseUrl: string,
+  seedToken: string,
+  hmacSecret: string
+): Promise<ContractFixture> {
+  const seed = await httpRequest<{
+    access_token: string;
+    workspace_id: string;
+    user_id: string;
+    agents: Record<string, string>;
+  }>(baseUrl, "/api/v3/admin/test/seed", {
+    ...jsonRequestBody({ agents: Object.values(AGENT_IDS) }),
+    headers: {
+      "content-type": "application/json",
+      "x-blindpass-seed-token": seedToken
+    }
+  });
+  if (seed.status !== 200 || !seed.body) {
+    throw new Error(`Rust contract fixture seed failed with ${seed.status}: ${seed.text.slice(0, 500)}`);
+  }
+
+  const agents = {} as Record<AgentId, ContractAgent>;
+  for (const [agentId, apiKey] of Object.entries(seed.body.agents)) {
+    const token = await httpRequest<{
+      access_token: string;
+      access_token_expires_at: number;
+    }>(baseUrl, "/api/v2/agents/token", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "x-forwarded-for": `198.51.100.${Object.keys(agents).length + 10}`
+      }
+    });
+    if (token.status !== 200 || !token.body) {
+      throw new Error(`Rust fixture agent token failed for ${agentId}: ${token.status}: ${token.text.slice(0, 500)}`);
+    }
+    const key = (Object.entries(AGENT_IDS).find(([, value]) => value === agentId)?.[0] ?? agentId) as AgentId;
+    agents[key] = {
+      agentId,
+      apiKey,
+      accessToken: token.body.access_token,
+      accessTokenExpiresAt: token.body.access_token_expires_at
+    };
+  }
+
+  const canaries = fixtureCanaries();
+  canaries.push(seedToken, hmacSecret, seed.body.access_token);
+  for (const agent of Object.values(agents)) {
+    canaries.push(agent.apiKey, agent.accessToken);
+  }
+  return {
+    workspaceId: seed.body.workspace_id,
+    userId: seed.body.user_id,
+    adminAccessToken: seed.body.access_token,
+    agents,
+    baseUrl,
+    hmacSecret,
+    seedToken,
+    canaries
   };
 }
 
@@ -511,6 +588,273 @@ class BaseUrlAdapter implements ServerAdapter {
   }
 }
 
+class RustServerAdapter implements RustCrashTestAdapter {
+  baseUrl = "";
+  fixture!: ContractFixture;
+  private child: ChildProcess | null = null;
+  private adminPool: PgPoolLike | null = null;
+  private schemaLockClient: PgClientLike | null = null;
+  private schema = "";
+  private tempDir = "";
+  private externalIdentity!: ExternalJwtIdentity;
+  private executable = "";
+  private childEnv: NodeJS.ProcessEnv = {};
+  private adminSession: { cookie: string; csrfToken: string } | null = null;
+
+  constructor(private readonly bootstrapAdminBeforeFixture = false) {}
+
+  async start(): Promise<void> {
+    try {
+      await this.startIsolated();
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
+  }
+
+  private async startIsolated(): Promise<void> {
+    const backend = process.env.CONTRACT_RUST_BACKEND?.trim().toLowerCase();
+    if (backend !== "sqlite" && backend !== "postgres") {
+      throw new Error("SUT=rust requires CONTRACT_RUST_BACKEND=sqlite or postgres");
+    }
+
+    this.executable = process.env.CONTRACT_RUST_BIN?.trim()
+      || path.join(process.env.CARGO_TARGET_DIR ? path.resolve(REPO_ROOT, process.env.CARGO_TARGET_DIR) : path.join(REPO_ROOT, "target"), "debug", process.platform === "win32" ? "blindpass-controller.exe" : "blindpass-controller");
+    this.tempDir = await mkdtemp(path.join(os.tmpdir(), "blindpass-rust-contract-"));
+
+    let databaseUrl: string;
+    if (backend === "sqlite") {
+      const databasePath = path.join(this.tempDir, "controller.db");
+      databaseUrl = `sqlite://${databasePath}?mode=rwc`;
+    } else {
+      const parentDatabaseUrl = process.env.CONTRACT_DATABASE_URL?.trim() || process.env.DATABASE_URL?.trim();
+      if (!parentDatabaseUrl) {
+        throw new Error("SUT=rust with the postgres backend requires CONTRACT_DATABASE_URL or DATABASE_URL");
+      }
+      this.schema = randomIdentifier("contract_rust");
+      this.adminPool = await loadPgPool(parentDatabaseUrl, 2);
+      this.schemaLockClient = await this.adminPool.connect();
+      await this.schemaLockClient.query(
+        "SELECT pg_advisory_lock(hashtextextended($1, 0))",
+        [schemaLockKey(this.schema)]
+      );
+      await this.adminPool.query(`CREATE SCHEMA ${quoteIdentifier(this.schema)}`);
+      await this.adminPool.query(
+        `COMMENT ON SCHEMA ${quoteIdentifier(this.schema)} IS '${CONTRACT_SCHEMA_COMMENT_PREFIX}${Date.now()}'`
+      );
+      databaseUrl = withSearchPath(parentDatabaseUrl, this.schema);
+    }
+
+    const jwksPath = path.join(this.tempDir, "jwks.json");
+    this.externalIdentity = createExternalJwtIdentity();
+    await writeFile(jwksPath, JSON.stringify({ keys: [this.externalIdentity.publicJwk] }), { mode: 0o600 });
+    const rootSecretPath = path.join(this.tempDir, "root.secret");
+    const agentSecretPath = path.join(this.tempDir, "agent-jwt.secret");
+    const rootSecret = randomBytes(32).toString("base64url");
+    const agentSecret = randomBytes(32).toString("base64url");
+    const seedToken = `contract-rust-seed-${randomBytes(32).toString("hex")}`;
+    await writeFile(rootSecretPath, rootSecret, { mode: 0o600 });
+    await writeFile(agentSecretPath, agentSecret, { mode: 0o600 });
+
+    const configuredPort = process.env.CONTRACT_RUST_PORT?.trim();
+    const port = configuredPort ? Number(configuredPort) : await freeTcpPort();
+    if (!Number.isInteger(port) || port < 1 || port > 65_535) {
+      throw new Error("CONTRACT_RUST_PORT must be a valid TCP port");
+    }
+    this.baseUrl = `http://127.0.0.1:${port}`;
+    const uiBaseUrl = process.env.CONTRACT_UI_BASE_URL?.trim() || "http://127.0.0.1:5175";
+    const allowedOrigins = [...new Set([
+      new URL(uiBaseUrl).origin,
+      "http://allowed.contract.test"
+    ])].join(",");
+    this.childEnv = {
+      PATH: process.env.PATH,
+      TMPDIR: process.env.TMPDIR,
+      LANG: process.env.LANG,
+      TZ: process.env.TZ,
+      NODE_ENV: "test",
+      RUST_LOG: "warn",
+      BLINDPASS_LISTEN: `127.0.0.1:${port}`,
+      BLINDPASS_ADMIN_SOCKET_PATH: path.join(this.tempDir, "admin.sock"),
+      BLINDPASS_PUBLIC_URL: this.baseUrl,
+      BLINDPASS_UI_BASE_URL: uiBaseUrl,
+      BLINDPASS_DATABASE_URL: databaseUrl,
+      BLINDPASS_ROOT_SECRET_FILE: rootSecretPath,
+      BLINDPASS_AGENT_JWT_SECRET_FILE: agentSecretPath,
+      BLINDPASS_AGENT_AUTH_PROVIDERS_JSON: JSON.stringify([{
+        name: "contract-jwks",
+        jwks_file: jwksPath,
+        issuer: "contract-gateway",
+        audience: "contract-sps"
+      }]),
+      BLINDPASS_CORS_ALLOWED_ORIGINS: allowedOrigins,
+      BLINDPASS_BODY_LIMIT_BYTES: "1048576",
+      BLINDPASS_AGENT_TOKEN_RATE_LIMIT: "5",
+      BLINDPASS_TRUST_PROXY: "127.0.0.1",
+      BLINDPASS_SECRET_REGISTRY_JSON: JSON.stringify(POLICY_DOCUMENT.secret_registry),
+      BLINDPASS_EXCHANGE_POLICY_JSON: JSON.stringify(POLICY_DOCUMENT.exchange_policy),
+      BLINDPASS_LOG_FORMAT: "json",
+      BLINDPASS_TEST_MODE: "1",
+      BLINDPASS_TEST_SEED_TOKEN: seedToken,
+      BLINDPASS_TEST_REQUEST_TTL_SECONDS: process.env.CONTRACT_REQUEST_TTL_SECONDS ?? "8",
+      BLINDPASS_TEST_SUBMITTED_TTL_SECONDS: process.env.CONTRACT_SUBMITTED_TTL_SECONDS ?? "3",
+      BLINDPASS_TEST_REVOKED_TTL_SECONDS: process.env.CONTRACT_REVOKED_TTL_SECONDS ?? "4",
+      BLINDPASS_TEST_APPROVAL_TTL_SECONDS: process.env.CONTRACT_APPROVAL_TTL_SECONDS ?? "20",
+      BLINDPASS_TEST_REFRESH_TOKEN_TTL_SECONDS: process.env.CONTRACT_REFRESH_TOKEN_TTL_SECONDS ?? "10",
+      BLINDPASS_TEST_RATE_LIMIT_WINDOW_MS: process.env.CONTRACT_RATE_LIMIT_WINDOW_MS ?? "1000",
+      BLINDPASS_TEST_AGENT_TOKEN_RATE_WINDOW_MS: process.env.CONTRACT_AGENT_TOKEN_RATE_WINDOW_MS ?? "1000"
+    };
+
+    try {
+      await this.launchController();
+      if (this.bootstrapAdminBeforeFixture) {
+        await this.bootstrapAdminSession();
+      }
+      this.fixture = await seedRustFixture(this.baseUrl, seedToken, rootSecret);
+    } catch {
+      await this.close();
+      throw new Error("Rust controller failed to become healthy; check its config and process startup without exposing credentials");
+    }
+  }
+
+  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number): string {
+    const token = signExternalJwt(this.externalIdentity, {
+      role: "gateway",
+      sub: "contract-external/ring/blue",
+      workspace_id: this.fixture.workspaceId,
+      workload_mode: "external",
+      ...claims
+    }, nowSeconds);
+    this.fixture?.canaries.push(token);
+    return token;
+  }
+
+  async startWithFailpoint(name: string): Promise<void> {
+    if (this.child) {
+      await stopChild(this.child);
+      this.child = null;
+    }
+    await this.launchController(name);
+  }
+
+  async restartController(): Promise<void> {
+    if (this.child) {
+      await stopChild(this.child);
+      this.child = null;
+    }
+    await this.launchController();
+  }
+
+  async assertCrashAndRestart(): Promise<void> {
+    if (!this.child) {
+      throw new Error("Rust crash test adapter has no controller process to inspect");
+    }
+    const crashedChild = this.child;
+    let timeoutHandle: NodeJS.Timeout | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutHandle = setTimeout(() => reject(new Error("Rust controller did not exit at the armed P02 failpoint")), 10_000);
+    });
+    let result: { code: number | null; signal: NodeJS.Signals | null };
+    try {
+      result = await Promise.race([childExitStatus(crashedChild), timeout]);
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+    }
+    if (result.code !== 86) {
+      throw new Error(`Rust controller exited unexpectedly at the P02 failpoint (code=${result.code}, signal=${result.signal})`);
+    }
+    this.child = null;
+    await this.launchController();
+  }
+
+  async bootstrapAdminSession(): Promise<{ cookie: string; csrfToken: string }> {
+    if (this.adminSession) {
+      return this.adminSession;
+    }
+    const socketPath = path.join(this.tempDir, "admin.sock");
+    const socketResponse = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const socket = net.createConnection(socketPath);
+      let response = "";
+      socket.once("connect", () => socket.write('{"command":"bootstrap-token"}\n'));
+      socket.on("data", (chunk: Buffer) => { response += chunk.toString(); });
+      socket.once("error", reject);
+      socket.once("end", () => {
+        try {
+          resolve(JSON.parse(response) as Record<string, unknown>);
+        } catch {
+          reject(new Error("Rust local admin socket returned an invalid bootstrap response"));
+        }
+      });
+    });
+    const bootstrapToken = socketResponse.bootstrap_token;
+    if (typeof bootstrapToken !== "string") {
+      throw new Error("Rust local admin socket did not issue a bootstrap capability");
+    }
+    const origin = "http://allowed.contract.test";
+    const response = await httpRequest<Record<string, unknown>>(this.baseUrl, "/api/v3/admin/bootstrap", {
+      ...jsonRequestBody({ username: "p02-admin", display_name: "P02 test admin", password: "p02-local-test-password-2026" }),
+      headers: {
+        "content-type": "application/json",
+        "x-blindpass-bootstrap-token": bootstrapToken,
+        origin
+      }
+    });
+    const csrfToken = response.body?.csrf_token;
+    if (response.status !== 201 || typeof csrfToken !== "string") {
+      throw new Error(`Rust local admin bootstrap failed with ${response.status}`);
+    }
+    const cookieHeaders = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie?.()
+      ?? [response.headers.get("set-cookie") ?? ""];
+    const cookies = cookieHeaders
+      .map((value) => value.split(";", 1)[0] ?? "")
+      .filter((value) => value.startsWith("bp_session=") || value.startsWith("bp_csrf="));
+    if (!cookies.some((value) => value.startsWith("bp_session=")) || !cookies.some((value) => value.startsWith("bp_csrf="))) {
+      throw new Error("Rust local admin bootstrap did not return session and CSRF cookies");
+    }
+    this.adminSession = { cookie: cookies.join("; "), csrfToken };
+    return this.adminSession;
+  }
+
+  private async launchController(failpoint?: string): Promise<void> {
+    const env = failpoint
+      ? { ...this.childEnv, BLINDPASS_TEST_FAILPOINT: failpoint }
+      : this.childEnv;
+    this.child = spawn(this.executable, ["serve"], {
+      cwd: REPO_ROOT,
+      env,
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+    this.child.stderr?.on("data", () => undefined);
+    await waitForHttp(this.baseUrl);
+  }
+
+  async close(): Promise<void> {
+    if (this.child) {
+      await stopChild(this.child);
+      this.child = null;
+    }
+    if (this.adminPool) {
+      if (this.schema) {
+        await this.adminPool.query(`DROP SCHEMA IF EXISTS ${quoteIdentifier(this.schema)} CASCADE`).catch(() => undefined);
+      }
+      if (this.schemaLockClient) {
+        await this.schemaLockClient.query(
+          "SELECT pg_advisory_unlock(hashtextextended($1, 0))",
+          [schemaLockKey(this.schema)]
+        ).catch(() => undefined);
+        this.schemaLockClient.release();
+        this.schemaLockClient = null;
+      }
+      await this.adminPool.end().catch(() => undefined);
+      this.adminPool = null;
+    }
+    if (this.tempDir) {
+      await rm(this.tempDir, { recursive: true, force: true });
+      this.tempDir = "";
+    }
+  }
+}
+
 export async function startAdapter(): Promise<ServerAdapter | null> {
   const sut = sutFromEnvironment();
   if (!sut) {
@@ -536,7 +880,18 @@ export async function startAdapter(): Promise<ServerAdapter | null> {
     return adapter;
   }
 
-  throw new Error("SUT=rust is reserved for P02; provide RUST_BASE_URL until the Rust launcher is implemented");
+  const adapter = new RustServerAdapter();
+  await adapter.start();
+  return adapter;
+}
+
+export async function startRustCrashTestAdapter(): Promise<RustCrashTestAdapter> {
+  if (sutFromEnvironment() !== "rust" || process.env.RUST_BASE_URL?.trim()) {
+    throw new Error("P02 crash-recovery tests require a harness-spawned Rust controller");
+  }
+  const adapter = new RustServerAdapter(true);
+  await adapter.start();
+  return adapter;
 }
 
 export async function startTsServerForBaseContract(): Promise<{

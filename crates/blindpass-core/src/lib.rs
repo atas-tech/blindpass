@@ -12,8 +12,10 @@
 pub mod custody;
 pub mod delivery;
 pub mod identity;
+pub mod policy;
 pub mod protocol;
 pub mod secret;
+pub mod signing;
 
 pub const PROTOCOL_VERSION: &str = "blindpass-broker/0.1";
 pub const MAX_FRAME_BYTES: usize = 4096;

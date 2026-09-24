@@ -66,6 +66,14 @@ unsafe extern "C" {
         length: *mut usize,
     ) -> c_int;
     fn EVP_sha256() -> *const EVP_MD;
+    fn EVP_Digest(
+        data: *const c_void,
+        count: usize,
+        digest: *mut u8,
+        digest_length: *mut c_uint,
+        algorithm: *const EVP_MD,
+        implementation: *mut c_void,
+    ) -> c_int;
     fn HMAC(
         digest: *const EVP_MD,
         key: *const u8,
@@ -531,7 +539,7 @@ fn key_schedule(
     Ok((key, nonce))
 }
 
-fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<[u8; N_SECRET], CryptoError> {
+pub(crate) fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<[u8; N_SECRET], CryptoError> {
     let mut output = [0; N_SECRET];
     let mut output_length = 0;
     let pointer = unsafe {
@@ -550,6 +558,26 @@ fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<[u8; N_SECRET], CryptoError> {
         return Err(CryptoError::OpenSsl("HMAC-SHA256 failed"));
     }
     Ok(output)
+}
+
+pub fn sha256(data: &[u8]) -> Result<[u8; N_SECRET], CryptoError> {
+    let mut digest = [0; N_SECRET];
+    let mut digest_length = 0;
+    let result = unsafe {
+        EVP_Digest(
+            data.as_ptr().cast(),
+            data.len(),
+            digest.as_mut_ptr(),
+            &mut digest_length,
+            EVP_sha256(),
+            std::ptr::null_mut(),
+        )
+    };
+    if result != 1 || digest_length as usize != N_SECRET {
+        wipe(&mut digest);
+        return Err(CryptoError::OpenSsl("SHA-256 failed"));
+    }
+    Ok(digest)
 }
 
 fn aead_encrypt(
