@@ -3,8 +3,9 @@
 use crate::app::AppState;
 use crate::routes::auth::{constant_equal, hash_api_key, hash_refresh_token, verify_api_key};
 use crate::store::{LocalOperator, LocalSession, Store};
-use axum::extract::State;
+use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -14,7 +15,7 @@ use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-const SESSION_COOKIE: &str = "bp_session";
+pub(crate) const SESSION_COOKIE: &str = "bp_session";
 const REFRESH_COOKIE: &str = "bp_refresh";
 const CSRF_COOKIE: &str = "bp_csrf";
 const SESSION_IDLE_SECONDS: u64 = 12 * 60 * 60;
@@ -295,6 +296,49 @@ async fn change_password(
     }
 }
 
+/// Routes an operator may use while `must_change_password` is set:
+/// reading and ending the session, refreshing it and changing the
+/// password. Every other matched `/api/v3/admin/` route is refused so a
+/// temporary password from bootstrap, reset or a test fixture cannot be
+/// used for administration.
+const PASSWORD_CHANGE_EXEMPT_ROUTES: &[&str] = &[
+    "/api/v3/admin/bootstrap",
+    "/api/v3/admin/session",
+    "/api/v3/admin/session/login",
+    "/api/v3/admin/session/logout",
+    "/api/v3/admin/session/refresh",
+    "/api/v3/admin/session/change-password",
+    "/api/v3/admin/test/seed",
+];
+
+pub(crate) async fn forced_password_change_gate(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+    if !path.starts_with("/api/v3/admin/") || PASSWORD_CHANGE_EXEMPT_ROUTES.contains(&path) {
+        return next.run(request).await;
+    }
+    if let (Some(store), Some(session_id)) = (
+        state.store.as_ref(),
+        cookie(request.headers(), SESSION_COOKIE),
+    ) {
+        match store.browser_session_by_id(&session_id).await {
+            Ok(Some(session)) if session.operator.must_change_password => {
+                return admin_error(
+                    StatusCode::FORBIDDEN,
+                    "password_change_required",
+                    "change the temporary password before using other administration routes",
+                );
+            }
+            Ok(_) => {}
+            Err(_) => return unavailable(),
+        }
+    }
+    next.run(request).await
+}
+
 pub(crate) async fn authenticated_session(
     store: Option<&Store>,
     headers: &HeaderMap,
@@ -437,7 +481,7 @@ pub(crate) fn valid_session_csrf(headers: &HeaderMap, session: &LocalSession) ->
         && constant_equal(cookie_token.as_bytes(), session.csrf_secret.as_bytes())
 }
 
-fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+pub(crate) fn cookie(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
         .get(header::COOKIE)?
         .to_str()

@@ -11,6 +11,8 @@ pub(crate) mod auth;
 pub(crate) mod exchanges;
 pub(crate) mod secrets;
 
+pub(crate) use admin_session::forced_password_change_gate;
+
 use crate::app::AppState;
 use axum::{Router, routing::post};
 

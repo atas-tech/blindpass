@@ -118,6 +118,10 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .merge(exchanges::routes())
         .merge(secrets::routes())
         .merge(routes::test_seed_routes(state.test_mode))
+        .route_layer(middleware::from_fn_with_state(
+            state.clone(),
+            routes::forced_password_change_gate,
+        ))
         .with_state(state)
         .layer(middleware::from_fn(security_headers))
         .layer(RequestBodyLimitLayer::new(body_limit_bytes))

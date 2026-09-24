@@ -972,3 +972,225 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
         pool.close().await;
     }
 }
+
+#[tokio::test]
+async fn forced_password_change_blocks_administration_until_completed() {
+    let directory = TestDirectory::new();
+    let (database_url, postgres_schema): (String, Option<(PgPool, String)>) =
+        if std::env::var("P02_TEST_BACKEND").as_deref() == Ok("postgres") {
+            let parent_url = std::env::var("P02_TEST_POSTGRES_URL")
+                .or_else(|_| std::env::var("CONTRACT_DATABASE_URL"))
+                .expect("P02_TEST_POSTGRES_URL or CONTRACT_DATABASE_URL is required");
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock after Unix epoch")
+                .as_nanos();
+            let schema = format!("p02_forced_{}_{nonce}", std::process::id());
+            let pool = PgPoolOptions::new()
+                .max_connections(2)
+                .connect(&parent_url)
+                .await
+                .expect("connect PostgreSQL forced-change fixture");
+            sqlx::query(&format!("CREATE SCHEMA \"{schema}\""))
+                .execute(&pool)
+                .await
+                .expect("create isolated PostgreSQL schema");
+            let separator = if parent_url.contains('?') { '&' } else { '?' };
+            (
+                format!("{parent_url}{separator}options=-c%20search_path%3D{schema}"),
+                Some((pool, schema)),
+            )
+        } else {
+            let database_path = directory.file("controller.db");
+            (
+                format!("sqlite://{}?mode=rwc", database_path.display()),
+                None,
+            )
+        };
+    for (name, value) in [
+        ("database.url", database_url.clone()),
+        ("root.secret", "R".repeat(32)),
+        ("agent.secret", "A".repeat(32)),
+    ] {
+        let path = directory.file(name);
+        std::fs::write(&path, value).expect("write test credential");
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+            .expect("protect test credential");
+    }
+    let config = Config::from_variables([
+        ("BLINDPASS_LISTEN", "127.0.0.1:0"),
+        ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
+        ("BLINDPASS_UI_BASE_URL", "http://127.0.0.1:5175"),
+        (
+            "BLINDPASS_DATABASE_URL_FILE",
+            directory.file("database.url").to_str().unwrap(),
+        ),
+        (
+            "BLINDPASS_ROOT_SECRET_FILE",
+            directory.file("root.secret").to_str().unwrap(),
+        ),
+        (
+            "BLINDPASS_AGENT_JWT_SECRET_FILE",
+            directory.file("agent.secret").to_str().unwrap(),
+        ),
+    ])
+    .expect("valid local test config");
+    let store = Store::connect(&database_url)
+        .await
+        .expect("connect forced-change test database");
+    let seeded = blindpass_controller::seed::seed_fixture(
+        &store,
+        &[b'A'; 32],
+        blindpass_controller::seed::SeedRequest {
+            agents: vec!["fixture-agent".to_owned()],
+            policy: None,
+            rotated_agents: Vec::new(),
+            revoked_agents: Vec::new(),
+            local_admin: true,
+        },
+    )
+    .await
+    .expect("seed a local administrator with a temporary password");
+    let local_admin = seeded.local_admin.expect("seeded local administrator");
+    let temporary_password = local_admin.temporary_password.clone();
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind local HTTP test listener");
+    let address = listener.local_addr().expect("resolve test address");
+    let app: Router = build_app(config, Some(store.clone()));
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let login = request(
+        address,
+        "POST",
+        "/api/v3/admin/session/login",
+        &[
+            ("content-type", "application/json"),
+            ("origin", "http://127.0.0.1:5175"),
+            ("cookie", "bp_csrf=pre-session-token"),
+            ("x-csrf-token", "pre-session-token"),
+        ],
+        Some(&json!({"username": local_admin.username, "password": temporary_password})),
+    )
+    .await;
+    assert_eq!(
+        login.status, 200,
+        "temporary password login: {:?}",
+        login.body
+    );
+    assert_eq!(login.body["must_change_password"], true);
+    let csrf = login.body["csrf_token"].as_str().unwrap().to_owned();
+    let session_cookie = cookie_header(&login, "bp_session");
+    let csrf_cookie = cookie_header(&login, "bp_csrf");
+    let cookies = format!("{session_cookie}; {csrf_cookie}");
+
+    let current = request(
+        address,
+        "GET",
+        "/api/v3/admin/session",
+        &[("cookie", &cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(current.status, 200);
+    assert_eq!(current.body["must_change_password"], true);
+
+    for (method, path, body) in [
+        ("GET", "/api/v3/admin/agents", None),
+        ("GET", "/api/v3/admin/audit", None),
+        ("GET", "/api/v3/admin/policy", None),
+        (
+            "POST",
+            "/api/v3/admin/operators",
+            Some(json!({
+                "username": "viewer",
+                "display_name": "Local Viewer",
+                "role": "viewer",
+                "password": "viewer-password-long-enough"
+            })),
+        ),
+    ] {
+        let blocked = request(
+            address,
+            method,
+            path,
+            &[
+                ("origin", "http://127.0.0.1:5175"),
+                ("cookie", &cookies),
+                ("x-csrf-token", &csrf),
+                ("content-type", "application/json"),
+            ],
+            body.as_ref(),
+        )
+        .await;
+        assert_eq!(
+            blocked.status, 403,
+            "{method} {path} must be blocked until the temporary password is changed: {:?}",
+            blocked.body
+        );
+        assert_eq!(blocked.body["error"], "password_change_required");
+    }
+    assert!(
+        store
+            .list_local_operators()
+            .await
+            .expect("list operators")
+            .iter()
+            .all(|operator| operator.username != "viewer"),
+        "blocked administration must not mutate state"
+    );
+
+    let changed = request(
+        address,
+        "POST",
+        "/api/v3/admin/session/change-password",
+        &[
+            ("origin", "http://127.0.0.1:5175"),
+            ("cookie", &cookies),
+            ("x-csrf-token", &csrf),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({
+            "current_password": temporary_password,
+            "new_password": "rotated-password-long-enough"
+        })),
+    )
+    .await;
+    assert_eq!(changed.status, 204, "password change: {:?}", changed.body);
+
+    let agents = request(
+        address,
+        "GET",
+        "/api/v3/admin/agents",
+        &[("cookie", &cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(
+        agents.status, 200,
+        "administration resumes: {:?}",
+        agents.body
+    );
+    let current = request(
+        address,
+        "GET",
+        "/api/v3/admin/session",
+        &[("cookie", &cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(current.status, 200);
+    assert_eq!(current.body["must_change_password"], false);
+
+    server.abort();
+    let _ = server.await;
+    drop(store);
+    if let Some((pool, schema)) = postgres_schema {
+        sqlx::query(&format!("DROP SCHEMA IF EXISTS \"{schema}\" CASCADE"))
+            .execute(&pool)
+            .await
+            .expect("drop isolated PostgreSQL schema");
+        pool.close().await;
+    }
+}
