@@ -2529,6 +2529,21 @@
       "message": "body/ciphertext must NOT have more than 524288 characters"
     }
   },
+  "CT18.error.503": {
+    "status": 503,
+    "content_type": "application/json",
+    "body": {
+      "checks": {
+        "database": "down",
+        "redis": "down"
+      },
+      "code": "service_unavailable",
+      "ok": false
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
   "CC01.secret-status": {
     "status": 200,
     "content_type": "application/json",

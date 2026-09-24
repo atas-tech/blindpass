@@ -6,6 +6,10 @@ import { containsCanary } from "../src/normalization.js";
 import { SnapshotRecorder } from "../src/snapshots.js";
 import { expiredBrowserPayload, signBrowserPayload } from "../src/signing.js";
 import { verifyFulfillmentToken } from "../../sps-server/src/services/crypto.js";
+import { buildApp } from "../../sps-server/src/index.js";
+import { InMemoryRequestStore } from "../../sps-server/src/services/redis.js";
+import { SpsClient } from "../../agent-skill/src/sps-client.js";
+import { GatewaySpsClient } from "../../gateway/src/sps-client.js";
 import { evaluatePolicyVectors } from "../src/vectors.js";
 
 const runContractSuite = Boolean(process.env.SUT);
@@ -752,9 +756,32 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const oversized = namedResults.get("CT05.submit.oversized");
     expect(oversized?.status).toBe(400);
     snapshots.recordValue("CT18.error.validation", { status: oversized?.status, body: oversized?.body });
+
+    const unavailableApp = await buildApp({
+      store: new InMemoryRequestStore(),
+      useInMemoryStore: true,
+      hmacSecret: "ct18-readiness-dummy-secret",
+      readinessChecks: {
+        db: async () => { throw new Error("CT18 database dependency unavailable"); },
+        redis: async () => { throw new Error("CT18 Redis dependency unavailable"); }
+      }
+    });
+    try {
+      const baseUrl = await unavailableApp.listen({ host: "127.0.0.1", port: 0 });
+      const readiness = await httpRequest(baseUrl, "/readyz");
+      expect(readiness.status).toBe(503);
+      expect(readiness.body).toEqual({
+        ok: false,
+        code: "service_unavailable",
+        checks: { database: "down", redis: "down" }
+      });
+      snapshots.record("CT18.error.503", readiness);
+    } finally {
+      await unavailableApp.close();
+    }
   });
 
-  it("CC01 keeps client-consumed response fields present on live HTTP responses", async () => {
+  it("CC01 keeps the agent-skill and gateway clients compatible with live responses", async () => {
     const created = await createSecretRequest("requester", "CC01 client shape");
     const body = requireBody<{ request_id: string; confirmation_code: string; secret_url: string }>(created.response);
     expect(body).toEqual(expect.objectContaining({
@@ -766,12 +793,45 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const status = await call("CC01.secret-status", `/api/v2/secret/status/${created.requestId}`, withBearer(agent(fixture, "requester").token));
     expect(requireBody(status)).toEqual(expect.objectContaining({ status: "pending" }));
 
-    const exchange = await createExchange("CC01 exchange shape");
-    expect(requireBody(exchange)).toEqual(expect.objectContaining({
-      exchange_id: expect.any(String),
+    const gatewayClient = new GatewaySpsClient({
+      baseUrl: fixture.baseUrl,
+      gatewayBearerToken: agent(fixture, "requester").token
+    });
+    const gatewayRequest = await gatewayClient.createSecretRequest({
+      publicKey: "Y29udHJhY3QtZ2F0ZXdheQ==",
+      description: "CC01 gateway client"
+    });
+    expect(gatewayRequest).toEqual(expect.objectContaining({
+      requestId: expect.any(String),
+      confirmationCode: expect.any(String),
+      secretUrl: expect.any(String)
+    }));
+
+    const agentClient = new SpsClient({
+      baseUrl: fixture.baseUrl,
+      gatewayBearerToken: agent(fixture, "requester").token
+    });
+    const agentRequest = await agentClient.requestSecret({
+      publicKey: "Y29udHJhY3QtYWdlbnQ=",
+      description: "CC01 agent-skill client"
+    });
+    expect(agentRequest).toEqual(expect.objectContaining({
+      requestId: expect.any(String),
+      confirmationCode: expect.any(String),
+      secretUrl: expect.any(String)
+    }));
+
+    const exchange = await agentClient.createExchangeRequest({
+      publicKey: "Y29udHJhY3QtYWdlbnQ=",
+      secretName: SECRET_NAMES.allowed,
+      purpose: "CC01 exchange shape",
+      fulfillerHint: AGENT_IDS.fulfiller
+    });
+    expect(exchange).toEqual(expect.objectContaining({
+      exchangeId: expect.any(String),
       status: "pending",
-      expires_at: expect.any(Number),
-      fulfillment_token: expect.any(String)
+      expiresAt: expect.any(Number),
+      fulfillmentToken: expect.any(String)
     }));
   });
 });
