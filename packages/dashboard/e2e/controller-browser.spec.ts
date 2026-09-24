@@ -113,8 +113,9 @@ test.beforeAll(async () => {
     throw new Error("CC03 requires SUT=rust");
   }
 
-  const port = await freePort();
-  browserUiUrl = `http://127.0.0.1:${port}`;
+  const packagedUrl = process.env.P02_PACKAGED_BROWSER_UI_URL?.trim();
+  const port = packagedUrl ? null : await freePort();
+  browserUiUrl = packagedUrl || `http://127.0.0.1:${port}`;
   process.env.CONTRACT_UI_BASE_URL = browserUiUrl;
   process.env.CONTRACT_REQUEST_TTL_SECONDS = "8";
   process.env.CONTRACT_RUST_PORT = "3100";
@@ -122,6 +123,11 @@ test.beforeAll(async () => {
   const started = await startAdapter();
   if (!started) throw new Error("Rust controller adapter did not start");
   adapter = started;
+
+  if (packagedUrl) {
+    await waitForBrowserUi();
+    return;
+  }
 
   browserUiProcess = spawn(
     process.execPath,
@@ -149,6 +155,18 @@ test.afterAll(async () => {
   await stopBrowserUi();
   await adapter?.close();
 });
+
+if (process.env.P02_PACKAGED_BROWSER_UI_URL) {
+  test("CC03 packaged nginx serves the page with security headers", async ({ request }) => {
+    const response = await request.get(browserUiUrl);
+    expect(response.status()).toBe(200);
+    expect(response.headers()["content-security-policy"]).toContain("connect-src 'self' http://127.0.0.1:3100");
+    expect(response.headers()["permissions-policy"]).toContain("camera=()");
+    expect(response.headers()["referrer-policy"]).toBe("no-referrer");
+    expect(response.headers()["x-content-type-options"]).toBe("nosniff");
+    expect(response.headers()["x-frame-options"]).toBe("DENY");
+  });
+}
 
 test("CC02 runs scripts/e2e-human.mjs against Rust through the browser UI", async ({ page }) => {
   const bearerToken = adapter.externalJwt({

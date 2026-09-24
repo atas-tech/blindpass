@@ -65,6 +65,8 @@ The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build
 | `cargo test --workspace --locked` | P01/P02 portable unit, store, transport-boundary and HPKE interop tests | Unix-socket operations; rerun outside restricted sandboxes if required |
 | `./tests/fleet/p01-vm.sh` | P01 real systemd guest harness | Named QEMU/KVM runner with writable `/dev/kvm`, pinned image hash, SSH key, cloud-localds and an ISO writer; exit 78 means unsupported/blocking infrastructure |
 
+For the packaged P02 browser check, build `packages/browser-ui/Dockerfile`, run the image on a disposable loopback port and set `P02_PACKAGED_BROWSER_UI_URL` to that origin when invoking `test:p02-browser`. The suite then serves the page from nginx and adds a response-header check; it still starts the Rust controller at port 3100 and runs CC02/CC03. Stop the container after the run.
+
 Inspect skipped-test counts. `npm run test:e2e` at the root is **dashboard E2E**, while the workspace-qualified SPS command is the PostgreSQL API suite. `npm run test:e2e:full` starts infrastructure and runs dashboard E2E; it does not mean every repository or proposed fleet suite.
 
 Install the browser used by the committed Playwright package when needed:
@@ -77,7 +79,7 @@ The [Playwright config](../../packages/dashboard/playwright.config.ts) starts SP
 
 ## CI ownership
 
-`.github/workflows/ci.yml` runs the workspace build, landing workflow checks, default tests, Redis integration, PostgreSQL SPS tests, a separate P00 contract job, the Rust SQLite/PostgreSQL contract matrix and a separately built P02-I03 crash-failpoint matrix, plus the pinned Rust format/lint/test gates. The P00 job writes a Vitest JSON report and fails if any contract case or suite was skipped. The PostgreSQL job checks that every gated SPS test file executed passing cases. `.github/workflows/fleet-vm.yml` is manual-only and requires the labeled disposable QEMU/KVM runner; hosted CI and a successful Rust job do not establish systemd VM, stock-client or fleet evidence.
+`.github/workflows/ci.yml` runs the workspace build, landing workflow checks, default tests, Redis integration, PostgreSQL SPS tests, a separate P00 contract job, the Rust SQLite/PostgreSQL contract matrix, development and packaged nginx browser flows, and a separately built P02-I03 crash-failpoint matrix, plus the pinned Rust format/lint/test gates. The P00 job writes a Vitest JSON report and fails if any contract case or suite was skipped. The PostgreSQL job checks that every gated SPS test file executed passing cases. `.github/workflows/fleet-vm.yml` is manual-only and requires the labeled disposable QEMU/KVM runner; hosted CI and a successful Rust job do not establish systemd VM, stock-client or fleet evidence.
 
 ## Evidence and troubleshooting
 
