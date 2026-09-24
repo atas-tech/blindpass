@@ -1476,3 +1476,167 @@ async fn futures_join<T>(tasks: impl IntoIterator<Item = tokio::task::JoinHandle
     }
     results
 }
+
+#[tokio::test]
+async fn later_migration_table_missing_on_current_version_fails_closed() {
+    let fixture = StoreFixture::new().await;
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL schema fixture");
+        sqlx::query("DROP TABLE controller_clock")
+            .execute(&pool)
+            .await
+            .expect("remove later-migration PostgreSQL table");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite schema fixture");
+        sqlx::query("DROP TABLE controller_clock")
+            .execute(&pool)
+            .await
+            .expect("remove later-migration SQLite table");
+        pool.close().await;
+    }
+
+    assert!(matches!(
+        Store::connect(&fixture.url).await,
+        Err(StoreError::UnsupportedSchemaVersion)
+    ));
+    let recreated = if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("reopen PostgreSQL schema fixture");
+        let present: bool =
+            sqlx::query_scalar("SELECT to_regclass('controller_clock') IS NOT NULL")
+                .fetch_one(&pool)
+                .await
+                .expect("inspect PostgreSQL schema");
+        pool.close().await;
+        present
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("reopen SQLite schema fixture");
+        let present: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'controller_clock')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("inspect SQLite schema");
+        pool.close().await;
+        present != 0
+    };
+    assert!(
+        !recreated,
+        "a missing clock table must not be recreated with a fresh high-water mark"
+    );
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn older_schema_version_migrates_forward_and_records_current_version() {
+    let fixture = StoreFixture::new().await;
+    let request_id = fixture
+        .store()
+        .create_secret_request("upgrade-agent", "dummy-public-key", "upgrade", "123456", 60)
+        .await
+        .expect("create request before downgrade simulation");
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL schema fixture");
+        sqlx::query("UPDATE controller_meta SET schema_version = 1 WHERE id = 1")
+            .execute(&pool)
+            .await
+            .expect("simulate a version 1 database");
+        sqlx::query("DROP TABLE controller_clock")
+            .execute(&pool)
+            .await
+            .expect("remove version 3 table");
+        sqlx::query("DROP TABLE idempotency_keys")
+            .execute(&pool)
+            .await
+            .expect("remove version 2 table");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite schema fixture");
+        sqlx::query("UPDATE controller_meta SET schema_version = 1 WHERE id = 1")
+            .execute(&pool)
+            .await
+            .expect("simulate a version 1 database");
+        sqlx::query("DROP TABLE controller_clock")
+            .execute(&pool)
+            .await
+            .expect("remove version 3 table");
+        sqlx::query("DROP TABLE idempotency_keys")
+            .execute(&pool)
+            .await
+            .expect("remove version 2 table");
+        pool.close().await;
+    }
+
+    let upgraded = Store::connect(&fixture.url)
+        .await
+        .expect("a supported older schema migrates forward");
+    assert!(
+        upgraded
+            .secret_request_metadata(&request_id)
+            .await
+            .expect("read request after upgrade")
+            .is_some(),
+        "durable state survives a forward migration"
+    );
+    drop(upgraded);
+    let (version, clock_present, idempotency_present) = if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("reopen PostgreSQL schema fixture");
+        let version: i32 =
+            sqlx::query_scalar("SELECT schema_version FROM controller_meta WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .expect("read schema version");
+        let clock: bool = sqlx::query_scalar("SELECT to_regclass('controller_clock') IS NOT NULL")
+            .fetch_one(&pool)
+            .await
+            .expect("inspect clock table");
+        let idempotency: bool =
+            sqlx::query_scalar("SELECT to_regclass('idempotency_keys') IS NOT NULL")
+                .fetch_one(&pool)
+                .await
+                .expect("inspect idempotency table");
+        pool.close().await;
+        (i64::from(version), clock, idempotency)
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("reopen SQLite schema fixture");
+        let version: i64 =
+            sqlx::query_scalar("SELECT schema_version FROM controller_meta WHERE id = 1")
+                .fetch_one(&pool)
+                .await
+                .expect("read schema version");
+        let clock: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'controller_clock')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("inspect clock table");
+        let idempotency: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'idempotency_keys')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("inspect idempotency table");
+        pool.close().await;
+        (version, clock != 0, idempotency != 0)
+    };
+    // Version 3 is the current schema: 0001 base tables, 0002 idempotency keys, 0003 controller clock.
+    assert_eq!(version, 3);
+    assert!(clock_present && idempotency_present);
+    fixture.close().await;
+}

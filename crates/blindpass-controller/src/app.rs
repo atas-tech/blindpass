@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::routes::{self, agents, exchanges, secrets};
-use crate::store::Store;
+use crate::store::{SCHEMA_VERSION, Store};
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode, header};
@@ -282,7 +282,7 @@ async fn capabilities(State(state): State<AppState>) -> Response {
     Json(CapabilitiesResponse {
         api: ["compat.v2", "admin.v3"],
         version: env!("CARGO_PKG_VERSION"),
-        schema_version: 1,
+        schema_version: u32::try_from(SCHEMA_VERSION).expect("schema version fits u32"),
         setup_required,
         features: CapabilitiesFeatures {
             browser_status: BROWSER_STATUS_ADOPTED,

@@ -23,21 +23,38 @@ const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000
 const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
 const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
-const REQUIRED_BASE_TABLES: &[&str] = &[
-    "controller_meta",
-    "operators",
-    "bootstrap_tokens",
-    "operator_sessions",
-    "agents",
-    "secret_requests",
-    "exchanges",
-    "approvals",
-    "exchange_lifecycle",
-    "policies",
-    "audit_events",
-    "rate_windows",
-    "quota_counters",
+/// Current schema version. Each migration file raises it by one:
+/// 1 = `0001_init`, 2 = `0002_admin_idempotency`, 3 = `0003_controller_clock`.
+pub const SCHEMA_VERSION: i64 = 3;
+/// Tables that must exist for a database that reports the given version.
+/// A supported older version is migrated forward; a version whose tables
+/// are missing is damaged and fails closed instead of being recreated.
+const SCHEMA_TABLES: &[(i64, &[&str])] = &[
+    (
+        1,
+        &[
+            "controller_meta",
+            "operators",
+            "bootstrap_tokens",
+            "operator_sessions",
+            "agents",
+            "secret_requests",
+            "exchanges",
+            "approvals",
+            "exchange_lifecycle",
+            "policies",
+            "audit_events",
+            "rate_windows",
+            "quota_counters",
+        ],
+    ),
+    (2, &["idempotency_keys"]),
+    (3, &["controller_clock"]),
 ];
+/// The persisted clock high-water mark advances at most this often. Every
+/// statement still fails closed against the mark, so a regression smaller
+/// than this interval cannot make expiring state readable.
+const CLOCK_ADVANCE_INTERVAL_MS: i64 = 1_000;
 
 #[derive(Debug)]
 pub enum StoreError {
@@ -151,10 +168,16 @@ impl Store {
                 let sql = format!(
                     "INSERT OR IGNORE INTO controller_meta
                      (id, schema_version, tenant_id, issuer_epoch, created_at)
-                     VALUES (1, 1, ?, 1, {SQLITE_WALL_NOW_MS})"
+                     VALUES (1, {SCHEMA_VERSION}, ?, 1, {SQLITE_WALL_NOW_MS})"
                 );
                 sqlx::query(&sql)
                     .bind(candidate_tenant_id)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                sqlx::query("UPDATE controller_meta SET schema_version = ? WHERE id = 1 AND schema_version < ?")
+                    .bind(SCHEMA_VERSION)
+                    .bind(SCHEMA_VERSION)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
@@ -163,11 +186,16 @@ impl Store {
                 let sql = format!(
                     "INSERT INTO controller_meta
                      (id, schema_version, tenant_id, issuer_epoch, created_at)
-                     VALUES (1, 1, $1, 1, {POSTGRES_WALL_NOW_MS})
+                     VALUES (1, {SCHEMA_VERSION}, $1, 1, {POSTGRES_WALL_NOW_MS})
                      ON CONFLICT (id) DO NOTHING"
                 );
                 sqlx::query(&sql)
                     .bind(candidate_tenant_id)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                sqlx::query("UPDATE controller_meta SET schema_version = $1 WHERE id = 1 AND schema_version < $1")
+                    .bind(SCHEMA_VERSION)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
@@ -249,59 +277,65 @@ impl Store {
         }
     }
 
+    /// Compare the database wall clock with the persisted high-water mark
+    /// without taking a write lock. A regression fails closed; the mark is
+    /// advanced with a single guarded statement at most once per interval,
+    /// so ordinary reads never serialize on the clock row.
     async fn checkpoint_clock(&self) -> Result<(), StoreError> {
-        match &self.database {
+        let (observed, now): (i64, i64) = match &self.database {
             Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query(
-                    "UPDATE controller_clock SET last_observed_ms = last_observed_ms WHERE id = 1",
-                )
-                .execute(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?;
                 let sql = format!(
                     "SELECT last_observed_ms, {SQLITE_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
                 );
                 let row = sqlx::query(&sql)
-                    .fetch_one(&mut *transaction)
+                    .fetch_one(pool)
                     .await
                     .map_err(StoreError::Database)?;
-                let observed: i64 = row.try_get(0).map_err(StoreError::Database)?;
-                let now: i64 = row.try_get(1).map_err(StoreError::Database)?;
-                if now < observed {
-                    return Err(StoreError::ClockRegression);
-                }
-                sqlx::query("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1")
-                    .bind(now)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
+                (
+                    row.try_get(0).map_err(StoreError::Database)?,
+                    row.try_get(1).map_err(StoreError::Database)?,
+                )
             }
             Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                let row = sqlx::query(
-                    "SELECT last_observed_ms FROM controller_clock WHERE id = 1 FOR UPDATE",
-                )
-                .fetch_one(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?;
-                let observed: i64 = row.try_get(0).map_err(StoreError::Database)?;
-                let sql = format!("SELECT {POSTGRES_WALL_NOW_MS}");
+                let sql = format!(
+                    "SELECT last_observed_ms, {POSTGRES_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
+                );
                 let row = sqlx::query(&sql)
-                    .fetch_one(&mut *transaction)
+                    .fetch_one(pool)
                     .await
                     .map_err(StoreError::Database)?;
-                let now: i64 = row.try_get(0).map_err(StoreError::Database)?;
-                if now < observed {
-                    return Err(StoreError::ClockRegression);
-                }
-                sqlx::query("UPDATE controller_clock SET last_observed_ms = $1 WHERE id = 1")
-                    .bind(now)
-                    .execute(&mut *transaction)
+                (
+                    row.try_get(0).map_err(StoreError::Database)?,
+                    row.try_get(1).map_err(StoreError::Database)?,
+                )
+            }
+        };
+        if now < observed {
+            return Err(StoreError::ClockRegression);
+        }
+        if now - observed < CLOCK_ADVANCE_INTERVAL_MS {
+            return Ok(());
+        }
+        match &self.database {
+            Database::Sqlite(pool) => {
+                let sql = format!(
+                    "UPDATE controller_clock SET last_observed_ms = {SQLITE_WALL_NOW_MS}
+                     WHERE id = 1 AND {SQLITE_WALL_NOW_MS} > last_observed_ms"
+                );
+                sqlx::query(&sql)
+                    .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
+            }
+            Database::Postgres(pool) => {
+                let sql = format!(
+                    "UPDATE controller_clock SET last_observed_ms = {POSTGRES_WALL_NOW_MS}
+                     WHERE id = 1 AND {POSTGRES_WALL_NOW_MS} > last_observed_ms"
+                );
+                sqlx::query(&sql)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
             }
         }
         Ok(())
@@ -1354,34 +1388,45 @@ impl Database {
                 .map_err(StoreError::Database)?
             }
         };
-        if version != Some(1) {
+        let Some(version) = version else {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        };
+        if !(1..=SCHEMA_VERSION).contains(&version) {
             return Err(StoreError::UnsupportedSchemaVersion);
         }
-        for table in REQUIRED_BASE_TABLES {
-            let exists = match self {
-                Self::Sqlite(pool) => {
-                    let present: i64 = sqlx::query_scalar(
-                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)",
-                    )
-                    .bind(table)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                    present != 0
+        for (introduced_in, tables) in SCHEMA_TABLES {
+            if *introduced_in > version {
+                continue;
+            }
+            for table in *tables {
+                if !self.table_exists(table).await? {
+                    return Err(StoreError::UnsupportedSchemaVersion);
                 }
-                Self::Postgres(pool) => {
-                    sqlx::query_scalar::<_, bool>("SELECT to_regclass($1) IS NOT NULL")
-                        .bind(table)
-                        .fetch_one(pool)
-                        .await
-                        .map_err(StoreError::Database)?
-                }
-            };
-            if !exists {
-                return Err(StoreError::UnsupportedSchemaVersion);
             }
         }
         Ok(())
+    }
+
+    async fn table_exists(&self, table: &str) -> Result<bool, StoreError> {
+        match self {
+            Self::Sqlite(pool) => {
+                let present: i64 = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)",
+                )
+                .bind(table)
+                .fetch_one(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                Ok(present != 0)
+            }
+            Self::Postgres(pool) => {
+                sqlx::query_scalar::<_, bool>("SELECT to_regclass($1) IS NOT NULL")
+                    .bind(table)
+                    .fetch_one(pool)
+                    .await
+                    .map_err(StoreError::Database)
+            }
+        }
     }
 
     async fn migrate(&self) -> Result<(), StoreError> {
