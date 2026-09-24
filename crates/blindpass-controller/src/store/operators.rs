@@ -29,6 +29,7 @@ const SESSION_IDLE_MS: i64 = 12 * 60 * 60 * 1_000;
 
 impl Store {
     pub async fn has_active_admin(&self) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let row = sqlx::query("SELECT EXISTS(SELECT 1 FROM operators WHERE role = 'admin' AND disabled_at IS NULL)")
@@ -52,6 +53,7 @@ impl Store {
         display_name: &str,
         password_hash: &str,
     ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
@@ -105,6 +107,7 @@ impl Store {
         token_hash: &str,
         ttl_seconds: u64,
     ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         let ttl_ms = positive_milliseconds(ttl_seconds, "bootstrap token TTL")?;
         match &self.database {
             Database::Sqlite(pool) => {
@@ -164,6 +167,7 @@ impl Store {
         display_name: &str,
         password_hash: &str,
     ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
@@ -236,6 +240,7 @@ impl Store {
         &self,
         username: &str,
     ) -> Result<Option<LocalOperator>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let row = sqlx::query(
@@ -263,6 +268,7 @@ impl Store {
     }
 
     pub async fn operator_by_id(&self, id: &str) -> Result<Option<LocalOperator>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let row = sqlx::query(
@@ -295,6 +301,7 @@ impl Store {
         refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
+        self.checkpoint_clock().await?;
         if refresh_hash.is_empty() {
             return Err(StoreError::InvalidInput("refresh hash"));
         }
@@ -349,6 +356,7 @@ impl Store {
         &self,
         session_id: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!(
@@ -393,6 +401,7 @@ impl Store {
         &self,
         refresh_hash: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!(
@@ -437,6 +446,7 @@ impl Store {
         &self,
         refresh_hash: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!("SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
@@ -473,6 +483,7 @@ impl Store {
         new_refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
+        self.checkpoint_clock().await?;
         if new_refresh_hash.is_empty() {
             return Err(StoreError::InvalidInput("refresh hash"));
         }
@@ -626,6 +637,7 @@ impl Store {
     }
 
     pub async fn touch_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         let updated = match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!("UPDATE operator_sessions SET last_seen_at = {SQLITE_NOW_MS}
@@ -658,11 +670,13 @@ impl Store {
     }
 
     pub async fn revoke_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         let updated = match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!(
                     "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
-                    WHERE id = ? AND kind = 'browser' AND revoked_at IS NULL"
+                    WHERE id = ? AND kind = 'browser' AND revoked_at IS NULL
+                      AND {SQLITE_NOW_MS} IS NOT NULL"
                 );
                 sqlx::query(&query)
                     .bind(session_id)
@@ -674,7 +688,8 @@ impl Store {
             Database::Postgres(pool) => {
                 let query = format!(
                     "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
-                    WHERE id = $1 AND kind = 'browser' AND revoked_at IS NULL"
+                    WHERE id = $1 AND kind = 'browser' AND revoked_at IS NULL
+                      AND {POSTGRES_NOW_MS} IS NOT NULL"
                 );
                 sqlx::query(&query)
                     .bind(session_id)
@@ -693,6 +708,7 @@ impl Store {
         current_session_id: &str,
         new_password_hash: &str,
     ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         if new_password_hash.is_empty() {
             return Err(StoreError::InvalidInput("password hash"));
         }
@@ -759,6 +775,7 @@ impl Store {
     }
 
     pub async fn list_local_operators(&self) -> Result<Vec<LocalOperator>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let rows = sqlx::query(
@@ -791,6 +808,7 @@ impl Store {
         role: &str,
         password_hash: &str,
     ) -> Result<(), StoreError> {
+        self.checkpoint_clock().await?;
         if !matches!(role, "admin" | "operator" | "viewer") {
             return Err(StoreError::InvalidInput("operator role"));
         }
@@ -833,6 +851,7 @@ impl Store {
         display_name: &str,
         role: &str,
     ) -> Result<Option<bool>, StoreError> {
+        self.checkpoint_clock().await?;
         if !matches!(role, "admin" | "operator" | "viewer") {
             return Err(StoreError::InvalidInput("operator role"));
         }
@@ -936,6 +955,7 @@ impl Store {
     }
 
     pub async fn delete_local_operator(&self, id: &str) -> Result<Option<bool>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
@@ -1032,6 +1052,7 @@ impl Store {
         id: &str,
         password_hash: &str,
     ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         if password_hash.is_empty() {
             return Err(StoreError::InvalidInput("password hash"));
         }

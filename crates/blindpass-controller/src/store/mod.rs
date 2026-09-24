@@ -19,8 +19,25 @@ pub use exchanges::{
 };
 pub use operators::{LocalOperator, LocalSession};
 
-const SQLITE_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
-const POSTGRES_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
+const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
+const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
+const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
+const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
+const REQUIRED_BASE_TABLES: &[&str] = &[
+    "controller_meta",
+    "operators",
+    "bootstrap_tokens",
+    "operator_sessions",
+    "agents",
+    "secret_requests",
+    "exchanges",
+    "approvals",
+    "exchange_lifecycle",
+    "policies",
+    "audit_events",
+    "rate_windows",
+    "quota_counters",
+];
 
 #[derive(Debug)]
 pub enum StoreError {
@@ -28,6 +45,7 @@ pub enum StoreError {
     InvalidInput(&'static str),
     MissingState(&'static str),
     UnsupportedSchemaVersion,
+    ClockRegression,
 }
 
 impl fmt::Display for StoreError {
@@ -39,6 +57,7 @@ impl fmt::Display for StoreError {
             Self::UnsupportedSchemaVersion => {
                 formatter.write_str("controller schema version is unsupported")
             }
+            Self::ClockRegression => formatter.write_str("controller database clock regressed"),
         }
     }
 }
@@ -132,7 +151,7 @@ impl Store {
                 let sql = format!(
                     "INSERT OR IGNORE INTO controller_meta
                      (id, schema_version, tenant_id, issuer_epoch, created_at)
-                     VALUES (1, 1, ?, 1, {SQLITE_NOW_MS})"
+                     VALUES (1, 1, ?, 1, {SQLITE_WALL_NOW_MS})"
                 );
                 sqlx::query(&sql)
                     .bind(candidate_tenant_id)
@@ -144,7 +163,7 @@ impl Store {
                 let sql = format!(
                     "INSERT INTO controller_meta
                      (id, schema_version, tenant_id, issuer_epoch, created_at)
-                     VALUES (1, 1, $1, 1, {POSTGRES_NOW_MS})
+                     VALUES (1, 1, $1, 1, {POSTGRES_WALL_NOW_MS})
                      ON CONFLICT (id) DO NOTHING"
                 );
                 sqlx::query(&sql)
@@ -172,11 +191,32 @@ impl Store {
                     .map_err(StoreError::Database)?
             }
         };
-
-        Ok(Self {
+        match &database {
+            Database::Sqlite(pool) => {
+                let sql = format!(
+                    "INSERT OR IGNORE INTO controller_clock (id, last_observed_ms) VALUES (1, {SQLITE_WALL_NOW_MS})"
+                );
+                sqlx::query(&sql)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+            }
+            Database::Postgres(pool) => {
+                let sql = format!(
+                    "INSERT INTO controller_clock (id, last_observed_ms) VALUES (1, {POSTGRES_WALL_NOW_MS}) ON CONFLICT (id) DO NOTHING"
+                );
+                sqlx::query(&sql)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+            }
+        }
+        let store = Self {
             database,
             tenant_id,
-        })
+        };
+        store.checkpoint_clock().await?;
+        Ok(store)
     }
 
     #[must_use]
@@ -194,6 +234,9 @@ impl Store {
     }
 
     pub async fn is_ready(&self) -> bool {
+        if self.checkpoint_clock().await.is_err() {
+            return false;
+        }
         match &self.database {
             Database::Sqlite(pool) => sqlx::query("SELECT 1")
                 .fetch_one(pool)
@@ -206,7 +249,66 @@ impl Store {
         }
     }
 
+    async fn checkpoint_clock(&self) -> Result<(), StoreError> {
+        match &self.database {
+            Database::Sqlite(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                sqlx::query(
+                    "UPDATE controller_clock SET last_observed_ms = last_observed_ms WHERE id = 1",
+                )
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                let sql = format!(
+                    "SELECT last_observed_ms, {SQLITE_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
+                );
+                let row = sqlx::query(&sql)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let observed: i64 = row.try_get(0).map_err(StoreError::Database)?;
+                let now: i64 = row.try_get(1).map_err(StoreError::Database)?;
+                if now < observed {
+                    return Err(StoreError::ClockRegression);
+                }
+                sqlx::query("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1")
+                    .bind(now)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
+            }
+            Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                let row = sqlx::query(
+                    "SELECT last_observed_ms FROM controller_clock WHERE id = 1 FOR UPDATE",
+                )
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                let observed: i64 = row.try_get(0).map_err(StoreError::Database)?;
+                let sql = format!("SELECT {POSTGRES_WALL_NOW_MS}");
+                let row = sqlx::query(&sql)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let now: i64 = row.try_get(0).map_err(StoreError::Database)?;
+                if now < observed {
+                    return Err(StoreError::ClockRegression);
+                }
+                sqlx::query("UPDATE controller_clock SET last_observed_ms = $1 WHERE id = 1")
+                    .bind(now)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn policy_document(&self) -> Result<Option<PolicyDocumentRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let row = sqlx::query(
@@ -262,6 +364,7 @@ impl Store {
         document_json: &str,
         updated_by: &str,
     ) -> Result<Option<i64>, StoreError> {
+        self.checkpoint_clock().await?;
         if expected_version < 1 || document_json.is_empty() || updated_by.is_empty() {
             return Err(StoreError::InvalidInput("policy document"));
         }
@@ -385,6 +488,7 @@ impl Store {
     /// Every public read and transition checks its own expiry, so this worker
     /// controls retention rather than authority.
     pub async fn sweep_expired(&self, retention_grace_seconds: u64) -> Result<u64, StoreError> {
+        self.checkpoint_clock().await?;
         let grace_ms = positive_milliseconds(retention_grace_seconds.max(1), "sweep grace")?;
         let mut removed = 0_u64;
         match &self.database {
@@ -450,6 +554,7 @@ impl Store {
     /// Apply the audit log's day-based retention separately from ciphertext
     /// expiry. A short ciphertext grace must never prune fresh audit history.
     pub async fn sweep_audit(&self, retention_days: u32) -> Result<u64, StoreError> {
+        self.checkpoint_clock().await?;
         let retention_ms = i64::from(retention_days)
             .checked_mul(86_400_000)
             .filter(|value| *value > 0)
@@ -502,6 +607,7 @@ impl Store {
         ring: Option<&str>,
         api_key_hash: &str,
     ) -> Result<AgentCredential, StoreError> {
+        self.checkpoint_clock().await?;
         if agent_id.trim().is_empty() || name.trim().is_empty() || api_key_hash.is_empty() {
             return Err(StoreError::InvalidInput("agent"));
         }
@@ -551,6 +657,7 @@ impl Store {
     }
 
     pub async fn agent_by_key_id(&self, id: &str) -> Result<Option<AgentCredential>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let row = sqlx::query("SELECT id, agent_id, name, api_key_hash, status, key_version, created_at, revoked_at FROM agents WHERE id = ? AND tenant_id = ?")
@@ -577,6 +684,7 @@ impl Store {
         &self,
         agent_id: &str,
     ) -> Result<Option<AgentCredential>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let row = sqlx::query("SELECT id, agent_id, name, api_key_hash, status, key_version, created_at, revoked_at FROM agents WHERE agent_id = ? AND tenant_id = ?")
@@ -600,6 +708,7 @@ impl Store {
     }
 
     pub async fn list_admin_agents(&self) -> Result<Vec<AdminAgentRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let rows = sqlx::query(
@@ -654,12 +763,14 @@ impl Store {
         expected_key_version: i64,
         api_key_hash: &str,
     ) -> Result<Option<AgentCredential>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
                     "UPDATE agents SET api_key_hash = ?, key_version = key_version + 1,
                                        rotated_at = {SQLITE_NOW_MS}
                      WHERE agent_id = ? AND tenant_id = ? AND status = 'active' AND key_version = ?
+                       AND {SQLITE_NOW_MS} IS NOT NULL
                      RETURNING id, agent_id, name, api_key_hash, status, key_version, created_at, revoked_at"
                 );
                 let row = sqlx::query(&sql)
@@ -677,6 +788,7 @@ impl Store {
                     "UPDATE agents SET api_key_hash = $1, key_version = key_version + 1,
                                        rotated_at = {POSTGRES_NOW_MS}
                      WHERE agent_id = $2 AND tenant_id = $3 AND status = 'active' AND key_version = $4
+                       AND {POSTGRES_NOW_MS} IS NOT NULL
                      RETURNING id, agent_id, name, api_key_hash, status, key_version, created_at, revoked_at"
                 );
                 let row = sqlx::query(&sql)
@@ -693,11 +805,13 @@ impl Store {
     }
 
     pub async fn revoke_agent(&self, agent_id: &str) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
                     "UPDATE agents SET status = 'revoked', revoked_at = {SQLITE_NOW_MS}
-                     WHERE agent_id = ? AND tenant_id = ? AND status = 'active'"
+                     WHERE agent_id = ? AND tenant_id = ? AND status = 'active'
+                       AND {SQLITE_NOW_MS} IS NOT NULL"
                 );
                 let result = sqlx::query(&sql)
                     .bind(agent_id)
@@ -710,7 +824,8 @@ impl Store {
             Database::Postgres(pool) => {
                 let sql = format!(
                     "UPDATE agents SET status = 'revoked', revoked_at = {POSTGRES_NOW_MS}
-                     WHERE agent_id = $1 AND tenant_id = $2 AND status = 'active'"
+                     WHERE agent_id = $1 AND tenant_id = $2 AND status = 'active'
+                       AND {POSTGRES_NOW_MS} IS NOT NULL"
                 );
                 let result = sqlx::query(&sql)
                     .bind(agent_id)
@@ -729,6 +844,7 @@ impl Store {
         limit: u32,
         window_milliseconds: u64,
     ) -> Result<RateLimitResult, StoreError> {
+        self.checkpoint_clock().await?;
         if key.is_empty() || limit == 0 {
             return Err(StoreError::InvalidInput("rate limit"));
         }
@@ -820,6 +936,7 @@ impl Store {
         confirmation_code: &str,
         ttl_seconds: u64,
     ) -> Result<CreatedSecretRequest, StoreError> {
+        self.checkpoint_clock().await?;
         if requester_agent_id.is_empty() || public_key.is_empty() || confirmation_code.is_empty() {
             return Err(StoreError::InvalidInput("secret request"));
         }
@@ -881,6 +998,7 @@ impl Store {
         &self,
         request_id: &str,
     ) -> Result<Option<SecretRequestMetadata>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -915,6 +1033,7 @@ impl Store {
         &self,
         request_id: &str,
     ) -> Result<Option<SecretRequestStatus>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -958,6 +1077,7 @@ impl Store {
         request_id: &str,
         requester_agent_id: &str,
     ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -998,6 +1118,7 @@ impl Store {
         ciphertext: &str,
         submitted_ttl_seconds: u64,
     ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
         if enc.is_empty() || ciphertext.is_empty() {
             return Err(StoreError::InvalidInput("encrypted payload"));
         }
@@ -1055,6 +1176,7 @@ impl Store {
         request_id: &str,
         requester_agent_id: &str,
     ) -> Result<Option<SecretRequestStatus>, StoreError> {
+        self.checkpoint_clock().await?;
         let status = match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -1097,6 +1219,7 @@ impl Store {
         request_id: &str,
         requester_agent_id: &str,
     ) -> Result<Option<EncryptedPayload>, StoreError> {
+        self.checkpoint_clock().await?;
         let payload = match &self.database {
             Database::Sqlite(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
@@ -1234,6 +1357,30 @@ impl Database {
         if version != Some(1) {
             return Err(StoreError::UnsupportedSchemaVersion);
         }
+        for table in REQUIRED_BASE_TABLES {
+            let exists = match self {
+                Self::Sqlite(pool) => {
+                    let present: i64 = sqlx::query_scalar(
+                        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)",
+                    )
+                    .bind(table)
+                    .fetch_one(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    present != 0
+                }
+                Self::Postgres(pool) => {
+                    sqlx::query_scalar::<_, bool>("SELECT to_regclass($1) IS NOT NULL")
+                        .bind(table)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                }
+            };
+            if !exists {
+                return Err(StoreError::UnsupportedSchemaVersion);
+            }
+        }
         Ok(())
     }
 
@@ -1247,6 +1394,10 @@ impl Database {
                 sqlx::raw_sql(include_str!("migrations/sqlite/0002_admin_idempotency.sql"))
                     .execute(pool)
                     .await
+                    .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!("migrations/sqlite/0003_controller_clock.sql"))
+                    .execute(pool)
+                    .await
                     .map(|_| ())
                     .map_err(StoreError::Database)
             }
@@ -1257,6 +1408,12 @@ impl Database {
                     .map_err(StoreError::Database)?;
                 sqlx::raw_sql(include_str!(
                     "migrations/postgres/0002_admin_idempotency.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0003_controller_clock.sql"
                 ))
                 .execute(pool)
                 .await

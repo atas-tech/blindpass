@@ -113,6 +113,7 @@ impl Store {
         mut exchange: ExchangeRecord,
         ttl_seconds: u64,
     ) -> Result<ExchangeRecord, StoreError> {
+        self.checkpoint_clock().await?;
         if exchange.exchange_id.len() != 64 || exchange.secret_name.is_empty() {
             return Err(StoreError::InvalidInput("exchange"));
         }
@@ -188,6 +189,7 @@ impl Store {
         &self,
         exchange_id: &str,
     ) -> Result<Option<ExchangeRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -229,6 +231,7 @@ impl Store {
         exchange_id: &str,
         fulfiller_id: &str,
     ) -> Result<Option<ExchangeRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -279,6 +282,7 @@ impl Store {
         ciphertext: &str,
         ttl_seconds: u64,
     ) -> Result<Option<ExchangeRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         if enc.is_empty() || ciphertext.is_empty() {
             return Err(StoreError::InvalidInput("exchange payload"));
         }
@@ -338,6 +342,7 @@ impl Store {
         exchange_id: &str,
         requester_id: &str,
     ) -> Result<Option<ExchangeRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         let row = match &self.database {
             Database::Sqlite(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
@@ -409,6 +414,7 @@ impl Store {
         requester_id: Option<&str>,
         revoked_ttl_seconds: u64,
     ) -> Result<Option<ExchangeRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         let ttl_ms = positive_milliseconds(revoked_ttl_seconds, "revoked exchange TTL")?;
         match &self.database {
             Database::Sqlite(pool) => {
@@ -459,6 +465,7 @@ impl Store {
     }
 
     pub async fn create_approval(&self, approval: &ApprovalRecord) -> Result<(), StoreError> {
+        self.checkpoint_clock().await?;
         let approver_ids = serde_json::to_string(&approval.approver_ids)
             .map_err(|_| StoreError::InvalidInput("approver ids"))?;
         let approver_rings = serde_json::to_string(&approval.approver_rings)
@@ -525,6 +532,7 @@ impl Store {
         &self,
         reference: &str,
     ) -> Result<Option<ApprovalRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -567,6 +575,7 @@ impl Store {
         cursor: Option<(i64, String)>,
         limit: u32,
     ) -> Result<Vec<ApprovalRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         let limit = i64::from(limit.clamp(1, 101));
         let status = status.unwrap_or("");
         match &self.database {
@@ -618,6 +627,7 @@ impl Store {
     }
 
     pub async fn count_pending_approvals(&self) -> Result<i64, StoreError> {
+        self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
                 let sql = format!(
@@ -651,6 +661,7 @@ impl Store {
         exchange_id: &str,
         limit: u32,
     ) -> Result<Vec<AuditRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         let limit = i64::from(limit.clamp(1, 200));
         match &self.database {
             Database::Sqlite(pool) => {
@@ -717,6 +728,7 @@ impl Store {
         actor_id: &str,
         idempotency_key_hash: &str,
     ) -> Result<ApprovalDecisionOutcome, StoreError> {
+        self.checkpoint_clock().await?;
         if !matches!(status, "approved" | "rejected") || idempotency_key_hash.is_empty() {
             return Err(StoreError::InvalidInput("approval decision"));
         }
@@ -944,6 +956,7 @@ impl Store {
         status: &str,
         decided_by: &str,
     ) -> Result<Option<ApprovalRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         if status != "approved" && status != "rejected" {
             return Err(StoreError::InvalidInput("approval status"));
         }
@@ -987,6 +1000,7 @@ impl Store {
     }
 
     pub async fn append_lifecycle(&self, record: &LifecycleRecord) -> Result<(), StoreError> {
+        self.checkpoint_clock().await?;
         let metadata = serde_json::to_string(&record.metadata)
             .map_err(|_| StoreError::InvalidInput("lifecycle metadata"))?;
         match &self.database {
@@ -1037,6 +1051,7 @@ impl Store {
         target_id: Option<&str>,
         metadata: &Value,
     ) -> Result<(), StoreError> {
+        self.checkpoint_clock().await?;
         let id = new_hex_id();
         let metadata_json = serde_json::to_string(metadata)
             .map_err(|_| StoreError::InvalidInput("audit metadata"))?;
@@ -1080,6 +1095,7 @@ impl Store {
     }
 
     pub async fn list_audit(&self, limit: u32) -> Result<Vec<AuditRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         let limit = i64::from(limit.clamp(1, 200));
         match &self.database {
             Database::Sqlite(pool) => {
@@ -1114,6 +1130,7 @@ impl Store {
         cursor: Option<(i64, String)>,
         limit: u32,
     ) -> Result<Vec<AuditRecord>, StoreError> {
+        self.checkpoint_clock().await?;
         let limit = i64::from(limit.clamp(1, 101));
         match &self.database {
             Database::Sqlite(pool) => {

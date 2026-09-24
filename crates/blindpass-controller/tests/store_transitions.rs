@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use blindpass_controller::store::{
-    ApprovalRecord, ExchangePolicyRecord, ExchangeRecord, SecretRequestStatus, Store,
+    ApprovalRecord, ExchangePolicyRecord, ExchangeRecord, SecretRequestStatus, Store, StoreError,
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::path::PathBuf;
@@ -182,6 +182,122 @@ async fn unsupported_schema_version_fails_closed_before_migration() {
         assert_eq!(recreated, 0, "unsupported schema must not be migrated");
         pool.close().await;
     }
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn missing_required_table_is_not_silently_recreated() {
+    let fixture = StoreFixture::new().await;
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL schema fixture");
+        sqlx::query("DROP TABLE secret_requests")
+            .execute(&pool)
+            .await
+            .expect("remove required PostgreSQL table");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite schema fixture");
+        sqlx::query("DROP TABLE secret_requests")
+            .execute(&pool)
+            .await
+            .expect("remove required SQLite table");
+        pool.close().await;
+    }
+
+    assert!(matches!(
+        Store::connect(&fixture.url).await,
+        Err(blindpass_controller::store::StoreError::UnsupportedSchemaVersion)
+    ));
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("reopen PostgreSQL schema fixture");
+        let recreated: bool =
+            sqlx::query_scalar("SELECT to_regclass('secret_requests') IS NOT NULL")
+                .fetch_one(&pool)
+                .await
+                .expect("inspect PostgreSQL schema");
+        assert!(!recreated, "damaged schema must not be migrated");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("reopen SQLite schema fixture");
+        let recreated: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'secret_requests')",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("inspect SQLite schema");
+        assert_eq!(recreated, 0, "damaged schema must not be migrated");
+        pool.close().await;
+    }
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn persisted_clock_regression_denies_expiring_state_and_readiness() {
+    let fixture = StoreFixture::new().await;
+    let request_id = fixture
+        .store()
+        .create_secret_request(
+            "clock-agent",
+            "dummy-public-key",
+            "clock check",
+            "123456",
+            60,
+        )
+        .await
+        .expect("create request before clock regression");
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = $1 WHERE id = 1")
+            .bind(i64::MAX / 2)
+            .execute(&pool)
+            .await
+            .expect("simulate persisted future clock");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1")
+            .bind(i64::MAX / 2)
+            .execute(&pool)
+            .await
+            .expect("simulate persisted future clock");
+        pool.close().await;
+    }
+    assert!(!fixture.store().is_ready().await);
+    assert!(matches!(
+        fixture.store().secret_request_metadata(&request_id).await,
+        Err(StoreError::ClockRegression)
+    ));
+    assert!(matches!(
+        fixture
+            .store()
+            .create_secret_request("clock-agent", "dummy-public-key", "later", "654321", 60)
+            .await,
+        Err(StoreError::ClockRegression)
+    ));
+    assert!(matches!(
+        fixture.store().list_admin_agents().await,
+        Err(StoreError::ClockRegression)
+    ));
+    assert!(matches!(
+        fixture.store().sweep_expired(0).await,
+        Err(StoreError::ClockRegression)
+    ));
+    assert!(matches!(
+        Store::connect(&fixture.url).await,
+        Err(StoreError::ClockRegression)
+    ));
     fixture.close().await;
 }
 

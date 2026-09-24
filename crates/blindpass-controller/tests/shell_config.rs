@@ -272,6 +272,57 @@ fn inaccessible_production_database_prevents_startup_with_sanitized_error() {
 }
 
 #[tokio::test]
+async fn damaged_existing_schema_prevents_startup_without_recreation() {
+    let files = TestFiles::new();
+    let database_path = files.0.join("damaged.db");
+    let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
+    let store = Store::connect(&database_url)
+        .await
+        .expect("initialize disposable controller database");
+    store.close().await;
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .expect("open disposable database for corruption test");
+    sqlx::query("DROP TABLE secret_requests")
+        .execute(&pool)
+        .await
+        .expect("remove required table");
+    pool.close().await;
+
+    let database = files.credential("database.url", database_url.as_bytes());
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let output = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
+        .arg("serve")
+        .env_clear()
+        .env("BLINDPASS_LISTEN", "127.0.0.1:0")
+        .env("BLINDPASS_DATABASE_URL_FILE", &database)
+        .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
+        .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+        .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
+        .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example")
+        .output()
+        .expect("run controller against damaged schema");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8(output.stderr).expect("UTF-8 controller error");
+    assert!(stderr.contains("controller database initialization failed"));
+    assert!(!stderr.contains(&database_url));
+    assert!(!stderr.contains("RRRR"));
+    assert!(!stderr.contains("AAAA"));
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .expect("inspect damaged database after denied startup");
+    let recreated: i64 = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'secret_requests')",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("inspect schema after denial");
+    assert_eq!(recreated, 0);
+    pool.close().await;
+}
+
+#[tokio::test]
 async fn production_shell_has_no_seed_route_or_test_override() {
     let files = TestFiles::new();
     let database = files.credential("database.url", b"sqlite::memory:");
