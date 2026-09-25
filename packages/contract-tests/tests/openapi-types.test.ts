@@ -12,6 +12,8 @@ type BrowserStatusResponse = BrowserStatusOperation["responses"]["200"]["content
 type TestSeedOperation = NonNullable<paths["/api/v3/admin/test/seed"]["post"]>;
 type TestSeedResponse = TestSeedOperation["responses"]["200"]["content"]["application/json"];
 type NodeChallenge = components["schemas"]["NodeSessionChallenge"];
+type NodePollOperation = NonNullable<paths["/api/v3/node/poll"]["post"]>;
+type NodePollInput = NodePollOperation["requestBody"]["content"]["application/json"];
 type NodePollResponse = components["schemas"]["NodePollResponse"];
 
 const encryptedPayload: SubmitPayload = {
@@ -66,12 +68,22 @@ it("generated operation and component types describe the controller wire shapes"
     capabilities_hash: "a".repeat(64)
   };
   const poll: NodePollResponse = {
-    documents: [{ seq: 1, envelope: { kind: "time_reply", v: 1, body: {}, sig: "A".repeat(86), kid: "issuer", epoch: 1 } }],
-    highest_seq: 1,
-    server_time_ms: 1_800_000_000_000
+    documents: [],
+    highest_seq: null,
+    server_time_ms: 1_800_000_000_000,
+    time_reply: {
+      kind: "time_reply",
+      v: 1,
+      body: { node_id: "nd_node-a", challenge: "A".repeat(43), controller_time_ms: 1_800_000_000_000, issuer_epoch: 1 },
+      sig: "A".repeat(86),
+      kid: "issuer",
+      epoch: 1
+    }
   };
+  const pollInput: NodePollInput = { time_challenge: "A".repeat(43) };
   expect(challenge.audience).toBe("blindpass-node");
-  expect(poll.documents[0].seq).toBe(1);
+  expect(pollInput.time_challenge).toHaveLength(43);
+  expect(poll.time_reply?.kind).toBe("time_reply");
 
   if (false) {
     // @ts-expect-error ciphertext is required by the generated schema type.

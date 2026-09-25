@@ -470,10 +470,22 @@ fn run_channel_session(
     let token = std::str::from_utf8(&token.0).map_err(|_| ChannelError::Retryable)?;
 
     loop {
+        let challenge_response =
+            broker_request(socket, b"TIME_CHALLENGE\n").map_err(|_| ChannelError::Retryable)?;
+        let challenge = std::str::from_utf8(&challenge_response)
+            .ok()
+            .and_then(|response| response.strip_prefix("TIME "))
+            .and_then(|response| response.strip_suffix('\n'))
+            .filter(|challenge| decode_base64url(challenge, 32).is_some())
+            .ok_or(ChannelError::Retryable)?;
         let ack_value = ack_seq.map_or(Value::Null, |seq| Value::Unsigned(seq));
         let poll_body = Value::Object(vec![
             ("ack_seq".to_owned(), ack_value),
             ("health".to_owned(), Value::Object(Vec::new())),
+            (
+                "time_challenge".to_owned(),
+                Value::String(challenge.to_owned()),
+            ),
         ]);
         let mut poll_request =
             canonicalize_value(&poll_body).map_err(|_| ChannelError::Retryable)?;
@@ -493,6 +505,11 @@ fn run_channel_session(
         })?;
         let response_text = std::str::from_utf8(&response).map_err(|_| ChannelError::Retryable)?;
         let response_value = parse_json(response_text).map_err(|_| ChannelError::Retryable)?;
+        let time_reply = response_value
+            .get("time_reply")
+            .filter(|reply| reply.as_object().is_some())
+            .ok_or(ChannelError::Retryable)?;
+        relay_document(socket, time_reply).map_err(|_| ChannelError::Retryable)?;
         let documents = response_value
             .get("documents")
             .and_then(Value::as_array)
@@ -507,26 +524,32 @@ fn run_channel_session(
                 return Err(ChannelError::Retryable);
             }
             let envelope = item.get("envelope").ok_or(ChannelError::Retryable)?;
-            let mut document = canonicalize_value(envelope).map_err(|_| ChannelError::Retryable)?;
-            if document.is_empty() || document.len() > 64 * 1024 {
-                wipe(&mut document);
-                return Err(ChannelError::Retryable);
-            }
-            let mut relay_request = format!("RELAY {}\n", document.len()).into_bytes();
-            relay_request.extend_from_slice(&document);
-            wipe(&mut document);
-            let relay_response = broker_request(socket, &relay_request);
-            wipe(&mut relay_request);
-            let relay_response = relay_response.map_err(|_| ChannelError::Retryable)?;
-            if !relay_response.starts_with(b"OK document_applied ") {
-                return Err(ChannelError::Retryable);
-            }
+            relay_document(socket, envelope).map_err(|_| ChannelError::Retryable)?;
             previous_seq = Some(seq);
             *ack_seq = Some(seq);
         }
         let _ = broker_request(socket, b"PULL_EVENTS\n").map_err(|_| ChannelError::Retryable)?;
         *backoff_seconds = 1;
     }
+}
+
+fn relay_document(socket: &Path, envelope: &Value) -> Result<(), String> {
+    let mut document = canonicalize_value(envelope)
+        .map_err(|_| "controller document could not be encoded".to_owned())?;
+    if document.is_empty() || document.len() > 64 * 1024 {
+        wipe(&mut document);
+        return Err("controller document size is invalid".to_owned());
+    }
+    let mut relay_request = format!("RELAY {}\n", document.len()).into_bytes();
+    relay_request.extend_from_slice(&document);
+    wipe(&mut document);
+    let relay_response = broker_request(socket, &relay_request);
+    wipe(&mut relay_request);
+    let relay_response = relay_response?;
+    if !relay_response.starts_with(b"OK document_applied ") {
+        return Err("broker rejected the signed controller document".to_owned());
+    }
+    Ok(())
 }
 
 fn parse_pinned_controller(response: &[u8]) -> Result<PinnedController, &'static str> {

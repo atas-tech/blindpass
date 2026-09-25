@@ -14,7 +14,9 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blindpass_core::canon::{canonicalize_json, parse_json};
 use blindpass_core::custody::sha256;
-use blindpass_core::fleet::{node_event_message, node_session_challenge_message};
+use blindpass_core::fleet::{
+    DocumentKind, SignedEnvelope, TimeReply, node_event_message, node_session_challenge_message,
+};
 use blindpass_core::signing::ed25519::verify;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, decode, encode};
 use rand::{RngCore, rngs::OsRng};
@@ -44,6 +46,7 @@ struct SessionInput {
 struct PollInput {
     ack_seq: Option<i64>,
     health: Option<JsonValue>,
+    time_challenge: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -273,6 +276,10 @@ async fn node_poll(
     Json(body): Json<PollInput>,
 ) -> Response {
     if body.ack_seq.is_some_and(|seq| seq < 0)
+        || body
+            .time_challenge
+            .as_deref()
+            .is_some_and(|challenge| decode_base64url(challenge, 32).is_none())
         || body.health.as_ref().is_some_and(|health| {
             !health.is_object() || serde_json::to_vec(health).is_ok_and(|v| v.len() > 16 * 1024)
         })
@@ -299,7 +306,14 @@ async fn node_poll(
         };
         ack_seq = None;
         if !documents.is_empty() || Instant::now() >= deadline {
-            return poll_response(store, documents).await;
+            return poll_response(
+                &state,
+                store,
+                &claims.node_id,
+                body.time_challenge.as_deref(),
+                documents,
+            )
+            .await;
         }
         tokio::time::sleep(
             NODE_POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
@@ -308,7 +322,13 @@ async fn node_poll(
     }
 }
 
-async fn poll_response(store: &crate::store::Store, documents: Vec<InboxDocument>) -> Response {
+async fn poll_response(
+    state: &AppState,
+    store: &crate::store::Store,
+    node_id: &str,
+    time_challenge: Option<&str>,
+    documents: Vec<InboxDocument>,
+) -> Response {
     let mut output = Vec::with_capacity(documents.len());
     let mut highest_seq = None;
     for document in documents {
@@ -322,10 +342,48 @@ async fn poll_response(store: &crate::store::Store, documents: Vec<InboxDocument
         Ok(value) => value,
         Err(_) => return unavailable(),
     };
+    let time_reply = if let Some(challenge) = time_challenge {
+        let (Some(issuer), Some(key_id)) = (
+            state.issuer_keypair.as_ref(),
+            state.issuer_key_id.as_deref(),
+        ) else {
+            return unavailable();
+        };
+        let Ok(controller_time_ms) = u64::try_from(server_time_ms) else {
+            return unavailable();
+        };
+        let Ok(issuer_epoch) = store.issuer_epoch().await else {
+            return unavailable();
+        };
+        let reply = TimeReply {
+            node_id: node_id.to_owned(),
+            challenge: challenge.to_owned(),
+            controller_time_ms,
+            issuer_epoch,
+        };
+        let Ok(body) = reply.to_value() else {
+            return unavailable();
+        };
+        let Ok(envelope) =
+            SignedEnvelope::sign(DocumentKind::TimeReply, body, key_id, issuer_epoch, issuer)
+        else {
+            return unavailable();
+        };
+        let Ok(bytes) = envelope.to_json() else {
+            return unavailable();
+        };
+        let Ok(document) = serde_json::from_slice::<JsonValue>(&bytes) else {
+            return unavailable();
+        };
+        Some(document)
+    } else {
+        None
+    };
     Json(json!({
         "documents": output,
         "highest_seq": highest_seq,
-        "server_time_ms": server_time_ms
+        "server_time_ms": server_time_ms,
+        "time_reply": time_reply
     }))
     .into_response()
 }

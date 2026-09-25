@@ -8,7 +8,7 @@ use crate::keys::{NodeIdentity, PinnedIssuer};
 use crate::os_identity::require_control_peer;
 use crate::os_identity::require_root_peer;
 use blindpass_core::fleet::{
-    DocumentKind, PolicySnapshot, Registration, SignedEnvelope, TimeReply,
+    DocumentKind, Grant, PolicySnapshot, Registration, SignedEnvelope, TimeReply,
 };
 use blindpass_core::secret::wipe;
 use std::io::{self, Read, Write};
@@ -42,6 +42,15 @@ fn handle_command(
     match command {
         b"STATUS\n" => stream.write_all(b"OK blindpass-control/1\n")?,
         b"PULL_EVENTS\n" => stream.write_all(b"EVENTS 0\n")?,
+        b"TIME_CHALLENGE\n" => {
+            let challenge = state
+                .lock()
+                .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?
+                .grant_verifier
+                .begin_time_challenge()
+                .map_err(BrokerError::Configuration)?;
+            writeln!(stream, "TIME {challenge}")?;
+        }
         b"IDENTITY\n" => {
             let public = identity.public_identity()?;
             writeln!(
@@ -132,6 +141,9 @@ fn apply_controller_document_to_state(
     persist: bool,
 ) -> Result<&'static str, BrokerError> {
     let kind = identity.verify_controller_document(document)?;
+    if kind == "stale_epoch" {
+        return Ok("stale_epoch");
+    }
     let source = std::str::from_utf8(document)
         .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
     let envelope = SignedEnvelope::from_json(source)
@@ -175,6 +187,44 @@ fn apply_controller_document_to_state(
                     "controller time reply is bound to another node",
                 ));
             }
+            state
+                .grant_verifier
+                .accept_time_reply(
+                    &reply,
+                    &pin.node_id,
+                    envelope.epoch(),
+                    crate::grants::boottime_ms().map_err(BrokerError::Configuration)?,
+                )
+                .map_err(BrokerError::Configuration)?;
+        }
+        DocumentKind::Grant => {
+            let grant = Grant::from_value(envelope.body())
+                .map_err(|_| BrokerError::Configuration("controller grant is malformed"))?;
+            if grant.node_id != pin.node_id {
+                return Err(BrokerError::Configuration(
+                    "controller grant is bound to another node",
+                ));
+            }
+            let registration = state.fleet_registrations.get(&grant.workload_id).ok_or(
+                BrokerError::Configuration("controller grant has no current workload registration"),
+            )?;
+            let policy = state
+                .fleet_policy
+                .as_ref()
+                .ok_or(BrokerError::Configuration("fleet policy is unavailable"))?;
+            let expected_recipient_key_id = format!("{}-1", pin.node_id);
+            state
+                .grant_verifier
+                .accept_grant(
+                    grant,
+                    document,
+                    &pin.node_id,
+                    &expected_recipient_key_id,
+                    policy,
+                    registration,
+                    crate::grants::boottime_ms().map_err(BrokerError::Configuration)?,
+                )
+                .map_err(BrokerError::Configuration)?;
         }
         _ => {
             return Err(BrokerError::Configuration(
@@ -185,6 +235,7 @@ fn apply_controller_document_to_state(
     match kind.as_str() {
         "registration" => Ok("registration"),
         "policy_snapshot" => Ok("policy_snapshot"),
+        "grant" => Ok("grant"),
         "time_reply" => Ok("time_reply"),
         _ => Err(BrokerError::Configuration(
             "controller document kind is unsupported",
@@ -390,6 +441,13 @@ mod tests {
     use crate::BrokerState;
     use crate::keys::NodeIdentity;
     use blindpass_core::delivery::DeliveryPolicy;
+    use blindpass_core::fleet::{
+        ConsumptionMode, DocumentKind, Grant, PolicySnapshot, Registration, SignedEnvelope,
+        TimeReply,
+    };
+    use blindpass_core::identity::{PeerIdentity, WorkloadRequest};
+    use blindpass_core::signing::base64_url_encode;
+    use blindpass_core::signing::ed25519::Ed25519KeyPair;
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::time::{Duration, Instant};
@@ -434,6 +492,193 @@ mod tests {
         let mut response = Vec::new();
         client.read_to_end(&mut response).unwrap();
         assert_eq!(response, b"ERR invalid_controller_document\n");
+    }
+
+    #[test]
+    fn signed_time_and_grant_relay_authorize_exactly_one_live_invocation() {
+        let directory = temporary_directory();
+        let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
+        let issuer = Ed25519KeyPair::from_seed(&[9; 32]).unwrap();
+        let issuer_public = base64_url_encode(issuer.public_key());
+        let issuer_key_id = format!("ed25519-{issuer_public}");
+        identity
+            .pin_issuer(crate::keys::PinnedIssuer {
+                tenant_id: "tenant-a".to_owned(),
+                node_id: "nd_node-a".to_owned(),
+                epoch: 1,
+                key_id: issuer_key_id.clone(),
+                public_key: issuer_public,
+            })
+            .unwrap();
+        let mut broker_state = BrokerState::new(DeliveryPolicy::default());
+        broker_state.configure_grant_storage(&identity).unwrap();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(broker_state));
+
+        let registration = Registration {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            unit: "worker.service".to_owned(),
+            account: "worker".to_owned(),
+            invocation_id: None,
+            status: "active".to_owned(),
+            consumption_mode: ConsumptionMode::File,
+            registration_version: 1,
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+        };
+        let policy = PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        for (kind, body) in [
+            (DocumentKind::Registration, registration.to_value().unwrap()),
+            (DocumentKind::PolicySnapshot, policy.to_value().unwrap()),
+        ] {
+            let envelope = SignedEnvelope::sign(kind, body, &issuer_key_id, 1, &issuer)
+                .unwrap()
+                .to_json()
+                .unwrap();
+            assert!(
+                relay_signed_document(&identity, &state, &envelope)
+                    .starts_with(b"OK document_applied ")
+            );
+        }
+
+        let challenge_response = control_exchange(&identity, &state, b"TIME_CHALLENGE\n");
+        let challenge = std::str::from_utf8(&challenge_response)
+            .unwrap()
+            .strip_prefix("TIME ")
+            .unwrap()
+            .strip_suffix('\n')
+            .unwrap()
+            .to_owned();
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let time_reply = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge,
+            controller_time_ms: now_ms,
+            issuer_epoch: 1,
+        };
+        let time_envelope = SignedEnvelope::sign(
+            DocumentKind::TimeReply,
+            time_reply.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &time_envelope),
+            b"OK document_applied time_reply\n"
+        );
+
+        let grant = Grant {
+            id: "gr_0123456789abcdef0123456789abcdef".to_owned(),
+            operation_id: "op_0123456789abcdef0123456789abcdef".to_owned(),
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            invocation_id: "invocation-a".to_owned(),
+            unit: "worker.service".to_owned(),
+            account: "worker".to_owned(),
+            resource_id: "marker-a".to_owned(),
+            recipient_key_id: "nd_node-a-1".to_owned(),
+            policy_version: 4,
+            approval_reference: None,
+            action: "noop.marker".to_owned(),
+            mode: ConsumptionMode::File,
+            audience: "blindpass-node".to_owned(),
+            issuer_epoch: 1,
+            issued_at_ms: now_ms,
+            expires_at_ms: now_ms + 60_000,
+            local_ceiling_seconds: 60,
+        };
+        let grant_envelope = SignedEnvelope::sign(
+            DocumentKind::Grant,
+            grant.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &grant_envelope),
+            b"OK document_applied grant\n"
+        );
+
+        let peer = PeerIdentity::fixture(
+            1000,
+            current_gid(),
+            "worker.service",
+            "invocation-a",
+            "worker",
+        );
+        let request = WorkloadRequest {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            claimed_unit: "worker.service".to_owned(),
+            claimed_invocation_id: "invocation-a".to_owned(),
+            operation: format!("consume:{}", grant.id),
+        };
+        let consumed = state
+            .lock()
+            .unwrap()
+            .process_workload(&peer, &request)
+            .unwrap();
+        assert_eq!(
+            consumed,
+            format!("OK grant_consumed {}\n", grant.id).as_bytes()
+        );
+        assert!(
+            state
+                .lock()
+                .unwrap()
+                .process_workload(&peer, &request)
+                .is_err()
+        );
+
+        drop(state);
+        drop(identity);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn relay_signed_document(
+        identity: &std::sync::Arc<NodeIdentity>,
+        state: &std::sync::Arc<std::sync::Mutex<BrokerState>>,
+        document: &[u8],
+    ) -> Vec<u8> {
+        let mut request = format!("RELAY {}\n", document.len()).into_bytes();
+        request.extend_from_slice(document);
+        control_exchange(identity, state, &request)
+    }
+
+    fn control_exchange(
+        identity: &std::sync::Arc<NodeIdentity>,
+        state: &std::sync::Arc<std::sync::Mutex<BrokerState>>,
+        request: &[u8],
+    ) -> Vec<u8> {
+        let (mut broker, mut client) = UnixStream::pair().unwrap();
+        client.write_all(request).unwrap();
+        handle_connection(
+            &mut broker,
+            Some(current_gid()),
+            identity.clone(),
+            state.clone(),
+            Instant::now() + Duration::from_secs(2),
+        )
+        .unwrap();
+        drop(broker);
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).unwrap();
+        response
     }
 
     fn current_gid() -> u32 {

@@ -219,6 +219,12 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
 
 test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const pollInput = schema.components.schemas.NodePollInput;
+  assert.match(pollInput.properties.time_challenge.pattern, /43/);
+  const pollResponse = schema.components.schemas.NodePollResponse;
+  assert.ok(pollResponse.required.includes("time_reply"));
+  assert.ok(pollResponse.properties.time_reply.oneOf.some((schema) => schema.type === "null"));
+  assert.ok(pollResponse.properties.time_reply.oneOf.some((schema) => schema.$ref === "#/components/schemas/SignedDocument"));
   const operations = new Set();
   for (const [route, pathItem] of Object.entries(schema.paths ?? {})) {
     for (const method of ["get", "post", "put", "patch", "delete"]) {
@@ -247,6 +253,7 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
     "POST /api/v3/approvals/{id}/reject",
     "GET /api/v3/operations",
     "GET /api/v3/grants",
+    "GET /api/v3/grants/{id}",
     "POST /api/v3/operations",
     "GET /api/v3/audit",
     "POST /api/v3/node/enroll",
@@ -283,7 +290,9 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
       "POST /api/v3/approvals/{id}/reject",
       "GET /api/v3/operations",
       "POST /api/v3/operations",
-      "GET /api/v3/operations/{id}"
+      "GET /api/v3/operations/{id}",
+      "GET /api/v3/grants",
+      "GET /api/v3/grants/{id}"
     ]);
     assert.equal(
       schema.paths[route][method.toLowerCase()]["x-blindpass-status"],

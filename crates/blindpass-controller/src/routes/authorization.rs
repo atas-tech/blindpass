@@ -5,9 +5,9 @@
 use crate::app::AppState;
 use crate::routes::fleet::{api_error, require_operator, unavailable};
 use crate::store::{
-    ApprovalDecisionOutcome, ApprovalRecord, FleetPolicyRecord, OperationApprovalDraft,
-    OperationApprovalRecord, OperationCreateOutcome, OperationDecisionOutcome, OperationRecord,
-    WorkloadRecord,
+    ApprovalDecisionOutcome, ApprovalRecord, FleetPolicyRecord, GrantIssueDraft, GrantIssueOutcome,
+    GrantRecord, OperationApprovalDraft, OperationApprovalRecord, OperationCreateOutcome,
+    OperationDecisionOutcome, OperationRecord, WorkloadRecord,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -18,7 +18,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blindpass_core::canon::canonicalize_json;
 use blindpass_core::custody::sha256;
-use blindpass_core::fleet::{ConsumptionMode, DocumentKind, Registration, SignedEnvelope};
+use blindpass_core::fleet::{ConsumptionMode, DocumentKind, Grant, Registration, SignedEnvelope};
 use serde::Deserialize;
 use serde_json::{Value as JsonValue, json};
 
@@ -40,6 +40,8 @@ pub(crate) fn routes() -> Router<AppState> {
             get(list_operations).post(create_operation),
         )
         .route("/api/v3/operations/{id}", get(get_operation))
+        .route("/api/v3/grants", get(list_grants))
+        .route("/api/v3/grants/{id}", get(get_grant))
         .route("/api/v3/approvals", get(list_unified_approvals))
         .route("/api/v3/approvals/count", get(count_unified_approvals))
         .route("/api/v3/approvals/{id}", get(get_unified_approval))
@@ -122,6 +124,14 @@ struct ApprovalQuery {
 
 #[derive(Debug, Deserialize)]
 struct OperationQuery {
+    status: Option<String>,
+    cursor: Option<String>,
+    limit: Option<u32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GrantQuery {
+    node_id: Option<String>,
     status: Option<String>,
     cursor: Option<String>,
     limit: Option<u32>,
@@ -894,10 +904,44 @@ async fn create_operation(
         )
         .await
     {
-        Ok(OperationCreateOutcome::Created(operation)) => {
+        Ok(OperationCreateOutcome::Created(mut operation)) => {
+            if operation.decision == "allow" {
+                match ensure_operation_grants(&state, std::slice::from_ref(&operation.id)).await {
+                    Ok(()) => {
+                        if let Ok(Some(updated)) = store.operation_by_id(&operation.id).await {
+                            operation = updated;
+                        }
+                    }
+                    Err(GrantIssuanceError::Stale) => {
+                        return api_error(
+                            StatusCode::CONFLICT,
+                            "authorization_changed",
+                            "operation authorization changed before its grant could be issued",
+                        );
+                    }
+                    Err(GrantIssuanceError::Unavailable) => return unavailable(),
+                }
+            }
             (StatusCode::CREATED, Json(operation_body(&operation))).into_response()
         }
-        Ok(OperationCreateOutcome::Existing(operation)) => {
+        Ok(OperationCreateOutcome::Existing(mut operation)) => {
+            if operation.decision == "allow" && operation.status == "requested" {
+                match ensure_operation_grants(&state, std::slice::from_ref(&operation.id)).await {
+                    Ok(()) => {
+                        if let Ok(Some(updated)) = store.operation_by_id(&operation.id).await {
+                            operation = updated;
+                        }
+                    }
+                    Err(GrantIssuanceError::Stale) => {
+                        return api_error(
+                            StatusCode::CONFLICT,
+                            "authorization_changed",
+                            "operation authorization changed before its grant could be issued",
+                        );
+                    }
+                    Err(GrantIssuanceError::Unavailable) => return unavailable(),
+                }
+            }
             Json(operation_body(&operation)).into_response()
         }
         Ok(OperationCreateOutcome::Conflict) => api_error(
@@ -1000,6 +1044,94 @@ async fn get_operation(
             StatusCode::NOT_FOUND,
             "operation_not_found",
             "operation was not found",
+        ),
+        Err(_) => unavailable(),
+    }
+}
+
+async fn list_grants(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<GrantQuery>,
+) -> Response {
+    if let Err(response) = require_fleet_operator(&state, &headers, false).await {
+        return response;
+    }
+    if query.status.as_deref().is_some_and(|status| {
+        !matches!(
+            status,
+            "issued" | "delivered" | "consumed" | "revoked" | "expired"
+        )
+    }) || query.node_id.as_deref().is_some_and(|id| !valid_id(id))
+    {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant_filter",
+            "grant filter is invalid",
+        );
+    }
+    let limit = query.limit.unwrap_or(50);
+    if !(1..=100).contains(&limit) {
+        return api_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_limit",
+            "limit must be between 1 and 100",
+        );
+    }
+    let cursor = match parse_cursor(query.cursor.as_deref()) {
+        Ok(cursor) => cursor,
+        Err(()) => {
+            return api_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_cursor",
+                "grant cursor is invalid",
+            );
+        }
+    };
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    let mut records = match store
+        .list_grants(
+            query.node_id.as_deref(),
+            query.status.as_deref(),
+            cursor,
+            limit + 1,
+        )
+        .await
+    {
+        Ok(records) => records,
+        Err(_) => return unavailable(),
+    };
+    let has_more = records.len() > limit as usize;
+    records.truncate(limit as usize);
+    let next_cursor = has_more
+        .then(|| {
+            records
+                .last()
+                .map(|record| cursor_for(record.created_at_ms, &record.id))
+        })
+        .flatten();
+    Json(json!({"items":records.iter().map(grant_body).collect::<Vec<_>>(),"next_cursor":next_cursor})).into_response()
+}
+
+async fn get_grant(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_fleet_operator(&state, &headers, false).await {
+        return response;
+    }
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    match store.grant_by_id(&id).await {
+        Ok(Some(record)) => Json(grant_body(&record)).into_response(),
+        Ok(None) => api_error(
+            StatusCode::NOT_FOUND,
+            "grant_not_found",
+            "grant was not found",
         ),
         Err(_) => unavailable(),
     }
@@ -1247,10 +1379,30 @@ async fn decide_unified_approval(
             Ok(
                 OperationDecisionOutcome::Applied(record)
                 | OperationDecisionOutcome::Replayed(record),
-            ) => operation_approval_body(&record)
-                .map(Json)
-                .map(IntoResponse::into_response)
-                .unwrap_or_else(unavailable),
+            ) => {
+                if decision == "approved" {
+                    let operation_ids =
+                        match serde_json::from_str::<Vec<String>>(&record.operation_ids_json) {
+                            Ok(ids) => ids,
+                            Err(_) => return unavailable(),
+                        };
+                    match ensure_operation_grants(&state, &operation_ids).await {
+                        Ok(()) => {}
+                        Err(GrantIssuanceError::Stale) => {
+                            return api_error(
+                                StatusCode::CONFLICT,
+                                "authorization_changed",
+                                "approval was recorded but current policy or workload state prevents grant issuance",
+                            );
+                        }
+                        Err(GrantIssuanceError::Unavailable) => return unavailable(),
+                    }
+                }
+                operation_approval_body(&record)
+                    .map(Json)
+                    .map(IntoResponse::into_response)
+                    .unwrap_or_else(unavailable)
+            }
             Ok(OperationDecisionOutcome::Conflict | OperationDecisionOutcome::StalePolicy) => {
                 api_error(
                     StatusCode::CONFLICT,
@@ -1446,6 +1598,146 @@ fn operation_body(record: &OperationRecord) -> JsonValue {
         "result":record.result_json.as_deref().and_then(|value|serde_json::from_str::<JsonValue>(value).ok()),
         "created_at":record.created_at_ms,"expires_at":record.expires_at_ms,
         "completed_at":record.completed_at_ms,"version":record.version
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum GrantIssuanceError {
+    Stale,
+    Unavailable,
+}
+
+async fn ensure_operation_grants(
+    state: &AppState,
+    operation_ids: &[String],
+) -> Result<(), GrantIssuanceError> {
+    if operation_ids.is_empty() || operation_ids.len() > 10 {
+        return Err(GrantIssuanceError::Stale);
+    }
+    let Some(store) = state.store.as_ref() else {
+        return Err(GrantIssuanceError::Unavailable);
+    };
+    let Some(issuer) = state.issuer_keypair.as_ref() else {
+        return Err(GrantIssuanceError::Unavailable);
+    };
+    let Some(key_id) = state.issuer_key_id.as_deref() else {
+        return Err(GrantIssuanceError::Unavailable);
+    };
+    let epoch = store
+        .issuer_epoch()
+        .await
+        .map_err(|_| GrantIssuanceError::Unavailable)?;
+    let mut drafts = Vec::with_capacity(operation_ids.len());
+    for operation_id in operation_ids {
+        let operation = store
+            .operation_by_id(operation_id)
+            .await
+            .map_err(|_| GrantIssuanceError::Unavailable)?
+            .ok_or(GrantIssuanceError::Stale)?;
+        if operation.status == "granted" {
+            continue;
+        }
+        if operation.status != "requested" || operation.decision == "deny" {
+            return Err(GrantIssuanceError::Stale);
+        }
+        let workload = store
+            .workload_by_id(&operation.workload_id)
+            .await
+            .map_err(|_| GrantIssuanceError::Unavailable)?
+            .filter(|workload| workload.status == "active")
+            .ok_or(GrantIssuanceError::Stale)?;
+        let node = store
+            .node_by_id(&operation.node_id)
+            .await
+            .map_err(|_| GrantIssuanceError::Unavailable)?
+            .filter(|node| node.status == "active")
+            .ok_or(GrantIssuanceError::Stale)?;
+        if workload.node_id != node.id
+            || workload.consumption_mode != operation.mode
+            || operation.policy_version <= 0
+            || operation.requested_ttl_seconds <= 0
+        {
+            return Err(GrantIssuanceError::Stale);
+        }
+        let now_ms = store
+            .database_now_ms()
+            .await
+            .map_err(|_| GrantIssuanceError::Unavailable)?;
+        let local_ceiling = u64::try_from(workload.local_ceiling_seconds)
+            .ok()
+            .filter(|value| (1..=3600).contains(value))
+            .ok_or(GrantIssuanceError::Stale)?;
+        let ttl_seconds = u64::try_from(operation.requested_ttl_seconds)
+            .map_err(|_| GrantIssuanceError::Stale)?
+            .min(local_ceiling)
+            .min(3600);
+        let issued_at_ms = u64::try_from(now_ms).map_err(|_| GrantIssuanceError::Stale)?;
+        let expires_at_ms = issued_at_ms
+            .checked_add(ttl_seconds.saturating_mul(1_000))
+            .ok_or(GrantIssuanceError::Stale)?;
+        let grant = Grant {
+            id: random_id("gr_"),
+            operation_id: operation.id.clone(),
+            node_id: operation.node_id.clone(),
+            workload_id: operation.workload_id.clone(),
+            invocation_id: operation.invocation_id.clone(),
+            unit: workload.unit,
+            account: workload.account,
+            resource_id: operation.resource_id.clone(),
+            recipient_key_id: format!("{}-{}", node.id, node.key_version),
+            policy_version: u64::try_from(operation.policy_version)
+                .map_err(|_| GrantIssuanceError::Stale)?,
+            approval_reference: operation.approval_id.clone(),
+            action: operation.action.clone(),
+            mode: ConsumptionMode::parse(&operation.mode).ok_or(GrantIssuanceError::Stale)?,
+            audience: "blindpass-node".to_owned(),
+            issuer_epoch: epoch,
+            issued_at_ms,
+            expires_at_ms,
+            local_ceiling_seconds: local_ceiling,
+        };
+        let envelope = SignedEnvelope::sign(
+            DocumentKind::Grant,
+            grant.to_value().map_err(|_| GrantIssuanceError::Stale)?,
+            key_id,
+            epoch,
+            issuer,
+        )
+        .map_err(|_| GrantIssuanceError::Unavailable)?;
+        let envelope_json = String::from_utf8(
+            envelope
+                .to_json()
+                .map_err(|_| GrantIssuanceError::Unavailable)?,
+        )
+        .map_err(|_| GrantIssuanceError::Unavailable)?;
+        drafts.push(GrantIssueDraft {
+            grant,
+            expected_operation_version: operation.version,
+            envelope_json,
+        });
+    }
+    if drafts.is_empty() {
+        return Ok(());
+    }
+    match store
+        .issue_operation_grants(&drafts)
+        .await
+        .map_err(|_| GrantIssuanceError::Unavailable)?
+    {
+        GrantIssueOutcome::Issued(_) | GrantIssueOutcome::Existing(_) => Ok(()),
+        GrantIssueOutcome::Stale | GrantIssueOutcome::Conflict => Err(GrantIssuanceError::Stale),
+    }
+}
+
+fn grant_body(record: &GrantRecord) -> JsonValue {
+    json!({
+        "id":record.id,"operation_id":record.operation_id,"node_id":record.node_id,
+        "workload_id":record.workload_id,"invocation_id":record.invocation_id,
+        "unit":record.unit,"account":record.account,"resource_id":record.resource_id,
+        "recipient_key_id":record.recipient_key_id,"policy_version":record.policy_version,
+        "approval_reference":record.approval_reference,"action":record.action,"mode":record.mode,
+        "audience":record.audience,"issuer_epoch":record.issuer_epoch,
+        "issued_at":record.issued_at_ms,"expires_at":record.expires_at_ms,"status":record.status
     })
 }
 

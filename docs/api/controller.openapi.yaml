@@ -744,9 +744,8 @@
       "get": {
         "operationId": "listFleetGrants",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "query", "name": "node_id", "schema": { "type": "string" } }, { "in": "query", "name": "status", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "node_id", "schema": { "type": "string" } }, { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["issued", "delivered", "consumed", "revoked", "expired"] } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Grant metadata page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       }
     },
@@ -754,9 +753,8 @@
       "get": {
         "operationId": "getFleetGrant",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Grant metadata without signature material or plaintext", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Grant" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
       },
       "delete": {
@@ -929,9 +927,9 @@
       "NodeSessionInput": { "type": "object", "description": "Send node identity and enrollment capability snapshot to request a challenge. Repeat them with nonce and signature to authenticate.", "properties": { "node_id": { "type": "string" }, "protocol_version": { "type": "string" }, "capabilities": { "type": "object", "additionalProperties": true }, "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" } }, "required": ["node_id", "protocol_version", "capabilities"], "additionalProperties": false },
       "NodeSessionChallenge": { "type": "object", "properties": { "nonce": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "controller_time_ms": { "type": "integer" }, "expires_at_ms": { "type": "integer" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "min_protocol_version": { "type": "string" }, "audience": { "type": "string", "const": "blindpass-node" }, "tenant_id": { "type": "string" }, "node_id": { "type": "string" }, "key_version": { "type": "integer", "minimum": 1 }, "capabilities_hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" } }, "required": ["nonce", "controller_time_ms", "expires_at_ms", "issuer_pub", "issuer_kid", "issuer_epoch", "min_protocol_version", "audience", "tenant_id", "node_id", "key_version", "capabilities_hash"], "additionalProperties": false },
       "NodeSessionToken": { "type": "object", "properties": { "token": { "type": "string" }, "expires_at_ms": { "type": "integer" }, "session_id": { "type": "string" } }, "required": ["token", "expires_at_ms", "session_id"], "additionalProperties": false },
-      "NodePollInput": { "type": "object", "properties": { "ack_seq": { "type": ["integer", "null"], "minimum": 0 }, "health": { "type": "object", "additionalProperties": true } }, "additionalProperties": false },
+      "NodePollInput": { "type": "object", "properties": { "ack_seq": { "type": ["integer", "null"], "minimum": 0 }, "health": { "type": "object", "additionalProperties": true }, "time_challenge": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$", "description": "One-use suspend-aware broker challenge; when provided the response includes a signed time_reply." } }, "additionalProperties": false },
       "NodeInboxDocument": { "type": "object", "properties": { "seq": { "type": "integer", "minimum": 1 }, "envelope": { "$ref": "#/components/schemas/SignedDocument" } }, "required": ["seq", "envelope"], "additionalProperties": false },
-      "NodePollResponse": { "type": "object", "properties": { "documents": { "type": "array", "items": { "$ref": "#/components/schemas/NodeInboxDocument" }, "maxItems": 50 }, "highest_seq": { "type": ["integer", "null"], "minimum": 1 }, "server_time_ms": { "type": "integer" } }, "required": ["documents", "highest_seq", "server_time_ms"], "additionalProperties": false },
+      "NodePollResponse": { "type": "object", "properties": { "documents": { "type": "array", "items": { "$ref": "#/components/schemas/NodeInboxDocument" }, "maxItems": 50 }, "highest_seq": { "type": ["integer", "null"], "minimum": 1 }, "server_time_ms": { "type": "integer" }, "time_reply": { "oneOf": [{ "$ref": "#/components/schemas/SignedDocument" }, { "type": "null" }], "description": "Signed reply bound to time_challenge, node ID and current issuer epoch; null when no challenge was supplied." } }, "required": ["documents", "highest_seq", "server_time_ms", "time_reply"], "additionalProperties": false },
       "NodeEvent": { "type": "object", "properties": { "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 128 }, "kind": { "type": "string", "enum": ["operation_request", "operation_result", "audit", "application_ack"] }, "body": { "type": "object", "additionalProperties": true }, "broker_signature": { "type": "string" } }, "required": ["idempotency_key", "kind", "body", "broker_signature"], "additionalProperties": false },
       "NodeEventsInput": { "type": "object", "properties": { "events": { "type": "array", "items": { "$ref": "#/components/schemas/NodeEvent" }, "maxItems": 100 } }, "required": ["events"], "additionalProperties": false },
       "NodeEventsResponse": { "type": "object", "properties": { "accepted": { "type": "integer", "minimum": 0 }, "duplicates": { "type": "integer", "minimum": 0 } }, "required": ["accepted", "duplicates"], "additionalProperties": false },

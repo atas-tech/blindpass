@@ -25,7 +25,7 @@ pub struct WorkloadRecord {
     pub version: i64,
 }
 
-async fn enqueue_node_document_sqlite(
+pub(super) async fn enqueue_node_document_sqlite(
     transaction: &mut Transaction<'_, Sqlite>,
     node_id: &str,
     envelope_json: &str,
@@ -55,7 +55,7 @@ async fn enqueue_node_document_sqlite(
     Ok(())
 }
 
-async fn enqueue_node_document_postgres(
+pub(super) async fn enqueue_node_document_postgres(
     transaction: &mut Transaction<'_, Postgres>,
     node_id: &str,
     envelope_json: &str,
@@ -1175,8 +1175,10 @@ async fn decide_operation_approval_sqlite(
     sqlx::query(&format!("UPDATE operation_approvals SET status = ?, decided_by = ?, decided_at = {SQLITE_NOW_MS}, decision_key_hash = ?, version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'pending' AND version = ?"))
         .bind(target_status).bind(decided_by).bind(decision_key_hash).bind(id).bind(tenant_id).bind(expected_version)
         .execute(&mut *tx).await.map_err(StoreError::Database)?;
-    sqlx::query("UPDATE operations SET status = ?, version = version + 1 WHERE approval_id = ? AND tenant_id = ? AND status = 'awaiting_approval'")
-        .bind(operation_status).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
+    sqlx::query(&format!("UPDATE operations SET status = ?,
+        expires_at = CASE WHEN ? = 'requested' THEN {SQLITE_NOW_MS} + requested_ttl_seconds * 1000 ELSE expires_at END,
+        version = version + 1 WHERE approval_id = ? AND tenant_id = ? AND status = 'awaiting_approval'"))
+        .bind(operation_status).bind(operation_status).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
     let row = sqlx::query(&sql)
         .bind(id)
         .bind(tenant_id)
@@ -1307,8 +1309,10 @@ async fn decide_operation_approval_postgres(
     sqlx::query(&format!("UPDATE operation_approvals SET status = $1, decided_by = $2, decided_at = {POSTGRES_NOW_MS}, decision_key_hash = $3, version = version + 1 WHERE id = $4 AND tenant_id = $5 AND status = 'pending' AND version = $6"))
         .bind(target_status).bind(decided_by).bind(decision_key_hash).bind(id).bind(tenant_id).bind(expected_version)
         .execute(&mut *tx).await.map_err(StoreError::Database)?;
-    sqlx::query("UPDATE operations SET status = $1, version = version + 1 WHERE approval_id = $2 AND tenant_id = $3 AND status = 'awaiting_approval'")
-        .bind(operation_status).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
+    sqlx::query(&format!("UPDATE operations SET status = $1,
+        expires_at = CASE WHEN $2 = 'requested' THEN {POSTGRES_NOW_MS} + requested_ttl_seconds * 1000 ELSE expires_at END,
+        version = version + 1 WHERE approval_id = $3 AND tenant_id = $4 AND status = 'awaiting_approval'"))
+        .bind(operation_status).bind(operation_status).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
     let row = sqlx::query(&sql)
         .bind(id)
         .bind(tenant_id)
@@ -1406,7 +1410,7 @@ async fn insert_operation_postgres(
     Ok(())
 }
 
-fn operation_from_sqlite(row: &SqliteRow) -> Result<OperationRecord, StoreError> {
+pub(super) fn operation_from_sqlite(row: &SqliteRow) -> Result<OperationRecord, StoreError> {
     Ok(OperationRecord {
         id: row.try_get("id").map_err(StoreError::Database)?,
         workload_id: row.try_get("workload_id").map_err(StoreError::Database)?,
@@ -1443,7 +1447,7 @@ fn operation_from_sqlite(row: &SqliteRow) -> Result<OperationRecord, StoreError>
     })
 }
 
-fn operation_from_postgres(row: &PgRow) -> Result<OperationRecord, StoreError> {
+pub(super) fn operation_from_postgres(row: &PgRow) -> Result<OperationRecord, StoreError> {
     Ok(OperationRecord {
         id: row.try_get("id").map_err(StoreError::Database)?,
         workload_id: row.try_get("workload_id").map_err(StoreError::Database)?,

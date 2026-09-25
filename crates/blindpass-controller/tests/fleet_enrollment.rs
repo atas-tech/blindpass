@@ -4,7 +4,7 @@ use blindpass_controller::{app::build_app, config::Config, store::Store};
 use blindpass_core::canon::parse_json;
 use blindpass_core::custody::{RecipientKeyPair, sha256};
 use blindpass_core::fleet::{
-    DocumentKind, SignedEnvelope, TimeReply, enrollment_proof_message, node_event_message,
+    DocumentKind, Grant, SignedEnvelope, TimeReply, enrollment_proof_message, node_event_message,
     node_key_fingerprint, node_session_challenge_message,
 };
 use blindpass_core::signing::{base64_url_encode, ed25519::Ed25519KeyPair};
@@ -595,12 +595,31 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             ("authorization", &node_bearer),
             ("content-type", "application/json"),
         ],
-        Some(&json!({"ack_seq":1,"health":{}})),
+        Some(&json!({
+            "ack_seq":1,
+            "health":{},
+            "time_challenge":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        })),
     )
     .await;
     assert_eq!(first_poll.status, 200, "{}", first_poll.body);
     assert_eq!(first_poll.body["documents"][0]["seq"], 1);
     assert_eq!(first_poll.body["documents"][1]["seq"], 2);
+    let time_envelope =
+        SignedEnvelope::from_json(&first_poll.body["time_reply"].to_string()).unwrap();
+    assert_eq!(time_envelope.kind(), DocumentKind::TimeReply);
+    assert!(
+        time_envelope
+            .verify(issuer.public_key(), &issuer_key_id, 1)
+            .unwrap()
+    );
+    let time_reply = blindpass_core::fleet::TimeReply::from_value(time_envelope.body()).unwrap();
+    assert_eq!(time_reply.node_id, first_node_id);
+    assert_eq!(
+        time_reply.challenge,
+        "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    );
+    assert!(time_reply.controller_time_ms > 0);
     let acknowledged_poll = request(
         address,
         "POST",
@@ -927,7 +946,62 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         None,
     )
     .await;
-    assert_eq!(operation_after_approval.body["status"], "requested");
+    assert_eq!(operation_after_approval.body["status"], "granted");
+    let first_grant_id = operation_after_approval.body["grant_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let grant_page = request(
+        address,
+        "GET",
+        &format!("/api/v3/grants?node_id={first_node_id}&limit=10"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(grant_page.status, 200, "{}", grant_page.body);
+    assert_eq!(grant_page.body["items"].as_array().unwrap().len(), 2);
+    let first_grant = request(
+        address,
+        "GET",
+        &format!("/api/v3/grants/{first_grant_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(first_grant.status, 200, "{}", first_grant.body);
+    assert_eq!(first_grant.body["status"], "issued");
+    assert_eq!(first_grant.body["audience"], "blindpass-node");
+    assert_eq!(first_grant.body["invocation_id"], "invocation-123");
+    assert_eq!(first_grant.body["resource_id"], "marker-a");
+    let grant_documents: Vec<String> = match (&backend_pool, &pg_test_pool) {
+        (Some(pool), _) => sqlx::query_scalar(
+            "SELECT envelope_json FROM node_inbox WHERE node_id = ? ORDER BY seq DESC LIMIT 2",
+        )
+        .bind(&first_node_id)
+        .fetch_all(pool)
+        .await
+        .unwrap(),
+        (_, Some(pool)) => sqlx::query_scalar(
+            "SELECT envelope_json FROM node_inbox WHERE node_id = $1 ORDER BY seq DESC LIMIT 2",
+        )
+        .bind(&first_node_id)
+        .fetch_all(pool)
+        .await
+        .unwrap(),
+        _ => unreachable!(),
+    };
+    let issuer_public = issuer.public_key();
+    for document in grant_documents {
+        let envelope = SignedEnvelope::from_json(&document).unwrap();
+        assert_eq!(envelope.kind(), DocumentKind::Grant);
+        assert!(envelope.verify(issuer_public, &issuer_key_id, 1).unwrap());
+        let grant = Grant::from_value(envelope.body()).unwrap();
+        assert_eq!(grant.node_id, first_node_id);
+        assert_eq!(grant.workload_id, workload_id);
+        assert_eq!(grant.invocation_id, "invocation-123");
+        assert_eq!(grant.audience, "blindpass-node");
+    }
 
     let third_operation_event_key = "operation-event-key-0003";
     let third_operation_event = signed_node_event(
@@ -968,7 +1042,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(third_operation.status, 201);
     let third_approval_id = third_operation.body["approval_id"].as_str().unwrap();
-    let deny_policy_headers = [
+    let next_policy_headers = [
         ("origin", ORIGIN),
         ("cookie", admin_cookies.as_str()),
         ("x-csrf-token", csrf),
@@ -979,14 +1053,14 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         address,
         "PUT",
         "/api/v3/policies",
-        &deny_policy_headers,
+        &next_policy_headers,
         Some(&json!({
             "expected_version":2,
             "rules":[{
-                "id":"deny-noop-file",
+                "id":"allow-noop-file",
                 "action":"noop.marker",
                 "mode":"file",
-                "decision":"deny",
+                "decision":"allow",
                 "approval_required":false,
                 "max_ttl_seconds":120
             }]
@@ -1024,6 +1098,47 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     )
     .await;
     assert_eq!(expired_approval.body["status"], "expired");
+
+    let direct_allow_event_key = "operation-event-key-0004";
+    let direct_allow_event = signed_node_event(
+        &first_node_id,
+        direct_allow_event_key,
+        "operation_request",
+        operation_event_body.clone(),
+        &first_keys.signing,
+    );
+    let direct_allow_event_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&direct_allow_event),
+    )
+    .await;
+    assert_eq!(direct_allow_event_response.status, 200);
+    let mut direct_allow_input = first_operation_input.clone();
+    direct_allow_input["broker_event_key"] = json!(direct_allow_event_key);
+    let direct_allow_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-request-idem-0004"),
+    ];
+    let direct_allow = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &direct_allow_headers,
+        Some(&direct_allow_input),
+    )
+    .await;
+    assert_eq!(direct_allow.status, 201, "{}", direct_allow.body);
+    assert_eq!(direct_allow.body["status"], "granted");
+    assert!(direct_allow.body["grant_id"].as_str().is_some());
 
     let workload_update_headers = [
         ("origin", ORIGIN),

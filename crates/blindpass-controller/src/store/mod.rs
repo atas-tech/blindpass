@@ -19,6 +19,7 @@ use std::time::{Duration, Instant};
 mod authorization;
 mod exchanges;
 mod fleet;
+mod grants;
 mod node_channel;
 mod operators;
 pub use authorization::{
@@ -30,6 +31,7 @@ pub use exchanges::{
     LifecycleRecord,
 };
 pub use fleet::{EnrollmentRecord, NodeRecord};
+pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord};
 pub use node_channel::{InboxDocument, NodeChallenge, NodeEventInsert, NodeEventRecord};
 pub use operators::{LocalOperator, LocalSession};
 

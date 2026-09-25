@@ -404,6 +404,7 @@ export interface components {
       "health"?: {
         [key: string]: unknown;
       };
+      "time_challenge"?: string;
     };
     "NodeInboxDocument": {
       "seq": number;
@@ -413,6 +414,7 @@ export interface components {
       "documents": Array<components["schemas"]["NodeInboxDocument"]>;
       "highest_seq": number | null;
       "server_time_ms": number;
+      "time_reply": components["schemas"]["SignedDocument"] | null;
     };
     "NodeEvent": {
       "idempotency_key": string;
@@ -2754,13 +2756,11 @@ export interface operations {
     path: never;
     query: {
       "node_id"?: string;
-      "status"?: string;
+      "status"?: "issued" | "delivered" | "consumed" | "revoked" | "expired";
       "cursor"?: string;
       "limit"?: number;
     };
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2781,7 +2781,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "getFleetGrant": {
   parameters: {
@@ -2789,9 +2789,7 @@ export interface operations {
       "id": string;
     };
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2817,7 +2815,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "revokeFleetGrant": {
   parameters: {

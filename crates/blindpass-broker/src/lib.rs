@@ -8,6 +8,7 @@
 //! non-root unit/account/invocation tuple.
 
 mod control;
+mod grants;
 mod keys;
 pub mod os_identity;
 
@@ -151,6 +152,7 @@ pub struct BrokerState {
     pub workloads: Vec<WorkloadRegistration>,
     fleet_registrations: BTreeMap<String, Registration>,
     fleet_policy: Option<PolicySnapshot>,
+    grant_verifier: grants::GrantVerifier,
     pub credentials: CredentialRegistry,
     pub custody: EphemeralCustody,
     credential_expiries: BTreeMap<String, Instant>,
@@ -177,6 +179,7 @@ impl BrokerState {
             workloads: Vec::new(),
             fleet_registrations: BTreeMap::new(),
             fleet_policy: None,
+            grant_verifier: grants::GrantVerifier::default(),
             credentials: CredentialRegistry::new(delivery_policy),
             custody: EphemeralCustody::new(custody_key_lifetime),
             credential_expiries: BTreeMap::new(),
@@ -269,12 +272,36 @@ impl BrokerState {
     }
 
     pub fn process_workload(
-        &self,
+        &mut self,
         peer: &PeerIdentity,
         request: &blindpass_core::identity::WorkloadRequest,
     ) -> Result<Vec<u8>, BrokerError> {
-        authorize_workload(peer, request, &self.workloads)?;
+        let authorization = authorize_workload(peer, request, &self.workloads)?;
+        if let Some(grant_id) = request.operation.strip_prefix("consume:") {
+            let policy_version = self
+                .fleet_policy
+                .as_ref()
+                .map(|policy| policy.policy_version)
+                .ok_or(BrokerError::Configuration("fleet policy is unavailable"))?;
+            let now = grants::boottime_ms().map_err(BrokerError::Configuration)?;
+            self.grant_verifier
+                .consume(grant_id, &authorization, policy_version, now)
+                .map_err(BrokerError::Configuration)?;
+            return Ok(format!("OK grant_consumed {grant_id}\n").into_bytes());
+        }
         Ok(workload_ok(request))
+    }
+
+    fn configure_grant_storage(
+        &mut self,
+        identity: &keys::NodeIdentity,
+    ) -> Result<(), BrokerError> {
+        self.grant_verifier = grants::GrantVerifier::with_state_files(
+            &identity.consumed_grant_journal_path(),
+            &identity.trusted_time_path(),
+        )
+        .map_err(BrokerError::Configuration)?;
+        Ok(())
     }
 
     pub(crate) fn validate_fleet_registration(
@@ -283,7 +310,7 @@ impl BrokerState {
     ) -> Result<bool, BrokerError> {
         if let Some(previous) = self.fleet_registrations.get(&registration.workload_id) {
             if registration.registration_version < previous.registration_version {
-                return Err(BrokerError::Configuration("stale workload registration"));
+                return Ok(false);
             }
             if registration.registration_version == previous.registration_version {
                 if registration == previous {
@@ -306,6 +333,8 @@ impl BrokerState {
         }
         self.workloads
             .retain(|workload| workload.workload_id != registration.workload_id);
+        self.grant_verifier
+            .revoke_workload(&registration.workload_id);
         if registration.status == "active" {
             self.workloads.push(WorkloadRegistration {
                 node_id: registration.node_id.clone(),
@@ -326,7 +355,7 @@ impl BrokerState {
     ) -> Result<bool, BrokerError> {
         if let Some(previous) = self.fleet_policy.as_ref() {
             if policy.policy_version < previous.policy_version {
-                return Err(BrokerError::Configuration("stale fleet policy"));
+                return Ok(false);
             }
             if policy.policy_version == previous.policy_version {
                 if policy == previous {
@@ -347,6 +376,8 @@ impl BrokerState {
         if !self.validate_fleet_policy(&policy)? {
             return Ok(false);
         }
+        self.grant_verifier
+            .revoke_stale_policy(policy.policy_version);
         self.fleet_policy = Some(policy);
         Ok(true)
     }
@@ -410,6 +441,7 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
     validate_config(&config)?;
     let node_identity = Arc::new(keys::NodeIdentity::load_or_create(&config.key_directory)?);
     let mut state = state;
+    state.configure_grant_storage(&node_identity)?;
     control::restore_controller_documents(&mut state, &node_identity)?;
     let loader_listener = bind_socket(
         &config.loader_socket,

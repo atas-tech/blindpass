@@ -90,6 +90,16 @@ impl NodeIdentity {
     }
 
     #[must_use]
+    pub fn consumed_grant_journal_path(&self) -> PathBuf {
+        self.directory.join("consumed.jsonl")
+    }
+
+    #[must_use]
+    pub fn trusted_time_path(&self) -> PathBuf {
+        self.directory.join("trusted-controller-time")
+    }
+
+    #[must_use]
     pub fn public_identity(&self) -> Result<PublicIdentity, BrokerError> {
         Ok(PublicIdentity {
             signing_public: base64_url_encode(self.signing.public_key()),
@@ -197,12 +207,17 @@ impl NodeIdentity {
         let envelope = SignedEnvelope::from_json(document)
             .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
         if !envelope
-            .verify(&public_key, &pin.key_id, pin.epoch)
+            .verify(&public_key, &pin.key_id, 1)
             .map_err(|_| BrokerError::Configuration("controller document verification failed"))?
         {
             return Err(BrokerError::Configuration(
                 "controller document signature is invalid",
             ));
+        }
+        if envelope.epoch() < pin.epoch {
+            // A delayed document from an older, but correctly signed, epoch
+            // can be acknowledged by the channel without restoring authority.
+            return Ok("stale_epoch".to_owned());
         }
         if envelope.epoch() > pin.epoch {
             let mut advanced_pin = pin;
@@ -731,10 +746,11 @@ mod tests {
         .unwrap()
         .to_json()
         .unwrap();
-        assert!(
+        assert_eq!(
             identity
                 .verify_controller_document(&stale_document)
-                .is_err()
+                .unwrap(),
+            "stale_epoch"
         );
         std::fs::remove_dir_all(directory).unwrap();
     }
