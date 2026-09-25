@@ -74,7 +74,7 @@ async fn seed(path: &Path) -> Result<(), String> {
     let store = Store::connect(config.database_url())
         .await
         .map_err(|_| "controller database initialization failed".to_owned())?;
-    let result = seed_fixture(&store, config.agent_jwt_secret(), request).await;
+    let result = seed_fixture(&store, request).await;
     store.close().await;
     let response = result.map_err(|_| "test fixture seeding failed".to_owned())?;
     let output = serde_json::to_string(&response)
@@ -107,10 +107,11 @@ async fn migrate() -> Result<(), String> {
 async fn serve() -> Result<(), String> {
     let config = Config::from_env().map_err(|error| error.to_string())?;
     observability::init(config.log_format()).map_err(str::to_owned)?;
-    let store = Store::connect(config.database_url())
+    let store = Store::connect_with_tolerance(config.database_url(), config.clock_tolerance_ms())
         .await
         .map_err(|_| "controller database initialization failed".to_owned())?;
     let sweep_store = store.clone();
+    let clock_task = store.spawn_clock_monitor();
     let audit_retention_days = config.audit_retention_days();
     let sweep_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
@@ -160,6 +161,7 @@ async fn serve() -> Result<(), String> {
         }
     };
     sweep_task.abort();
+    clock_task.abort();
     admin_task.abort();
     result
 }

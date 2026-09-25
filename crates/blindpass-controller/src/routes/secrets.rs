@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use crate::app::AppState;
+use crate::routes::agent_rate_limit;
 use crate::routes::auth::{AuthError, WorkloadIdentity, authenticate_workload, current_seconds};
 use crate::store::{SecretRequestStatus, Store};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use blindpass_core::signing::{
     BrowserScope, VerifyError, sign_browser_payload, verify_browser_payload,
@@ -30,7 +31,6 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/v2/secret/submit/{id}", post(submit))
         .route("/api/v2/secret/status/{id}", get(status))
         .route("/api/v2/secret/retrieve/{id}", get(retrieve))
-        .route("/api/v2/secret/revoke/{id}", delete(revoke))
         .route(
             "/api/v2/secret/browser-status/{id}/capability",
             post(issue_browser_status_capability),
@@ -84,6 +84,18 @@ async fn create_request(
             Json(json!({"error":"workspace_mismatch"})),
         )
             .into_response();
+    }
+    if let Some(response) = agent_rate_limit::enforce(
+        store,
+        &identity,
+        "request",
+        "secret requests",
+        state.agent_request_rate_limit,
+        state.agent_rate_window_ms,
+    )
+    .await
+    {
+        return response;
     }
     if body.description.trim().is_empty() {
         return (
@@ -360,30 +372,6 @@ async fn retrieve(
         Ok(Some(payload)) => {
             Json(json!({"enc":payload.enc,"ciphertext":payload.ciphertext})).into_response()
         }
-        _ => not_available(),
-    }
-}
-
-async fn revoke(
-    State(state): State<AppState>,
-    Path(id): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    if !valid_request_id(&id) {
-        return not_available();
-    }
-    let Some(store) = state.store.as_ref() else {
-        return service_unavailable();
-    };
-    let identity = match authenticate_workload(&state, &headers).await {
-        Ok(identity) => identity,
-        Err(error) => return workload_auth_error(error),
-    };
-    if foreign_tenant(&identity, store) {
-        return not_available();
-    }
-    match store.delete_secret_request(&id, &identity.sub).await {
-        Ok(true) => StatusCode::NO_CONTENT.into_response(),
         _ => not_available(),
     }
 }

@@ -56,6 +56,7 @@ function requireBody<T>(result: Awaited<ReturnType<typeof httpRequest<T>>>): T {
 
 describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
   let adapter: ServerAdapter;
+  let rateLimitAdapter: ServerAdapter | null = null;
   let fixture: ContractFixture;
   const snapshots = new SnapshotRecorder();
   const namedResults = new Map<string, Result>();
@@ -73,9 +74,36 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     try {
       await snapshots.finish();
     } finally {
-      await adapter?.close();
+      await Promise.all([adapter?.close(), rateLimitAdapter?.close()]);
     }
   });
+
+  function rustAdminHeaders(unsafeMethod = false, extra: Record<string, string> = {}): Record<string, string> {
+    if (!fixture.adminSession) {
+      throw new Error("Rust contract fixture has no local administrator session");
+    }
+    return {
+      cookie: fixture.adminSession.cookie,
+      origin: "http://allowed.contract.test",
+      ...(unsafeMethod ? { "x-csrf-token": fixture.adminSession.csrfToken } : {}),
+      ...extra
+    };
+  }
+
+  async function startRateLimitContractAdapter(): Promise<ServerAdapter> {
+    if (rateLimitAdapter) return rateLimitAdapter;
+    const previous = process.env.CONTRACT_AGENT_REQUEST_RATE_LIMIT;
+    process.env.CONTRACT_AGENT_REQUEST_RATE_LIMIT = "2";
+    try {
+      const started = await startAdapter();
+      if (!started) throw new Error("Rate-limit contract adapter did not start");
+      rateLimitAdapter = started;
+      return started;
+    } finally {
+      if (previous === undefined) delete process.env.CONTRACT_AGENT_REQUEST_RATE_LIMIT;
+      else process.env.CONTRACT_AGENT_REQUEST_RATE_LIMIT = previous;
+    }
+  }
 
   async function call<T = unknown>(name: string, path: string, init: RequestInit = {}): Promise<Awaited<ReturnType<typeof httpRequest<T>>>> {
     const response = await httpRequest<T>(fixture.baseUrl, path, init);
@@ -209,11 +237,24 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     });
     expect(unknown.status).toBe(401);
 
-    const rotate = await call<{ bootstrap_api_key: string }>("CT02.key.rotate", `/api/v2/agents/${AGENT_IDS.rotatable}/rotate-key`, withBearer(fixture.adminAccessToken, {
-      method: "POST"
-    }));
+    const isRust = process.env.SUT === "rust";
+    const rotatableRecordId = fixture.agentRecordIds?.[AGENT_IDS.rotatable];
+    const rotate = await call<{ agent?: { status?: string }; bootstrap_api_key: string }>(
+      isRust ? "helper.CT02.key.rotate" : "CT02.key.rotate",
+      isRust ? `/api/v3/admin/agents/${rotatableRecordId}/rotate-key` : `/api/v2/agents/${AGENT_IDS.rotatable}/rotate-key`,
+      isRust
+        ? { method: "POST", headers: rustAdminHeaders(true) }
+        : withBearer(fixture.adminAccessToken ?? "", { method: "POST" })
+    );
     expect(rotate.status).toBe(200);
     const rotatedKey = requireBody(rotate).bootstrap_api_key;
+    if (isRust) {
+      snapshots.recordValue("CT02.key.rotate", {
+        status: rotate.status,
+        agent_status: rotate.body?.agent?.status,
+        key_issued: rotatedKey.length > 0
+      });
+    }
     addCanaries(fixture, rotatedKey);
 
     const oldKey = await call("CT02.key.rotated-old", "/api/v2/agents/token", {
@@ -230,10 +271,21 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     addCanaries(fixture, requireBody(newKey).access_token);
     fixture.agents.rotatable.apiKey = rotatedKey;
 
-    const revoke = await call("CT02.key.revoke", `/api/v2/agents/${AGENT_IDS.revocable}`, withBearer(fixture.adminAccessToken, {
-      method: "DELETE"
-    }));
+    const revocableRecordId = fixture.agentRecordIds?.[AGENT_IDS.revocable];
+    const revoke = await call<{ status?: string }>(
+      isRust ? "helper.CT02.key.revoke" : "CT02.key.revoke",
+      isRust ? `/api/v3/admin/agents/${revocableRecordId}` : `/api/v2/agents/${AGENT_IDS.revocable}`,
+      isRust
+        ? { method: "DELETE", headers: rustAdminHeaders(true) }
+        : withBearer(fixture.adminAccessToken ?? "", { method: "DELETE" })
+    );
     expect(revoke.status).toBe(200);
+    if (isRust) {
+      snapshots.recordValue("CT02.key.revoke", {
+        status: revoke.status,
+        agent_status: revoke.body?.status
+      });
+    }
 
     const revokedKey = await call("CT02.key.revoked", "/api/v2/agents/token", {
       method: "POST",
@@ -656,8 +708,24 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const approvalBody = requireBody<{ policy: { approval_reference: string } }>(approval);
     const approvalReference = approvalBody.policy.approval_reference;
 
-    const approve = await call("CT13.approval.approve", `/api/v2/secret/exchange/admin/approval/${approvalReference}/approve`, withBearer(fixture.adminAccessToken, { method: "POST" }));
+    const isRust = process.env.SUT === "rust";
+    const approve = await call<{ status?: string }>(
+      isRust ? "helper.CT13.approval.approve" : "CT13.approval.approve",
+      isRust ? `/api/v3/admin/approvals/${approvalReference}/approve` : `/api/v2/secret/exchange/admin/approval/${approvalReference}/approve`,
+      isRust
+        ? {
+          ...jsonRequestBody({ expected_status: "pending" }),
+          headers: rustAdminHeaders(true, { "content-type": "application/json", "idempotency-key": `ct13-approve-${approvalReference}` })
+        }
+        : withBearer(fixture.adminAccessToken ?? "", { method: "POST" })
+    );
     expect(approve.status).toBe(200);
+    if (isRust) {
+      snapshots.recordValue("CT13.approval.approve", {
+        status: approve.status,
+        decision_status: approve.body?.status
+      });
+    }
 
     const continued = await createExchange("CT13 approve", SECRET_NAMES.approval, "CT13.exchange.approve.continued");
     expect(continued.status).toBe(201);
@@ -666,8 +734,23 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const rejection = await createExchange("CT13 reject", SECRET_NAMES.approval, "CT13.exchange.reject.pending");
     expect(rejection.status).toBe(403);
     const rejectionReference = requireBody<{ policy: { approval_reference: string } }>(rejection).policy.approval_reference;
-    const reject = await call("CT13.approval.reject", `/api/v2/secret/exchange/admin/approval/${rejectionReference}/reject`, withBearer(fixture.adminAccessToken, { method: "POST" }));
+    const reject = await call<{ status?: string }>(
+      isRust ? "helper.CT13.approval.reject" : "CT13.approval.reject",
+      isRust ? `/api/v3/admin/approvals/${rejectionReference}/reject` : `/api/v2/secret/exchange/admin/approval/${rejectionReference}/reject`,
+      isRust
+        ? {
+          ...jsonRequestBody({ expected_status: "pending" }),
+          headers: rustAdminHeaders(true, { "content-type": "application/json", "idempotency-key": `ct13-reject-${rejectionReference}` })
+        }
+        : withBearer(fixture.adminAccessToken ?? "", { method: "POST" })
+    );
     expect(reject.status).toBe(200);
+    if (isRust) {
+      snapshots.recordValue("CT13.approval.reject", {
+        status: reject.status,
+        decision_status: reject.body?.status
+      });
+    }
     const rejectedAgain = await createExchange("CT13 reject", SECRET_NAMES.approval, "CT13.exchange.reject.rejected");
     expect(rejectedAgain.status).toBe(403);
     expect(requireBody(rejectedAgain)).toMatchObject({ error: "Exchange approval was rejected" });
@@ -724,6 +807,92 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     it("keeps hosted user refresh outside the controller", async () => {
       const response = await httpRequest(fixture.baseUrl, "/api/v2/auth/refresh", jsonRequestBody({}));
       expect(response.status).toBe(404);
+    });
+
+    it("CT15.request.agent-limit scopes request windows by tenant, agent and provider", async () => {
+      const rateAdapter = await startRateLimitContractAdapter();
+      const rateFixture = rateAdapter.fixture;
+      const rateCall = <T = unknown>(path: string, init: RequestInit = {}) =>
+        httpRequest<T>(rateFixture.baseUrl, path, init);
+      const subject = "ct15-provider-scoped-agent";
+      const providerOne = rateAdapter.externalJwt({ sub: subject });
+      const requestBody = () => jsonRequestBody({ public_key: "YQ==", description: "CT15 request limit" });
+      const allowedOne = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+      const allowedTwo = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+      const limited = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+      expect(allowedOne.status).toBe(201);
+      expect(allowedTwo.status).toBe(201);
+      expect(limited.status).toBe(429);
+      expect(requireBody(limited)).toEqual({
+        error: "Too many secret requests",
+        code: "rate_limited",
+        retry_after_seconds: expect.any(Number),
+        limit: 2,
+        used: 3
+      });
+      expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+      expect(containsCanary(limited.body, rateFixture.canaries)).toEqual([]);
+
+      const otherProvider = rateAdapter.externalJwt({ sub: subject, iss: "contract-gateway-alt" });
+      const otherProviderRequest = await rateCall("/api/v2/secret/request", withBearer(otherProvider, requestBody()));
+      expect(otherProviderRequest.status).toBe(201);
+
+      const foreignToken = rateAdapter.externalJwt({ sub: "ct15-foreign-scope", workspace_id: "another-tenant" });
+      const foreign = await rateCall("/api/v2/secret/request", withBearer(foreignToken, requestBody()));
+      expect(foreign.status).toBe(403);
+      const validTenantToken = rateAdapter.externalJwt({ sub: "ct15-foreign-scope" });
+      const validOne = await rateCall("/api/v2/secret/request", withBearer(validTenantToken, requestBody()));
+      const validTwo = await rateCall("/api/v2/secret/request", withBearer(validTenantToken, requestBody()));
+      expect(validOne.status).toBe(201);
+      expect(validTwo.status).toBe(201);
+
+      const exchangeBody = () => jsonRequestBody({
+        public_key: "YQ==",
+        secret_name: "not-registered.secret",
+        purpose: "CT15 exchange rate limit",
+        fulfiller_hint: AGENT_IDS.fulfiller
+      });
+      const deniedOne = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
+      const deniedTwo = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
+      const exchangeLimited = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
+      expect(deniedOne.status).toBe(403);
+      expect(deniedTwo.status).toBe(403);
+      expect(exchangeLimited.status).toBe(429);
+      expect(requireBody(exchangeLimited)).toMatchObject({
+        error: "Too many exchange requests",
+        code: "rate_limited",
+        limit: 2,
+        used: 3
+      });
+      expect(containsCanary(exchangeLimited.body, rateFixture.canaries)).toEqual([]);
+
+      await sleep(Number(process.env.CONTRACT_AGENT_RATE_WINDOW_MS ?? 1000) + 250);
+      const reset = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+      expect(reset.status).toBe(201);
+    });
+
+    it("CT15.exchange.agent-limit counts policy denials and keeps the request budget separate", async () => {
+      const rateAdapter = await startRateLimitContractAdapter();
+      const rateFixture = rateAdapter.fixture;
+      const rateCall = <T = unknown>(path: string, init: RequestInit = {}) =>
+        httpRequest<T>(rateFixture.baseUrl, path, init);
+      const token = rateAdapter.externalJwt({ sub: "ct15-independent-exchange-agent" });
+      const requestBody = () => jsonRequestBody({ public_key: "YQ==", description: "independent request window" });
+      const allowed = await rateCall("/api/v2/secret/request", withBearer(token, requestBody()));
+      expect(allowed.status).toBe(201);
+      const exchangeBody = () => jsonRequestBody({
+        public_key: "YQ==",
+        secret_name: "not-registered.secret",
+        purpose: "CT15 isolated exchange limit",
+        fulfiller_hint: AGENT_IDS.fulfiller
+      });
+      const deniedOne = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
+      const deniedTwo = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
+      expect(deniedOne.status).toBe(403);
+      expect(deniedTwo.status).toBe(403);
+      const limited = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
+      expect(limited.status).toBe(429);
+      expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
     });
 
     it("P02-I01 keeps a submit/revoke HTTP race revoked without retrievable ciphertext", async () => {
@@ -820,13 +989,22 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
   });
 
   it("CT17 records metadata-only audit output and rejects canary leakage", async () => {
-    const audit = await call<{ records: unknown[] }>(process.env.SUT === "rust" ? "helper.CT17.audit" : "CT17.audit", "/api/v2/audit/?limit=200", withBearer(fixture.adminAccessToken));
+    const isRust = process.env.SUT === "rust";
+    const audit = await call<{ records?: unknown[]; items?: unknown[] }>(
+      isRust ? "helper.CT17.audit" : "CT17.audit",
+      isRust ? "/api/v3/admin/audit?limit=100" : "/api/v2/audit/?limit=200",
+      isRust ? { headers: rustAdminHeaders() } : withBearer(fixture.adminAccessToken ?? "")
+    );
     expect(audit.status).toBe(200);
-    const records = requireBody(audit).records;
+    const records = (isRust ? requireBody(audit).items : requireBody(audit).records) ?? [];
+    expect(records).toBeDefined();
     expect(records.length).toBeGreaterThan(0);
     const eventTypes = new Set(records.flatMap((record) => {
-      if (!record || typeof record !== "object" || !("event_type" in record)) return [];
-      return [String(record.event_type)];
+      if (!record || typeof record !== "object") return [];
+      const event = isRust
+        ? ("event" in record ? record.event : undefined)
+        : ("event_type" in record ? record.event_type : undefined);
+      return event === undefined ? [] : [String(event)];
     }));
     expect([...eventTypes]).toEqual(expect.arrayContaining([
       "agent_token_minted",
@@ -834,7 +1012,9 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       "exchange_rejected"
     ]));
     expect(containsCanary(records, fixture.canaries)).toEqual([]);
-    const recordShape = ["actor_id", "actor_type", "created_at", "event_type", "id", "ip_address", "metadata", "resource_id", "workspace_id"];
+    const recordShape = isRust
+      ? ["actor_id", "created_at", "event", "id", "metadata", "resource_id"]
+      : ["actor_id", "actor_type", "created_at", "event_type", "id", "ip_address", "metadata", "resource_id", "workspace_id"];
     expect(records.every((record) => record && typeof record === "object"
       && JSON.stringify(Object.keys(record).sort()) === JSON.stringify(recordShape))).toBe(true);
     if (process.env.SUT === "rust") {

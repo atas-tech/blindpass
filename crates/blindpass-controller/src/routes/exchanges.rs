@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use crate::app::AppState;
+use crate::routes::agent_rate_limit;
 use crate::routes::auth::{
-    AuthError, WorkloadIdentity, authenticate_user, authenticate_workload, current_seconds,
-    jwt_validation,
+    WorkloadIdentity, authenticate_workload, current_seconds, jwt_validation,
 };
 use crate::routes::secrets::workload_auth_error;
 use crate::store::{ApprovalRecord, ExchangePolicyRecord, ExchangeRecord, LifecycleRecord, Store};
-use axum::extract::{Path, Query, State};
+use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
@@ -48,11 +48,6 @@ struct SubmitBody {
     ciphertext: String,
 }
 
-#[derive(Debug, Deserialize)]
-struct AuditQuery {
-    limit: Option<u32>,
-}
-
 #[derive(Debug, Serialize)]
 struct PolicyResponse {
     mode: String,
@@ -63,24 +58,6 @@ struct PolicyResponse {
     requester_ring: Option<String>,
     fulfiller_ring: Option<String>,
     secret_name: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ApprovalResponse {
-    approval_reference: String,
-    status: String,
-    requester_id: String,
-    fulfiller_hint: String,
-    secret_name: String,
-    purpose: String,
-    rule_id: Option<String>,
-    reason: String,
-    requester_ring: Option<String>,
-    fulfiller_ring: Option<String>,
-    created_at: u64,
-    decided_at: Option<u64>,
-    decided_by: Option<String>,
-    expires_at: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -129,24 +106,6 @@ pub(crate) fn routes() -> Router<AppState> {
             "/api/v2/secret/exchange/revoke/{id}",
             delete(revoke_exchange),
         )
-        .route("/api/v2/secret/exchange/approval/{id}", get(get_approval))
-        .route(
-            "/api/v2/secret/exchange/approval/{id}/approve",
-            post(approve_agent),
-        )
-        .route(
-            "/api/v2/secret/exchange/approval/{id}/reject",
-            post(reject_agent),
-        )
-        .route(
-            "/api/v2/secret/exchange/admin/approval/{id}/approve",
-            post(approve_admin),
-        )
-        .route(
-            "/api/v2/secret/exchange/admin/approval/{id}/reject",
-            post(reject_admin),
-        )
-        .route("/api/v2/audit/", get(list_audit))
 }
 
 async fn create_exchange(
@@ -164,6 +123,29 @@ async fn create_exchange(
     let secret_name = body.secret_name.trim();
     let purpose = body.purpose.trim();
     let fulfiller_hint = body.fulfiller_hint.trim();
+    if identity
+        .workspace_id
+        .as_deref()
+        .is_some_and(|workspace| workspace != store.tenant_id())
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error":"workspace_mismatch"})),
+        )
+            .into_response();
+    }
+    if let Some(response) = agent_rate_limit::enforce(
+        store,
+        &identity,
+        "exchange",
+        "exchange requests",
+        state.agent_exchange_rate_limit,
+        state.agent_rate_window_ms,
+    )
+    .await
+    {
+        return response;
+    }
     if body.public_key.len() > 2_048 {
         return validation_error("body/public_key must NOT have more than 2048 characters");
     }
@@ -176,17 +158,6 @@ async fn create_exchange(
         || fulfiller_hint.len() > 512
     {
         return validation_error("body/public_key must match pattern \"^[A-Za-z0-9+/]+={0,2}$\"");
-    }
-    if identity
-        .workspace_id
-        .as_deref()
-        .is_some_and(|workspace| workspace != store.tenant_id())
-    {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(json!({"error":"workspace_mismatch"})),
-        )
-            .into_response();
     }
     let prior_id = body.prior_exchange_id.as_deref().unwrap_or("").trim();
     if !prior_id.is_empty() {
@@ -768,214 +739,6 @@ async fn revoke_exchange(
     Json(json!({"status":"revoked"})).into_response()
 }
 
-async fn get_approval(
-    State(state): State<AppState>,
-    Path(reference): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    let Some(store) = state.store.as_ref() else {
-        return unavailable();
-    };
-    let identity = match authenticate_workload(&state, &headers).await {
-        Ok(identity) => identity,
-        Err(error) => return workload_auth_error(error),
-    };
-    let approval = match store.get_approval(&reference).await {
-        Ok(Some(approval)) => approval,
-        _ => return not_available(),
-    };
-    if foreign_workspace(&identity, &approval.workspace_id)
-        || (approval.requester_id != identity.sub && !approver_authorized(&approval, &identity.sub))
-    {
-        return not_available();
-    }
-    Json(approval_response(&approval)).into_response()
-}
-
-async fn approve_agent(
-    State(state): State<AppState>,
-    Path(reference): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    decide_agent_approval(state, reference, headers, "approved").await
-}
-async fn reject_agent(
-    State(state): State<AppState>,
-    Path(reference): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    decide_agent_approval(state, reference, headers, "rejected").await
-}
-async fn approve_admin(
-    State(state): State<AppState>,
-    Path(reference): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    decide_admin_approval(state, reference, headers, "approved").await
-}
-async fn reject_admin(
-    State(state): State<AppState>,
-    Path(reference): Path<String>,
-    headers: HeaderMap,
-) -> Response {
-    decide_admin_approval(state, reference, headers, "rejected").await
-}
-
-async fn decide_agent_approval(
-    state: AppState,
-    reference: String,
-    headers: HeaderMap,
-    status: &'static str,
-) -> Response {
-    let Some(store) = state.store.as_ref() else {
-        return unavailable();
-    };
-    let identity = match authenticate_workload(&state, &headers).await {
-        Ok(identity) => identity,
-        Err(error) => return workload_auth_error(error),
-    };
-    let approval = match store.get_approval(&reference).await {
-        Ok(Some(approval)) => approval,
-        _ => return not_available(),
-    };
-    if !approver_authorized(&approval, &identity.sub)
-        || foreign_workspace(&identity, &approval.workspace_id)
-    {
-        return not_available();
-    }
-    complete_approval(store, approval, &identity.sub, "agent", status).await
-}
-
-async fn decide_admin_approval(
-    state: AppState,
-    reference: String,
-    headers: HeaderMap,
-    status: &'static str,
-) -> Response {
-    let Some(store) = state.store.as_ref() else {
-        return unavailable();
-    };
-    let user = match authenticate_user(&state, &headers) {
-        Ok(user) => user,
-        Err(error) => return auth_error(error),
-    };
-    if !matches!(
-        user.role.as_str(),
-        "workspace_admin" | "workspace_operator" | "super_admin"
-    ) {
-        return (StatusCode::FORBIDDEN, Json(json!({"error":"forbidden"}))).into_response();
-    }
-    let approval = match store.get_approval(&reference).await {
-        Ok(Some(approval)) if approval.workspace_id == user.workspace_id => approval,
-        _ => return not_available(),
-    };
-    complete_approval(store, approval, &user.sub, "user", status).await
-}
-
-async fn complete_approval(
-    store: &Store,
-    approval: ApprovalRecord,
-    actor_id: &str,
-    actor_type: &str,
-    status: &str,
-) -> Response {
-    if approval.status != "pending" {
-        return (
-            StatusCode::CONFLICT,
-            Json(json!({"error":"Approval is no longer pending"})),
-        )
-            .into_response();
-    }
-    let decided = match store
-        .decide_approval(&approval.approval_reference, status, actor_id)
-        .await
-    {
-        Ok(Some(approval)) => approval,
-        _ => {
-            return (
-                StatusCode::CONFLICT,
-                Json(json!({"error":"Approval is no longer pending"})),
-            )
-                .into_response();
-        }
-    };
-    append_lifecycle(
-        store,
-        "approval_decided",
-        None,
-        Some(&decided.approval_reference),
-        &decided.requester_id,
-        &decided.secret_name,
-        &decided.purpose,
-        Some(&decided.fulfiller_hint),
-        Some(actor_id),
-        Some(status),
-        decided.rule_id.as_deref().unwrap_or(""),
-        Value::Null,
-    )
-    .await;
-    let event = if status == "approved" {
-        "exchange_approved"
-    } else {
-        "exchange_rejected"
-    };
-    let _ = store.append_audit(event, actor_type, Some(actor_id), "approval", Some(&decided.approval_reference), &json!({
-        "action":if status == "approved" {"exchange_approval_approve"} else {"exchange_approval_reject"},
-        "purpose":decided.purpose,"secret_name":decided.secret_name
-    })).await;
-    Json(json!({
-        "approval_reference":decided.approval_reference,
-        "status":decided.status,
-        "decided_at":decided.decided_at_ms.map(|value|(value / 1000) as u64),
-        "decided_by":decided.decided_by
-    }))
-    .into_response()
-}
-
-async fn list_audit(
-    State(state): State<AppState>,
-    Query(query): Query<AuditQuery>,
-    headers: HeaderMap,
-) -> Response {
-    let Some(store) = state.store.as_ref() else {
-        return unavailable();
-    };
-    let user = match authenticate_user(&state, &headers) {
-        Ok(user) => user,
-        Err(error) => return auth_error(error),
-    };
-    if !matches!(
-        user.role.as_str(),
-        "workspace_admin" | "workspace_operator" | "workspace_viewer" | "super_admin"
-    ) {
-        return (StatusCode::FORBIDDEN, Json(json!({"error":"forbidden"}))).into_response();
-    }
-    if user.workspace_id != store.tenant_id() {
-        return not_available();
-    }
-    let records = match store.list_audit(query.limit.unwrap_or(50)).await {
-        Ok(records) => records,
-        Err(_) => return unavailable(),
-    };
-    let records = records
-        .into_iter()
-        .map(|record| {
-            json!({
-                "id":record.id,
-                "workspace_id":record.workspace_id,
-                "event_type":record.event_type,
-                "actor_id":record.actor_id,
-                "actor_type":record.actor_type,
-                "resource_id":record.resource_id,
-                "metadata":record.metadata,
-                "ip_address":Value::Null,
-                "created_at":format_epoch_ms(record.created_at_ms)
-            })
-        })
-        .collect::<Vec<_>>();
-    Json(json!({"records":records,"next_cursor":Value::Null})).into_response()
-}
-
 async fn resolve_policy(
     state: &AppState,
     store: &Store,
@@ -1199,40 +962,6 @@ fn core_policy(policy: &ExchangePolicyRecord) -> blindpass_core::policy::PolicyD
     }
 }
 
-fn approval_response(approval: &ApprovalRecord) -> ApprovalResponse {
-    ApprovalResponse {
-        approval_reference: approval.approval_reference.clone(),
-        status: approval.status.clone(),
-        requester_id: approval.requester_id.clone(),
-        fulfiller_hint: approval.fulfiller_hint.clone(),
-        secret_name: approval.secret_name.clone(),
-        purpose: approval.purpose.clone(),
-        rule_id: approval.rule_id.clone(),
-        reason: approval.reason.clone(),
-        requester_ring: approval.requester_ring.clone(),
-        fulfiller_ring: approval.fulfiller_ring.clone(),
-        created_at: (approval.created_at_ms / 1_000) as u64,
-        decided_at: approval.decided_at_ms.map(|value| (value / 1_000) as u64),
-        decided_by: approval.decided_by.clone(),
-        expires_at: (approval.expires_at_ms / 1_000) as u64,
-    }
-}
-
-fn approver_authorized(approval: &ApprovalRecord, agent_id: &str) -> bool {
-    (approval.approver_ids.is_empty()
-        || approval
-            .approver_ids
-            .iter()
-            .any(|candidate| candidate == agent_id))
-        && (approval.approver_rings.is_empty()
-            || ring_from_agent_id(agent_id).is_some_and(|ring| {
-                approval
-                    .approver_rings
-                    .iter()
-                    .any(|allowed| allowed == &ring)
-            }))
-}
-
 /// P02-D11: a workload whose token names another workspace never acts in
 /// this tenant, even when its subject matches a tenant agent.
 fn foreign_workspace(identity: &WorkloadIdentity, workspace_id: &str) -> bool {
@@ -1240,12 +969,6 @@ fn foreign_workspace(identity: &WorkloadIdentity, workspace_id: &str) -> bool {
         .workspace_id
         .as_deref()
         .is_some_and(|workspace| workspace != workspace_id)
-}
-
-fn ring_from_agent_id(agent_id: &str) -> Option<String> {
-    let (_, suffix) = agent_id.split_once("/ring/")?;
-    let ring = suffix.split('/').next()?.trim();
-    (!ring.is_empty()).then(|| ring.to_owned())
 }
 
 fn approval_reference(
@@ -1436,50 +1159,6 @@ fn hex(bytes: &[u8]) -> String {
         output.push(DIGITS[(byte & 0xf) as usize] as char);
     }
     output
-}
-
-fn format_epoch_ms(milliseconds: i64) -> String {
-    let seconds = milliseconds.div_euclid(1_000);
-    let millis = milliseconds.rem_euclid(1_000);
-    let days = seconds.div_euclid(86_400);
-    let day_seconds = seconds.rem_euclid(86_400);
-    let (year, month, day) = civil_from_days(days);
-    format!(
-        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{millis:03}Z",
-        day_seconds / 3600,
-        (day_seconds / 60) % 60,
-        day_seconds % 60
-    )
-}
-
-fn civil_from_days(days_since_epoch: i64) -> (i64, i64, i64) {
-    let z = days_since_epoch + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = z - era * 146_097;
-    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = mp + if mp < 10 { 3 } else { -9 };
-    (y + i64::from(m <= 2), m, d)
-}
-
-fn auth_error(error: AuthError) -> Response {
-    let status = match error {
-        AuthError::MissingBearer => StatusCode::UNAUTHORIZED,
-        AuthError::InvalidToken | AuthError::InvalidClaims | AuthError::InvalidApiKey => {
-            StatusCode::UNAUTHORIZED
-        }
-        AuthError::ProviderUnavailable => StatusCode::SERVICE_UNAVAILABLE,
-    };
-    let (message, code) = match error {
-        AuthError::MissingBearer => ("Missing bearer token", "missing_bearer"),
-        AuthError::InvalidToken | AuthError::InvalidClaims => ("Invalid token", "invalid_token"),
-        AuthError::InvalidApiKey => ("Invalid agent API key", "invalid_api_key"),
-        AuthError::ProviderUnavailable => ("Identity provider unavailable", "provider_unavailable"),
-    };
-    (status, Json(json!({"error":message,"code":code}))).into_response()
 }
 
 fn unavailable() -> Response {

@@ -16,10 +16,22 @@ describe("contract snapshot failure detection", () => {
     expect(projectRustSharedSnapshot("CT16.cors.disallowed", baseline["CT16.cors.disallowed"])).toEqual({
       allow_origin: null
     });
+    expect(projectRustSharedSnapshot("CT02.key.rotate", baseline["CT02.key.rotate"])).toEqual({
+      status: 200, agent_status: "active", key_issued: true
+    });
+    expect(projectRustSharedSnapshot("CT02.key.revoke", baseline["CT02.key.revoke"])).toEqual({
+      status: 200, agent_status: "revoked"
+    });
+    expect(projectRustSharedSnapshot("CT13.approval.approve", baseline["CT13.approval.approve"])).toEqual({
+      status: 200, decision_status: "approved"
+    });
+    expect(projectRustSharedSnapshot("CT13.approval.reject", baseline["CT13.approval.reject"])).toEqual({
+      status: 200, decision_status: "rejected"
+    });
     expect(projectRustSharedSnapshot("CT17.audit", baseline["CT17.audit"])).toEqual({
       status: 200,
       content_type: "application/json",
-      record_shape: ["actor_id", "actor_type", "created_at", "event_type", "id", "ip_address", "metadata", "resource_id", "workspace_id"],
+      record_shape: ["actor_id", "created_at", "event", "id", "metadata", "resource_id"],
       required_events: ["agent_token_minted", "exchange_pending_approval", "exchange_rejected"]
     });
     expect((baseline["CT17.audit"] as { body: { records: unknown[] } }).body.records.length).toBeGreaterThan(50);

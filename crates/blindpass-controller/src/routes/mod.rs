@@ -6,6 +6,7 @@ pub(crate) mod admin_approvals;
 pub(crate) mod admin_operators;
 pub(crate) mod admin_policy;
 pub(crate) mod admin_session;
+pub(crate) mod agent_rate_limit;
 pub(crate) mod agents;
 pub(crate) mod auth;
 pub(crate) mod exchanges;

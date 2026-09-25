@@ -8,7 +8,7 @@ import { GatewaySpsClient } from "../../packages/gateway/src/sps-client.ts";
 import { startAdapter } from "../../packages/contract-tests/src/adapter.ts";
 import { addCanaries, AGENT_IDS, SECRET_NAMES } from "../../packages/contract-tests/src/fixtures.ts";
 import { containsCanary } from "../../packages/contract-tests/src/normalization.ts";
-import { httpRequest, jsonRequestBody, withBearer } from "../../packages/contract-tests/src/http.ts";
+import { httpRequest, jsonRequestBody } from "../../packages/contract-tests/src/http.ts";
 
 if (process.env.SUT !== "rust") {
   throw new Error("CC02 requires SUT=rust");
@@ -106,11 +106,11 @@ try {
 
     const audit = await httpRequest(
       adapter.baseUrl,
-      "/api/v2/audit/?limit=200",
-      withBearer(fixture.adminAccessToken)
+      "/api/v3/admin/audit?limit=100",
+      { headers: { cookie: fixture.adminSession.cookie } }
     );
     assert.equal(audit.status, 200);
-    assert.deepEqual(containsCanary(audit.body?.records ?? [], fixture.canaries), []);
+    assert.deepEqual(containsCanary(audit.body?.items ?? [], fixture.canaries), []);
   } finally {
     agentKeyManager.destroyKeyPair(requesterKeyPair);
   }

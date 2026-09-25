@@ -4,12 +4,17 @@
 //! database statement as every read or state transition; the sweeper only
 //! bounds retention and is never an authorization mechanism.
 
+use blindpass_core::clock::{
+    ClockAnchor, ClockSample, ClockSource, StartupClockCheck, SystemClock, check_running_clock,
+    check_startup_clock,
+};
 use rand::{RngCore, rngs::OsRng};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{PgPool, Row, SqlitePool, postgres::PgPoolOptions};
 use std::fmt;
 use std::str::FromStr;
-use std::time::Duration;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 mod exchanges;
 mod operators;
@@ -24,8 +29,8 @@ const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) 
 const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
 /// Current schema version. Each migration file raises it by one:
-/// 1 = `0001_init`, 2 = `0002_admin_idempotency`, 3 = `0003_controller_clock`.
-pub const SCHEMA_VERSION: i64 = 3;
+/// 1 = `0001_init`, 2 = `0002_admin_idempotency`, 3 = `0003_controller_clock`, 4 = `0004_clock_anchor`.
+pub const SCHEMA_VERSION: i64 = 4;
 /// Tables that must exist for a database that reports the given version.
 /// A supported older version is migrated forward; a version whose tables
 /// are missing is damaged and fails closed instead of being recreated.
@@ -50,14 +55,12 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     ),
     (2, &["idempotency_keys"]),
     (3, &["controller_clock"]),
+    (4, &["controller_clock"]),
 ];
 /// The persisted clock high-water mark advances at most this often, so
-/// ordinary reads never take a write lock. The mark moves only inside store
-/// calls, including the 30-second retention sweep, so it trails the clock by
-/// up to that sweep period on an idle controller and by the whole downtime
-/// across a restart. Every expiry predicate compares against the mark: a
-/// clock that falls behind it fails closed, while a smaller step back goes
-/// undetected and extends deadlines by the step.
+/// ordinary reads never take a write lock. The independent one-second clock
+/// monitor refreshes it while `serve` is running; outside `serve`, store calls
+/// (including the retention sweep) are the checkpoints.
 const CLOCK_ADVANCE_INTERVAL_MS: i64 = 1_000;
 
 #[derive(Debug)]
@@ -67,6 +70,8 @@ pub enum StoreError {
     MissingState(&'static str),
     UnsupportedSchemaVersion,
     ClockRegression,
+    ClockFenced,
+    ClockSourceUnavailable,
 }
 
 impl fmt::Display for StoreError {
@@ -79,6 +84,10 @@ impl fmt::Display for StoreError {
                 formatter.write_str("controller schema version is unsupported")
             }
             Self::ClockRegression => formatter.write_str("controller database clock regressed"),
+            Self::ClockFenced => formatter.write_str("controller clock is fenced"),
+            Self::ClockSourceUnavailable => {
+                formatter.write_str("controller clock source is unavailable")
+            }
         }
     }
 }
@@ -95,6 +104,24 @@ enum Database {
 pub struct Store {
     database: Database,
     tenant_id: String,
+    clock_source: Arc<dyn ClockSource>,
+    clock_tolerance_ms: i64,
+    clock_monitor: Arc<Mutex<Option<ClockMonitorSample>>>,
+}
+
+#[derive(Clone)]
+struct ClockMonitorSample {
+    database_ms: i64,
+    host_wall_ms: i64,
+    measured_at: Instant,
+}
+
+struct PersistedClockAnchor {
+    last_observed_ms: i64,
+    boot_id: Option<String>,
+    boottime_ms: Option<i64>,
+    host_wall_ms: Option<i64>,
+    fenced_at: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -176,7 +203,39 @@ pub struct RateLimitResult {
 }
 
 impl Store {
+    pub fn spawn_clock_monitor(&self) -> tokio::task::JoinHandle<()> {
+        let store = self.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(1));
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                match store.monitor_clock().await {
+                    Ok(()) | Err(StoreError::ClockFenced) => {}
+                    Err(_) => tracing::warn!("controller clock monitor could not check the clock"),
+                }
+            }
+        })
+    }
+
     pub async fn connect(url: &str) -> Result<Self, StoreError> {
+        Self::connect_with_clock_source(url, Arc::new(SystemClock), 2_000).await
+    }
+
+    pub async fn connect_with_tolerance(url: &str, tolerance_ms: u64) -> Result<Self, StoreError> {
+        Self::connect_with_clock_source(url, Arc::new(SystemClock), tolerance_ms).await
+    }
+
+    pub async fn connect_with_clock_source(
+        url: &str,
+        clock_source: Arc<dyn ClockSource>,
+        tolerance_ms: u64,
+    ) -> Result<Self, StoreError> {
+        let clock_tolerance_ms = i64::try_from(tolerance_ms)
+            .ok()
+            .filter(|value| *value > 0)
+            .ok_or(StoreError::InvalidInput("clock tolerance"))?;
         let database = Database::connect(url).await?;
         database.validate_existing_schema_version().await?;
         database.migrate().await?;
@@ -238,21 +297,35 @@ impl Store {
                     .map_err(StoreError::Database)?
             }
         };
+        let sample = clock_source
+            .sample()
+            .map_err(|_| StoreError::ClockSourceUnavailable)?;
         match &database {
             Database::Sqlite(pool) => {
                 let sql = format!(
-                    "INSERT OR IGNORE INTO controller_clock (id, last_observed_ms) VALUES (1, {SQLITE_WALL_NOW_MS})"
+                    "INSERT OR IGNORE INTO controller_clock
+                     (id, last_observed_ms, boot_id, boottime_ms, host_wall_ms, fenced_at)
+                     VALUES (1, {SQLITE_WALL_NOW_MS}, ?, ?, ?, NULL)"
                 );
                 sqlx::query(&sql)
+                    .bind(&sample.boot_id)
+                    .bind(sample.boottime_ms)
+                    .bind(sample.host_wall_ms)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
             }
             Database::Postgres(pool) => {
                 let sql = format!(
-                    "INSERT INTO controller_clock (id, last_observed_ms) VALUES (1, {POSTGRES_WALL_NOW_MS}) ON CONFLICT (id) DO NOTHING"
+                    "INSERT INTO controller_clock
+                     (id, last_observed_ms, boot_id, boottime_ms, host_wall_ms, fenced_at)
+                     VALUES (1, {POSTGRES_WALL_NOW_MS}, $1, $2, $3, NULL)
+                     ON CONFLICT (id) DO NOTHING"
                 );
                 sqlx::query(&sql)
+                    .bind(&sample.boot_id)
+                    .bind(sample.boottime_ms)
+                    .bind(sample.host_wall_ms)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
@@ -261,8 +334,12 @@ impl Store {
         let store = Self {
             database,
             tenant_id,
+            clock_source,
+            clock_tolerance_ms,
+            clock_monitor: Arc::new(Mutex::new(None)),
         };
-        store.checkpoint_clock().await?;
+        let database_ms = database_wall_now_ms(&store.database).await?;
+        store.initialize_clock(sample, database_ms).await?;
         Ok(store)
     }
 
@@ -278,6 +355,319 @@ impl Store {
             Database::Sqlite(pool) => pool.close().await,
             Database::Postgres(pool) => pool.close().await,
         }
+    }
+
+    async fn initialize_clock(
+        &self,
+        sample: ClockSample,
+        database_now_ms: i64,
+    ) -> Result<(), StoreError> {
+        let anchor = read_clock_anchor(&self.database).await?;
+        if anchor.fenced_at.is_some() {
+            self.set_monitor_sample(database_now_ms, sample.host_wall_ms)?;
+            return Ok(());
+        }
+        let previous = ClockAnchor {
+            boot_id: anchor.boot_id,
+            boottime_ms: anchor.boottime_ms.unwrap_or_default(),
+            database_ms: anchor.last_observed_ms,
+            host_wall_ms: anchor.host_wall_ms.unwrap_or_default(),
+        };
+        let current = ClockAnchor {
+            boot_id: sample.boot_id.clone(),
+            boottime_ms: sample.boottime_ms,
+            database_ms: database_now_ms,
+            host_wall_ms: sample.host_wall_ms,
+        };
+        let check = check_startup_clock(&previous, &current, self.clock_tolerance_ms);
+        match check {
+            StartupClockCheck::SameBoot => {
+                update_clock_anchor(&self.database, &sample, database_now_ms).await?;
+                self.set_monitor_sample(database_now_ms, sample.host_wall_ms)?;
+                Ok(())
+            }
+            StartupClockCheck::BootChangedOrUnknown => {
+                self.fence_after_restart(&sample, database_now_ms).await?;
+                self.set_monitor_sample(database_now_ms, sample.host_wall_ms)?;
+                Ok(())
+            }
+            StartupClockCheck::DatabaseRegressed
+            | StartupClockCheck::HostRegressed
+            | StartupClockCheck::BothRegressed => {
+                self.persist_clock_fence(database_now_ms).await?;
+                tracing::warn!(event = "clock_regression_detected", check = ?check);
+                Err(StoreError::ClockRegression)
+            }
+        }
+    }
+
+    fn set_monitor_sample(&self, database_ms: i64, host_wall_ms: i64) -> Result<(), StoreError> {
+        let mut previous = self
+            .clock_monitor
+            .lock()
+            .map_err(|_| StoreError::ClockFenced)?;
+        *previous = Some(ClockMonitorSample {
+            database_ms,
+            host_wall_ms,
+            measured_at: Instant::now(),
+        });
+        Ok(())
+    }
+
+    async fn persist_clock_fence(&self, database_now_ms: i64) -> Result<(), StoreError> {
+        match &self.database {
+            Database::Sqlite(pool) => {
+                sqlx::query(
+                    "UPDATE controller_clock SET fenced_at = ? WHERE id = 1 AND fenced_at IS NULL",
+                )
+                .bind(database_now_ms)
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+            }
+            Database::Postgres(pool) => {
+                sqlx::query(
+                    "UPDATE controller_clock SET fenced_at = $1 WHERE id = 1 AND fenced_at IS NULL",
+                )
+                .bind(database_now_ms)
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn fence_after_restart(
+        &self,
+        sample: &ClockSample,
+        database_now_ms: i64,
+    ) -> Result<(), StoreError> {
+        let metadata;
+        match &self.database {
+            Database::Sqlite(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                let fenced = sqlx::query(
+                    "UPDATE controller_clock SET fenced_at = ? WHERE id = 1 AND fenced_at IS NULL",
+                )
+                .bind(database_now_ms)
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?
+                .rows_affected();
+                if fenced == 0 {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(());
+                }
+                let removed_secret_requests = sqlx::query("DELETE FROM secret_requests")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_exchanges = sqlx::query("DELETE FROM exchanges")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_approvals =
+                    sqlx::query("DELETE FROM approvals WHERE status = 'pending'")
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                let removed_bootstrap_tokens = sqlx::query("DELETE FROM bootstrap_tokens")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_rate_windows = sqlx::query("DELETE FROM rate_windows")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_idempotency_keys = sqlx::query("DELETE FROM idempotency_keys")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let counts = serde_json::json!({
+                    "removed_secret_requests":removed_secret_requests,
+                    "removed_exchanges":removed_exchanges,
+                    "removed_pending_approvals":removed_approvals,
+                    "removed_bootstrap_tokens":removed_bootstrap_tokens,
+                    "removed_rate_windows":removed_rate_windows,
+                    "removed_idempotency_keys":removed_idempotency_keys
+                });
+                metadata = serde_json::to_string(&counts)
+                    .map_err(|_| StoreError::InvalidInput("clock fence audit metadata"))?;
+                sqlx::query(
+                    "UPDATE controller_clock SET last_observed_ms = ?, boot_id = ?, boottime_ms = ?, host_wall_ms = ? WHERE id = 1",
+                )
+                .bind(database_now_ms)
+                .bind(&sample.boot_id)
+                .bind(sample.boottime_ms)
+                .bind(sample.host_wall_ms)
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::query(
+                    "INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at) VALUES (?, ?, 'system', NULL, 'clock_restart_fence', 'controller', NULL, ?, ?)",
+                )
+                .bind(new_hex_id())
+                .bind(&self.tenant_id)
+                .bind(&metadata)
+                .bind(database_now_ms)
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
+            }
+            Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                let fenced = sqlx::query(
+                    "UPDATE controller_clock SET fenced_at = $1 WHERE id = 1 AND fenced_at IS NULL",
+                )
+                .bind(database_now_ms)
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?
+                .rows_affected();
+                if fenced == 0 {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(());
+                }
+                let removed_secret_requests = sqlx::query("DELETE FROM secret_requests")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_exchanges = sqlx::query("DELETE FROM exchanges")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_approvals =
+                    sqlx::query("DELETE FROM approvals WHERE status = 'pending'")
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                let removed_bootstrap_tokens = sqlx::query("DELETE FROM bootstrap_tokens")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_rate_windows = sqlx::query("DELETE FROM rate_windows")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let removed_idempotency_keys = sqlx::query("DELETE FROM idempotency_keys")
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let counts = serde_json::json!({
+                    "removed_secret_requests":removed_secret_requests,
+                    "removed_exchanges":removed_exchanges,
+                    "removed_pending_approvals":removed_approvals,
+                    "removed_bootstrap_tokens":removed_bootstrap_tokens,
+                    "removed_rate_windows":removed_rate_windows,
+                    "removed_idempotency_keys":removed_idempotency_keys
+                });
+                metadata = serde_json::to_string(&counts)
+                    .map_err(|_| StoreError::InvalidInput("clock fence audit metadata"))?;
+                sqlx::query(
+                    "UPDATE controller_clock SET last_observed_ms = $1, boot_id = $2, boottime_ms = $3, host_wall_ms = $4 WHERE id = 1",
+                )
+                .bind(database_now_ms)
+                .bind(&sample.boot_id)
+                .bind(sample.boottime_ms)
+                .bind(sample.host_wall_ms)
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::query(
+                    "INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at) VALUES ($1, $2, 'system', NULL, 'clock_restart_fence', 'controller', NULL, $3, $4)",
+                )
+                .bind(new_hex_id())
+                .bind(&self.tenant_id)
+                .bind(&metadata)
+                .bind(database_now_ms)
+                .execute(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
+            }
+        }
+        tracing::warn!(
+            event = "clock_restart_fence",
+            "controller clock fenced after boot identity changed or became unreadable"
+        );
+        Ok(())
+    }
+
+    /// Compare host and database time against the previous one-second monitor
+    /// sample. A regression beyond the configured tolerance is fenced in the
+    /// shared database row so every process and store clone refuses writes.
+    pub async fn monitor_clock(&self) -> Result<(), StoreError> {
+        let database_ms = database_wall_now_ms(&self.database).await?;
+        let sample = match self.clock_source.sample() {
+            Ok(sample) => sample,
+            Err(_) => {
+                self.persist_clock_fence(database_ms).await?;
+                tracing::warn!(
+                    event = "clock_source_unavailable",
+                    "controller clock source became unavailable"
+                );
+                return Err(StoreError::ClockFenced);
+            }
+        };
+        let anchor = read_clock_anchor(&self.database).await?;
+        if anchor.fenced_at.is_some() {
+            return Err(StoreError::ClockFenced);
+        }
+        if anchor.boot_id.as_deref() != sample.boot_id.as_deref() || sample.boot_id.is_none() {
+            self.fence_after_restart(&sample, database_ms).await?;
+            return Err(StoreError::ClockFenced);
+        }
+        let previous = self
+            .clock_monitor
+            .lock()
+            .map_err(|_| StoreError::ClockFenced)?
+            .clone()
+            .ok_or(StoreError::ClockFenced)?;
+        let elapsed_ms =
+            i64::try_from(previous.measured_at.elapsed().as_millis()).unwrap_or(i64::MAX);
+        let check = check_running_clock(
+            previous.database_ms,
+            previous.host_wall_ms,
+            database_ms,
+            sample.host_wall_ms,
+            elapsed_ms,
+            self.clock_tolerance_ms,
+        );
+        if check.database_regressed || check.host_regressed {
+            self.persist_clock_fence(database_ms).await?;
+            tracing::warn!(
+                event = "clock_regression_detected",
+                database_regressed = check.database_regressed,
+                host_regressed = check.host_regressed,
+                "controller clock regression exceeded tolerance"
+            );
+            return Err(StoreError::ClockFenced);
+        }
+        if check.database_advanced || check.host_advanced {
+            tracing::info!(
+                event = "clock_forward_jump",
+                database_advanced = check.database_advanced,
+                host_advanced = check.host_advanced,
+                "controller clock advanced beyond monotonic elapsed time"
+            );
+        }
+        update_clock_anchor(&self.database, &sample, database_ms).await?;
+        self.set_monitor_sample(database_ms, sample.host_wall_ms)?;
+        Ok(())
     }
 
     pub async fn is_ready(&self) -> bool {
@@ -296,67 +686,74 @@ impl Store {
         }
     }
 
-    /// Compare the database wall clock with the persisted high-water mark
-    /// without taking a write lock. A regression fails closed; the mark is
-    /// advanced with a single guarded statement at most once per interval,
-    /// so ordinary reads never serialize on the clock row.
+    /// Refuse every store operation while the durable clock fence is set.
+    /// A separate one-second monitor compares host and database clocks while
+    /// `serve` is running; this checkpoint also verifies the running clock on
+    /// store calls used by shell commands and test fixtures.
     async fn checkpoint_clock(&self) -> Result<(), StoreError> {
-        let (observed, now): (i64, i64) = match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!(
-                    "SELECT last_observed_ms, {SQLITE_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
+        let anchor = read_clock_anchor(&self.database).await?;
+        if anchor.fenced_at.is_some() {
+            return Err(StoreError::ClockFenced);
+        }
+        let now = database_wall_now_ms(&self.database).await?;
+        let sample = match self.clock_source.sample() {
+            Ok(sample) => sample,
+            Err(_) => {
+                self.persist_clock_fence(now).await?;
+                tracing::warn!(
+                    event = "clock_source_unavailable",
+                    "controller clock source became unavailable"
                 );
-                let row = sqlx::query(&sql)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                (
-                    row.try_get(0).map_err(StoreError::Database)?,
-                    row.try_get(1).map_err(StoreError::Database)?,
-                )
-            }
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "SELECT last_observed_ms, {POSTGRES_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
-                );
-                let row = sqlx::query(&sql)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                (
-                    row.try_get(0).map_err(StoreError::Database)?,
-                    row.try_get(1).map_err(StoreError::Database)?,
-                )
+                return Err(StoreError::ClockFenced);
             }
         };
-        if now < observed {
+        if anchor.boot_id.as_deref() != sample.boot_id.as_deref() || sample.boot_id.is_none() {
+            self.fence_after_restart(&sample, now).await?;
+            return Err(StoreError::ClockFenced);
+        }
+        let previous = self
+            .clock_monitor
+            .lock()
+            .map_err(|_| StoreError::ClockFenced)?
+            .clone()
+            .ok_or(StoreError::ClockFenced)?;
+        let elapsed_ms =
+            i64::try_from(previous.measured_at.elapsed().as_millis()).unwrap_or(i64::MAX);
+        let check = check_running_clock(
+            previous.database_ms,
+            previous.host_wall_ms,
+            now,
+            sample.host_wall_ms,
+            elapsed_ms,
+            self.clock_tolerance_ms,
+        );
+        let checkpoint_regressed =
+            now.saturating_add(self.clock_tolerance_ms) < anchor.last_observed_ms;
+        if check.database_regressed || check.host_regressed || checkpoint_regressed {
+            self.persist_clock_fence(now).await?;
+            tracing::warn!(
+                event = "clock_regression_detected",
+                database_regressed = check.database_regressed,
+                host_regressed = check.host_regressed,
+                checkpoint_regressed,
+                "controller clock regression exceeded tolerance"
+            );
             return Err(StoreError::ClockRegression);
         }
-        if now - observed < CLOCK_ADVANCE_INTERVAL_MS {
-            return Ok(());
+        if check.database_advanced || check.host_advanced {
+            tracing::info!(
+                event = "clock_forward_jump",
+                database_advanced = check.database_advanced,
+                host_advanced = check.host_advanced,
+                "controller clock advanced beyond monotonic elapsed time"
+            );
         }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!(
-                    "UPDATE controller_clock SET last_observed_ms = {SQLITE_WALL_NOW_MS}
-                     WHERE id = 1 AND {SQLITE_WALL_NOW_MS} > last_observed_ms"
-                );
-                sqlx::query(&sql)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-            }
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "UPDATE controller_clock SET last_observed_ms = {POSTGRES_WALL_NOW_MS}
-                     WHERE id = 1 AND {POSTGRES_WALL_NOW_MS} > last_observed_ms"
-                );
-                sqlx::query(&sql)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-            }
+        if now < anchor.last_observed_ms
+            || now.saturating_sub(anchor.last_observed_ms) >= CLOCK_ADVANCE_INTERVAL_MS
+        {
+            update_clock_anchor(&self.database, &sample, now).await?;
         }
+        self.set_monitor_sample(now, sample.host_wall_ms)?;
         Ok(())
     }
 
@@ -371,13 +768,19 @@ impl Store {
     /// idempotency keys are deleted, operator sessions are revoked, the mark
     /// is reset to the current database clock and one audit event records
     /// the counts. Operators, agents, policy, rejected approvals, lifecycle
-    /// and audit history are kept. Run this from the CLI while the
-    /// controller is stopped; startup fails closed until it has run.
+    /// and audit history are kept. Run this from the CLI while the controller
+    /// is stopped; readiness and all store transitions fail closed until it has run.
     pub async fn reconcile_clock(url: &str) -> Result<ClockReconciliation, StoreError> {
         let database = Database::connect(url).await?;
         database.validate_existing_schema_version().await?;
         if !database.table_exists("controller_clock").await? {
             return Err(StoreError::MissingState("controller clock"));
+        }
+        let sample = SystemClock
+            .sample()
+            .map_err(|_| StoreError::ClockSourceUnavailable)?;
+        if sample.boot_id.is_none() {
+            return Err(StoreError::ClockSourceUnavailable);
         }
         let summary = match &database {
             Database::Sqlite(pool) => {
@@ -389,16 +792,17 @@ impl Store {
                 .await
                 .map_err(StoreError::Database)?;
                 let sql = format!(
-                    "SELECT last_observed_ms, {SQLITE_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
+                    "SELECT last_observed_ms, fenced_at, {SQLITE_WALL_NOW_MS} FROM controller_clock WHERE id = 1"
                 );
                 let row = sqlx::query(&sql)
                     .fetch_one(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
                 let persisted_ms: i64 = row.try_get(0).map_err(StoreError::Database)?;
-                let database_now_ms: i64 = row.try_get(1).map_err(StoreError::Database)?;
+                let fenced_at: Option<i64> = row.try_get(1).map_err(StoreError::Database)?;
+                let database_now_ms: i64 = row.try_get(2).map_err(StoreError::Database)?;
                 let mut summary = ClockReconciliation {
-                    regression_detected: database_now_ms < persisted_ms,
+                    regression_detected: database_now_ms < persisted_ms || fenced_at.is_some(),
                     persisted_ms,
                     database_now_ms,
                     removed_secret_requests: 0,
@@ -452,10 +856,13 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?
                     .rows_affected();
-                let sql = format!(
-                    "UPDATE controller_clock SET last_observed_ms = {SQLITE_WALL_NOW_MS} WHERE id = 1"
-                );
-                sqlx::query(&sql)
+                sqlx::query(
+                    "UPDATE controller_clock SET last_observed_ms = ?, boot_id = ?, boottime_ms = ?, host_wall_ms = ?, fenced_at = NULL WHERE id = 1",
+                )
+                    .bind(database_now_ms)
+                    .bind(&sample.boot_id)
+                    .bind(sample.boottime_ms)
+                    .bind(sample.host_wall_ms)
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
@@ -484,19 +891,20 @@ impl Store {
             Database::Postgres(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
                 let row = sqlx::query(
-                    "SELECT last_observed_ms FROM controller_clock WHERE id = 1 FOR UPDATE",
+                    "SELECT last_observed_ms, fenced_at FROM controller_clock WHERE id = 1 FOR UPDATE",
                 )
                 .fetch_one(&mut *transaction)
                 .await
                 .map_err(StoreError::Database)?;
                 let persisted_ms: i64 = row.try_get(0).map_err(StoreError::Database)?;
+                let fenced_at: Option<i64> = row.try_get(1).map_err(StoreError::Database)?;
                 let sql = format!("SELECT {POSTGRES_WALL_NOW_MS}");
                 let database_now_ms: i64 = sqlx::query_scalar(&sql)
                     .fetch_one(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
                 let mut summary = ClockReconciliation {
-                    regression_detected: database_now_ms < persisted_ms,
+                    regression_detected: database_now_ms < persisted_ms || fenced_at.is_some(),
                     persisted_ms,
                     database_now_ms,
                     removed_secret_requests: 0,
@@ -550,10 +958,13 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?
                     .rows_affected();
-                let sql = format!(
-                    "UPDATE controller_clock SET last_observed_ms = {POSTGRES_WALL_NOW_MS} WHERE id = 1"
-                );
-                sqlx::query(&sql)
+                sqlx::query(
+                    "UPDATE controller_clock SET last_observed_ms = $1, boot_id = $2, boottime_ms = $3, host_wall_ms = $4, fenced_at = NULL WHERE id = 1",
+                )
+                    .bind(database_now_ms)
+                    .bind(&sample.boot_id)
+                    .bind(sample.boottime_ms)
+                    .bind(sample.host_wall_ms)
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
@@ -797,6 +1208,20 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?
                     .rows_affected();
+                let rate_windows =
+                    format!("DELETE FROM rate_windows WHERE expires_at <= {SQLITE_NOW_MS}");
+                removed += sqlx::query(&rate_windows)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let idempotency =
+                    format!("DELETE FROM idempotency_keys WHERE expires_at <= {SQLITE_NOW_MS}");
+                removed += sqlx::query(&idempotency)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
             }
             Database::Postgres(pool) => {
                 let requests = format!(
@@ -822,6 +1247,20 @@ impl Store {
                 );
                 removed += sqlx::query(&approvals)
                     .bind(grace_ms)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let rate_windows =
+                    format!("DELETE FROM rate_windows WHERE expires_at <= {POSTGRES_NOW_MS}");
+                removed += sqlx::query(&rate_windows)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                let idempotency =
+                    format!("DELETE FROM idempotency_keys WHERE expires_at <= {POSTGRES_NOW_MS}");
+                removed += sqlx::query(&idempotency)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?
@@ -1587,6 +2026,97 @@ impl Store {
     }
 }
 
+async fn read_clock_anchor(database: &Database) -> Result<PersistedClockAnchor, StoreError> {
+    match database {
+        Database::Sqlite(pool) => {
+            let row = sqlx::query(
+                "SELECT last_observed_ms, boot_id, boottime_ms, host_wall_ms, fenced_at
+                 FROM controller_clock WHERE id = 1",
+            )
+            .fetch_one(pool)
+            .await
+            .map_err(StoreError::Database)?;
+            Ok(PersistedClockAnchor {
+                last_observed_ms: row
+                    .try_get("last_observed_ms")
+                    .map_err(StoreError::Database)?,
+                boot_id: row.try_get("boot_id").map_err(StoreError::Database)?,
+                boottime_ms: row.try_get("boottime_ms").map_err(StoreError::Database)?,
+                host_wall_ms: row.try_get("host_wall_ms").map_err(StoreError::Database)?,
+                fenced_at: row.try_get("fenced_at").map_err(StoreError::Database)?,
+            })
+        }
+        Database::Postgres(pool) => {
+            let row = sqlx::query(
+                "SELECT last_observed_ms, boot_id, boottime_ms, host_wall_ms, fenced_at
+                 FROM controller_clock WHERE id = 1",
+            )
+            .fetch_one(pool)
+            .await
+            .map_err(StoreError::Database)?;
+            Ok(PersistedClockAnchor {
+                last_observed_ms: row
+                    .try_get("last_observed_ms")
+                    .map_err(StoreError::Database)?,
+                boot_id: row.try_get("boot_id").map_err(StoreError::Database)?,
+                boottime_ms: row.try_get("boottime_ms").map_err(StoreError::Database)?,
+                host_wall_ms: row.try_get("host_wall_ms").map_err(StoreError::Database)?,
+                fenced_at: row.try_get("fenced_at").map_err(StoreError::Database)?,
+            })
+        }
+    }
+}
+
+async fn database_wall_now_ms(database: &Database) -> Result<i64, StoreError> {
+    match database {
+        Database::Sqlite(pool) => sqlx::query_scalar(&format!("SELECT {SQLITE_WALL_NOW_MS}"))
+            .fetch_one(pool)
+            .await
+            .map_err(StoreError::Database),
+        Database::Postgres(pool) => sqlx::query_scalar(&format!("SELECT {POSTGRES_WALL_NOW_MS}"))
+            .fetch_one(pool)
+            .await
+            .map_err(StoreError::Database),
+    }
+}
+
+async fn update_clock_anchor(
+    database: &Database,
+    sample: &ClockSample,
+    database_now_ms: i64,
+) -> Result<(), StoreError> {
+    let affected = match database {
+        Database::Sqlite(pool) => sqlx::query(
+            "UPDATE controller_clock SET last_observed_ms = ?, boot_id = ?, boottime_ms = ?, host_wall_ms = ?
+             WHERE id = 1 AND fenced_at IS NULL",
+        )
+        .bind(database_now_ms)
+        .bind(&sample.boot_id)
+        .bind(sample.boottime_ms)
+        .bind(sample.host_wall_ms)
+        .execute(pool)
+        .await
+        .map_err(StoreError::Database)?
+        .rows_affected(),
+        Database::Postgres(pool) => sqlx::query(
+            "UPDATE controller_clock SET last_observed_ms = $1, boot_id = $2, boottime_ms = $3, host_wall_ms = $4
+             WHERE id = 1 AND fenced_at IS NULL",
+        )
+        .bind(database_now_ms)
+        .bind(&sample.boot_id)
+        .bind(sample.boottime_ms)
+        .bind(sample.host_wall_ms)
+        .execute(pool)
+        .await
+        .map_err(StoreError::Database)?
+        .rows_affected(),
+    };
+    if affected == 0 {
+        return Err(StoreError::ClockFenced);
+    }
+    Ok(())
+}
+
 impl Database {
     async fn connect(url: &str) -> Result<Self, StoreError> {
         if url.starts_with("sqlite:") {
@@ -1667,7 +2197,39 @@ impl Database {
                 }
             }
         }
+        if version >= 4 && !self.clock_anchor_columns_present().await? {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
         Ok(())
+    }
+
+    async fn clock_anchor_columns_present(&self) -> Result<bool, StoreError> {
+        match self {
+            Self::Sqlite(pool) => {
+                let rows = sqlx::query("PRAGMA table_info(controller_clock)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let columns = rows
+                    .iter()
+                    .filter_map(|row| row.try_get::<String, _>("name").ok())
+                    .collect::<std::collections::BTreeSet<_>>();
+                Ok(["boot_id", "boottime_ms", "host_wall_ms", "fenced_at"]
+                    .iter()
+                    .all(|column| columns.contains(*column)))
+            }
+            Self::Postgres(pool) => {
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'controller_clock'
+                       AND column_name IN ('boot_id', 'boottime_ms', 'host_wall_ms', 'fenced_at')",
+                )
+                .fetch_one(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                Ok(count == 4)
+            }
+        }
     }
 
     async fn table_exists(&self, table: &str) -> Result<bool, StoreError> {
@@ -1706,8 +2268,31 @@ impl Database {
                 sqlx::raw_sql(include_str!("migrations/sqlite/0003_controller_clock.sql"))
                     .execute(pool)
                     .await
-                    .map(|_| ())
-                    .map_err(StoreError::Database)
+                    .map_err(StoreError::Database)?;
+                let rows = sqlx::query("PRAGMA table_info(controller_clock)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let columns = rows
+                    .iter()
+                    .filter_map(|row| row.try_get::<String, _>("name").ok())
+                    .collect::<std::collections::BTreeSet<_>>();
+                for (column, definition) in [
+                    ("boot_id", "TEXT"),
+                    ("boottime_ms", "INTEGER"),
+                    ("host_wall_ms", "INTEGER"),
+                    ("fenced_at", "INTEGER"),
+                ] {
+                    if !columns.contains(column) {
+                        sqlx::query(&format!(
+                            "ALTER TABLE controller_clock ADD COLUMN {column} {definition}"
+                        ))
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    }
+                }
+                Ok(())
             }
             Self::Postgres(pool) => {
                 sqlx::raw_sql(include_str!("migrations/postgres/0001_init.sql"))
@@ -1725,8 +2310,12 @@ impl Database {
                 ))
                 .execute(pool)
                 .await
-                .map(|_| ())
-                .map_err(StoreError::Database)
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!("migrations/postgres/0004_clock_anchor.sql"))
+                    .execute(pool)
+                    .await
+                    .map(|_| ())
+                    .map_err(StoreError::Database)
             }
         }
     }

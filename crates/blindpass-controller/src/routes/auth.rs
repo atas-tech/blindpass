@@ -51,15 +51,6 @@ pub(crate) struct WorkloadIdentity {
     pub(crate) spiffe_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub(crate) struct UserIdentity {
-    pub(crate) sub: String,
-    pub(crate) role: String,
-    pub(crate) workspace_id: String,
-    pub(crate) sid: Option<String>,
-    pub(crate) force_password_change: bool,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TokenClaims {
     sub: String,
@@ -73,8 +64,6 @@ struct TokenClaims {
     aud: String,
     iat: u64,
     exp: u64,
-    sid: Option<String>,
-    force_password_change: Option<bool>,
 }
 
 /// JWT validation without clock leeway. SPS verifies with jose's default zero
@@ -177,8 +166,6 @@ pub(crate) fn mint_agent_token(
         aud: "sps-agent".to_owned(),
         iat: now,
         exp: expiry,
-        sid: None,
-        force_password_change: None,
     };
     encode(
         &Header::new(Algorithm::HS256),
@@ -187,60 +174,6 @@ pub(crate) fn mint_agent_token(
     )
     .map(|token| (token, expiry))
     .map_err(|_| "agent token could not be minted")
-}
-
-pub(crate) fn mint_seed_admin_token(
-    jwt_secret: &[u8],
-    operator_id: &str,
-    tenant_id: &str,
-) -> Result<String, &'static str> {
-    let now = current_seconds();
-    let claims = TokenClaims {
-        sub: operator_id.to_owned(),
-        role: "workspace_admin".to_owned(),
-        workspace_id: Some(tenant_id.to_owned()),
-        workload_mode: None,
-        admin: None,
-        auth_provider: None,
-        spiffe_id: None,
-        iss: "sps".to_owned(),
-        aud: "sps-user".to_owned(),
-        iat: now,
-        exp: now + 15 * 60,
-        sid: Some(format!("test-{operator_id}")),
-        force_password_change: Some(false),
-    };
-    encode(
-        &Header::new(Algorithm::HS256),
-        &claims,
-        &EncodingKey::from_secret(jwt_secret),
-    )
-    .map_err(|_| "test administrator token could not be minted")
-}
-
-pub(crate) fn authenticate_user(
-    state: &AppState,
-    headers: &HeaderMap,
-) -> Result<UserIdentity, AuthError> {
-    let token = bearer_token(headers).ok_or(AuthError::MissingBearer)?;
-    let mut validation = jwt_validation(Algorithm::HS256);
-    validation.set_issuer(&["sps"]);
-    validation.set_audience(&["sps-user"]);
-    let decoded = decode::<TokenClaims>(
-        token,
-        &DecodingKey::from_secret(state.agent_jwt_secret.as_bytes()),
-        &validation,
-    )
-    .map_err(|_| AuthError::InvalidToken)?;
-    let claims = decoded.claims;
-    let workspace_id = claims.workspace_id.ok_or(AuthError::InvalidToken)?;
-    Ok(UserIdentity {
-        sub: claims.sub,
-        role: claims.role,
-        workspace_id,
-        sid: claims.sid,
-        force_password_change: claims.force_password_change.unwrap_or(false),
-    })
 }
 
 pub(crate) async fn authenticate_workload(
@@ -422,7 +355,7 @@ pub(crate) async fn test_seed(
             axum::Json(serde_json::json!({"error":"not_found"})),
         ));
     }
-    seed_fixture(store, state.agent_jwt_secret.as_bytes(), body)
+    seed_fixture(store, body)
         .await
         .map(axum::Json)
         .map_err(|error| {

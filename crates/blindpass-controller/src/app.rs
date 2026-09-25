@@ -44,7 +44,10 @@ pub(crate) struct AppState {
     pub(crate) approval_ttl_seconds: u64,
     pub(crate) refresh_token_ttl_seconds: u64,
     pub(crate) agent_token_rate_limit: u32,
+    pub(crate) agent_request_rate_limit: u32,
+    pub(crate) agent_exchange_rate_limit: u32,
     pub(crate) agent_token_rate_window_ms: u64,
+    pub(crate) agent_rate_window_ms: u64,
 }
 
 #[derive(Serialize)]
@@ -106,7 +109,10 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         approval_ttl_seconds: config.approval_ttl_seconds(),
         refresh_token_ttl_seconds: config.refresh_token_ttl_seconds(),
         agent_token_rate_limit: config.agent_token_rate_limit(),
+        agent_request_rate_limit: config.agent_request_rate_limit(),
+        agent_exchange_rate_limit: config.agent_exchange_rate_limit(),
         agent_token_rate_window_ms: config.agent_token_rate_window_ms(),
+        agent_rate_window_ms: config.agent_rate_window_ms(),
     };
 
     Router::new()

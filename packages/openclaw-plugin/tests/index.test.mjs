@@ -756,6 +756,52 @@ async function testReRequestFormat() {
     disposeStoredSecret("db_pass");
 }
 
+async function testRequestSecretFlowSurfacesRateLimitAndDestroysKeyPair() {
+    const originalApiKey = process.env.BLINDPASS_API_KEY;
+    const originalFallbackApiKey = process.env.SPS_AGENT_API_KEY;
+    delete process.env.BLINDPASS_API_KEY;
+    delete process.env.SPS_AGENT_API_KEY;
+
+    const calls = { secretRequest: 0, destroyKeyPair: 0, onSecretLink: 0 };
+    try {
+        await assert.rejects(requestSecretFlow({
+            description: "Rate-limited secret request",
+            agentId: "bridge-rate-limit-agent",
+            onSecretLink: async () => { calls.onSecretLink += 1; },
+            moduleOverrides: {
+                identity: {
+                    async loadOrCreateGatewayIdentity() { return { kid: "rate-limit-kid" }; },
+                    async writeJwksFile() {},
+                    async issueJwt() { return "rate-limit-jwt"; },
+                },
+                keyManager: {
+                    async generateKeyPair() { return { publicKey: "public-key", privateKey: "private-key" }; },
+                    async decrypt() { return Buffer.from("unused"); },
+                    destroyKeyPair() { calls.destroyKeyPair += 1; },
+                },
+                AgentSkillRuntimeModule: { AgentSecretRuntime: class {} },
+                GatewaySpsClientModule: {
+                    GatewaySpsClient: class {
+                        async createSecretRequest() {
+                            calls.secretRequest += 1;
+                            throw new Error("SPS request failed with status 429");
+                        }
+                    },
+                },
+                SpsClientModule: { SpsClient: class {} },
+            },
+        }), /SPS request failed with status 429/);
+
+        assert.deepEqual(calls, { secretRequest: 1, destroyKeyPair: 1, onSecretLink: 0 });
+    } finally {
+        await cleanupBridge();
+        if (originalApiKey === undefined) delete process.env.BLINDPASS_API_KEY;
+        else process.env.BLINDPASS_API_KEY = originalApiKey;
+        if (originalFallbackApiKey === undefined) delete process.env.SPS_AGENT_API_KEY;
+        else process.env.SPS_AGENT_API_KEY = originalFallbackApiKey;
+    }
+}
+
 async function testFulfillSecretExchangeUsesStoredSecret() {
     const api = createMockApi();
     const calls = [];
@@ -2431,6 +2477,10 @@ const tests = [
     {
         name: "requestSecretFlow publishes a JWKS when using JWT auth fallback",
         run: testRequestSecretFlowPublishesJwksForJwtAuth,
+    },
+    {
+        name: "requestSecretFlow surfaces 429 without retry and destroys its key pair",
+        run: testRequestSecretFlowSurfacesRateLimitAndDestroysKeyPair,
     },
     {
         name: "fulfill_secret_exchange uses the stored runtime secret",

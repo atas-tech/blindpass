@@ -5,6 +5,7 @@ use blindpass_controller::{
     config::{Config, ConfigError},
     store::Store,
 };
+use blindpass_core::clock::{ClockError, ClockSample, ClockSource, SystemClock};
 use serde_json::Value;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::collections::BTreeMap;
@@ -13,6 +14,7 @@ use std::net::TcpStream as BlockingTcpStream;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 
@@ -44,6 +46,24 @@ impl TestFiles {
 impl Drop for TestFiles {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+struct ManualClock(Mutex<ClockSample>);
+
+impl ManualClock {
+    fn new(sample: ClockSample) -> Self {
+        Self(Mutex::new(sample))
+    }
+
+    fn set(&self, sample: ClockSample) {
+        *self.0.lock().expect("manual clock lock") = sample;
+    }
+}
+
+impl ClockSource for ManualClock {
+    fn sample(&self) -> Result<ClockSample, ClockError> {
+        Ok(self.0.lock().expect("manual clock lock").clone())
     }
 }
 
@@ -216,6 +236,10 @@ fn production_defaults_match_sps_and_test_overrides_are_bounded() {
     assert_eq!(config.approval_ttl_seconds(), 600);
     assert_eq!(config.agent_token_rate_limit(), 5);
     assert_eq!(config.agent_token_rate_window_ms(), 60_000);
+    assert_eq!(config.agent_request_rate_limit(), 60);
+    assert_eq!(config.agent_exchange_rate_limit(), 60);
+    assert_eq!(config.agent_rate_window_ms(), 60_000);
+    assert_eq!(config.clock_tolerance_ms(), 2_000);
 
     for (key, value) in [
         ("BLINDPASS_TEST_REQUEST_TTL_SECONDS", "0"),
@@ -223,6 +247,16 @@ fn production_defaults_match_sps_and_test_overrides_are_bounded() {
         ("BLINDPASS_TEST_SUBMITTED_TTL_SECONDS", "ten"),
         ("BLINDPASS_TEST_APPROVAL_TTL_SECONDS", "-1"),
         ("BLINDPASS_TEST_AGENT_TOKEN_RATE_WINDOW_MS", "99"),
+        ("BLINDPASS_AGENT_REQUEST_RATE_LIMIT", "0"),
+        ("BLINDPASS_AGENT_REQUEST_RATE_LIMIT", "10001"),
+        ("BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT", "0"),
+        ("BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT", "10001"),
+        ("BLINDPASS_AGENT_RATE_WINDOW_SECONDS", "0"),
+        ("BLINDPASS_AGENT_RATE_WINDOW_SECONDS", "3601"),
+        ("BLINDPASS_TEST_AGENT_RATE_WINDOW_MS", "0"),
+        ("BLINDPASS_TEST_AGENT_RATE_WINDOW_MS", "3600001"),
+        ("BLINDPASS_CLOCK_TOLERANCE_MS", "249"),
+        ("BLINDPASS_CLOCK_TOLERANCE_MS", "60001"),
     ] {
         let mut values = base.clone();
         values.insert("BLINDPASS_TEST_MODE".to_owned(), "1".to_owned());
@@ -233,6 +267,31 @@ fn production_defaults_match_sps_and_test_overrides_are_bounded() {
             "{key}={value}"
         );
     }
+
+    let mut overrides = base;
+    overrides.insert("BLINDPASS_TEST_MODE".to_owned(), "1".to_owned());
+    overrides.insert(
+        "BLINDPASS_AGENT_REQUEST_RATE_LIMIT".to_owned(),
+        "7".to_owned(),
+    );
+    overrides.insert(
+        "BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT".to_owned(),
+        "8".to_owned(),
+    );
+    overrides.insert(
+        "BLINDPASS_AGENT_RATE_WINDOW_SECONDS".to_owned(),
+        "3".to_owned(),
+    );
+    overrides.insert(
+        "BLINDPASS_TEST_AGENT_RATE_WINDOW_MS".to_owned(),
+        "500".to_owned(),
+    );
+    overrides.insert("BLINDPASS_CLOCK_TOLERANCE_MS".to_owned(), "2500".to_owned());
+    let configured = Config::from_variables(overrides).expect("bounded rate and clock overrides");
+    assert_eq!(configured.agent_request_rate_limit(), 7);
+    assert_eq!(configured.agent_exchange_rate_limit(), 8);
+    assert_eq!(configured.agent_rate_window_ms(), 500);
+    assert_eq!(configured.clock_tolerance_ms(), 2_500);
 }
 
 #[test]
@@ -346,6 +405,8 @@ fn environment_policy_is_validated_like_an_administrator_write() {
         r#"[{"ruleId":"only-a","secretName":"finance.api_key","requesterIds":[""]}]"#,
         r#"[{"ruleId":"only-a","secretName":"finance.api_key","fulfillerIds":["  "]}]"#,
         r#"[{"ruleId":"only-a","secretName":"finance.api_key","requesterIds":null}]"#,
+        r#"[{"ruleId":"approval","secretName":"finance.api_key","mode":"pending_approval"}]"#,
+        r#"[{"ruleId":"approval","secretName":"finance.api_key","mode":"pending_approval","approverIds":["admin"],"approverRings":["finance"]}]"#,
         r#"[{"ruleId":"other","secretName":"unregistered.secret"}]"#,
     ] {
         assert_eq!(
@@ -634,7 +695,8 @@ async fn seed_command_uses_test_fixture_and_rejects_production_mode() {
         String::from_utf8_lossy(&allowed.stderr)
     );
     let response: Value = serde_json::from_slice(&allowed.stdout).expect("seed JSON response");
-    assert!(response["access_token"].as_str().is_some());
+    assert!(response.get("access_token").is_none());
+    assert!(response.get("refresh_token").is_none());
     assert!(response["agents"]["seed-agent"].as_str().is_some());
     assert!(response["agents"]["rotated-agent"].as_str().is_some());
     assert!(response["agents"]["revoked-agent"].as_str().is_some());
@@ -644,6 +706,7 @@ async fn seed_command_uses_test_fixture_and_rejects_production_mode() {
             .is_some()
     );
     assert!(response["local_admin"]["session_id"].as_str().is_some());
+    assert!(response["local_admin"].get("refresh_token").is_none());
     if postgres_schema.is_none() {
         assert!(database_path.exists());
     }
@@ -837,6 +900,54 @@ async fn production_shell_has_no_seed_route_or_test_override() {
     assert!(!body.contains("RRRR"));
     assert!(!body.contains("AAAA"));
     server.abort();
+}
+
+#[tokio::test]
+async fn serving_clock_monitor_fences_running_regression_within_two_ticks() {
+    let files = TestFiles::new();
+    let database_path = files.0.join("clock-monitor.db");
+    let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
+    let mut sample = SystemClock.sample().expect("sample system clock");
+    let clock = Arc::new(ManualClock::new(sample.clone()));
+    let store = Store::connect_with_clock_source(&database_url, clock.clone(), 2_000)
+        .await
+        .expect("connect test controller store");
+    assert!(store.is_ready().await);
+    let monitor = store.spawn_clock_monitor();
+
+    sample.host_wall_ms = sample.host_wall_ms.saturating_sub(5_000);
+    clock.set(sample);
+
+    let pool = sqlx::SqlitePool::connect(&database_url)
+        .await
+        .expect("connect clock monitor observer");
+    let fenced = tokio::time::timeout(std::time::Duration::from_millis(2_300), async {
+        loop {
+            let fence: Option<i64> =
+                sqlx::query_scalar("SELECT fenced_at FROM controller_clock WHERE id = 1")
+                    .fetch_one(&pool)
+                    .await
+                    .expect("read persisted clock fence");
+            if fence.is_some() {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+    })
+    .await;
+    assert!(
+        fenced.is_ok(),
+        "the one-second monitor must fence within two ticks"
+    );
+    assert!(!store.is_ready().await);
+    assert!(matches!(
+        store.list_admin_agents().await,
+        Err(blindpass_controller::store::StoreError::ClockFenced)
+    ));
+
+    monitor.abort();
+    pool.close().await;
+    store.close().await;
 }
 
 #[tokio::test]

@@ -17,6 +17,13 @@ export interface components {
       "statusCode"?: number;
       [key: string]: unknown;
     };
+    "RateLimited": {
+      "error": string;
+      "code": "rate_limited";
+      "retry_after_seconds": number;
+      "limit": number;
+      "used": number;
+    };
     "AdminError": {
       "error": string;
       "message"?: string;
@@ -129,7 +136,7 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3">;
       "version": string;
-      "schema_version": number;
+      "schema_version": 4;
       "setup_required": boolean;
       "features": {
         "browser_status": true;
@@ -267,7 +274,6 @@ export interface components {
       "local_admin"?: boolean;
     };
     "TestSeedResponse": {
-      "access_token": string;
       "workspace_id": string;
       "user_id": string;
       "agents": {
@@ -281,7 +287,6 @@ export interface components {
       "temporary_password": string;
       "session_id": string;
       "csrf_token": string;
-      "refresh_token": string;
     };
   };
 }
@@ -389,7 +394,7 @@ export interface operations {
     };
     "429": {
       content: {
-        "application/json": components["schemas"]["LegacyError"];
+        "application/json": components["schemas"]["RateLimited"];
       };
     };
   };
@@ -633,7 +638,7 @@ export interface operations {
     };
     "429": {
       content: {
-        "application/json": components["schemas"]["LegacyError"];
+        "application/json": components["schemas"]["RateLimited"];
       };
     };
   };

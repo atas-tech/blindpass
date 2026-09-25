@@ -3,8 +3,10 @@
 use blindpass_controller::store::{
     ApprovalRecord, ExchangePolicyRecord, ExchangeRecord, SecretRequestStatus, Store, StoreError,
 };
+use blindpass_core::clock::{ClockError, ClockSample, ClockSource, SystemClock};
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 struct StoreFixture {
@@ -104,6 +106,104 @@ impl StoreFixture {
         if let Some(directory) = self.sqlite_dir.take() {
             let _ = std::fs::remove_dir_all(directory);
         }
+    }
+}
+
+struct ManualClock(Mutex<ClockSample>);
+
+impl ManualClock {
+    fn new(sample: ClockSample) -> Self {
+        Self(Mutex::new(sample))
+    }
+
+    fn set(&self, sample: ClockSample) {
+        *self.0.lock().expect("manual clock lock") = sample;
+    }
+}
+
+impl ClockSource for ManualClock {
+    fn sample(&self) -> Result<ClockSample, ClockError> {
+        Ok(self.0.lock().expect("manual clock lock").clone())
+    }
+}
+
+async fn fixture_table_count(fixture: &StoreFixture, table: &str) -> i64 {
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL count query");
+        let count = sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .expect("count PostgreSQL fixture rows");
+        pool.close().await;
+        count
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite count query");
+        let count = sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(&pool)
+            .await
+            .expect("count SQLite fixture rows");
+        pool.close().await;
+        count
+    }
+}
+
+async fn fixture_active_session_count(fixture: &StoreFixture) -> i64 {
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL session query");
+        let count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM operator_sessions WHERE revoked_at IS NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count active PostgreSQL sessions");
+        pool.close().await;
+        count
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite session query");
+        let count = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM operator_sessions WHERE revoked_at IS NULL",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("count active SQLite sessions");
+        pool.close().await;
+        count
+    }
+}
+
+async fn fixture_action_count(fixture: &StoreFixture, action: &str) -> i64 {
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL audit query");
+        let count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_events WHERE action = $1")
+                .bind(action)
+                .fetch_one(&pool)
+                .await
+                .expect("count PostgreSQL audit events");
+        pool.close().await;
+        count
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite audit query");
+        let count =
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM audit_events WHERE action = ?")
+                .bind(action)
+                .fetch_one(&pool)
+                .await
+                .expect("count SQLite audit events");
+        pool.close().await;
+        count
     }
 }
 
@@ -277,27 +377,240 @@ async fn persisted_clock_regression_denies_expiring_state_and_readiness() {
     assert!(!fixture.store().is_ready().await);
     assert!(matches!(
         fixture.store().secret_request_metadata(&request_id).await,
-        Err(StoreError::ClockRegression)
+        Err(StoreError::ClockFenced)
     ));
     assert!(matches!(
         fixture
             .store()
             .create_secret_request("clock-agent", "dummy-public-key", "later", "654321", 60)
             .await,
-        Err(StoreError::ClockRegression)
+        Err(StoreError::ClockFenced)
     ));
     assert!(matches!(
         fixture.store().list_admin_agents().await,
-        Err(StoreError::ClockRegression)
+        Err(StoreError::ClockFenced)
     ));
     assert!(matches!(
         fixture.store().sweep_expired(0).await,
-        Err(StoreError::ClockRegression)
+        Err(StoreError::ClockFenced)
     ));
+    let reconnected = Store::connect(&fixture.url)
+        .await
+        .expect("persistent clock fence remains available for reconciliation");
+    assert!(!reconnected.is_ready().await);
+    reconnected.close().await;
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn boot_change_fences_and_purges_transient_authority_but_keeps_sessions() {
+    let mut fixture = StoreFixture::new().await;
+    let store = fixture.store().clone();
+    store
+        .create_secret_request("clock-agent", "dummy-key", "restart request", "code", 60)
+        .await
+        .expect("create secret request before simulated reboot");
+    store
+        .create_exchange(exchange_record(&"b".repeat(64)), 60)
+        .await
+        .expect("create exchange before simulated reboot");
+    store
+        .create_approval(&short_lived_approval(&store, "apr_restart_pending"))
+        .await
+        .expect("create pending approval before simulated reboot");
+    store
+        .issue_bootstrap_token("dummy-bootstrap-hash", 900)
+        .await
+        .expect("issue bootstrap token before simulated reboot");
+    store
+        .consume_rate_limit("rate-window-before-reboot", 10, 60_000)
+        .await
+        .expect("create rate window before simulated reboot");
+    store
+        .bootstrap_local_operator(
+            "op-restart",
+            "admin",
+            "Restart Admin",
+            "dummy-password-hash",
+        )
+        .await
+        .expect("create local operator");
+    store
+        .create_browser_session(
+            "op-restart",
+            "dummy-password-hash",
+            "dummy-refresh-hash",
+            3_600,
+        )
+        .await
+        .expect("create operator browser session")
+        .expect("operator is active");
+
+    let mut sample = SystemClock.sample().expect("sample system clock");
+    sample.boot_id = Some("simulated-next-boot".to_owned());
+    sample.boottime_ms = sample.boottime_ms.saturating_sub(10_000).max(0);
+    let manual_clock = Arc::new(ManualClock::new(sample.clone()));
+    fixture.store.take();
+    let fenced = Store::connect_with_clock_source(&fixture.url, manual_clock.clone(), 2_000)
+        .await
+        .expect("boot change fences the process instead of trusting transient authority");
+    assert!(!fenced.is_ready().await);
     assert!(matches!(
-        Store::connect(&fixture.url).await,
+        fenced.list_admin_agents().await,
+        Err(StoreError::ClockFenced)
+    ));
+    assert_eq!(fixture_table_count(&fixture, "secret_requests").await, 0);
+    assert_eq!(fixture_table_count(&fixture, "exchanges").await, 0);
+    assert_eq!(fixture_table_count(&fixture, "approvals").await, 0);
+    assert_eq!(fixture_table_count(&fixture, "bootstrap_tokens").await, 0);
+    assert_eq!(fixture_table_count(&fixture, "rate_windows").await, 0);
+    assert_eq!(fixture_active_session_count(&fixture).await, 1);
+    assert_eq!(
+        fixture_action_count(&fixture, "clock_restart_fence").await,
+        1
+    );
+
+    sample.boottime_ms = sample.boottime_ms.saturating_add(1_000);
+    manual_clock.set(sample);
+    drop(fenced);
+    let reconnected = Store::connect_with_clock_source(&fixture.url, manual_clock, 2_000)
+        .await
+        .expect("persistent restart fence survives reconnection");
+    assert!(!reconnected.is_ready().await);
+    assert_eq!(
+        fixture_action_count(&fixture, "clock_restart_fence").await,
+        1
+    );
+    reconnected.close().await;
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn unreadable_boot_id_fences_and_purges_transient_authority() {
+    let mut fixture = StoreFixture::new().await;
+    fixture
+        .store()
+        .create_secret_request("clock-agent", "dummy-key", "unknown boot", "code", 60)
+        .await
+        .expect("create secret request before unreadable boot check");
+    let mut sample = SystemClock.sample().expect("sample system clock");
+    sample.boot_id = None;
+    let manual_clock = Arc::new(ManualClock::new(sample));
+    fixture.store.take();
+
+    let fenced = Store::connect_with_clock_source(&fixture.url, manual_clock, 2_000)
+        .await
+        .expect("unreadable boot identity fences without accepting transient state");
+    assert!(!fenced.is_ready().await);
+    assert!(matches!(
+        fenced.list_admin_agents().await,
+        Err(StoreError::ClockFenced)
+    ));
+    assert_eq!(fixture_table_count(&fixture, "secret_requests").await, 0);
+    assert_eq!(
+        fixture_action_count(&fixture, "clock_restart_fence").await,
+        1
+    );
+    fenced.close().await;
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn same_boot_startup_detects_database_clock_regression_beyond_tolerance() {
+    let mut fixture = StoreFixture::new().await;
+    let store = fixture.store().clone();
+    store
+        .create_secret_request("clock-agent", "dummy-key", "startup regression", "code", 60)
+        .await
+        .expect("create request before simulated downtime");
+    store
+        .bootstrap_local_operator(
+            "op-startup",
+            "admin",
+            "Startup Admin",
+            "dummy-password-hash",
+        )
+        .await
+        .expect("create local operator");
+    store
+        .create_browser_session(
+            "op-startup",
+            "dummy-password-hash",
+            "dummy-refresh-hash",
+            3_600,
+        )
+        .await
+        .expect("create browser session")
+        .expect("operator is active");
+
+    let mut sample = SystemClock.sample().expect("sample system clock");
+    sample.boottime_ms = sample.boottime_ms.saturating_add(10_000);
+    sample.host_wall_ms = sample.host_wall_ms.saturating_add(10_000);
+    let manual_clock = Arc::new(ManualClock::new(sample));
+    fixture.store.take();
+    assert!(matches!(
+        Store::connect_with_clock_source(&fixture.url, manual_clock, 2_000).await,
         Err(StoreError::ClockRegression)
     ));
+
+    let fenced = Store::connect(&fixture.url)
+        .await
+        .expect("persistent regression fence is available to reconciliation");
+    assert!(!fenced.is_ready().await);
+    assert_eq!(fixture_active_session_count(&fixture).await, 1);
+    fenced.close().await;
+
+    let reconciled = Store::reconcile_clock(&fixture.url)
+        .await
+        .expect("reconcile startup clock fence");
+    assert!(reconciled.regression_detected);
+    assert_eq!(reconciled.removed_secret_requests, 1);
+    assert_eq!(reconciled.revoked_sessions, 1);
+    let healthy = Store::connect(&fixture.url)
+        .await
+        .expect("reconciled controller starts");
+    assert!(healthy.is_ready().await);
+    healthy.close().await;
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn running_clock_monitor_persists_fence_until_reconciliation() {
+    let mut fixture = StoreFixture::new().await;
+    let mut sample = SystemClock.sample().expect("sample system clock");
+    let manual_clock = Arc::new(ManualClock::new(sample.clone()));
+    fixture.store.take();
+    let store = Store::connect_with_clock_source(&fixture.url, manual_clock.clone(), 2_000)
+        .await
+        .expect("connect with injected test clock");
+
+    sample.host_wall_ms = sample.host_wall_ms.saturating_sub(5_000);
+    manual_clock.set(sample);
+    assert!(matches!(
+        store.monitor_clock().await,
+        Err(StoreError::ClockFenced)
+    ));
+    assert!(!store.is_ready().await);
+    assert!(matches!(
+        store.list_admin_agents().await,
+        Err(StoreError::ClockFenced)
+    ));
+    drop(store);
+
+    let reconnected = Store::connect(&fixture.url)
+        .await
+        .expect("fenced database remains available for local reconciliation");
+    assert!(!reconnected.is_ready().await);
+    reconnected.close().await;
+    let result = Store::reconcile_clock(&fixture.url)
+        .await
+        .expect("clock reconciliation clears the persistent fence");
+    assert!(result.regression_detected);
+    let healthy = Store::connect(&fixture.url)
+        .await
+        .expect("reconciled clock starts cleanly");
+    assert!(healthy.is_ready().await);
+    healthy.close().await;
     fixture.close().await;
 }
 
@@ -357,7 +670,7 @@ async fn write_clock_mark(fixture: &StoreFixture, mark: i64) {
 }
 
 #[tokio::test]
-async fn persisted_clock_mark_advances_per_interval_and_a_small_regression_fails_closed() {
+async fn persisted_clock_mark_advances_and_tolerates_small_regressions_but_fences_large_ones() {
     let fixture = StoreFixture::new().await;
     let store = fixture.store();
     let (initial, _) = read_clock(&fixture).await;
@@ -384,26 +697,33 @@ async fn persisted_clock_mark_advances_per_interval_and_a_small_regression_fails
         .expect("read within the interval");
     assert_eq!(read_clock(&fixture).await.0, advanced);
 
-    // A realistic regression: the database clock is 1.5 s behind the mark.
+    // A 1.5 s regression is within the configured two-second tolerance and
+    // resets the checkpoint to the current database time.
     let (_, now) = read_clock(&fixture).await;
     write_clock_mark(&fixture, now + 1_500).await;
-    assert!(!store.is_ready().await);
-    assert!(matches!(
-        store.list_admin_agents().await,
-        Err(StoreError::ClockRegression)
-    ));
-    assert!(matches!(
-        Store::connect(&fixture.url).await,
-        Err(StoreError::ClockRegression)
-    ));
-
-    // It fails closed only until the database clock passes the mark.
-    tokio::time::sleep(Duration::from_millis(1_700)).await;
     assert!(store.is_ready().await);
     store
         .list_admin_agents()
         .await
-        .expect("operations resume once the clock passes the mark");
+        .expect("operations continue within tolerance");
+
+    let (_, now) = read_clock(&fixture).await;
+    write_clock_mark(&fixture, now + 2_500).await;
+    assert!(!store.is_ready().await);
+    assert!(matches!(
+        store.list_admin_agents().await,
+        Err(StoreError::ClockFenced)
+    ));
+    let reconnected = Store::connect(&fixture.url)
+        .await
+        .expect("fenced clock remains available for reconciliation");
+    assert!(!reconnected.is_ready().await);
+    reconnected.close().await;
+    let repaired = Store::reconcile_clock(&fixture.url)
+        .await
+        .expect("reconcile clock beyond tolerance");
+    assert!(repaired.regression_detected);
+    assert!(store.is_ready().await, "reconciliation clears the fence");
     fixture.close().await;
 }
 
@@ -714,6 +1034,33 @@ async fn agent_key_rotation_revocation_and_ip_windows_are_atomic() {
             .count,
         1
     );
+    fixture.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 8)]
+async fn concurrent_rate_window_consumes_allow_exactly_the_limit_on_both_stores() {
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store().clone();
+    let mut tasks = Vec::new();
+    for _ in 0..32 {
+        let store = store.clone();
+        tasks.push(tokio::spawn(async move {
+            store
+                .consume_rate_limit("agent-request:tenant-fixture:agent:concurrent", 7, 60_000)
+                .await
+        }));
+    }
+    let mut allowed = 0;
+    for task in tasks {
+        let result = task
+            .await
+            .expect("rate-window task completes")
+            .expect("atomic rate-window consume succeeds");
+        if result.count <= 7 {
+            allowed += 1;
+        }
+    }
+    assert_eq!(allowed, 7);
     fixture.close().await;
 }
 
@@ -2252,7 +2599,7 @@ async fn approval_decision_is_audited_and_idempotent_by_actor_and_request() {
     );
     let audit = store.list_audit(10).await.unwrap();
     assert_eq!(audit.len(), 1);
-    assert_eq!(audit[0].event_type, "approval_decided");
+    assert_eq!(audit[0].event_type, "exchange_approved");
     assert!(!audit[0].metadata.to_string().contains(raw_idempotency_key));
     fixture.close().await;
 }
@@ -2520,9 +2867,68 @@ async fn older_schema_version_migrates_forward_and_records_current_version() {
         pool.close().await;
         (version, clock != 0, idempotency != 0)
     };
-    // Version 3 is the current schema: 0001 base tables, 0002 idempotency keys, 0003 controller clock.
-    assert_eq!(version, 3);
+    // Version 4 adds boot-anchored clock checks to the controller clock table.
+    assert_eq!(version, 4);
     assert!(clock_present && idempotency_present);
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn schema_v3_clock_migrates_to_v4_and_fences_unknown_boot_anchor() {
+    let mut fixture = StoreFixture::new().await;
+    fixture
+        .store()
+        .create_secret_request("upgrade-agent", "dummy-key", "v3 upgrade", "code", 60)
+        .await
+        .expect("create transient authority in the old schema");
+    fixture.store.take();
+    let columns = ["boot_id", "boottime_ms", "host_wall_ms", "fenced_at"];
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL migration fixture");
+        sqlx::query("UPDATE controller_meta SET schema_version = 3 WHERE id = 1")
+            .execute(&pool)
+            .await
+            .expect("mark schema as version 3");
+        for column in columns {
+            sqlx::query(&format!(
+                "ALTER TABLE controller_clock DROP COLUMN {column}"
+            ))
+            .execute(&pool)
+            .await
+            .expect("remove v4 column from PostgreSQL fixture");
+        }
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite migration fixture");
+        sqlx::query("UPDATE controller_meta SET schema_version = 3 WHERE id = 1")
+            .execute(&pool)
+            .await
+            .expect("mark schema as version 3");
+        for column in columns {
+            sqlx::query(&format!(
+                "ALTER TABLE controller_clock DROP COLUMN {column}"
+            ))
+            .execute(&pool)
+            .await
+            .expect("remove v4 column from SQLite fixture");
+        }
+        pool.close().await;
+    }
+
+    let upgraded = Store::connect(&fixture.url)
+        .await
+        .expect("schema v3 upgrades and records unknown boot identity");
+    assert!(!upgraded.is_ready().await);
+    assert_eq!(fixture_table_count(&fixture, "secret_requests").await, 0);
+    assert_eq!(
+        fixture_action_count(&fixture, "clock_restart_fence").await,
+        1
+    );
+    upgraded.close().await;
     fixture.close().await;
 }
 

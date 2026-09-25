@@ -30,6 +30,22 @@ interface PgClientLike {
   release(): void;
 }
 
+interface ClockAnchorSnapshot {
+  lastObservedMs: number;
+  bootId: string | null;
+  boottimeMs: number | null;
+  hostWallMs: number | null;
+  fencedAt: number | null;
+}
+
+interface ClockAnchorRow {
+  last_observed_ms: number | string;
+  boot_id: string | null;
+  boottime_ms: number | string | null;
+  host_wall_ms: number | string | null;
+  fenced_at: number | string | null;
+}
+
 interface RedisLike {
   ping(): Promise<string>;
   scan(cursor: string, match: "MATCH", pattern: string, count: "COUNT", size: number): Promise<[string, string[]]>;
@@ -242,15 +258,17 @@ async function seedFixture(
 async function seedRustFixture(
   baseUrl: string,
   seedToken: string,
-  hmacSecret: string
+  hmacSecret: string,
+  rootSecret: string,
+  adminSession: { cookie: string; csrfToken: string },
+  policy: { secret_registry: readonly unknown[]; exchange_policy: readonly unknown[] }
 ): Promise<ContractFixture> {
   const seed = await httpRequest<{
-    access_token: string;
     workspace_id: string;
     user_id: string;
     agents: Record<string, string>;
   }>(baseUrl, "/api/v3/admin/test/seed", {
-    ...jsonRequestBody({ agents: Object.values(AGENT_IDS) }),
+    ...jsonRequestBody({ agents: Object.values(AGENT_IDS), policy }),
     headers: {
       "content-type": "application/json",
       "x-blindpass-seed-token": seedToken
@@ -259,6 +277,14 @@ async function seedRustFixture(
   if (seed.status !== 200 || !seed.body) {
     throw new Error(`Rust contract fixture seed failed with ${seed.status}: ${seed.text.slice(0, 500)}`);
   }
+
+  const listed = await httpRequest<{ items: Array<{ id: string; agent_id: string }> }>(baseUrl, "/api/v3/admin/agents", {
+    headers: { cookie: adminSession.cookie }
+  });
+  if (listed.status !== 200 || !listed.body) {
+    throw new Error(`Rust contract fixture agent listing failed with ${listed.status}: ${listed.text.slice(0, 500)}`);
+  }
+  const agentRecordIds = Object.fromEntries(listed.body.items.map(({ id, agent_id }) => [agent_id, id]));
 
   const agents = {} as Record<AgentId, ContractAgent>;
   for (const [agentId, apiKey] of Object.entries(seed.body.agents)) {
@@ -285,14 +311,15 @@ async function seedRustFixture(
   }
 
   const canaries = fixtureCanaries();
-  canaries.push(seedToken, hmacSecret, seed.body.access_token);
+  canaries.push(seedToken, hmacSecret, rootSecret);
   for (const agent of Object.values(agents)) {
     canaries.push(agent.apiKey, agent.accessToken);
   }
   return {
     workspaceId: seed.body.workspace_id,
     userId: seed.body.user_id,
-    adminAccessToken: seed.body.access_token,
+    adminSession,
+    agentRecordIds,
     agents,
     baseUrl,
     hmacSecret,
@@ -602,8 +629,6 @@ class RustServerAdapter implements RustCrashTestAdapter {
   private childEnv: NodeJS.ProcessEnv = {};
   private adminSession: { cookie: string; csrfToken: string } | null = null;
 
-  constructor(private readonly bootstrapAdminBeforeFixture = false) {}
-
   async start(): Promise<void> {
     try {
       await this.startIsolated();
@@ -654,6 +679,12 @@ class RustServerAdapter implements RustCrashTestAdapter {
     const rootSecret = randomBytes(32).toString("base64url");
     const agentSecret = randomBytes(32).toString("base64url");
     const seedToken = `contract-rust-seed-${randomBytes(32).toString("hex")}`;
+    const rustPolicy = {
+      secret_registry: POLICY_DOCUMENT.secret_registry,
+      exchange_policy: POLICY_DOCUMENT.exchange_policy.map((rule) => rule.ruleId === "contract-approval"
+        ? { ...rule, approverIds: ["p02-admin"] }
+        : rule)
+    };
     await writeFile(rootSecretPath, rootSecret, { mode: 0o600 });
     await writeFile(agentSecretPath, agentSecret, { mode: 0o600 });
 
@@ -687,13 +718,22 @@ class RustServerAdapter implements RustCrashTestAdapter {
         jwks_file: jwksPath,
         issuer: "contract-gateway",
         audience: "contract-sps"
+      }, {
+        name: "contract-jwks-alt",
+        jwks_file: jwksPath,
+        issuer: "contract-gateway-alt",
+        audience: "contract-sps"
       }]),
       BLINDPASS_CORS_ALLOWED_ORIGINS: allowedOrigins,
       BLINDPASS_BODY_LIMIT_BYTES: "1048576",
       BLINDPASS_AGENT_TOKEN_RATE_LIMIT: "5",
+      BLINDPASS_AGENT_REQUEST_RATE_LIMIT: process.env.CONTRACT_AGENT_REQUEST_RATE_LIMIT ?? "60",
+      BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT: process.env.CONTRACT_AGENT_EXCHANGE_RATE_LIMIT
+        ?? process.env.CONTRACT_AGENT_REQUEST_RATE_LIMIT
+        ?? "60",
       BLINDPASS_TRUST_PROXY: "127.0.0.1",
-      BLINDPASS_SECRET_REGISTRY_JSON: JSON.stringify(POLICY_DOCUMENT.secret_registry),
-      BLINDPASS_EXCHANGE_POLICY_JSON: JSON.stringify(POLICY_DOCUMENT.exchange_policy),
+      BLINDPASS_SECRET_REGISTRY_JSON: JSON.stringify(rustPolicy.secret_registry),
+      BLINDPASS_EXCHANGE_POLICY_JSON: JSON.stringify(rustPolicy.exchange_policy),
       BLINDPASS_LOG_FORMAT: "json",
       BLINDPASS_TEST_MODE: "1",
       BLINDPASS_TEST_SEED_TOKEN: seedToken,
@@ -701,16 +741,15 @@ class RustServerAdapter implements RustCrashTestAdapter {
       BLINDPASS_TEST_SUBMITTED_TTL_SECONDS: process.env.CONTRACT_SUBMITTED_TTL_SECONDS ?? "3",
       BLINDPASS_TEST_REVOKED_TTL_SECONDS: process.env.CONTRACT_REVOKED_TTL_SECONDS ?? "4",
       BLINDPASS_TEST_APPROVAL_TTL_SECONDS: process.env.CONTRACT_APPROVAL_TTL_SECONDS ?? "20",
-      BLINDPASS_TEST_REFRESH_TOKEN_TTL_SECONDS: process.env.CONTRACT_REFRESH_TOKEN_TTL_SECONDS ?? "10",
-      BLINDPASS_TEST_AGENT_TOKEN_RATE_WINDOW_MS: process.env.CONTRACT_AGENT_TOKEN_RATE_WINDOW_MS ?? "1000"
+      BLINDPASS_TEST_REFRESH_TOKEN_TTL_SECONDS: process.env.CONTRACT_REFRESH_TOKEN_TTL_SECONDS ?? "180",
+      BLINDPASS_TEST_AGENT_TOKEN_RATE_WINDOW_MS: process.env.CONTRACT_AGENT_TOKEN_RATE_WINDOW_MS ?? "1000",
+      BLINDPASS_TEST_AGENT_RATE_WINDOW_MS: process.env.CONTRACT_AGENT_RATE_WINDOW_MS ?? "1000"
     };
 
     try {
       await this.launchController();
-      if (this.bootstrapAdminBeforeFixture) {
-        await this.bootstrapAdminSession();
-      }
-      this.fixture = await seedRustFixture(this.baseUrl, seedToken, rootSecret);
+      const adminSession = await this.bootstrapAdminSession();
+      this.fixture = await seedRustFixture(this.baseUrl, seedToken, rootSecret, rootSecret, adminSession, rustPolicy);
     } catch {
       await this.close();
       throw new Error("Rust controller failed to become healthy; check its config and process startup without exposing credentials");
@@ -754,23 +793,31 @@ class RustServerAdapter implements RustCrashTestAdapter {
     try {
       return await run();
     } finally {
-      await this.replaceClockMark(previous);
+      await this.restoreClockAnchor(previous);
     }
   }
 
-  private async replaceClockMark(value: number): Promise<number> {
+  private async replaceClockMark(value: number): Promise<ClockAnchorSnapshot> {
     if (this.adminPool) {
       const table = `${quoteIdentifier(this.schema)}.controller_clock`;
-      const result = await this.adminPool.query<{ previous: string | number }>(
-        `WITH previous AS (SELECT last_observed_ms FROM ${table} WHERE id = 1 FOR UPDATE)
+      const result = await this.adminPool.query<ClockAnchorRow>(
+        `WITH previous AS (SELECT last_observed_ms, boot_id, boottime_ms, host_wall_ms, fenced_at FROM ${table} WHERE id = 1 FOR UPDATE)
         UPDATE ${table} SET last_observed_ms = $1 FROM previous WHERE ${table}.id = 1
-        RETURNING previous.last_observed_ms AS previous`,
+        RETURNING previous.last_observed_ms, previous.boot_id, previous.boottime_ms,
+          previous.host_wall_ms, previous.fenced_at`,
         [value]
       );
       if (result.rows.length !== 1) {
         throw new Error("Rust controller clock mark is missing");
       }
-      return Number(result.rows[0]!.previous);
+      const row = result.rows[0]!;
+      return {
+        lastObservedMs: Number(row.last_observed_ms),
+        bootId: row.boot_id,
+        boottimeMs: row.boottime_ms === null ? null : Number(row.boottime_ms),
+        hostWallMs: row.host_wall_ms === null ? null : Number(row.host_wall_ms),
+        fencedAt: row.fenced_at === null ? null : Number(row.fenced_at)
+      };
     }
     const { DatabaseSync } = await import("node:sqlite");
     const database = new DatabaseSync(path.join(this.tempDir, "controller.db"));
@@ -778,18 +825,47 @@ class RustServerAdapter implements RustCrashTestAdapter {
       database.exec("PRAGMA busy_timeout = 5000");
       database.exec("BEGIN IMMEDIATE");
       try {
-        const row = database.prepare("SELECT last_observed_ms FROM controller_clock WHERE id = 1").get() as
-          { last_observed_ms: number } | undefined;
+        const row = database.prepare(
+          "SELECT last_observed_ms, boot_id, boottime_ms, host_wall_ms, fenced_at FROM controller_clock WHERE id = 1"
+        ).get() as ClockAnchorRow | undefined;
         if (!row) {
           throw new Error("Rust controller clock mark is missing");
         }
         database.prepare("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1").run(value);
         database.exec("COMMIT");
-        return Number(row.last_observed_ms);
+        return {
+          lastObservedMs: Number(row.last_observed_ms),
+          bootId: row.boot_id,
+          boottimeMs: row.boottime_ms === null ? null : Number(row.boottime_ms),
+          hostWallMs: row.host_wall_ms === null ? null : Number(row.host_wall_ms),
+          fencedAt: row.fenced_at === null ? null : Number(row.fenced_at)
+        };
       } catch (error) {
         database.exec("ROLLBACK");
         throw error;
       }
+    } finally {
+      database.close();
+    }
+  }
+
+  private async restoreClockAnchor(anchor: ClockAnchorSnapshot): Promise<void> {
+    if (this.adminPool) {
+      const table = `${quoteIdentifier(this.schema)}.controller_clock`;
+      await this.adminPool.query(
+        `UPDATE ${table} SET last_observed_ms = $1, boot_id = $2, boottime_ms = $3,
+          host_wall_ms = $4, fenced_at = $5 WHERE id = 1`,
+        [anchor.lastObservedMs, anchor.bootId, anchor.boottimeMs, anchor.hostWallMs, anchor.fencedAt]
+      );
+      return;
+    }
+    const { DatabaseSync } = await import("node:sqlite");
+    const database = new DatabaseSync(path.join(this.tempDir, "controller.db"));
+    try {
+      database.exec("PRAGMA busy_timeout = 5000");
+      database.prepare(
+        "UPDATE controller_clock SET last_observed_ms = ?, boot_id = ?, boottime_ms = ?, host_wall_ms = ?, fenced_at = ? WHERE id = 1"
+      ).run(anchor.lastObservedMs, anchor.bootId, anchor.boottimeMs, anchor.hostWallMs, anchor.fencedAt);
     } finally {
       database.close();
     }
@@ -939,7 +1015,7 @@ export async function startRustCrashTestAdapter(): Promise<RustCrashTestAdapter>
   if (sutFromEnvironment() !== "rust" || process.env.RUST_BASE_URL?.trim()) {
     throw new Error("P02 crash-recovery tests require a harness-spawned Rust controller");
   }
-  const adapter = new RustServerAdapter(true);
+  const adapter = new RustServerAdapter();
   await adapter.start();
   return adapter;
 }

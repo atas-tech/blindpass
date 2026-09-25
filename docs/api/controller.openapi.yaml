@@ -67,7 +67,7 @@
           "400": { "$ref": "#/components/responses/LegacyError" },
           "401": { "$ref": "#/components/responses/LegacyError" },
           "404": { "$ref": "#/components/responses/LegacyError" },
-          "429": { "$ref": "#/components/responses/LegacyError" }
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     },
@@ -190,7 +190,7 @@
           "401": { "$ref": "#/components/responses/LegacyError" },
           "403": { "description": "Policy denial or pending approval; no exchange is created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ExchangePolicyDenial" } } } },
           "409": { "$ref": "#/components/responses/LegacyError" },
-          "429": { "$ref": "#/components/responses/LegacyError" }
+          "429": { "$ref": "#/components/responses/RateLimited" }
         }
       }
     },
@@ -581,12 +581,14 @@
     },
     "responses": {
       "LegacyError": { "description": "Legacy route-specific response body preserved from the SPS snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LegacyError" } } } },
-      "AdminError": { "description": "Local administration error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminError" } } } }
+      "AdminError": { "description": "Local administration error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminError" } } } },
+      "RateLimited": { "description": "The authenticated workload exceeded its tenant and agent request window. Retry-After is set; this response includes no secret name or request identifier.", "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RateLimited" } } } }
     },
     "schemas": {
       "HealthResponse": { "type": "object", "properties": { "ok": { "type": "boolean", "const": true } }, "required": ["ok"], "additionalProperties": false },
       "ReadinessResponse": { "type": "object", "properties": { "ok": { "type": "boolean" }, "checks": { "type": "object", "properties": { "database": { "type": "string", "enum": ["up", "down"] } }, "required": ["database"], "additionalProperties": false } }, "required": ["ok", "checks"], "additionalProperties": false },
       "LegacyError": { "type": "object", "properties": { "code": { "type": "string" }, "error": { "type": "string" }, "message": { "type": "string" }, "statusCode": { "type": "integer" } }, "additionalProperties": true },
+      "RateLimited": { "type": "object", "properties": { "error": { "type": "string" }, "code": { "type": "string", "const": "rate_limited" }, "retry_after_seconds": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1 }, "used": { "type": "integer", "minimum": 1 } }, "required": ["error", "code", "retry_after_seconds", "limit", "used"], "additionalProperties": false },
       "AdminError": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } }, "required": ["error"], "additionalProperties": false },
       "Agent": { "type": "object", "properties": { "id": { "type": "string" }, "agent_id": { "type": "string" }, "workspace_id": { "type": "string" }, "display_name": { "type": "string" }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "string", "format": "date-time" }, "revoked_at": { "type": ["string", "null"], "format": "date-time" } }, "required": ["id", "agent_id", "workspace_id", "display_name", "status", "created_at", "revoked_at"], "additionalProperties": false },
       "AgentTokenResponse": { "type": "object", "properties": { "access_token": { "type": "string" }, "access_token_expires_at": { "type": "integer" }, "agent": { "$ref": "#/components/schemas/Agent" } }, "required": ["access_token", "access_token_expires_at", "agent"], "additionalProperties": false },
@@ -608,7 +610,7 @@
       "ExchangeRetrieved": { "type": "object", "properties": { "enc": { "type": "string" }, "ciphertext": { "type": "string" }, "secret_name": { "type": "string" }, "fulfilled_by": { "type": ["string", "null"] } }, "required": ["enc", "ciphertext", "secret_name", "fulfilled_by"], "additionalProperties": false },
       "RevokedResponse": { "type": "object", "properties": { "status": { "type": "string", "const": "revoked" } }, "required": ["status"], "additionalProperties": false },
       "BrowserStatusCapabilityResponse": { "type": "object", "properties": { "status_sig": { "type": "string", "minLength": 16 } }, "required": ["status_sig"], "additionalProperties": false },
-      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer" }, "setup_required": { "type": "boolean" }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true } }, "required": ["browser_status"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
+      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 4 }, "setup_required": { "type": "boolean" }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true } }, "required": ["browser_status"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
       "BootstrapInput": { "type": "object", "properties": { "username": { "type": "string", "minLength": 3, "maxLength": 128 }, "password": { "type": "string", "minLength": 12, "maxLength": 1024 }, "display_name": { "type": "string", "minLength": 1, "maxLength": 160 } }, "required": ["username", "password", "display_name"], "additionalProperties": false },
       "LoginInput": { "type": "object", "properties": { "username": { "type": "string" }, "password": { "type": "string" } }, "required": ["username", "password"], "additionalProperties": false },
       "AdminSession": { "type": "object", "properties": { "operator": { "$ref": "#/components/schemas/Operator" }, "csrf_token": { "type": "string" }, "expires_at": { "type": "integer" }, "must_change_password": { "type": "boolean" } }, "required": ["operator", "csrf_token", "expires_at", "must_change_password"], "additionalProperties": false },
@@ -633,8 +635,8 @@
       "AuditEvent": { "type": "object", "properties": { "id": { "type": "string" }, "event": { "type": "string" }, "actor_id": { "type": ["string", "null"] }, "resource_id": { "type": ["string", "null"] }, "created_at": { "type": "integer" }, "metadata": { "type": "object", "additionalProperties": true } }, "required": ["id", "event", "created_at", "metadata"], "additionalProperties": false },
       "AuditList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEvent" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "TestSeedInput": { "type": "object", "properties": { "agents": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 64, "uniqueItems": true }, "policy": { "$ref": "#/components/schemas/PolicyDocumentInput" }, "rotated_agents": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "description": "Optional agent IDs from agents to rotate before returning fixture keys" }, "revoked_agents": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "description": "Optional agent IDs from agents to revoke after creation" }, "local_admin": { "type": "boolean", "description": "Create a test-only local administrator and browser session for VM clients" } }, "required": ["agents"], "additionalProperties": false },
-      "TestSeedResponse": { "type": "object", "properties": { "access_token": { "type": "string" }, "workspace_id": { "type": "string" }, "user_id": { "type": "string" }, "agents": { "type": "object", "additionalProperties": { "type": "string" } }, "local_admin": { "$ref": "#/components/schemas/TestSeedLocalAdmin" } }, "required": ["access_token", "workspace_id", "user_id", "agents"], "additionalProperties": false },
-      "TestSeedLocalAdmin": { "type": "object", "properties": { "operator_id": { "type": "string" }, "username": { "type": "string" }, "temporary_password": { "type": "string" }, "session_id": { "type": "string" }, "csrf_token": { "type": "string" }, "refresh_token": { "type": "string" } }, "required": ["operator_id", "username", "temporary_password", "session_id", "csrf_token", "refresh_token"], "additionalProperties": false }
+      "TestSeedResponse": { "type": "object", "properties": { "workspace_id": { "type": "string" }, "user_id": { "type": "string" }, "agents": { "type": "object", "additionalProperties": { "type": "string" } }, "local_admin": { "$ref": "#/components/schemas/TestSeedLocalAdmin" } }, "required": ["workspace_id", "user_id", "agents"], "additionalProperties": false },
+      "TestSeedLocalAdmin": { "type": "object", "properties": { "operator_id": { "type": "string" }, "username": { "type": "string" }, "temporary_password": { "type": "string" }, "session_id": { "type": "string" }, "csrf_token": { "type": "string" } }, "required": ["operator_id", "username", "temporary_password", "session_id", "csrf_token"], "additionalProperties": false }
     }
   }
 }

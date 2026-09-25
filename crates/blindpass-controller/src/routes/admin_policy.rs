@@ -232,6 +232,31 @@ fn validate_policy(document: &PolicyDocumentInput) -> Vec<String> {
         {
             errors.push(format!("exchange_policy[{index}].mode: unsupported value"));
         }
+        if rule.get("mode").and_then(Value::as_str) == Some("pending_approval") {
+            let approver_ids = ["approverIds", "approver_ids"]
+                .iter()
+                .find_map(|key| rule.get(*key))
+                .and_then(Value::as_array);
+            if !approver_ids.is_some_and(|ids| {
+                ids.iter()
+                    .filter_map(Value::as_str)
+                    .any(|id| !id.trim().is_empty())
+            }) {
+                errors.push(format!(
+                    "exchange_policy[{index}].approverIds: required for pending_approval"
+                ));
+            }
+        }
+        let has_approver_rings = ["approverRings", "approver_rings"]
+            .iter()
+            .find_map(|key| rule.get(*key))
+            .and_then(Value::as_array)
+            .is_some_and(|rings| !rings.is_empty());
+        if has_approver_rings {
+            errors.push(format!(
+                "exchange_policy[{index}].approverRings: unsupported; use approverIds"
+            ));
+        }
         for key in [
             "requesterIds",
             "requester_ids",

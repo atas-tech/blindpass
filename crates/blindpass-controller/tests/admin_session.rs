@@ -129,6 +129,30 @@ fn token_hash(token: &str) -> String {
         .collect()
 }
 
+fn forged_sps_user_token() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after Unix epoch")
+        .as_secs();
+    let claims = json!({
+        "sub":"forged-user",
+        "role":"workspace_admin",
+        "workspace_id":"tenant-fixture",
+        "iss":"sps",
+        "aud":"sps-user",
+        "iat":now,
+        "exp":now + 300,
+        "sid":"forged-session",
+        "force_password_change":false
+    });
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+        &claims,
+        &jsonwebtoken::EncodingKey::from_secret(&[b'A'; 32]),
+    )
+    .expect("sign legacy test user token")
+}
+
 fn approval_record(reference: &str, approver_ids: Vec<String>) -> ApprovalRecord {
     let now_ms = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -245,6 +269,147 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
 
     let health = request(address, "GET", "/healthz", &[], None).await;
     assert_eq!(health.status, 200);
+
+    let removed_v2_routes = [
+        ("DELETE", "/api/v2/agents/contract-agent"),
+        ("POST", "/api/v2/agents/contract-agent/rotate-key"),
+        ("GET", "/api/v2/audit/"),
+        ("DELETE", "/api/v2/secret/revoke/request-id"),
+        (
+            "POST",
+            "/api/v2/secret/exchange/admin/approval/reference/approve",
+        ),
+        (
+            "POST",
+            "/api/v2/secret/exchange/admin/approval/reference/reject",
+        ),
+        ("GET", "/api/v2/secret/exchange/approval/reference"),
+        ("POST", "/api/v2/secret/exchange/approval/reference/approve"),
+        ("POST", "/api/v2/secret/exchange/approval/reference/reject"),
+    ];
+    for (method, path) in removed_v2_routes {
+        let response = request(address, method, path, &[], None).await;
+        assert_eq!(response.status, 404, "{method} {path}");
+    }
+
+    let user_token = forged_sps_user_token();
+    let protected_v3_routes = [
+        ("GET", "/api/v3/admin/agents", None, 401),
+        (
+            "POST",
+            "/api/v3/admin/agents",
+            Some(json!({"agent_id":"forged-agent","display_name":"Forged"})),
+            401,
+        ),
+        (
+            "POST",
+            "/api/v3/admin/agents/00000000-0000-4000-8000-000000000000/rotate-key",
+            None,
+            401,
+        ),
+        (
+            "DELETE",
+            "/api/v3/admin/agents/00000000-0000-4000-8000-000000000000",
+            None,
+            401,
+        ),
+        ("GET", "/api/v3/admin/approvals", None, 401),
+        ("GET", "/api/v3/admin/approvals/count", None, 401),
+        ("GET", "/api/v3/admin/approvals/reference", None, 401),
+        (
+            "POST",
+            "/api/v3/admin/approvals/reference/approve",
+            Some(json!({"expected_status":"pending"})),
+            401,
+        ),
+        (
+            "POST",
+            "/api/v3/admin/approvals/reference/reject",
+            Some(json!({"expected_status":"pending"})),
+            401,
+        ),
+        ("GET", "/api/v3/admin/audit", None, 401),
+        ("GET", "/api/v3/admin/audit/exchange/exchange-id", None, 401),
+        ("GET", "/api/v3/admin/operators", None, 401),
+        (
+            "POST",
+            "/api/v3/admin/operators",
+            Some(
+                json!({"username":"forged","display_name":"Forged","role":"viewer","password":"forged-password-long"}),
+            ),
+            401,
+        ),
+        (
+            "PATCH",
+            "/api/v3/admin/operators/operator-id",
+            Some(json!({"display_name":"Forged"})),
+            401,
+        ),
+        ("DELETE", "/api/v3/admin/operators/operator-id", None, 401),
+        (
+            "POST",
+            "/api/v3/admin/operators/operator-id/reset-password",
+            None,
+            401,
+        ),
+        ("GET", "/api/v3/admin/policy", None, 401),
+        (
+            "PUT",
+            "/api/v3/admin/policy",
+            Some(json!({"secret_registry":[],"exchange_policy":[]})),
+            401,
+        ),
+        (
+            "POST",
+            "/api/v3/admin/policy/validate",
+            Some(json!({"secret_registry":[],"exchange_policy":[]})),
+            401,
+        ),
+        (
+            "POST",
+            "/api/v3/admin/bootstrap",
+            Some(
+                json!({"username":"forged","display_name":"Forged","password":"forged-password-long"}),
+            ),
+            401,
+        ),
+        (
+            "POST",
+            "/api/v3/admin/session/login",
+            Some(json!({"username":"forged","password":"forged-password-long"})),
+            401,
+        ),
+        ("POST", "/api/v3/admin/session/logout", None, 401),
+        ("POST", "/api/v3/admin/session/refresh", None, 401),
+        ("GET", "/api/v3/admin/session", None, 401),
+        (
+            "POST",
+            "/api/v3/admin/session/change-password",
+            Some(
+                json!({"current_password":"forged-password-long","new_password":"forged-password-new"}),
+            ),
+            401,
+        ),
+        (
+            "POST",
+            "/api/v3/admin/test/seed",
+            Some(json!({"agents":["forged"]})),
+            404,
+        ),
+    ];
+    let authorization = format!("Bearer {user_token}");
+    let forged_headers = [
+        ("authorization", authorization.as_str()),
+        ("origin", "http://127.0.0.1:5175"),
+        ("cookie", "bp_csrf=legacy-pre-session"),
+        ("x-csrf-token", "legacy-pre-session"),
+        ("idempotency-key", "legacy-approval-key-0001"),
+        ("content-type", "application/json"),
+    ];
+    for (method, path, body, expected_status) in protected_v3_routes {
+        let response = request(address, method, path, &forged_headers, body.as_ref()).await;
+        assert_eq!(response.status, expected_status, "{method} {path}");
+    }
 
     let bootstrap_body = json!({
         "username": "admin",
@@ -541,6 +706,51 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
     assert_eq!(validate_policy.status, 200);
     assert_eq!(validate_policy.body["valid"], true);
 
+    for policy in [
+        json!({
+            "secret_registry":[{"secretName":"db.token","classification":"sensitive"}],
+            "exchange_policy":[{"ruleId":"unassigned-approval","secretName":"db.token","requesterIds":["payments/ring/blue"],"fulfillerIds":["billing/ring/green"],"mode":"pending_approval"}]
+        }),
+        json!({
+            "secret_registry":[{"secretName":"db.token","classification":"sensitive"}],
+            "exchange_policy":[{"ruleId":"ring-approval","secretName":"db.token","requesterIds":["payments/ring/blue"],"fulfillerIds":["billing/ring/green"],"approverIds":["admin"],"approverRings":["finance"],"mode":"pending_approval"}]
+        }),
+    ] {
+        let validation = request(
+            address,
+            "POST",
+            "/api/v3/admin/policy/validate",
+            &[
+                ("origin", "http://127.0.0.1:5175"),
+                ("cookie", &format!("{session_cookie}; {csrf_cookie}")),
+                ("x-csrf-token", csrf),
+                ("content-type", "application/json"),
+            ],
+            Some(&policy),
+        )
+        .await;
+        assert_eq!(validation.status, 200);
+        assert_eq!(validation.body["valid"], false);
+        assert!(!validation.body["errors"].as_array().unwrap().is_empty());
+
+        let write = request(
+            address,
+            "PUT",
+            "/api/v3/admin/policy",
+            &[
+                ("origin", "http://127.0.0.1:5175"),
+                ("cookie", &format!("{session_cookie}; {csrf_cookie}")),
+                ("x-csrf-token", csrf),
+                ("if-match", "1"),
+                ("content-type", "application/json"),
+            ],
+            Some(&policy),
+        )
+        .await;
+        assert_eq!(write.status, 400);
+        assert_eq!(write.body["error"], "invalid_policy");
+    }
+
     let replace_policy = request(
         address,
         "PUT",
@@ -698,7 +908,7 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
     .await;
     assert_eq!(audit.status, 200);
     let audit_text = audit.body.to_string();
-    assert!(audit_text.contains("approval_decided"));
+    assert!(audit_text.contains("exchange_approved"));
     assert!(!audit_text.contains(raw_idempotency_key));
     let pending_after_decision = request(
         address,
@@ -1040,7 +1250,6 @@ async fn forced_password_change_blocks_administration_until_completed() {
         .expect("connect forced-change test database");
     let seeded = blindpass_controller::seed::seed_fixture(
         &store,
-        &[b'A'; 32],
         blindpass_controller::seed::SeedRequest {
             agents: vec!["fixture-agent".to_owned()],
             policy: None,
@@ -1646,15 +1855,6 @@ async fn bearer_and_fulfillment_tokens_are_rejected_once_exp_passes() {
             }),
         )
     };
-    let user_token = |exp: u64| {
-        hs256_token(
-            agent_secret.as_bytes(),
-            &json!({
-                "sub": "expiry-admin", "role": "workspace_admin", "workspace_id": tenant,
-                "iss": "sps", "aud": "sps-user", "iat": now - 600, "exp": exp
-            }),
-        )
-    };
     let fulfillment_secret =
         blindpass_core::signing::derive_secret("R".repeat(32).as_bytes(), "agent-fulfillment")
             .expect("derive fulfillment secret");
@@ -1671,8 +1871,6 @@ async fn bearer_and_fulfillment_tokens_are_rejected_once_exp_passes() {
         )
     };
     let status_path = format!("/api/v2/secret/status/{}", "a".repeat(64));
-    let approval_path = "/api/v2/secret/exchange/admin/approval/apr_expiry/approve";
-
     for (label, exp, expected) in [("live", now + 300, 410), ("expired", now - 5, 401)] {
         let bearer = format!("Bearer {}", agent_token(exp));
         let status = request(
@@ -1687,21 +1885,6 @@ async fn bearer_and_fulfillment_tokens_are_rejected_once_exp_passes() {
             status.status, expected,
             "{label} agent token: {:?}",
             status.body
-        );
-
-        let bearer = format!("Bearer {}", user_token(exp));
-        let approval = request(
-            address,
-            "POST",
-            approval_path,
-            &[("authorization", &bearer)],
-            None,
-        )
-        .await;
-        assert_eq!(
-            approval.status, expected,
-            "{label} user token: {:?}",
-            approval.body
         );
 
         let bearer = format!("Bearer {}", agent_token(now + 300));

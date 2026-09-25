@@ -24,21 +24,6 @@ const legacyMachineRoutes = [
   ["POST", "/api/v2/agents/token"]
 ];
 
-// Legacy v2 routes the controller mounts outside the reviewed contract. Each
-// needs a decision (document, restrict to test mode, or remove) before P02
-// acceptance; until then this list must match the router exactly.
-const undocumentedMountedRoutes = [
-  ["DELETE", "/api/v2/agents/{}"],
-  ["POST", "/api/v2/agents/{}/rotate-key"],
-  ["GET", "/api/v2/audit/"],
-  ["DELETE", "/api/v2/secret/revoke/{}"],
-  ["POST", "/api/v2/secret/exchange/admin/approval/{}/approve"],
-  ["POST", "/api/v2/secret/exchange/admin/approval/{}/reject"],
-  ["GET", "/api/v2/secret/exchange/approval/{}"],
-  ["POST", "/api/v2/secret/exchange/approval/{}/approve"],
-  ["POST", "/api/v2/secret/exchange/approval/{}/reject"]
-];
-
 async function rustSources(directory = controllerSource) {
   const files = [];
   for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -106,12 +91,12 @@ test("retained operations document every response status observed by CT02-CT13",
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
   const requiredStatuses = [
     ["post", "/api/v2/agents/token", ["200", "401", "429"]],
-    ["post", "/api/v2/secret/request", ["201", "400", "401"]],
+    ["post", "/api/v2/secret/request", ["201", "400", "401", "429"]],
     ["get", "/api/v2/secret/metadata/{id}", ["200", "403", "410"]],
     ["post", "/api/v2/secret/submit/{id}", ["201", "403", "409", "410", "413"]],
     ["get", "/api/v2/secret/status/{id}", ["200", "410"]],
     ["get", "/api/v2/secret/retrieve/{id}", ["200", "409", "410"]],
-    ["post", "/api/v2/secret/exchange/request", ["201", "403"]],
+    ["post", "/api/v2/secret/exchange/request", ["201", "403", "429"]],
     ["get", "/api/v2/secret/exchange/status/{id}", ["200", "410"]],
     ["post", "/api/v2/secret/exchange/fulfill", ["200", "409", "410"]],
     ["post", "/api/v2/secret/exchange/submit/{id}", ["201", "409"]],
@@ -193,6 +178,7 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
   assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
+  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 4);
 
   const serialized = JSON.stringify(schema.paths["/readyz"]);
   assert.doesNotMatch(serialized, /secret|token|credential|password/i);
@@ -239,8 +225,11 @@ test("test seed schema matches the exercised compatibility fixture response", as
   assert.deepEqual(input.required, ["agents"]);
   assert.deepEqual(Object.keys(input.properties), ["agents", "policy", "rotated_agents", "revoked_agents", "local_admin"]);
   const response = schema.components.schemas.TestSeedResponse;
-  assert.deepEqual(response.required, ["access_token", "workspace_id", "user_id", "agents"]);
+  assert.deepEqual(response.required, ["workspace_id", "user_id", "agents"]);
+  assert.ok(!Object.hasOwn(response.properties, "access_token"));
+  assert.ok(!Object.hasOwn(response.properties, "refresh_token"));
   assert.equal(response.properties.local_admin.$ref, "#/components/schemas/TestSeedLocalAdmin");
+  assert.ok(!Object.hasOwn(schema.components.schemas.TestSeedLocalAdmin.properties, "refresh_token"));
 
   const auth = await readFile(path.join(controllerSource, "routes/auth.rs"), "utf8");
   const header = auth.match(/async fn test_seed\([\s\S]*?\.get\("([^"]+)"\)/)?.[1];
@@ -255,7 +244,7 @@ test("controller OpenAPI server matches the default listen address", async () =>
   assert.deepEqual(schema.servers.map((server) => new URL(server.url).host), [listen]);
 });
 
-test("every mounted controller route is documented or explicitly pending a decision", async () => {
+test("every mounted controller route is documented exactly", async () => {
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
   const documented = new Set();
   for (const [route, pathItem] of Object.entries(schema.paths ?? {})) {
@@ -268,10 +257,7 @@ test("every mounted controller route is documented or explicitly pending a decis
   const mounted = await mountedRoutes();
   assert.ok(mounted.size > documented.size / 2, "route parser found too few routes");
   assert.deepEqual([...documented].filter((route) => !mounted.has(route)).sort(), []);
-  assert.deepEqual(
-    [...mounted].filter((route) => !documented.has(route)).sort(),
-    undocumentedMountedRoutes.map(([method, route]) => routeKey(method, route)).sort()
-  );
+  assert.deepEqual([...mounted].filter((route) => !documented.has(route)).sort(), []);
 });
 
 test("admin session scheme documents the forced password change gate", async () => {

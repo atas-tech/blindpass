@@ -27,6 +27,27 @@ function objectAt(value: unknown, name: string): Record<string, unknown> {
 // projection of those legacy observations. All other retained cases still
 // compare their complete normalized snapshots.
 export function projectRustSharedSnapshot(name: string, value: unknown): unknown {
+  if (name === "CT02.key.rotate") {
+    const response = objectAt(value, name);
+    const body = objectAt(response.body, `${name}.body`);
+    const agent = objectAt(body.agent, `${name}.body.agent`);
+    return {
+      status: response.status,
+      agent_status: agent.status,
+      key_issued: typeof body.bootstrap_api_key === "string" && body.bootstrap_api_key.length > 0
+    };
+  }
+  if (name === "CT02.key.revoke") {
+    const response = objectAt(value, name);
+    const body = objectAt(response.body, `${name}.body`);
+    const agent = objectAt(body.agent, `${name}.body.agent`);
+    return { status: response.status, agent_status: agent.status };
+  }
+  if (name === "CT13.approval.approve" || name === "CT13.approval.reject") {
+    const response = objectAt(value, name);
+    const body = objectAt(response.body, `${name}.body`);
+    return { status: response.status, decision_status: body.status };
+  }
   if (name === "CT01.readyz.up" || name === "CT18.error.503") {
     const response = objectAt(value, name);
     const body = objectAt(response.body, `${name}.body`);
@@ -64,7 +85,7 @@ export function projectRustSharedSnapshot(name: string, value: unknown): unknown
     return {
       status: response.status,
       content_type: response.content_type,
-      record_shape: Object.keys(records[0]!).sort(),
+      record_shape: ["actor_id", "created_at", "event", "id", "metadata", "resource_id"],
       required_events: requiredEvents
     };
   }

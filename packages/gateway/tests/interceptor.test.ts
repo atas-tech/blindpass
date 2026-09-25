@@ -3,6 +3,22 @@ import { GatewaySpsClient } from "../src/sps-client.js";
 import { RequestSecretInterceptor, createRequestSecretInterceptor } from "../src/interceptor.js";
 
 describe("interceptor", () => {
+  it("surfaces request rate limits without retrying", async () => {
+    const fetchImpl = vi.fn(async () => new Response("rate limited", {
+      status: 429,
+      headers: { "retry-after": "60" }
+    }));
+    const client = new GatewaySpsClient({
+      baseUrl: "http://localhost:3100",
+      gatewayBearerToken: "gateway-token",
+      fetchImpl
+    });
+
+    await expect(client.createSecretRequest({ description: "API key", publicKey: "cHVi" }))
+      .rejects.toThrow("SPS request failed with status 429");
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("creates SPS request, notifies chat, and returns non-sensitive response", async () => {
     const fetchImpl: typeof fetch = vi.fn(async (input, init) => {
       expect(String(input)).toBe("http://localhost:3100/api/v2/secret/request");

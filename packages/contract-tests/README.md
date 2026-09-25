@@ -49,9 +49,10 @@ SUT=rust CONTRACT_RUST_BACKEND=postgres CONTRACT_DATABASE_URL=... npm test --wor
 
 The adapter starts the controller in test mode with an isolated SQLite file or
 PostgreSQL schema and seeds it through the test seed route. The run compares
-the committed TypeScript snapshot; four reviewed projections in
-`src/snapshots.ts` cover responses where Rust intentionally differs (CT01 and
-CT18 readiness, CT16 CORS, CT17 audit). A Rust run can never rewrite the
+the committed TypeScript snapshot; reviewed semantic projections in
+`src/snapshots.ts` cover the v3 administration outcomes where Rust intentionally
+differs (CT01 readiness, CT02 key rotation/revocation, CT13 approval decisions,
+CT16 CORS, CT17 audit, and CT18 readiness). A Rust run can never rewrite the
 TypeScript snapshot. `fixtures/rust-pending.json` lists the required cases and
 the CT14 exclusion; `scripts/tests/assert-contract-progress.mjs` checks a JSON
 report against it.

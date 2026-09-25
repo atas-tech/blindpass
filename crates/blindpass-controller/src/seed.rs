@@ -4,7 +4,7 @@
 
 use crate::routes::admin_policy::validated_seed_policy_json;
 use crate::routes::auth::{
-    hash_api_key, hash_refresh_token, mint_seed_admin_token, new_api_key, random_uuid, ring_from_id,
+    hash_api_key, hash_refresh_token, new_api_key, random_uuid, ring_from_id,
 };
 use crate::store::Store;
 use base64::Engine;
@@ -35,12 +35,10 @@ pub struct LocalAdminSeed {
     pub temporary_password: String,
     pub session_id: String,
     pub csrf_token: String,
-    pub refresh_token: String,
 }
 
 #[derive(Serialize)]
 pub struct SeedResponse {
-    pub access_token: String,
     pub workspace_id: String,
     pub user_id: String,
     pub agents: BTreeMap<String, String>,
@@ -56,11 +54,7 @@ pub enum SeedError {
     Internal,
 }
 
-pub async fn seed_fixture(
-    store: &Store,
-    jwt_secret: &[u8],
-    request: SeedRequest,
-) -> Result<SeedResponse, SeedError> {
+pub async fn seed_fixture(store: &Store, request: SeedRequest) -> Result<SeedResponse, SeedError> {
     let SeedRequest {
         agents: fixture_agents,
         policy,
@@ -184,16 +178,12 @@ pub async fn seed_fixture(
             temporary_password,
             session_id: session.session_id,
             csrf_token: session.csrf_secret,
-            refresh_token,
         })
     } else {
         None
     };
     let user_id = random_uuid();
-    let access_token = mint_seed_admin_token(jwt_secret, &user_id, store.tenant_id())
-        .map_err(|_| SeedError::Internal)?;
     Ok(SeedResponse {
-        access_token,
         workspace_id: store.tenant_id().to_owned(),
         user_id,
         agents,
@@ -223,7 +213,6 @@ mod tests {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         let result = seed_fixture(
             &store,
-            &[b'A'; 32],
             SeedRequest {
                 agents: vec!["duplicate-agent".to_owned(), "duplicate-agent".to_owned()],
                 policy: None,
@@ -245,7 +234,7 @@ mod tests {
             r#"{"agents":["policy-agent"],"policy":{"secret_registry":[],"exchange_policy":[]}}"#,
         )
         .unwrap();
-        let response = seed_fixture(&store, &[b'A'; 32], request).await.unwrap();
+        let response = seed_fixture(&store, request).await.unwrap();
         assert!(response.agents.contains_key("policy-agent"));
         assert!(response.local_admin.is_none());
         let record = store
@@ -268,7 +257,7 @@ mod tests {
             r#"{"agents":["policy-agent"],"policy":{"secret_registry":[],"exchange_policy":[{"ruleId":"invalid","secretName":"unknown","mode":"allow"}]}}"#,
         )
         .unwrap();
-        assert!(seed_fixture(&store, &[b'A'; 32], request).await.is_err());
+        assert!(seed_fixture(&store, request).await.is_err());
         assert!(store.list_admin_agents().await.unwrap().is_empty());
         assert!(store.policy_document().await.unwrap().is_none());
         store.close().await;
@@ -281,7 +270,7 @@ mod tests {
             r#"{"agents":["active-agent","rotated-agent","revoked-agent"],"rotated_agents":["rotated-agent"],"revoked_agents":["revoked-agent"]}"#,
         )
         .unwrap();
-        let response = seed_fixture(&store, &[b'A'; 32], request).await.unwrap();
+        let response = seed_fixture(&store, request).await.unwrap();
         let rotated = store
             .agent_by_agent_id("rotated-agent")
             .await
@@ -314,7 +303,7 @@ mod tests {
             r#"{"agents":["active-agent"],"rotated_agents":["missing-agent"]}"#,
         )
         .unwrap();
-        assert!(seed_fixture(&store, &[b'A'; 32], request).await.is_err());
+        assert!(seed_fixture(&store, request).await.is_err());
         assert!(store.list_admin_agents().await.unwrap().is_empty());
         store.close().await;
     }
@@ -328,7 +317,7 @@ mod tests {
             .unwrap();
         let request: SeedRequest =
             serde_json::from_str(r#"{"agents":["new-agent","existing-agent"]}"#).unwrap();
-        assert!(seed_fixture(&store, &[b'A'; 32], request).await.is_err());
+        assert!(seed_fixture(&store, request).await.is_err());
         assert!(
             store
                 .agent_by_agent_id("new-agent")
@@ -351,7 +340,7 @@ mod tests {
         let store = Store::connect("sqlite::memory:").await.unwrap();
         let request: SeedRequest =
             serde_json::from_str(r#"{"agents":["vm-agent"],"local_admin":true}"#).unwrap();
-        let response = seed_fixture(&store, &[b'A'; 32], request).await.unwrap();
+        let response = seed_fixture(&store, request).await.unwrap();
         let value = serde_json::to_value(response).unwrap();
         let admin = &value["local_admin"];
         let session_id = admin["session_id"].as_str().expect("session id");
@@ -383,7 +372,7 @@ mod tests {
         );
         let request: SeedRequest =
             serde_json::from_str(r#"{"agents":["vm-agent"],"local_admin":true}"#).unwrap();
-        assert!(seed_fixture(&store, &[b'A'; 32], request).await.is_err());
+        assert!(seed_fixture(&store, request).await.is_err());
         assert!(store.list_admin_agents().await.unwrap().is_empty());
         store.close().await;
     }

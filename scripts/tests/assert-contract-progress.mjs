@@ -85,10 +85,10 @@ export function compareProgress(reportValue, manifestValue) {
     }
     for (const assertion of assertions) {
       const name = assertion.fullName ?? assertion.title ?? "";
-      if (!/\bCT\d{2}\b/.test(name) && assertion.status !== "passed") {
+      if (!/\bCT\d{2}(?:\.[A-Za-z0-9-]+)*/.test(name) && assertion.status !== "passed") {
         throw new Error(`Unexpected failure outside the contract cases: ${name} (${assertion.status}).`);
       }
-      for (const match of name.matchAll(/\bCT\d{2}\b/g)) {
+      for (const match of name.matchAll(/\bCT\d{2}(?:\.[A-Za-z0-9-]+)*/g)) {
         const id = match[0];
         if (!required.has(id)) {
           throw new Error(`Unexpected contract case ${id} appeared in the report.`);
@@ -139,7 +139,7 @@ export function compareProgress(reportValue, manifestValue) {
 }
 
 function validateIds(value, field) {
-  if (!Array.isArray(value) || (field === "requiredIds" && value.length === 0) || value.some((id) => typeof id !== "string" || !/^CT\d{2}$/.test(id))) {
+  if (!Array.isArray(value) || (field === "requiredIds" && value.length === 0) || value.some((id) => typeof id !== "string" || !/^CT\d{2}(?:\.[A-Za-z0-9-]+)*$/.test(id))) {
     throw new Error(`${field} must be a list of CT identifiers${field === "requiredIds" ? " with at least one entry" : ""}.`);
   }
   const duplicates = value.filter((id, index) => value.indexOf(id) !== index);

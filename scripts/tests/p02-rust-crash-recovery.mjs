@@ -141,7 +141,7 @@ async function approvalDecisionAudit(adapter, session, reference) {
     headers: adminHeaders(session)
   });
   assertStatus(response, 200, "admin audit read after restart");
-  return response.body.items.filter((entry) => entry.event === "approval_decided" && entry.resource_id === reference);
+  return response.body.items.filter((entry) => entry.event === "exchange_approved" && entry.resource_id === reference);
 }
 
 const adapter = await startRustCrashTestAdapter();

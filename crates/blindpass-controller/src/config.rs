@@ -48,6 +48,8 @@ pub struct Config {
     trusted_proxy_addresses: Vec<IpAddr>,
     body_limit_bytes: usize,
     agent_token_rate_limit: u32,
+    agent_request_rate_limit: u32,
+    agent_exchange_rate_limit: u32,
     audit_retention_days: u32,
     request_ttl_seconds: u64,
     submitted_ttl_seconds: u64,
@@ -55,6 +57,8 @@ pub struct Config {
     approval_ttl_seconds: u64,
     refresh_token_ttl_seconds: u64,
     agent_token_rate_window_ms: u64,
+    agent_rate_window_ms: u64,
+    clock_tolerance_ms: u64,
     admin_socket_path: PathBuf,
     test_mode: bool,
     test_seed_token: Option<SecretBytes>,
@@ -234,6 +238,10 @@ impl Config {
         )?;
         let agent_token_rate_limit =
             parse_range(values, "BLINDPASS_AGENT_TOKEN_RATE_LIMIT", 5, 1, 1_000)?;
+        let agent_request_rate_limit =
+            parse_range(values, "BLINDPASS_AGENT_REQUEST_RATE_LIMIT", 60, 1, 10_000)?;
+        let agent_exchange_rate_limit =
+            parse_range(values, "BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT", 60, 1, 10_000)?;
         let audit_retention_days =
             parse_range(values, "BLINDPASS_AUDIT_RETENTION_DAYS", 90, 1, 3_650)?;
         let request_ttl_seconds =
@@ -268,6 +276,17 @@ impl Config {
             100,
             3_600_000,
         )?;
+        let agent_rate_window_seconds =
+            parse_range(values, "BLINDPASS_AGENT_RATE_WINDOW_SECONDS", 60, 1, 3_600)?;
+        let agent_rate_window_ms = parse_range(
+            values,
+            "BLINDPASS_TEST_AGENT_RATE_WINDOW_MS",
+            agent_rate_window_seconds * 1_000,
+            1,
+            3_600_000,
+        )?;
+        let clock_tolerance_ms =
+            parse_range(values, "BLINDPASS_CLOCK_TOLERANCE_MS", 2_000, 250, 60_000)?;
         let test_seed_token = value(values, "BLINDPASS_TEST_SEED_TOKEN")
             .map(|token| {
                 if token.len() < MIN_KEY_BYTES {
@@ -308,6 +327,8 @@ impl Config {
             trusted_proxy_addresses,
             body_limit_bytes,
             agent_token_rate_limit,
+            agent_request_rate_limit,
+            agent_exchange_rate_limit,
             audit_retention_days,
             request_ttl_seconds,
             submitted_ttl_seconds,
@@ -315,6 +336,8 @@ impl Config {
             approval_ttl_seconds,
             refresh_token_ttl_seconds,
             agent_token_rate_window_ms,
+            agent_rate_window_ms,
+            clock_tolerance_ms,
             admin_socket_path,
             test_mode,
             test_seed_token,
@@ -403,6 +426,16 @@ impl Config {
     }
 
     #[must_use]
+    pub fn agent_request_rate_limit(&self) -> u32 {
+        self.agent_request_rate_limit
+    }
+
+    #[must_use]
+    pub fn agent_exchange_rate_limit(&self) -> u32 {
+        self.agent_exchange_rate_limit
+    }
+
+    #[must_use]
     pub fn audit_retention_days(&self) -> u32 {
         self.audit_retention_days
     }
@@ -435,6 +468,16 @@ impl Config {
     #[must_use]
     pub fn agent_token_rate_window_ms(&self) -> u64 {
         self.agent_token_rate_window_ms
+    }
+
+    #[must_use]
+    pub fn agent_rate_window_ms(&self) -> u64 {
+        self.agent_rate_window_ms
+    }
+
+    #[must_use]
+    pub fn clock_tolerance_ms(&self) -> u64 {
+        self.clock_tolerance_ms
     }
 
     #[must_use]

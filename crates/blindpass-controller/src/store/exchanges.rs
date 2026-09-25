@@ -780,6 +780,11 @@ impl Store {
             "idempotency_key_hash": idempotency_key_hash
         })
         .to_string();
+        let audit_event = if status == "approved" {
+            "exchange_approved"
+        } else {
+            "exchange_rejected"
+        };
         let audit_id = new_hex_id();
 
         match &self.database {
@@ -870,11 +875,12 @@ impl Store {
                     .map_err(StoreError::Database)?;
                 let insert_audit = format!("INSERT INTO audit_events
                     (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
-                    VALUES (?, ?, 'operator', ?, 'approval_decided', 'approval', ?, ?, {SQLITE_NOW_MS})");
+                    VALUES (?, ?, 'operator', ?, ?, 'approval', ?, ?, {SQLITE_NOW_MS})");
                 sqlx::query(&insert_audit)
                     .bind(audit_id)
                     .bind(&self.tenant_id)
                     .bind(actor_id)
+                    .bind(audit_event)
                     .bind(reference)
                     .bind(metadata_json)
                     .execute(&mut *transaction)
@@ -974,11 +980,12 @@ impl Store {
                     .map_err(StoreError::Database)?;
                 let insert_audit = format!("INSERT INTO audit_events
                     (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
-                    VALUES ($1, $2, 'operator', $3, 'approval_decided', 'approval', $4, $5, {POSTGRES_NOW_MS})");
+                    VALUES ($1, $2, 'operator', $3, $4, 'approval', $5, $6, {POSTGRES_NOW_MS})");
                 sqlx::query(&insert_audit)
                     .bind(audit_id)
                     .bind(&self.tenant_id)
                     .bind(actor_id)
+                    .bind(audit_event)
                     .bind(reference)
                     .bind(metadata_json)
                     .execute(&mut *transaction)

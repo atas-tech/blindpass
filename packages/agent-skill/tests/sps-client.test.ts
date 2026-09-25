@@ -38,6 +38,33 @@ function createPaymentRequiredHeader(): string {
 }
 
 describe("SpsClient", () => {
+  it("surfaces request and exchange rate limits without retrying", async () => {
+    const requestedUrls: string[] = [];
+    const fetchImpl: typeof fetch = async (input) => {
+      requestedUrls.push(String(input));
+      return new Response("rate limited", { status: 429, headers: { "retry-after": "60" } });
+    };
+    const client = new SpsClient({
+      baseUrl: "http://localhost:3100",
+      gatewayBearerToken: "token",
+      fetchImpl
+    });
+
+    await expect(client.requestSecret({ description: "API key", publicKey: "pub" }))
+      .rejects.toThrow("SPS request failed with status 429");
+    await expect(client.createExchangeRequest({
+      publicKey: "pub",
+      secretName: "stripe.api_key",
+      purpose: "production deployment",
+      fulfillerHint: "deployer"
+    })).rejects.toThrow("SPS exchange request failed with status 429");
+
+    expect(requestedUrls).toEqual([
+      "http://localhost:3100/api/v2/secret/request",
+      "http://localhost:3100/api/v2/secret/exchange/request"
+    ]);
+  });
+
   it("requests and polls until submitted", async () => {
     let statusCalls = 0;
     const fetchImpl: typeof fetch = async (input, init) => {

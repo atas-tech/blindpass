@@ -210,6 +210,12 @@ scp "${scp_options[@]}" \
     target/release/blindpass-workload-client \
     tests/fleet/p01-guest.sh \
     "$guest_target:/tmp/"
+if [[ "${BLINDPASS_FLEET_P02_CLOCK_TEST:-0}" == 1 ]]; then
+    scp "${scp_options[@]}" \
+        target/release/blindpass-controller \
+        tests/fleet/p02-clock-guest.sh \
+        "$guest_target:/tmp/"
+fi
 scp "${scp_options[@]}" deploy/native/*.service "$guest_target:/tmp/"
 scp "${scp_options[@]}" deploy/native/blindpass-workload.sysusers "$guest_target:/tmp/"
 if ((${#tpm_debs[@]} > 0)); then
@@ -236,3 +242,7 @@ if [[ "$guest_result" != 0 ]]; then
 fi
 
 printf 'P01-VM-COMPLETE runner_owner=%s serial_log=%s\n' "$BLINDPASS_FLEET_RUNNER_OWNER" "$serial_log"
+if [[ "${BLINDPASS_FLEET_P02_CLOCK_TEST:-0}" == 1 ]]; then
+    ssh "${ssh_options[@]}" "$guest_target" \
+        'sudo install -m 0755 /tmp/p02-clock-guest.sh /usr/local/sbin/blindpass-p02-clock-guest && sudo /usr/local/sbin/blindpass-p02-clock-guest'
+fi

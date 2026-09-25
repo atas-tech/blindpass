@@ -100,6 +100,17 @@ teardown runs also passed with owner `local-kvm-p01-teardown-final-20260923`.
 This is disposable runtime evidence, not a claim that the manual VM job is
 already configured as a shared GitHub self-hosted runner.
 
+To run the P02-I09 real-clock probe after the P01 guest checks, set
+`BLINDPASS_FLEET_P02_CLOCK_TEST=1` when invoking `p01-vm.sh`. The optional
+guest check installs PostgreSQL inside the disposable overlay, runs the
+controller with SQLite and PostgreSQL, steps the guest wall clock backward
+and forward, verifies the running readiness fence and restart fence, runs
+`reconcile-clock`, and confirms readiness recovers. It restores the guest
+clock from the original wall-time/boottime pair during cleanup. It does not
+change the host clock, and the P01 runner destroys the guest overlay on exit.
+Use a fresh disposable SSH key for each run; the test creates no repository
+credentials or database artifacts.
+
 A Debian 12 candidate-minimum attempt (kernel 6.1.0-53, systemd 252) was
 recorded for an earlier broker build that dynamically imported
 `sd_pidfd_get_unit` and failed to load `LIBSYSTEMD_253`. The current build no

@@ -43,6 +43,24 @@ test("contract progress accepts only the documented red cases", () => {
   assert.deepEqual(progress, { passed: ["CT01"], pending: ["CT02", "CT19"] });
 });
 
+test("contract progress tracks named subcases independently under one CT identifier", () => {
+  const manifest = {
+    ...fullManifest,
+    requiredIds: [...requiredIds, "CT15.request.agent-limit", "CT15.exchange.agent-limit"]
+  };
+  const progress = compareProgress(report({
+    CT01: "passed",
+    CT02: "passed",
+    CT19: "passed",
+    "CT15.request.agent-limit": "passed",
+    "CT15.exchange.agent-limit": "passed"
+  }), manifest);
+  assert.deepEqual(progress, {
+    passed: ["CT01", "CT02", "CT15.exchange.agent-limit", "CT15.request.agent-limit", "CT19"],
+    pending: []
+  });
+});
+
 test("contract progress rejects an unexpected pass until its pending entry is removed", () => {
   assert.throws(
     () => compareProgress(report({ CT01: "passed", CT02: "passed", CT19: "failed" }), baseManifest),

@@ -4,16 +4,18 @@
 
 **Scope:** P02 controller/API implementation, the adopted CT19 browser-status routes, P02-I03 process crash recovery, the 2026-09-24 CLI, clock, schema and administration follow-up, and the 2026-09-25 review fixes.
 
-**Status:** Every local P02.6 gate passes on SQLite and PostgreSQL on the tree below. Hosted clean-checkout CI has not run and several review findings need product decisions, so this is not a P02 acceptance or cutover record.
+**Status:** The 2026-09-25 follow-up WI-1 to WI-3 is implemented in the uncommitted tree below. Rust, SQLite/PostgreSQL controller and contract suites, the PostgreSQL outage test, pinned P01/P02 QEMU clock probe, root npm build/tests, P02 crash/client/browser flows, and OpenAPI/progress gates pass locally. Hosted clean-checkout CI remains unrun. This is not a P02 acceptance or cutover record.
 
 ## Tested tree and environment
 
-- Code: commit `86f3a59` plus the uncommitted 2026-09-25 review fixes in controller routes, store and tests, the contract harness and snapshot, the progress gate, the OpenAPI document and CI. Replace this line with the commit SHA once the fixes are committed.
+- Code: 2026-09-25 P02 follow-up tree based on commit `86f3a59`, covering WI-1 to WI-3 in controller routes, store and tests, contract harness, progress gate, OpenAPI document, generated types and documentation.
 - Linux development host with host access; Node.js 26.10.0, Vitest 4.1.11, Rust 1.98.1, Chromium; PostgreSQL 16 on port 5433 and Redis 7 on port 6380 from `docker-compose.test.yml`.
 - Rust contract runs start a disposable controller. SQLite uses a temporary database; PostgreSQL uses a uniquely named schema that the adapter drops on teardown.
 - Fixtures use generated dummy keys, tokens and canaries and synthetic ciphertext. No live secret material is included here.
 
-## Results on 2026-09-25
+## Prior baseline results on 2026-09-25
+
+The table below records the preceding P02 review tree before the accepted 2026-09-25 follow-up. The follow-up verification is recorded immediately after it.
 
 The gates ran sequentially from the repository root, mirroring `.github/workflows/ci.yml`.
 
@@ -35,6 +37,29 @@ The gates ran sequentially from the repository root, mirroring `.github/workflow
 | CC02 client flows | Pass on each store |
 | CC02/CC03 browser: development page; packaged nginx image | 3/3 and 4/4 on each store, including delivered security headers |
 | Landing; Redis integration; SPS PostgreSQL; SPS E2E; dashboard E2E | 7/7; 2/2; 179 passed with 2 Redis-gated skips across 18 executed files; 9/9; 31/31 |
+
+## Follow-up verification on 2026-09-25
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --all --check`; `cargo clippy --workspace --all-targets --locked --offline -- -D warnings` | Pass |
+| `cargo test --workspace --locked --offline` | 126 passed, 0 failed; the PostgreSQL-only outage test is ignored in this SQLite/default-backend run |
+| Controller suites with `P02_TEST_BACKEND=postgres` | 54 tests passed across `store_transitions` (34), `admin_session` (4), `shell_config` (15) and `rate_limits` (1); all 34 store tests, all 4 admin tests and the rate-limit test select PostgreSQL; 3 shell/config tests select PostgreSQL and the rest use SQLite or no database |
+| `npm run build` | Pass |
+| Root `npm test` (host process permissions) | Pass. Agent-skill 23, browser-ui 10, dashboard 42, gateway 9, i18n 3 and OpenClaw smoke tests passed. SPS reported 80 passed and 101 default database-gated skips of 181; this is not the full P02 backend matrix |
+| Full SPS suite (`SPS_PG_INTEGRATION=1`, `SPS_REDIS_INTEGRATION=1`) | 181/181 passed, no skips, against the disposable PostgreSQL and Redis services with a test-only HMAC canary |
+| Redis integration; SPS E2E; dashboard E2E; landing | 2/2; 9/9; 31/31; landing workflow test 1/1 |
+| `npm run test:controller-openapi`; `npm run test:contract-progress`; generated OpenAPI type-check | Pass: 10/10, progress gate pass, type-check 1/1 |
+| PostgreSQL outage/reconnection (`--ignored`) | Pass: 1/1 against the disposable Compose service |
+| P02-I09 real clock step in pinned P01 QEMU VM | Pass on SQLite and PostgreSQL in one disposable Ubuntu 24.04/systemd 255 guest: backward step fenced readiness, fence persisted across restart, reconciliation recovered readiness, forward step remained ready. Guest clock restored; overlay and ephemeral SSH key removed |
+| TypeScript SPS contract (`SUT=ts`) | 39/39, no skips; committed baseline unchanged |
+| Base-URL contract (`SUT=base`) | 19/19 |
+| Rust contracts and progress gates | SQLite 40/40 and PostgreSQL 40/40, no skips; progress gate 20/20 required cases on each backend; CT14 excluded; committed TypeScript baseline unchanged |
+| CT01 mismatch injection and progress gate | On both Rust stores, all 40 cases executed with no skips; the gate rejected the injected error as `Unexpected failure for CT01` |
+| P02-I03 failpoint crash/restart | Eight scenarios pass on SQLite and PostgreSQL using the separate `p02-test-failpoints` binary and 180-second fixture TTLs |
+| CC02 gateway, agent-skill and OpenClaw flows | Pass on SQLite and PostgreSQL |
+| CC02/CC03 browser flows | Development page: 3/3 on each store. Packaged nginx: 4/4 on each store, including security headers |
+| Hosted clean-checkout CI | Not run |
 
 ## 2026-09-25 review
 
@@ -63,7 +88,7 @@ A code review of `86f3a59` confirmed 15 findings, and a test-by-test audit compa
 | The acceptance audit said CV01–CV06 passed "in the Rust contract run", which executes only the TypeScript vectors. Rust had no CV03 or CV04 test and covered one of five CV05 rows | Controller unit tests now read the CV03–CV05 fixtures: both fulfillment tokens, 512 sampled confirmation codes, all five policy rows and three escaping hashes. CV01/CV02 were already pinned in `blindpass-core` and CV06 in `hpke_interop.rs` |
 | The progress gate accepted reports in which a suite failed in a hook, at import or outside the CT cases | Such reports are rejected, and the gate's unit tests run in CI |
 | The generated-type test was never type-checked | `test:openapi-types` runs `tsc` first |
-| The OpenAPI legacy route count was hard-coded | The test derives it from the router and pins the nine mounted routes the schema does not document |
+| The prior route inventory pinned nine mounted routes absent from the schema | The follow-up test compares mounted routes to OpenAPI exactly; the nine undocumented v2 routes are removed |
 | The CC03 expired-link test depended on timing | It waits for the 410 metadata response |
 | Concurrent store tests awaited each task before starting the next, on a single-thread runtime | Tasks start together on a multi-thread runtime. The refresh race asserts the real invariant: at most one rotation, no store errors and no live session left in the family |
 | The PostgreSQL controller gate was reported as the whole suite passing per backend, but most shell/config, admin-socket, unit and CLI tests never read `P02_TEST_BACKEND` | The records name the 35 of 64 controller tests that run on PostgreSQL and list the SQLite-only cases under P02-I04–I07 |
@@ -73,46 +98,56 @@ A code review of `86f3a59` confirmed 15 findings, and a test-by-test audit compa
 
 | Plan item | Status |
 |---|---|
-| CT01–CT13, CT15–CT19 | 18/18 required cases pass on both stores; CT14 is excluded as hosted-user auth and passes in the TypeScript run. CT15 exercises only the per-IP token-mint limit; see the decisions below |
+| CT01–CT13, CT15–CT19 | All 20 required Rust contract IDs pass on both stores, including the two new CT15 request/exchange rate-limit cases; no skips. CT14 remains hosted-user auth and is excluded from Rust |
 | CV01–CV06 | TypeScript side in `vectors.test.ts`; Rust side in `blindpass-core` and controller unit tests over the same fixtures |
-| CC01–CC03 | CC01 runs in the contract suite; CC02 client and CC03 browser flows pass on both stores, including the packaged nginx page |
+| CC01–CC03 | CC01 runs in the contract suite; CC02 client and CC02/CC03 browser flows pass on both stores, including the packaged nginx page and its security headers |
 | P02-I01/I02 | Store races, expiry before sweep and after restart, lock-wait expiry, tenant isolation and session/password races pass on both stores. HTTP races cover first bootstrap, approve/reject and submit/revoke; other permutations rely on store tests |
 | P02-I03 | Eight process-kill scenarios pass on both stores |
 | P02-I04–I06 | Bootstrap race and replay, CSRF, refresh replay, forced password change, administrator reset and the full role matrix pass over HTTP on both stores. The admin-socket `bootstrap` and `reset-password` tests run on SQLite only; the contract adapter uses the socket's `bootstrap-token` command on both stores |
 | P02-I07 | Key, database, schema-version, damaged-schema, seed/override, pool-loss, clock-regression and PostgreSQL outage/reconnection cases pass. Key and override cases validate configuration or use in-memory SQLite. Schema-version, clock-regression, seed and pool-loss cases run on both stores. The damaged-schema, inaccessible-database and `migrate` shell cases run on SQLite only |
 | P02-I08 | Mismatch and drift probes reject on both stores locally; hosted CI has not run |
+| P02-I09 | Clock unit/store/shell tests, both-backend controller tests and the real guest clock probe pass; see the follow-up verification table above |
+| P02-I10 | HTTP rate-limit tests, atomic store isolation, both CT15 contract cases and 429 client handling pass on SQLite and PostgreSQL; the default is 60 calls per route per agent in 60 seconds |
+| P02-I11 | Removed-route, forged-user-token, v3 admin, and policy validation tests pass on SQLite and PostgreSQL; all retained machine-visible contract cases and exact route/OpenAPI inventory pass locally |
 | P02-E01/E02 | Client flows and generated-type checks pass with no schema drift |
 | P01 W0 | Accepted NARROW for the tested profile |
 | Hosted clean-checkout CI | Not run; required before P02 acceptance |
 
 ## Design notes
 
-**Clock (P02-D9).** Every expiry predicate and transition timestamp evaluates to NULL while the database clock is behind the persisted mark, so the controller fails closed and refuses to start until `blindpass admin reconcile-clock` runs. The mark advances only inside store calls, at most once per second; while `serve` runs, the 30-second retention sweep is also such a call. A regression is therefore detected only once the clock falls behind the last checkpoint. An idle running controller's mark lags by up to about 30 seconds, and across a restart it lags by the whole downtime; a step back smaller than the lag goes undetected and extends deadlines by the step. The previous record's one-second bound held only while requests arrived at least every second. `reconcile-clock` deletes secret requests, exchanges, pending and approved approvals, bootstrap tokens, rate windows and idempotency keys, revokes operator sessions, resets the mark and writes one `clock_reconciled` audit event. Operators, agents, policy, rejected approvals, lifecycle and audit history are kept.
+**Clock (P02-D9).** A dedicated one-second task checks database and host wall-clock advance against monotonic elapsed time while the controller runs. At startup, the stored database/host/boottime anchor and Linux boot ID detect same-boot regressions; changed or unreadable boot identity fences startup. A durable fence makes readiness return 503 and store transitions fail until `blindpass admin reconcile-clock` runs. The 2,000 ms default tolerance is configurable from 250 to 60,000 ms. A running boot change or unreadable boot ID also fences and purges transient secret requests, exchanges, pending approvals, bootstrap tokens, rate windows and idempotency keys; operator sessions survive. Startup after a boot change applies the same transient purge and records one count-only restart-fence event. Explicit reconciliation additionally revokes operator sessions, resets the database/host/boottime/boot-ID anchor and records one `clock_reconciled` event. Operators, agents, policy, rejected approvals, lifecycle and audit history are kept.
 
-**Rate limiting.** The controller limits agent token mints per client IP (default 5 per 60 seconds), matching self-hosted SPS. It has no per-agent request or exchange windows.
+**Rate limiting.** The existing agent token-mint limit remains 5 per client IP per 60 seconds. Agent secret-request and exchange-request routes now have separate per-tenant/per-agent 60-per-60-second windows by default. Provider plus subject scopes external JWKS identities. Authentication and tenant checks precede consumption; policy-denied attempts consume budget; a 429 writes no request or exchange record, returns `Retry-After`, and emits at most one metadata-only audit event for the agent/window. Expired windows and idempotency keys are swept.
 
-**Snapshots.** The committed TypeScript baseline stays authoritative. New cases are added from a TypeScript run, and the regenerated file must leave every existing record unchanged; this run added the two CT03 missing-claim records. Rust compares four reviewed projections (CT01 readiness, CT18 readiness 503, CT16 CORS and CT17 audit shape); every other case compares the full normalized response.
+**Snapshots.** The committed TypeScript baseline stays authoritative. New cases are added from a TypeScript run, and the regenerated file must leave every existing record unchanged; this run added the two CT03 missing-claim records. Rust uses reviewed semantic projections for CT01 readiness, CT02 key rotation/revocation, CT13 approval decisions, CT16 CORS, CT17 audit shape and CT18 readiness 503; every other retained case compares the full normalized response. CT02 and CT13 live v3 behavior remains asserted directly, including rejection of old keys, continuation after approval, and denial after rejection.
 
 ## Decisions
 
 Recorded on 2026-09-24 and unchanged: W0 NARROW for the tested Ubuntu 24.04/systemd 255, no-TPM profile ([P01 evidence](../p01-host-broker-evidence.md)); P02-D7 plain HTTP behind a reverse proxy, after `axum-server@0.8.0` was blocked by dependency review; CT14 stays TypeScript-only; P02-D11 issuer-admin authority. The user chose not to push the branch, so hosted CI has not run.
 
-Open for a decision:
+Decided by the user on 2026-09-25 and implemented in this follow-up tree:
 
-1. **CT15 and P02-D12.** The recorded envelope names per-agent request/exchange rate windows, but neither self-hosted SPS nor the controller has them; SPS applies burst and daily quotas only in hosted mode. Amend the record to the per-IP token-mint limit, or implement per-agent windows.
-2. **Approval authority.** As in SPS, the v2 agent route lets any tenant agent, including the requester, decide when a rule names no approvers. Unlike SPS, whose administrator route let any workspace operator decide, the v3 route decides only approvals whose `approverIds` name the operator's id or username, so an administrator cannot decide a rule without approvers. Because v2 matches the same `approverIds` against the token subject, an agent or external workload whose subject equals a listed operator name can decide without a session. Choose the intended rule before acceptance.
-3. **Nine undocumented routes.** Agent revoke and key rotation, `GET /api/v2/audit/`, secret-request revoke and the v2 approval read/approve/reject routes are mounted and exercised by the contract suite but absent from the OpenAPI document. Document or remove them.
-4. **Clock checkpoint.** Accept the lag above, or tighten it: a shorter checkpoint interval bounds the running case, while the restart case needs an external time reference.
-5. **Security follow-ups.** Login throttling and Argon2 off the async workers; hashed session identifiers and CSRF secrets; audit events for secret requests and administrator changes; resetting the approval deadline at decision as SPS does; reporting store errors as 503 instead of 410/403; `prior_exchange_id` lineage for retrieved or expired exchanges.
+- **P02-D12:** keep the recorded envelope and add independent per-agent request and exchange windows to the controller. The user confirmed 60 calls per route per agent per 60 seconds as the default (WI-2, P02-I10).
+- **P02-D13:** keep the current v3 approval rule. An `admin` or `operator` operator decides only approvals whose `approverIds` name it. The v2 agent approver routes go with the route removal because they let a requester approve its own exchange (WI-1, WI-4).
+- **P02-D3:** remove the nine undocumented v2 routes and the `sps-user` bearer path that only they use (WI-1, P02-I11).
+- **P02-D9:** tighten the clock checkpoint with a 1-second tick, a monotonic cross-check and a boot-anchored restart check. The user confirmed a 2,000 ms default tolerance and fencing/purging transient authority after a boot change or unreadable boot ID (WI-3, P02-I09).
+
+The following findings are retained as decision history; the four items above are closed by implementation and targeted verification:
+
+1. **CT15 and P02-D12.** The prior review found the recorded per-agent request/exchange windows missing from the controller. WI-2 implements and documents them; the rate-limit store, HTTP, CT15 and client 429 cases now pass on both stores.
+2. **Approval authority.** WI-1 removes the v2 agent decision route and rejects `approverRings` or `pending_approval` policies without `approverIds`; v3 operators decide only named approvals.
+3. **Nine undocumented routes.** WI-1 removes the unused/unsafe v2 routes; the exact route inventory and removed-route tests pass locally.
+4. **Clock checkpoint.** WI-3 adds the one-second monitor, monotonic checks, boot anchor and durable fence. P02-I09's disposable real-clock VM check passed on both database backends.
+5. **Security follow-ups (still open).** Login throttling and Argon2 off the async workers; hashed session identifiers and CSRF secrets; audit events for secret requests and administrator changes; resetting the approval deadline at decision as SPS does; reporting store errors as 503 instead of 410/403; `prior_exchange_id` lineage for retrieved or expired exchanges.
 
 ## Limits
 
 - Hosted clean-checkout CI is the last open P02.6 gate. The workflow runs the TypeScript baseline, both Rust backends, the store, shell and admin HTTP suites in each backend job, the PostgreSQL outage case, crash, client and browser flows, and the mismatch probe; none of it has run on GitHub Actions from this branch.
 - Production reverse-proxy deployment is unverified and belongs to P06.1, with native and container recovery and database migration support.
-- Agent JWTs and signed browser links use the controller host clock, not the database clock. A host clock step back extends them by the step, bounded by their short lifetimes.
+- Agent JWTs and signed browser links use the controller host clock, not the database clock. A host clock step back can extend them by the step, bounded by their short lifetimes.
 - Test fixtures check agent IDs before writing, but concurrent fixture writers can race. Fixtures must use isolated test databases.
 - The contract test files are transpiled without type checking; `tsc` reports existing type errors in `http-contract.test.ts` outside the cases changed here.
-- Other review items remain open: revoked agent IDs cannot be re-enrolled; an admin-socket `accept()` error stops the controller; a kill during first-boot migration can leave an unusable database (124 of 300 SIGKILLs on SQLite); expired idempotency keys and rate windows are never swept; a trailing-slash CORS origin passes `check-config` but later breaks admin mutations; temporary passwords do not expire and admin-created operators are not forced to change theirs. In the tests, CLI runs hit `ETXTBSY` in 14 of 300 runs, the crash suite's 10-second admin session can expire under load, and the retention-grace test never checks inside the window.
+- Other review items remain open: revoked agent IDs cannot be re-enrolled; an admin-socket `accept()` error stops the controller; a kill during first-boot migration can leave an unusable database (124 of 300 SIGKILLs on SQLite); a trailing-slash CORS origin passes `check-config` but later breaks admin mutations; temporary passwords do not expire and admin-created operators are not forced to change theirs. In the tests, CLI runs hit `ETXTBSY` in 14 of 300 runs, the crash suite's 10-second admin session can expire under load, and the retention-grace test never checks inside the window.
 
 ## History
 

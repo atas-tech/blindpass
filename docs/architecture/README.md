@@ -22,7 +22,7 @@ The Cargo workspace in [crates](../../crates) holds the P01 host broker and the 
 |---|---|
 | `blindpass-core` | Shared primitives with no crate dependencies: signed browser links and derived secrets, policy evaluation and decision hashes, HPKE through OpenSSL `libcrypto`, the broker protocol, workload identity and credential custody |
 | `blindpass-broker` | P01 host broker and its test binaries |
-| `blindpass-controller` | axum HTTP API, sqlx store (SQLite WAL or PostgreSQL, schema version 3) and a local administration Unix socket. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
+| `blindpass-controller` | axum HTTP API, sqlx store (SQLite WAL or PostgreSQL, schema version 4) and a local administration Unix socket. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
 | `blindpass-cli` | `blindpass` administration CLI: `migrate`, `admin bootstrap`, `admin bootstrap-token`, `admin reset-password`, `admin reconcile-clock` and test-mode `admin seed --fixture`. It runs the controller executable installed beside it or calls its admin socket |
 
 ### Controller configuration
@@ -41,13 +41,16 @@ The controller validates its environment at startup and refuses to start on any 
 | `BLINDPASS_TRUST_PROXY` | Comma-separated proxy IP addresses whose `X-Forwarded-For` is trusted |
 | `BLINDPASS_BODY_LIMIT_BYTES` | 1 MiB (1 KiB–64 MiB); JSON bodies above 2 MiB are still refused by axum's default extractor limit |
 | `BLINDPASS_AGENT_TOKEN_RATE_LIMIT` | 5 token mints per client IP per 60-second window |
+| `BLINDPASS_AGENT_REQUEST_RATE_LIMIT`, `BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT` | 60 secret-request creates and 60 exchange-request attempts per authenticated agent and tenant per window (1–10,000) |
+| `BLINDPASS_AGENT_RATE_WINDOW_SECONDS` | 60 seconds (1–3,600); `BLINDPASS_TEST_AGENT_RATE_WINDOW_MS` can set a 1–3,600,000 ms test window only with `BLINDPASS_TEST_MODE=1` |
+| `BLINDPASS_CLOCK_TOLERANCE_MS` | 2,000 ms (250–60,000); the running monitor checks database and host wall clocks against monotonic elapsed time and fences regressions or boot identity changes |
 | `BLINDPASS_AUDIT_RETENTION_DAYS` | 90 (1–3,650) |
 | `BLINDPASS_ADMIN_SOCKET_PATH` | `/run/blindpass-controller/admin.sock`; must be absolute |
 | `BLINDPASS_LOG_FORMAT` | `json` (default) or `text` |
 | `BLINDPASS_TLS_CERT_FILE`, `BLINDPASS_TLS_KEY_FILE` | Refused: TLS terminates at a reverse proxy (P02-D7) |
 | `BLINDPASS_TEST_MODE=1`, `BLINDPASS_TEST_*` | Test-only TTL, window and seed-route overrides; refused without test mode and when `NODE_ENV=production` |
 
-Agent bootstrap keys and operator passwords are stored as Argon2 hashes and refresh tokens as SHA-256 hashes. The `bp_session` cookie carries the session's database identifier and the CSRF secret is stored as issued, so read access to the database exposes live browser sessions. Deadlines use the database clock, guarded by a persisted high-water mark; agent JWTs and signed links use the host clock.
+Agent bootstrap keys and operator passwords are stored as Argon2 hashes and refresh tokens as SHA-256 hashes. The `bp_session` cookie carries the session's database identifier and the CSRF secret is stored as issued, so read access to the database exposes live browser sessions. Deadlines use the database clock; a persisted clock anchor compares database and host wall time with monotonic elapsed time and the Linux boot ID. A regression beyond tolerance, changed boot ID or unreadable boot ID sets a durable fence and purges transient requests, exchanges, pending approvals, bootstrap tokens, rate windows and idempotency keys. The operator must run `blindpass admin reconcile-clock` before expiring authority is accepted again. Agent JWTs and signed links still use the host clock.
 
 ## Provisioning and exchange
 

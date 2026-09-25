@@ -20,7 +20,7 @@ const encryptedPayload: SubmitPayload = {
 const capabilities: CapabilitiesResponse = {
   api: ["compat.v2", "admin.v3"],
   version: "0.1.0",
-  schema_version: 1,
+  schema_version: 4,
   setup_required: true,
   features: { browser_status: true }
 };
@@ -28,7 +28,6 @@ const capabilities: CapabilitiesResponse = {
 const browserCapability: BrowserCapabilityResponse = { status_sig: "exp.status-signature" };
 const browserStatus: BrowserStatusResponse = { status: "submitted" };
 const testSeed: TestSeedResponse = {
-  access_token: "dummy-token",
   workspace_id: "dummy-workspace",
   user_id: "dummy-user",
   agents: { "dummy-agent": "dummy-key" },
@@ -37,8 +36,7 @@ const testSeed: TestSeedResponse = {
     username: "admin",
     temporary_password: "dummy-password",
     session_id: "dummy-session",
-    csrf_token: "dummy-csrf",
-    refresh_token: "dummy-refresh"
+    csrf_token: "dummy-csrf"
   }
 };
 
