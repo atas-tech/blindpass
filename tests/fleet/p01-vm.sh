@@ -243,6 +243,38 @@ fi
 
 printf 'P01-VM-COMPLETE runner_owner=%s serial_log=%s\n' "$BLINDPASS_FLEET_RUNNER_OWNER" "$serial_log"
 if [[ "${BLINDPASS_FLEET_P02_CLOCK_TEST:-0}" == 1 ]]; then
+    set +e
     ssh "${ssh_options[@]}" "$guest_target" \
         'sudo install -m 0755 /tmp/p02-clock-guest.sh /usr/local/sbin/blindpass-p02-clock-guest && sudo /usr/local/sbin/blindpass-p02-clock-guest'
+    p02_guest_status=$?
+    set -e
+    printf 'P02-I09-VM initial_guest_command_status=%s (disconnect during the scheduled guest reboot is expected)\n' "$p02_guest_status"
+
+    guest_reconnected=0
+    for _attempt in {1..90}; do
+        if ssh "${ssh_options[@]}" "$guest_target" true 2>/dev/null; then
+            guest_reconnected=1
+            break
+        fi
+        sleep 2
+    done
+    [[ "$guest_reconnected" == 1 ]] || {
+        printf 'P02-I09-FAIL guest did not return after the scheduled reboot\n' >&2
+        exit 1
+    }
+    reboot_result=
+    for _attempt in {1..60}; do
+        reboot_result=$(ssh "${ssh_options[@]}" "$guest_target" \
+            'sudo cat /var/lib/blindpass-p02-clock-reboot/result' 2>/dev/null || true)
+        [[ "$reboot_result" == P02-I09-REBOOT-PASS* ]] && break
+        sleep 1
+    done
+    [[ "$reboot_result" == P02-I09-REBOOT-PASS* ]] || {
+        ssh "${ssh_options[@]}" "$guest_target" \
+            'sudo systemctl status blindpass-p02-clock-reboot.service --no-pager; sudo journalctl -u blindpass-p02-clock-reboot.service --no-pager -n 80' \
+            >&2 2>/dev/null || true
+        printf 'P02-I09-FAIL reboot resume service did not verify transient purge and session retention\n' >&2
+        exit 1
+    }
+    printf '%s\n' "$reboot_result"
 fi

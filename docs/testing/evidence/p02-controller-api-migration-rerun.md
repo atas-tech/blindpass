@@ -4,7 +4,7 @@
 
 **Scope:** P02 controller/API implementation, the adopted CT19 browser-status routes, P02-I03 process crash recovery, the 2026-09-24 CLI, clock, schema and administration follow-up, and the 2026-09-25 review fixes.
 
-**Status:** The 2026-09-25 follow-up WI-1 to WI-3 is implemented in BlindPass commit `bada011`. Rust, SQLite/PostgreSQL controller and contract suites, the PostgreSQL outage test, pinned P01/P02 QEMU clock probe, root npm build/tests, P02 crash/client/browser flows, and OpenAPI/progress gates pass locally. The VM probe covered a running host-clock step, the durable fence across controller restart, reconciliation, and a forward step; it did not cover a same-boot rollback while stopped or an actual guest reboot. Hosted clean-checkout CI remains unrun. This is not a P02 acceptance or cutover record.
+**Status:** The 2026-09-25 follow-up WI-1 to WI-3 is implemented in BlindPass commits `bada011` and `4fff273`. Rust, SQLite/PostgreSQL controller and contract suites, the PostgreSQL outage test, pinned P01/P02 QEMU clock probe, root npm build/tests, P02 crash/client/browser flows, and OpenAPI/progress gates pass locally. The VM probe covered running and stopped same-boot regressions on both stores, a durable fence across controller restart, reconciliation, forward steps, and an actual PostgreSQL-backed guest reboot that purged transient authority, preserved the operator session, and wrote one count-only fence event. Hosted clean-checkout CI remains unrun. This is not a P02 acceptance or cutover record.
 
 ## Tested tree and environment
 
@@ -51,7 +51,7 @@ The gates ran sequentially from the repository root, mirroring `.github/workflow
 | Redis integration; SPS E2E; dashboard E2E; landing | 2/2; 9/9; 31/31; landing workflow test 1/1 |
 | `npm run test:controller-openapi`; `npm run test:contract-progress`; generated OpenAPI type-check | Pass: 10/10, progress gate pass, type-check 1/1 |
 | PostgreSQL outage/reconnection (`--ignored`) | Pass: 1/1 against the disposable Compose service |
-| P02-I09 real clock step in pinned P01 QEMU VM | SQLite and PostgreSQL probes pass in one disposable Ubuntu 24.04/systemd 255 guest for a running host-clock backward step, a fence that survives controller restart, reconciliation, and a forward step. A same-boot rollback while stopped and an actual guest reboot were not exercised. Guest clock restored; overlay and ephemeral SSH key removed |
+| P02-I09 real clock step in pinned P01 QEMU VM | SQLite and PostgreSQL pass running host-clock backward steps, a durable fence across controller restart, reconciliation, forward steps, and same-boot backward steps while stopped (5-second rollback after 8 seconds stopped). An actual PostgreSQL-backed guest reboot changed boot ID, purged secret requests, exchanges, pending approvals, bootstrap tokens, rate windows and idempotency keys, preserved the operator session, and wrote exactly one count-only `clock_restart_fence` event. Guest clock restored; overlay and ephemeral SSH key removed |
 | TypeScript SPS contract (`SUT=ts`) | 39/39, no skips; committed baseline unchanged |
 | Base-URL contract (`SUT=base`) | 19/19 |
 | Rust contracts and progress gates | SQLite 40/40 and PostgreSQL 40/40, no skips; progress gate 20/20 required cases on each backend; CT14 excluded; committed TypeScript baseline unchanged |
@@ -94,6 +94,22 @@ A code review of `86f3a59` confirmed 15 findings, and a test-by-test audit compa
 | The PostgreSQL controller gate was reported as the whole suite passing per backend, but most shell/config, admin-socket, unit and CLI tests never read `P02_TEST_BACKEND` | The records name the 35 of 64 controller tests that run on PostgreSQL and list the SQLite-only cases under P02-I04–I07 |
 | Several store tests checked only return values | They check persisted state: expiry, foreign-tenant isolation, approval expiry, idle sessions, the bootstrap race, reconciliation counts and the clock mark's advance interval and regression handling. Mutants setting the interval to 0 or `i64::MAX` fail |
 
+### Follow-up mutation checks
+
+Targeted mutations were applied one at a time, rejected by the named tests, and reverted before the next mutation:
+
+| Mutant | Test evidence |
+|---|---|
+| Remount a removed v2 exchange-approval route | `admin_session`: 3 passed, the removed-route 404 assertion failed |
+| Omit tenant from the rate-window key | `request_windows_separate_tenant_route_and_external_provider` failed |
+| Consume the request budget after writing the request | `authenticated_agent_windows_are_scoped_and_reject_without_writing` failed on the unchanged-row-count assertion |
+| Change the rate boundary by one | The same HTTP rate-limit test failed on an allowed call at the configured limit |
+| Key external identities by subject without provider | `request_windows_separate_tenant_route_and_external_provider` failed |
+| Ignore the clock tolerance | `running_clock_tolerance_distinguishes_small_and_large_steps` failed |
+| Invert the same-boot comparison | `startup_clock_checks_boot_identity_and_both_wall_clocks` failed |
+| Do not persist the fence | `serving_clock_monitor_fences_running_regression_within_two_ticks` failed to observe the durable fence |
+| Replace the one-second monitor tick with 30 seconds | The same two-tick shell test failed |
+
 ## Coverage against the acceptance plan
 
 | Plan item | Status |
@@ -106,7 +122,7 @@ A code review of `86f3a59` confirmed 15 findings, and a test-by-test audit compa
 | P02-I04–I06 | Bootstrap race and replay, CSRF, refresh replay, forced password change, administrator reset and the full role matrix pass over HTTP on both stores. The admin-socket `bootstrap` and `reset-password` tests run on SQLite only; the contract adapter uses the socket's `bootstrap-token` command on both stores |
 | P02-I07 | Key, database, schema-version, damaged-schema, seed/override, pool-loss, clock-regression and PostgreSQL outage/reconnection cases pass. Key and override cases validate configuration or use in-memory SQLite. Schema-version, clock-regression, seed and pool-loss cases run on both stores. The damaged-schema, inaccessible-database and `migrate` shell cases run on SQLite only |
 | P02-I08 | Mismatch and drift probes reject on both stores locally; hosted CI has not run |
-| P02-I09 | Injected-clock startup regression, boot-change purge, durable fencing, reconciliation and running-monitor tests pass on both stores. The real guest probe covered a running host-clock backward step, persisted fence, reconciliation and forward step; same-boot rollback while stopped and an actual guest reboot remain unverified |
+| P02-I09 | Injected-clock startup regression, boot-change purge, durable fencing, reconciliation and running-monitor tests pass on both stores. The real guest probe passed running and stopped same-boot rollback, durable fencing, reconciliation and forward-step cases on both stores, plus a PostgreSQL-backed actual guest reboot with transient-state purge, operator-session retention and one count-only fence event |
 | P02-I10 | HTTP rate-limit tests, atomic store isolation, both CT15 contract cases and 429 client handling pass on SQLite and PostgreSQL; the default is 60 calls per route per agent in 60 seconds |
 | P02-I11 | Removed-route, forged-user-token, v3 admin, and policy validation tests pass on SQLite and PostgreSQL; all retained machine-visible contract cases and exact route/OpenAPI inventory pass locally |
 | P02-E01/E02 | Client flows and generated-type checks pass with no schema drift |

@@ -101,15 +101,19 @@ This is disposable runtime evidence, not a claim that the manual VM job is
 already configured as a shared GitHub self-hosted runner.
 
 To run the P02-I09 real-clock probe after the P01 guest checks, set
-`BLINDPASS_FLEET_P02_CLOCK_TEST=1` when invoking `p01-vm.sh`. The optional
-guest check installs PostgreSQL inside the disposable overlay, runs the
-controller with SQLite and PostgreSQL, steps the guest wall clock backward
-and forward, verifies the running readiness fence and restart fence, runs
-`reconcile-clock`, and confirms readiness recovers. It restores the guest
-clock from the original wall-time/boottime pair during cleanup. It does not
-change the host clock, and the P01 runner destroys the guest overlay on exit.
-Use a fresh disposable SSH key for each run; the test creates no repository
-credentials or database artifacts.
+`BLINDPASS_FLEET_P02_CLOCK_TEST=1` when invoking `p01-vm.sh`. The guest check
+installs PostgreSQL inside the disposable overlay and runs the controller with
+SQLite and PostgreSQL. For each backend it steps the guest wall clock backward
+while running and while the controller is stopped, steps it forward, verifies
+readiness fencing and persistence across controller restart, and runs
+`reconcile-clock`. It then reboots the guest with a PostgreSQL fixture containing
+transient authority and an operator session. A boot-resume check requires the
+transient rows to be purged, the session to remain active, and exactly one
+count-only `clock_restart_fence` audit event. The guest probe restores the clock
+from the original wall-time/boottime pair during cleanup. It does not change the
+host clock, and the P01 runner destroys the guest overlay on exit. Use a fresh
+disposable SSH key for each run; the test creates no repository credentials or
+database artifacts.
 
 A Debian 12 candidate-minimum attempt (kernel 6.1.0-53, systemd 252) was
 recorded for an earlier broker build that dynamically imported
