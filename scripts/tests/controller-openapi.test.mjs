@@ -73,6 +73,7 @@ test("controller OpenAPI lists the retained machine contract exactly once", asyn
   for (const [route, pathItem] of Object.entries(schema.paths ?? {})) {
     for (const method of ["get", "post", "put", "patch", "delete"]) {
       const operation = pathItem[method];
+      if (operation?.["x-blindpass-status"] === "planned") continue;
       if (operation) {
         assert.ok(operation.operationId, `missing operationId for ${method.toUpperCase()} ${route}`);
         assert.ok(!operationIds.has(operation.operationId), `duplicate operationId ${operation.operationId}`);
@@ -178,7 +179,7 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
   assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
-  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 4);
+  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 5);
 
   const serialized = JSON.stringify(schema.paths["/readyz"]);
   assert.doesNotMatch(serialized, /secret|token|credential|password/i);
@@ -216,6 +217,56 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.match(statusRoute.description, /wrong-scope credentials return 410/i);
 });
 
+test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const operations = new Set();
+  for (const [route, pathItem] of Object.entries(schema.paths ?? {})) {
+    for (const method of ["get", "post", "put", "patch", "delete"]) {
+      if (pathItem[method]) operations.add(`${method.toUpperCase()} ${route}`);
+    }
+  }
+
+  for (const operation of [
+    "POST /api/v3/enrollments",
+    "POST /api/v3/enrollments/{id}/approve",
+    "GET /api/v3/nodes",
+    "DELETE /api/v3/nodes/{id}",
+    "POST /api/v3/workloads",
+    "PUT /api/v3/policies",
+    "GET /api/v3/approvals/count",
+    "POST /api/v3/approvals/{id}/approve",
+    "GET /api/v3/grants",
+    "POST /api/v3/operations",
+    "GET /api/v3/audit",
+    "POST /api/v3/node/enroll",
+    "POST /api/v3/node/session",
+    "POST /api/v3/node/poll",
+    "POST /api/v3/node/events"
+  ]) {
+    assert.ok(operations.has(operation), `missing ${operation}`);
+    const [method, route] = operation.split(" ");
+    assert.equal(schema.paths[route][method.toLowerCase()]["x-blindpass-status"], "planned");
+  }
+
+  const security = schema.components.securitySchemes;
+  assert.equal(security.nodeBearer.bearerFormat, "JWT");
+  assert.equal(schema.components.schemas.OperationApproval.properties.id.pattern, "^oa_");
+  assert.deepEqual(schema.components.schemas.GrantRevocationResult.properties.status.enum, [
+    "grant_revoked",
+    "grant_revoked_after_consumption",
+    "not_revocable_offline"
+  ]);
+  for (const [route, pathItem] of Object.entries(schema.paths)) {
+    if (!route.startsWith("/api/v3/") || route.startsWith("/api/v3/node/") || route.startsWith("/api/v3/admin/")) continue;
+    for (const [method, operation] of Object.entries(pathItem)) {
+      if (!["post", "put", "patch", "delete"].includes(method)) continue;
+      assert.ok(operation.security?.some((requirement) => requirement.adminSession && requirement.csrfCookie), `${method.toUpperCase()} ${route} must require operator session and CSRF`);
+      const parameters = (operation.parameters ?? []).map((parameter) => parameter.$ref ? resolveReference(schema, parameter.$ref) : parameter);
+      assert.ok(parameters.some((parameter) => parameter.name === "X-CSRF-Token"), `${method.toUpperCase()} ${route} must declare the CSRF header`);
+    }
+  }
+});
+
 test("test seed schema matches the exercised compatibility fixture response", async () => {
   const schema = JSON.parse(await readFile(schemaPath, "utf8"));
   const operation = schema.paths["/api/v3/admin/test/seed"].post;
@@ -249,7 +300,7 @@ test("every mounted controller route is documented exactly", async () => {
   const documented = new Set();
   for (const [route, pathItem] of Object.entries(schema.paths ?? {})) {
     for (const method of ["get", "post", "put", "patch", "delete"]) {
-      if (pathItem[method]) {
+      if (pathItem[method] && pathItem[method]["x-blindpass-status"] !== "planned") {
         documented.add(routeKey(method.toUpperCase(), route));
       }
     }

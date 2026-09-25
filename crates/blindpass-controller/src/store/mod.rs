@@ -28,9 +28,8 @@ const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000
 const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
 const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
-/// Current schema version. Each migration file raises it by one:
-/// 1 = `0001_init`, 2 = `0002_admin_idempotency`, 3 = `0003_controller_clock`, 4 = `0004_clock_anchor`.
-pub const SCHEMA_VERSION: i64 = 4;
+/// Current schema version. Version 5 adds fleet identity and authorization state.
+pub const SCHEMA_VERSION: i64 = 5;
 /// Tables that must exist for a database that reports the given version.
 /// A supported older version is migrated forward; a version whose tables
 /// are missing is damaged and fails closed instead of being recreated.
@@ -56,6 +55,23 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     (2, &["idempotency_keys"]),
     (3, &["controller_clock"]),
     (4, &["controller_clock"]),
+    (
+        5,
+        &[
+            "enrollment_requests",
+            "nodes",
+            "node_key_history",
+            "node_sessions",
+            "workloads",
+            "fleet_policies",
+            "operations",
+            "operation_approvals",
+            "grants",
+            "grant_tombstones",
+            "node_inbox",
+            "node_events",
+        ],
+    ),
 ];
 /// The persisted clock high-water mark advances at most this often, so
 /// ordinary reads never take a write lock. The independent one-second clock
@@ -2311,6 +2327,10 @@ impl Database {
                         .map_err(StoreError::Database)?;
                     }
                 }
+                sqlx::raw_sql(include_str!("migrations/sqlite/0005_fleet.sql"))
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
                 Ok(())
             }
             Self::Postgres(pool) => {
@@ -2331,6 +2351,10 @@ impl Database {
                 .await
                 .map_err(StoreError::Database)?;
                 sqlx::raw_sql(include_str!("migrations/postgres/0004_clock_anchor.sql"))
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!("migrations/postgres/0005_fleet.sql"))
                     .execute(pool)
                     .await
                     .map(|_| ())

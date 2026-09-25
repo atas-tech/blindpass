@@ -136,11 +136,281 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3">;
       "version": string;
-      "schema_version": 4;
+      "schema_version": 5;
       "setup_required": boolean;
+      "issuer_pub"?: string;
+      "issuer_kid"?: string;
+      "issuer_epoch"?: number;
       "features": {
         "browser_status": true;
+        "fleet_authorization": boolean;
       };
+    };
+    "NodeStatus": "online" | "stale" | "offline" | "revoked";
+    "Node": {
+      "id": string;
+      "name": string;
+      "status": components["schemas"]["NodeStatus"];
+      "protocol_version": string;
+      "capabilities": {
+        [key: string]: unknown;
+      };
+      "key_version": number;
+      "signing_fingerprint": string;
+      "recipient_fingerprint": string;
+      "last_seen_at": number | null;
+      "last_poll_at": number | null;
+      "created_at": number;
+      "version": number;
+    };
+    "NodeList": {
+      "items": Array<components["schemas"]["Node"]>;
+      "next_cursor": string | null;
+    };
+    "EnrollmentCreateInput": {
+      "name": string;
+    };
+    "EnrollmentCreated": {
+      "id": string;
+      "token": string;
+      "expires_at": number;
+    };
+    "Enrollment": {
+      "id": string;
+      "name": string;
+      "status": "issued" | "submitted" | "approved" | "rejected" | "expired";
+      "fingerprint": string | null;
+      "protocol_version": string | null;
+      "capabilities": {
+        [key: string]: unknown;
+      } | null;
+      "created_at": number;
+      "expires_at": number;
+      "version": number;
+    };
+    "EnrollmentList": {
+      "items": Array<components["schemas"]["Enrollment"]>;
+      "next_cursor": string | null;
+    };
+    "EnrollmentDecisionInput": {
+      "expected_fingerprint": string;
+      "expected_version": number;
+    };
+    "EnrollmentSubmitInput": {
+      "token": string;
+      "name": string;
+      "signing_pub": string;
+      "recipient_pub": string;
+      "protocol_version": string;
+      "capabilities": {
+        [key: string]: unknown;
+      };
+      "host_facts": {
+        [key: string]: unknown;
+      };
+    };
+    "EnrollmentSubmitted": {
+      "enrollment_id": string;
+      "fingerprint": string;
+      "status": "submitted";
+    };
+    "Workload": {
+      "id": string;
+      "node_id": string;
+      "name": string;
+      "unit": string;
+      "account": string;
+      "consumption_mode": "file" | "socket" | "browser_session";
+      "local_ceiling_seconds": number;
+      "registration_version": number;
+      "status": "active" | "revoked";
+      "created_at": number;
+      "version": number;
+    };
+    "WorkloadList": {
+      "items": Array<components["schemas"]["Workload"]>;
+      "next_cursor": string | null;
+    };
+    "WorkloadInput": {
+      "node_id": string;
+      "name": string;
+      "unit": string;
+      "account": string;
+      "consumption_mode": "file" | "socket" | "browser_session";
+      "local_ceiling_seconds": number;
+    };
+    "WorkloadUpdateInput": {
+      "unit"?: string;
+      "account"?: string;
+      "consumption_mode"?: "file" | "socket" | "browser_session";
+      "local_ceiling_seconds"?: number;
+      "expected_version": number;
+    };
+    "FleetPolicyRule": {
+      "id": string;
+      "action": "noop.marker";
+      "mode": "file" | "socket";
+      "decision": "allow" | "pending_approval" | "deny";
+      "approval_required": boolean;
+      "max_ttl_seconds": number;
+    };
+    "FleetPolicy": {
+      "version": number;
+      "rules": Array<components["schemas"]["FleetPolicyRule"]>;
+      "updated_at": number;
+      "updated_by": string;
+    };
+    "FleetPolicyInput": {
+      "expected_version": number;
+      "rules": Array<components["schemas"]["FleetPolicyRule"]>;
+    };
+    "InvocationEvidence": {
+      "node_id": string;
+      "workload_id": string;
+      "unit": string;
+      "account": string;
+      "invocation_id": string;
+      "observed_at": number;
+    };
+    "OperationInput": {
+      "workload_id": string;
+      "action": "noop.marker";
+      "mode": "file" | "socket";
+      "purpose": string;
+      "resource_id": string;
+      "invocation_id": string;
+      "ttl_seconds": number;
+    };
+    "Operation": {
+      "id": string;
+      "workload_id": string;
+      "node_id": string;
+      "action": string;
+      "mode": "file" | "socket";
+      "purpose": string;
+      "policy_version": number;
+      "decision": "allow" | "pending_approval" | "deny";
+      "status": "requested" | "awaiting_approval" | "granted" | "executing" | "completed" | "failed" | "uncertain" | "denied" | "revoked" | "cancelled";
+      "approval_id": string | null;
+      "grant_id": string | null;
+      "result": {
+        [key: string]: unknown;
+      } | null;
+      "created_at": number;
+      "expires_at": number;
+      "completed_at": number | null;
+      "version": number;
+    };
+    "OperationList": {
+      "items": Array<components["schemas"]["Operation"]>;
+      "next_cursor": string | null;
+    };
+    "OperationApproval": {
+      "id": string;
+      "kind": "operation";
+      "operation_ids": Array<string>;
+      "status": "pending" | "approved" | "rejected" | "expired";
+      "requester_summary": {
+        [key: string]: unknown;
+      };
+      "verified_identity": components["schemas"]["InvocationEvidence"];
+      "rule_id": string;
+      "expires_at": number;
+      "version": number;
+    };
+    "UnifiedApprovalList": {
+      "items": Array<components["schemas"]["OperationApproval"] | components["schemas"]["Approval"]>;
+      "next_cursor": string | null;
+      "count": number;
+    };
+    "OperationDecisionInput": {
+      "expected_status": "pending";
+      "expected_version": number;
+      "operation_ids": Array<string>;
+    };
+    "Grant": {
+      "id": string;
+      "operation_id": string;
+      "node_id": string;
+      "workload_id": string;
+      "invocation_id": string;
+      "account": string;
+      "resource_id": string;
+      "recipient_key_id": string;
+      "policy_version": number;
+      "approval_reference": string | null;
+      "action": "noop.marker";
+      "mode": "file" | "socket";
+      "audience": "blindpass-node";
+      "issuer_epoch": number;
+      "issued_at": number;
+      "expires_at": number;
+      "status": "issued" | "delivered" | "consumed" | "revoked" | "expired";
+    };
+    "GrantList": {
+      "items": Array<components["schemas"]["Grant"]>;
+      "next_cursor": string | null;
+    };
+    "GrantRevocationResult": {
+      "status": "grant_revoked" | "grant_revoked_after_consumption" | "not_revocable_offline";
+      "grant_id": string;
+      "consumer_lifetime_seconds": number | null;
+    };
+    "SignedDocument": {
+      "kind": "registration" | "policy_snapshot" | "grant" | "revocation" | "time_reply" | "operation_result" | "audit_event";
+      "v": 1;
+      "body": {
+        [key: string]: unknown;
+      };
+      "sig": string;
+      "kid": string;
+      "epoch": number;
+    };
+    "NodeSessionInput": {
+      "node_id": string;
+      "protocol_version": string;
+      "capabilities": {
+        [key: string]: unknown;
+      };
+      "nonce"?: string;
+      "signature"?: string;
+    };
+    "NodeSessionChallenge": {
+      "nonce": string;
+      "controller_time": number;
+      "issuer_pub": string;
+      "issuer_kid": string;
+      "issuer_epoch": number;
+      "min_protocol_version": string;
+    };
+    "NodeSessionToken": {
+      "token": string;
+      "expires_at": number;
+    };
+    "NodePollInput": {
+      "ack_seq": number | null;
+      "health": {
+        [key: string]: unknown;
+      };
+    };
+    "NodePollResponse": {
+      "sequence": number;
+      "documents": Array<components["schemas"]["SignedDocument"]>;
+      "controller_time": number;
+      "wait_seconds": number;
+    };
+    "NodeEvent": {
+      "idempotency_key": string;
+      "kind": "operation_request" | "operation_result" | "audit" | "application_ack";
+      "body": {
+        [key: string]: unknown;
+      };
+      "broker_signature": string;
+    };
+    "NodeEventsInput": Array<components["schemas"]["NodeEvent"]>;
+    "NodeEventsResponse": {
+      "accepted": number;
+      "duplicates": number;
     };
     "BootstrapInput": {
       "username": string;
@@ -1707,6 +1977,1230 @@ export interface operations {
   };
   security: ReadonlyArray<readonly ["seedToken"]>;
   };
+  "listFleetEnrollments": {
+  parameters: {
+    path: never;
+    query: {
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["EnrollmentList"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "createFleetEnrollment": {
+  parameters: {
+    path: never;
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "Idempotency-Key": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["EnrollmentCreateInput"];
+    };
+  };
+  responses: {
+    "201": {
+      content: {
+        "application/json": components["schemas"]["EnrollmentCreated"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetEnrollment": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Enrollment"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "approveFleetEnrollment": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["EnrollmentDecisionInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Node"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "rejectFleetEnrollment": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["EnrollmentDecisionInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Enrollment"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "listFleetNodes": {
+  parameters: {
+    path: never;
+    query: {
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["NodeList"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetNode": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Node"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "revokeFleetNode": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Node"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "listFleetWorkloads": {
+  parameters: {
+    path: never;
+    query: {
+      "node_id"?: string;
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["WorkloadList"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "registerFleetWorkload": {
+  parameters: {
+    path: never;
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["WorkloadInput"];
+    };
+  };
+  responses: {
+    "201": {
+      content: {
+        "application/json": components["schemas"]["Workload"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetWorkload": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Workload"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "updateFleetWorkload": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "If-Match": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["WorkloadUpdateInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Workload"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "revokeFleetWorkload": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Workload"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetPolicy": {
+  parameters: {
+    path: never;
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["FleetPolicy"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "updateFleetPolicy": {
+  parameters: {
+    path: never;
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "If-Match": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["FleetPolicyInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["FleetPolicy"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "listFleetApprovals": {
+  parameters: {
+    path: never;
+    query: {
+      "status"?: "pending" | "approved" | "rejected" | "expired";
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["UnifiedApprovalList"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "countFleetApprovals": {
+  parameters: {
+    path: never;
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["ApprovalCount"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetApproval": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["OperationApproval"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "approveFleetOperations": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "Idempotency-Key": string;
+      "If-Match": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["OperationDecisionInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["OperationApproval"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "rejectFleetOperations": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "Idempotency-Key": string;
+      "If-Match": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["OperationDecisionInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["OperationApproval"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "listFleetGrants": {
+  parameters: {
+    path: never;
+    query: {
+      "node_id"?: string;
+      "status"?: string;
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["GrantList"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetGrant": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Grant"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "revokeFleetGrant": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["GrantRevocationResult"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "listFleetOperations": {
+  parameters: {
+    path: never;
+    query: {
+      "status"?: string;
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["OperationList"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "requestFleetOperation": {
+  parameters: {
+    path: never;
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "Idempotency-Key": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["OperationInput"];
+    };
+  };
+  responses: {
+    "201": {
+      content: {
+        "application/json": components["schemas"]["Operation"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetOperation": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Operation"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "cancelFleetOperation": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["GrantRevocationResult"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "listFleetAuditEvents": {
+  parameters: {
+    path: never;
+    query: {
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: {
+      "X-CSRF-Token": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["AuditList"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "submitNodeEnrollment": {
+  parameters: {
+    path: never;
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["EnrollmentSubmitInput"];
+    };
+  };
+  responses: {
+    "201": {
+      content: {
+        "application/json": components["schemas"]["EnrollmentSubmitted"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "410": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "426": Record<string, never>;
+  };
+  security: never;
+  };
+  "nodeSession": {
+  parameters: {
+    path: never;
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["NodeSessionInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["NodeSessionChallenge"] | components["schemas"]["NodeSessionToken"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "410": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "426": Record<string, never>;
+  };
+  security: never;
+  };
+  "pollNodeChannel": {
+  parameters: {
+    path: never;
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["NodePollInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["NodePollResponse"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["nodeBearer"]>;
+  };
+  "uploadNodeEvents": {
+  parameters: {
+    path: never;
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["NodeEventsInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["NodeEventsResponse"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "413": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["nodeBearer"]>;
+  };
 }
 
 export interface paths {
@@ -1830,5 +3324,83 @@ export interface paths {
   };
   "/api/v3/admin/test/seed": {
     post?: operations["seedContractFixture"];
+  };
+  "/api/v3/enrollments": {
+    get?: operations["listFleetEnrollments"];
+    post?: operations["createFleetEnrollment"];
+  };
+  "/api/v3/enrollments/{id}": {
+    get?: operations["getFleetEnrollment"];
+  };
+  "/api/v3/enrollments/{id}/approve": {
+    post?: operations["approveFleetEnrollment"];
+  };
+  "/api/v3/enrollments/{id}/reject": {
+    post?: operations["rejectFleetEnrollment"];
+  };
+  "/api/v3/nodes": {
+    get?: operations["listFleetNodes"];
+  };
+  "/api/v3/nodes/{id}": {
+    get?: operations["getFleetNode"];
+    delete?: operations["revokeFleetNode"];
+  };
+  "/api/v3/workloads": {
+    get?: operations["listFleetWorkloads"];
+    post?: operations["registerFleetWorkload"];
+  };
+  "/api/v3/workloads/{id}": {
+    get?: operations["getFleetWorkload"];
+    patch?: operations["updateFleetWorkload"];
+    delete?: operations["revokeFleetWorkload"];
+  };
+  "/api/v3/policies": {
+    get?: operations["getFleetPolicy"];
+    put?: operations["updateFleetPolicy"];
+  };
+  "/api/v3/approvals": {
+    get?: operations["listFleetApprovals"];
+  };
+  "/api/v3/approvals/count": {
+    get?: operations["countFleetApprovals"];
+  };
+  "/api/v3/approvals/{id}": {
+    get?: operations["getFleetApproval"];
+  };
+  "/api/v3/approvals/{id}/approve": {
+    post?: operations["approveFleetOperations"];
+  };
+  "/api/v3/approvals/{id}/reject": {
+    post?: operations["rejectFleetOperations"];
+  };
+  "/api/v3/grants": {
+    get?: operations["listFleetGrants"];
+  };
+  "/api/v3/grants/{id}": {
+    get?: operations["getFleetGrant"];
+    delete?: operations["revokeFleetGrant"];
+  };
+  "/api/v3/operations": {
+    get?: operations["listFleetOperations"];
+    post?: operations["requestFleetOperation"];
+  };
+  "/api/v3/operations/{id}": {
+    get?: operations["getFleetOperation"];
+    delete?: operations["cancelFleetOperation"];
+  };
+  "/api/v3/audit": {
+    get?: operations["listFleetAuditEvents"];
+  };
+  "/api/v3/node/enroll": {
+    post?: operations["submitNodeEnrollment"];
+  };
+  "/api/v3/node/session": {
+    post?: operations["nodeSession"];
+  };
+  "/api/v3/node/poll": {
+    post?: operations["pollNodeChannel"];
+  };
+  "/api/v3/node/events": {
+    post?: operations["uploadNodeEvents"];
   };
 }

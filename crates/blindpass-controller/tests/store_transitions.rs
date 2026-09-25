@@ -151,6 +151,103 @@ async fn fixture_table_count(fixture: &StoreFixture, table: &str) -> i64 {
     }
 }
 
+async fn remove_fleet_schema(fixture: &mut StoreFixture, schema_version: i64) {
+    fixture.store.take();
+    let tables = [
+        "node_events",
+        "node_inbox",
+        "grant_tombstones",
+        "grants",
+        "operation_approvals",
+        "operations",
+        "fleet_policies",
+        "workloads",
+        "node_sessions",
+        "node_key_history",
+        "nodes",
+        "enrollment_requests",
+    ];
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL migration fixture");
+        for table in tables {
+            sqlx::query(&format!("DROP TABLE IF EXISTS {table}"))
+                .execute(&pool)
+                .await
+                .expect("remove fleet table from PostgreSQL migration fixture");
+        }
+        sqlx::query("UPDATE controller_meta SET schema_version = $1 WHERE id = 1")
+            .bind(i32::try_from(schema_version).expect("schema version fits i32"))
+            .execute(&pool)
+            .await
+            .expect("set PostgreSQL migration fixture version");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite migration fixture");
+        for table in tables {
+            sqlx::query(&format!("DROP TABLE IF EXISTS {table}"))
+                .execute(&pool)
+                .await
+                .expect("remove fleet table from SQLite migration fixture");
+        }
+        sqlx::query("UPDATE controller_meta SET schema_version = ? WHERE id = 1")
+            .bind(schema_version)
+            .execute(&pool)
+            .await
+            .expect("set SQLite migration fixture version");
+        pool.close().await;
+    }
+}
+
+async fn assert_fleet_schema_present(fixture: &StoreFixture) {
+    let tables = [
+        "enrollment_requests",
+        "nodes",
+        "node_key_history",
+        "node_sessions",
+        "workloads",
+        "fleet_policies",
+        "operations",
+        "operation_approvals",
+        "grants",
+        "grant_tombstones",
+        "node_inbox",
+        "node_events",
+    ];
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL schema verification");
+        for table in tables {
+            let present: bool = sqlx::query_scalar("SELECT to_regclass($1) IS NOT NULL")
+                .bind(table)
+                .fetch_one(&pool)
+                .await
+                .expect("check PostgreSQL fleet table");
+            assert!(present, "missing PostgreSQL fleet table {table}");
+        }
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite schema verification");
+        for table in tables {
+            let present: i64 = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?)",
+            )
+            .bind(table)
+            .fetch_one(&pool)
+            .await
+            .expect("check SQLite fleet table");
+            assert_eq!(present, 1, "missing SQLite fleet table {table}");
+        }
+        pool.close().await;
+    }
+}
+
 async fn fixture_active_session_count(fixture: &StoreFixture) -> i64 {
     if fixture.postgres_schema.is_some() {
         let pool = PgPool::connect(&fixture.url)
@@ -2716,19 +2813,19 @@ async fn later_migration_table_missing_on_current_version_fails_closed() {
         let pool = PgPool::connect(&fixture.url)
             .await
             .expect("connect PostgreSQL schema fixture");
-        sqlx::query("DROP TABLE controller_clock")
+        sqlx::query("DROP TABLE nodes")
             .execute(&pool)
             .await
-            .expect("remove later-migration PostgreSQL table");
+            .expect("remove fleet PostgreSQL table");
         pool.close().await;
     } else {
         let pool = sqlx::SqlitePool::connect(&fixture.url)
             .await
             .expect("connect SQLite schema fixture");
-        sqlx::query("DROP TABLE controller_clock")
+        sqlx::query("DROP TABLE nodes")
             .execute(&pool)
             .await
-            .expect("remove later-migration SQLite table");
+            .expect("remove fleet SQLite table");
         pool.close().await;
     }
 
@@ -2740,11 +2837,10 @@ async fn later_migration_table_missing_on_current_version_fails_closed() {
         let pool = PgPool::connect(&fixture.url)
             .await
             .expect("reopen PostgreSQL schema fixture");
-        let present: bool =
-            sqlx::query_scalar("SELECT to_regclass('controller_clock') IS NOT NULL")
-                .fetch_one(&pool)
-                .await
-                .expect("inspect PostgreSQL schema");
+        let present: bool = sqlx::query_scalar("SELECT to_regclass('nodes') IS NOT NULL")
+            .fetch_one(&pool)
+            .await
+            .expect("inspect PostgreSQL schema");
         pool.close().await;
         present
     } else {
@@ -2752,7 +2848,7 @@ async fn later_migration_table_missing_on_current_version_fails_closed() {
             .await
             .expect("reopen SQLite schema fixture");
         let present: i64 = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'controller_clock')",
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'nodes')",
         )
         .fetch_one(&pool)
         .await
@@ -2762,7 +2858,7 @@ async fn later_migration_table_missing_on_current_version_fails_closed() {
     };
     assert!(
         !recreated,
-        "a missing clock table must not be recreated with a fresh high-water mark"
+        "a missing fleet table must not be recreated outside a versioned migration"
     );
     fixture.close().await;
 }
@@ -2867,9 +2963,48 @@ async fn older_schema_version_migrates_forward_and_records_current_version() {
         pool.close().await;
         (version, clock != 0, idempotency != 0)
     };
-    // Version 4 adds boot-anchored clock checks to the controller clock table.
-    assert_eq!(version, 4);
+    // Version 4 adds boot-anchored clock checks; version 5 adds fleet state.
+    assert_eq!(version, 5);
     assert!(clock_present && idempotency_present);
+    assert_fleet_schema_present(&fixture).await;
+    fixture.close().await;
+}
+
+#[tokio::test]
+async fn p03_fleet_migration_upgrades_a_v4_database_and_is_repeatable() {
+    let mut fixture = StoreFixture::new().await;
+    let request_id = fixture
+        .store()
+        .create_secret_request(
+            "fleet-migration-agent",
+            "dummy-key",
+            "migration",
+            "code",
+            60,
+        )
+        .await
+        .expect("create durable P02 state before migration");
+    remove_fleet_schema(&mut fixture, 4).await;
+
+    let upgraded = Store::connect(&fixture.url)
+        .await
+        .expect("upgrade schema version 4 to fleet schema version 5");
+    assert_eq!(
+        upgraded
+            .secret_request_metadata(&request_id)
+            .await
+            .expect("read durable P02 state after fleet migration")
+            .is_some(),
+        true
+    );
+    drop(upgraded);
+    assert_fleet_schema_present(&fixture).await;
+
+    let repeated = Store::connect(&fixture.url)
+        .await
+        .expect("repeat fleet migration without damaging durable state");
+    assert_eq!(repeated.issuer_epoch().await.expect("issuer epoch"), 1);
+    drop(repeated);
     fixture.close().await;
 }
 
@@ -2881,7 +3016,7 @@ async fn schema_v3_clock_migrates_to_v4_and_fences_unknown_boot_anchor() {
         .create_secret_request("upgrade-agent", "dummy-key", "v3 upgrade", "code", 60)
         .await
         .expect("create transient authority in the old schema");
-    fixture.store.take();
+    remove_fleet_schema(&mut fixture, 3).await;
     let columns = ["boot_id", "boottime_ms", "host_wall_ms", "fenced_at"];
     if fixture.postgres_schema.is_some() {
         let pool = PgPool::connect(&fixture.url)

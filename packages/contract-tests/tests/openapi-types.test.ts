@@ -20,9 +20,9 @@ const encryptedPayload: SubmitPayload = {
 const capabilities: CapabilitiesResponse = {
   api: ["compat.v2", "admin.v3"],
   version: "0.1.0",
-  schema_version: 4,
+  schema_version: 5,
   setup_required: true,
-  features: { browser_status: true }
+  features: { browser_status: true, fleet_authorization: true }
 };
 
 const browserCapability: BrowserCapabilityResponse = { status_sig: "exp.status-signature" };
