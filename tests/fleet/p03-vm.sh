@@ -247,6 +247,12 @@ start_reconnect_storm_proxy() {
         --fail-first-node-polls "$failures" --poll-failure-marker "$marker"
 }
 
+start_time_reply_replay_proxy() {
+    local marker=$1
+    start_proxy_process "$(dirname "$marker")/tls-proxy-time-replay.log" \
+        --replay-time-reply-on-reconnect --time-reply-marker "$marker"
+}
+
 start_clear_proxy() {
     local log_file=$1
     start_proxy_process "$log_file"
@@ -599,6 +605,64 @@ PY
     }
     printf 'P03-SCENARIO backend=%s scenario=P03-I06-reconnect-storm failures=3 backoff_ms=%s service_restarts=0 recovery=passed status=passed\n' \
         "$current_backend" "$reconnect_backoff_ms"
+
+    local time_reply_replay_marker=$backend_dir/time-reply-replay
+    guest_call a stop-node
+    start_time_reply_replay_proxy "$time_reply_replay_marker"
+    guest_call a start-node
+    local time_reply_captured=false
+    for _attempt in {1..150}; do
+        if grep -Fq 'captured ' "$time_reply_replay_marker" 2>/dev/null; then
+            time_reply_captured=true
+            break
+        fi
+        kill -0 "$proxy_pid" 2>/dev/null || break
+        sleep 0.2
+    done
+    [[ "$time_reply_captured" == true ]] || {
+        printf 'P03-FAIL TLS proxy did not capture a signed broker-time reply\n' >&2
+        return 1
+    }
+    guest_call a restart-channel
+    local time_reply_replayed=false
+    for _attempt in {1..150}; do
+        if grep -Fq 'replayed ' "$time_reply_replay_marker" 2>/dev/null; then
+            time_reply_replayed=true
+            break
+        fi
+        kill -0 "$proxy_pid" 2>/dev/null || break
+        sleep 0.2
+    done
+    [[ "$time_reply_replayed" == true && $(wc -l <"$time_reply_replay_marker") == 2 ]] || {
+        printf 'P03-FAIL TLS proxy did not replay exactly one captured signed time reply after broker restart\n' >&2
+        return 1
+    }
+    local replay_timestamp replay_node_status replay_last_poll time_reply_recovered=false
+    replay_timestamp=$(awk '$1 == "replayed" {print $2}' "$time_reply_replay_marker")
+    [[ "$replay_timestamp" =~ ^[0-9]+$ ]] || {
+        printf 'P03-FAIL time-reply replay marker timestamp is malformed\n' >&2
+        return 1
+    }
+    guest_call a assert-time-reply-replay-rejected
+    for _attempt in {1..100}; do
+        replay_node_status=$(admin node-status "$node_a")
+        replay_last_poll=$(json_field "$replay_node_status" last_poll_at)
+        if [[ "$replay_last_poll" =~ ^[0-9]+$ ]] \
+            && (( replay_last_poll > replay_timestamp )) \
+            && (( $(node -e 'process.stdout.write(String(Date.now()))') - replay_last_poll < 5000 )); then
+            time_reply_recovered=true
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$time_reply_recovered" == true ]] || {
+        printf 'P03-FAIL node did not recover with fresh signed controller time after replay rejection\n' >&2
+        return 1
+    }
+    guest_call a assert-node-channel-stable
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-time-challenge-replay broker_restart=true rejected=true fresh_time_recovered=true node_restarts=0 status=passed\n' \
+        "$current_backend"
+    start_clear_proxy "$backend_dir/tls-proxy-after-time-replay.log"
 
     local rotation_metadata rotation_result rotation_pending rotation_version
     rotation_metadata=$(guest_call a rotate-prepare)

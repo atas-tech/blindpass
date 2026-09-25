@@ -2,7 +2,7 @@
 
 **Run date:** 2026-09-26
 **Status:** Partial runtime evidence; P03 acceptance remains open.
-**Runner owner:** `local-kvm-p03-i06-suspend-expiry-20260926`
+**Runner owner:** `local-kvm-p03-i06-time-replay-20260926`
 
 ## Environment
 
@@ -17,7 +17,7 @@ Command:
 
 ```bash
 BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
-BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-i06-suspend-expiry-20260926 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-i06-time-replay-20260926 \
   ./tests/fleet/p03-vm.sh --backend both
 ```
 
@@ -37,10 +37,11 @@ keys were retained in the repository.
 | P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
 | P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration node/workload/unit/account/mode/invocation, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected; the controller rejects a forged broker-event signature. Two concurrent consumers produce exactly one successful consume and marker. |
 | P03-I06 partition/restart/replay and protocol-mismatch subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. A two-guest VM run injects HTTP 426 into the relay, confirms systemd records exit 78 with zero restarts, then restores the proxy and verifies node reconnection. |
-| P03-I06 reconnect storm | Pass | Pass | The proxy returned 503 for three consecutive node polls. The relay recovered using bounded exponential backoff; measured intervals were 1,008/1,690 ms on SQLite and 948/1,823 ms on PostgreSQL. The node service remained active with zero systemd restarts on both backends. |
-| P03-I06 suspend and guest wall-clock rollback | Pass | Pass | The controller grant was acknowledged by the broker with 19,003 ms remaining on SQLite and 18,691 ms on PostgreSQL. The guest then suspended and woke from an RTC alarm after 25,730/25,670 ms of BOOTTIME. After the guest wall clock was moved back two hours, workload consumption was denied and no marker was created. The disposable guest clock was restored. |
+| P03-I06 reconnect storm | Pass | Pass | The proxy returned 503 for three consecutive node polls. The relay recovered using bounded exponential backoff; measured intervals were 1,051/2,010 ms on SQLite and 1,106/2,094 ms on PostgreSQL. The node service remained active with zero systemd restarts on both backends. |
+| P03-I06 signed time-reply replay after broker restart | Pass | Pass | The TLS proxy captured a genuine signed controller `TimeReply`, then replayed it once after broker and node restart against a fresh broker challenge. Each broker rejected exactly one stale reply; the node recovered with a fresh signed reply, advanced `last_poll_at`, and had zero systemd restarts. |
+| P03-I06 suspend and guest wall-clock rollback | Pass | Pass | The controller grant was acknowledged by the broker with 18,882 ms remaining on SQLite and 18,875 ms on PostgreSQL. The guest then suspended and woke from an RTC alarm after 25,320/25,360 ms of BOOTTIME. After the guest wall clock was moved back two hours, workload consumption was denied and no marker was created. The disposable guest clock was restored. |
 | P03-I06 delayed expired grant | Pass | Pass | The node's signed grant poll response was held for 10 seconds against an 8-second grant TTL. The broker discarded the expired grant, the controller stored exactly one typed `expired_before_receipt` audit event, and the durable event queues drained. The same grant was then denied by the revoked broker. |
-| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 11,916 ms | Pass; revocation applied in 12,048 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
+| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 13,694 ms | Pass; revocation applied in 13,936 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
 Portable Rust boundary tests cover the broker's 10,000-event audit buffer and
@@ -166,6 +167,23 @@ passed on both backends. The run ended with `P03-VM-COMPLETE ...
 backends=both guests=2 revocation=reconciled recovery=passed` and exit status 0;
 disposable artifacts were removed.
 
+## Supplemental P03-I06 signed time-reply replay VM verification — 2026-09-26
+
+The two-backend QEMU/KVM run captured the controller's genuine signed time
+reply in the TLS test proxy's memory, restarted the broker and node to create a
+new pending time challenge, then replayed the captured reply exactly once. On
+SQLite and PostgreSQL the broker logged one rejection for a reply that did not
+match its pending challenge. The relay remained active without systemd
+restarts, then accepted a fresh signed reply and advanced `last_poll_at` beyond
+the replay time. The same run passed reconnect recovery at 1,051/2,010 ms on
+SQLite and 1,106/2,094 ms on PostgreSQL, guest suspension and wall-clock
+rollback (25,320/25,360 ms BOOTTIME; 18,882/18,875 ms remaining at grant
+acknowledgement), E01 connected revocation (13,694/13,936 ms), and E02 recovery
+on both backends. The runner ended with
+`P03-VM-COMPLETE runner_owner=local-kvm-p03-i06-time-replay-20260926
+backends=both guests=2 revocation=reconciled recovery=passed` and exit status
+0; disposable artifacts were removed.
+
 ## Final verification for the delayed-grant slice — 2026-09-26
 
 `cargo test --workspace --locked -- --test-threads=1`, workspace Clippy with
@@ -187,8 +205,9 @@ Cargo manifest or lockfile changed.
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves broader
-P03-I05 cases open; controller clock rollback and reboot/time-challenge replay,
-delayed/replayed policy and revocation cases in P03-I06; full P03-I07 coverage;
+P03-I05 cases open; controller clock rollback, guest/node reboot cases beyond
+the broker-restart time-reply replay, delayed/replayed policy and revocation
+cases in P03-I06; full P03-I07 coverage;
 and the broader pilot catalog, including E05–E07 and
 E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated

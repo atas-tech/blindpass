@@ -87,6 +87,9 @@ class ProxyHandler(BaseHTTPRequestHandler):
                     self.wfile.write(payload)
                     self.close_connection = True
                     return
+                with self.server.time_reply_lock:
+                    if self.server.saved_time_reply is not None and not self.server.time_reply_replayed:
+                        self.server.replay_next_time_reply = True
             headers = {
                 name: value
                 for name, value in self.headers.items()
@@ -121,10 +124,49 @@ class ProxyHandler(BaseHTTPRequestHandler):
             if self.command == "POST" and self.path == "/api/v3/node/poll":
                 try:
                     response_body = json.loads(payload)
+                except (TypeError, ValueError):
+                    response_body = None
+                if (
+                    isinstance(response_body, dict)
+                    and isinstance(response_body.get("time_reply"), dict)
+                ):
+                    marker_event = None
+                    with self.server.time_reply_lock:
+                        if self.server.saved_time_reply is None:
+                            self.server.saved_time_reply = response_body["time_reply"]
+                            marker_event = "captured"
+                        elif (
+                            self.server.replay_next_time_reply
+                            and not self.server.time_reply_replayed
+                        ):
+                            response_body["time_reply"] = self.server.saved_time_reply
+                            self.server.time_reply_replayed = True
+                            self.server.replay_next_time_reply = False
+                            marker_event = "replayed"
+                    if marker_event:
+                        if self.server.time_reply_marker:
+                            marker_fd = os.open(
+                                self.server.time_reply_marker,
+                                os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                                0o600,
+                            )
+                            with os.fdopen(marker_fd, "ab") as marker:
+                                marker.write(
+                                    f"{marker_event} {int(time.time() * 1000)}\n".encode()
+                                )
+                                marker.flush()
+                                os.fsync(marker.fileno())
+                    if marker_event == "replayed":
+                        payload = json.dumps(
+                            response_body,
+                            separators=(",", ":"),
+                            ensure_ascii=False,
+                        ).encode()
+                try:
                     has_grant = any(
                         item.get("envelope", {}).get("kind") == "grant"
                         for item in response_body.get("documents", [])
-                    )
+                    ) if isinstance(response_body, dict) else False
                 except (TypeError, ValueError, AttributeError):
                     has_grant = False
                 if has_grant:
@@ -175,11 +217,15 @@ def main():
     parser.add_argument("--grant-delay-seconds", type=float, default=0.0)
     parser.add_argument("--fail-first-node-polls", type=int, default=0)
     parser.add_argument("--poll-failure-marker")
+    parser.add_argument("--replay-time-reply-on-reconnect", action="store_true")
+    parser.add_argument("--time-reply-marker")
     args = parser.parse_args()
     if args.fail_first_node_polls < 0 or args.fail_first_node_polls > 10:
         parser.error("--fail-first-node-polls must be between 0 and 10")
     if args.fail_first_node_polls and not args.poll_failure_marker:
         parser.error("--poll-failure-marker is required with --fail-first-node-polls")
+    if args.replay_time_reply_on_reconnect and not args.time_reply_marker:
+        parser.error("--time-reply-marker is required with --replay-time-reply-on-reconnect")
     server = ThreadingHTTPServer(("0.0.0.0", 8443), ProxyHandler)
     server.daemon_threads = True
     server.drop_first_events_response = args.drop_first_events_response
@@ -199,6 +245,11 @@ def main():
     server.poll_failures_total = args.fail_first_node_polls
     server.poll_failure_lock = threading.Lock()
     server.poll_failure_marker = args.poll_failure_marker
+    server.saved_time_reply = None
+    server.replay_next_time_reply = False
+    server.time_reply_replayed = False
+    server.time_reply_lock = threading.Lock()
+    server.time_reply_marker = args.time_reply_marker if args.replay_time_reply_on_reconnect else None
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(args.certificate, args.private_key)

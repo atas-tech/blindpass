@@ -105,6 +105,16 @@ case "$command" in
         [[ "$restarts" == 0 ]] || fail 'transient channel failures restarted the node service'
         printf 'P03-GUEST-NODE-CHANNEL-STABLE restarts=%s\n' "$restarts"
         ;;
+    assert-time-reply-replay-rejected)
+        rejection_count=$(journalctl -u blindpass-broker.service -o cat --no-pager 2>/dev/null |
+            grep -Fc 'controller document rejected: time reply does not match the pending broker challenge' || true)
+        [[ "$rejection_count" == 1 ]] || fail 'broker did not reject exactly one stale signed time challenge'
+        systemctl is-active --quiet blindpass-node.service || fail 'node channel did not recover after rejecting the replay'
+        restarts=$(systemctl show --property=NRestarts --value blindpass-node.service 2>/dev/null || true)
+        [[ "$restarts" == 0 ]] || fail 'stale time challenge restarted the node service'
+        printf 'P03-GUEST-TIME-REPLY-REPLAY-REJECTED rejected=%s node_restarts=%s\n' \
+            "$rejection_count" "$restarts"
+        ;;
     suspend-resume)
         seconds=${1:-}
         [[ "$seconds" =~ ^[0-9]+$ ]] && ((seconds >= 5 && seconds <= 60)) || \
