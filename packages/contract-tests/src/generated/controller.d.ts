@@ -136,7 +136,7 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3">;
       "version": string;
-      "schema_version": 7;
+      "schema_version": 9;
       "setup_required": boolean;
       "issuer_pub"?: string;
       "issuer_kid"?: string;
@@ -223,7 +223,7 @@ export interface components {
       "name": string;
       "unit": string;
       "account": string;
-      "consumption_mode": "file" | "socket" | "browser_session";
+      "consumption_mode": "file" | "socket";
       "local_ceiling_seconds": number;
       "registration_version": number;
       "status": "active" | "revoked";
@@ -239,13 +239,13 @@ export interface components {
       "name": string;
       "unit": string;
       "account": string;
-      "consumption_mode": "file" | "socket" | "browser_session";
+      "consumption_mode": "file" | "socket";
       "local_ceiling_seconds": number;
     };
     "WorkloadUpdateInput": {
       "unit"?: string;
       "account"?: string;
-      "consumption_mode"?: "file" | "socket" | "browser_session";
+      "consumption_mode"?: "file" | "socket";
       "local_ceiling_seconds"?: number;
       "expected_version": number;
     };
@@ -283,6 +283,7 @@ export interface components {
       "resource_id": string;
       "invocation_id": string;
       "ttl_seconds": number;
+      "broker_event_key": string;
     };
     "Operation": {
       "id": string;
@@ -291,6 +292,7 @@ export interface components {
       "action": string;
       "mode": "file" | "socket";
       "purpose": string;
+      "resource_id": string;
       "policy_version": number;
       "decision": "allow" | "pending_approval" | "deny";
       "status": "requested" | "awaiting_approval" | "granted" | "executing" | "completed" | "failed" | "uncertain" | "denied" | "revoked" | "cancelled";
@@ -511,8 +513,9 @@ export interface components {
       "errors": Array<string>;
     };
     "Approval": {
+      "kind": "exchange";
       "reference": string;
-      "status": "pending" | "approved" | "rejected";
+      "status": "pending" | "approved" | "rejected" | "expired";
       "requester_id": string;
       "secret_name": string;
       "purpose": string;
@@ -533,6 +536,13 @@ export interface components {
     };
     "ApprovalDecision": {
       "approval_reference": string;
+      "status": "approved" | "rejected";
+      "decided_at": number;
+      "decided_by": string;
+    };
+    "UnifiedExchangeDecision": {
+      "kind": "exchange";
+      "reference": string;
       "status": "approved" | "rejected";
       "decided_at": number;
       "decided_by": string;
@@ -2299,9 +2309,7 @@ export interface operations {
       "cursor"?: string;
       "limit"?: number;
     };
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2322,7 +2330,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "registerFleetWorkload": {
   parameters: {
@@ -2375,9 +2383,7 @@ export interface operations {
       "id": string;
     };
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2403,7 +2409,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "updateFleetWorkload": {
   parameters: {
@@ -2494,9 +2500,7 @@ export interface operations {
   parameters: {
     path: never;
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2517,7 +2521,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "updateFleetPolicy": {
   parameters: {
@@ -2573,9 +2577,7 @@ export interface operations {
       "cursor"?: string;
       "limit"?: number;
     };
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2596,15 +2598,13 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "countFleetApprovals": {
   parameters: {
     path: never;
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2625,7 +2625,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "getFleetApproval": {
   parameters: {
@@ -2633,16 +2633,14 @@ export interface operations {
       "id": string;
     };
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
   responses: {
     "200": {
       content: {
-        "application/json": components["schemas"]["OperationApproval"];
+        "application/json": components["schemas"]["OperationApproval"] | components["schemas"]["Approval"];
       };
     };
     "401": {
@@ -2661,7 +2659,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "approveFleetOperations": {
   parameters: {
@@ -2680,13 +2678,13 @@ export interface operations {
   requestBody: {
     required: true;
     content: {
-    "application/json": components["schemas"]["OperationDecisionInput"];
+    "application/json": components["schemas"]["OperationDecisionInput"] | components["schemas"]["ApprovalDecisionInput"];
     };
   };
   responses: {
     "200": {
       content: {
-        "application/json": components["schemas"]["OperationApproval"];
+        "application/json": components["schemas"]["OperationApproval"] | components["schemas"]["UnifiedExchangeDecision"];
       };
     };
     "401": {
@@ -2724,13 +2722,13 @@ export interface operations {
   requestBody: {
     required: true;
     content: {
-    "application/json": components["schemas"]["OperationDecisionInput"];
+    "application/json": components["schemas"]["OperationDecisionInput"] | components["schemas"]["ApprovalDecisionInput"];
     };
   };
   responses: {
     "200": {
       content: {
-        "application/json": components["schemas"]["OperationApproval"];
+        "application/json": components["schemas"]["OperationApproval"] | components["schemas"]["UnifiedExchangeDecision"];
       };
     };
     "401": {
@@ -2871,9 +2869,7 @@ export interface operations {
       "cursor"?: string;
       "limit"?: number;
     };
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2894,7 +2890,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "requestFleetOperation": {
   parameters: {
@@ -2948,9 +2944,7 @@ export interface operations {
       "id": string;
     };
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2976,7 +2970,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "cancelFleetOperation": {
   parameters: {

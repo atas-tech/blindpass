@@ -518,7 +518,7 @@ fn run_channel_session(
             let relay_response = broker_request(socket, &relay_request);
             wipe(&mut relay_request);
             let relay_response = relay_response.map_err(|_| ChannelError::Retryable)?;
-            if !relay_response.starts_with(b"OK document_verified ") {
+            if !relay_response.starts_with(b"OK document_applied ") {
                 return Err(ChannelError::Retryable);
             }
             previous_seq = Some(seq);
@@ -820,11 +820,16 @@ mod tests {
         assert!(options.token_stdin);
         assert!(parse_options("status", &["--token-stdin".to_owned()]).is_err());
         assert!(parse_options("run", &[]).is_err());
-        assert!(parse_options(
-            "run",
-            &["--controller".to_owned(), "https://controller.example".to_owned()]
-        )
-        .is_ok());
+        assert!(
+            parse_options(
+                "run",
+                &[
+                    "--controller".to_owned(),
+                    "https://controller.example".to_owned()
+                ]
+            )
+            .is_ok()
+        );
     }
 
     #[test]

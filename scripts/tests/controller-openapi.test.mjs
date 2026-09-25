@@ -179,7 +179,7 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
   assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
-  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 7);
+  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 9);
 
   const serialized = JSON.stringify(schema.paths["/readyz"]);
   assert.doesNotMatch(serialized, /secret|token|credential|password/i);
@@ -234,9 +234,18 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
     "GET /api/v3/nodes",
     "DELETE /api/v3/nodes/{id}",
     "POST /api/v3/workloads",
+    "GET /api/v3/workloads",
+    "GET /api/v3/workloads/{id}",
+    "PATCH /api/v3/workloads/{id}",
+    "DELETE /api/v3/workloads/{id}",
+    "GET /api/v3/policies",
     "PUT /api/v3/policies",
+    "GET /api/v3/approvals",
     "GET /api/v3/approvals/count",
+    "GET /api/v3/approvals/{id}",
     "POST /api/v3/approvals/{id}/approve",
+    "POST /api/v3/approvals/{id}/reject",
+    "GET /api/v3/operations",
     "GET /api/v3/grants",
     "POST /api/v3/operations",
     "GET /api/v3/audit",
@@ -259,9 +268,26 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
       "POST /api/v3/node/poll",
       "POST /api/v3/node/events"
     ]);
+    const mountedInAuthorizationSlice = new Set([
+      "GET /api/v3/workloads",
+      "POST /api/v3/workloads",
+      "GET /api/v3/workloads/{id}",
+      "PATCH /api/v3/workloads/{id}",
+      "DELETE /api/v3/workloads/{id}",
+      "GET /api/v3/policies",
+      "PUT /api/v3/policies",
+      "GET /api/v3/approvals",
+      "GET /api/v3/approvals/count",
+      "GET /api/v3/approvals/{id}",
+      "POST /api/v3/approvals/{id}/approve",
+      "POST /api/v3/approvals/{id}/reject",
+      "GET /api/v3/operations",
+      "POST /api/v3/operations",
+      "GET /api/v3/operations/{id}"
+    ]);
     assert.equal(
       schema.paths[route][method.toLowerCase()]["x-blindpass-status"],
-      mountedInEnrollmentSlice.has(operation) ? undefined : "planned"
+      mountedInEnrollmentSlice.has(operation) || mountedInAuthorizationSlice.has(operation) ? undefined : "planned"
     );
   }
 

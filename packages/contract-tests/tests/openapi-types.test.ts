@@ -22,7 +22,7 @@ const encryptedPayload: SubmitPayload = {
 const capabilities: CapabilitiesResponse = {
   api: ["compat.v2", "admin.v3"],
   version: "0.1.0",
-  schema_version: 7,
+  schema_version: 9,
   setup_required: true,
   features: { browser_status: true, fleet_authorization: true }
 };

@@ -355,6 +355,7 @@ fn assigned_to_operator(approval: &ApprovalRecord, session: &LocalSession) -> bo
 
 fn approval_body(approval: &ApprovalRecord) -> Value {
     json!({
+        "kind":"exchange",
         "reference":approval.approval_reference,
         "status":approval.status,
         "requester_id":approval.requester_id,

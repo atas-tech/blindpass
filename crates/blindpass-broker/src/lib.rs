@@ -13,6 +13,7 @@ pub mod os_identity;
 
 use blindpass_core::custody::{CryptoError, EphemeralCustody};
 use blindpass_core::delivery::{CredentialRegistry, DeliveryError, DeliveryPolicy};
+use blindpass_core::fleet::{PolicySnapshot, Registration};
 use blindpass_core::identity::{
     IdentityError, LoaderPolicy, PeerIdentity, WorkloadRegistration, authorize_workload,
 };
@@ -148,6 +149,8 @@ impl From<CryptoError> for BrokerError {
 pub struct BrokerState {
     pub loader_policy: LoaderPolicy,
     pub workloads: Vec<WorkloadRegistration>,
+    fleet_registrations: BTreeMap<String, Registration>,
+    fleet_policy: Option<PolicySnapshot>,
     pub credentials: CredentialRegistry,
     pub custody: EphemeralCustody,
     credential_expiries: BTreeMap<String, Instant>,
@@ -172,6 +175,8 @@ impl BrokerState {
         Self {
             loader_policy: LoaderPolicy::new(),
             workloads: Vec::new(),
+            fleet_registrations: BTreeMap::new(),
+            fleet_policy: None,
             credentials: CredentialRegistry::new(delivery_policy),
             custody: EphemeralCustody::new(custody_key_lifetime),
             credential_expiries: BTreeMap::new(),
@@ -271,6 +276,80 @@ impl BrokerState {
         authorize_workload(peer, request, &self.workloads)?;
         Ok(workload_ok(request))
     }
+
+    pub(crate) fn validate_fleet_registration(
+        &self,
+        registration: &Registration,
+    ) -> Result<bool, BrokerError> {
+        if let Some(previous) = self.fleet_registrations.get(&registration.workload_id) {
+            if registration.registration_version < previous.registration_version {
+                return Err(BrokerError::Configuration("stale workload registration"));
+            }
+            if registration.registration_version == previous.registration_version {
+                if registration == previous {
+                    return Ok(false);
+                }
+                return Err(BrokerError::Configuration(
+                    "workload registration version was reused with different bytes",
+                ));
+            }
+        }
+        Ok(true)
+    }
+
+    pub(crate) fn apply_fleet_registration(
+        &mut self,
+        registration: Registration,
+    ) -> Result<bool, BrokerError> {
+        if !self.validate_fleet_registration(&registration)? {
+            return Ok(false);
+        }
+        self.workloads
+            .retain(|workload| workload.workload_id != registration.workload_id);
+        if registration.status == "active" {
+            self.workloads.push(WorkloadRegistration {
+                node_id: registration.node_id.clone(),
+                workload_id: registration.workload_id.clone(),
+                unit: registration.unit.clone(),
+                account: registration.account.clone(),
+                invocation_id: registration.invocation_id.clone(),
+            });
+        }
+        self.fleet_registrations
+            .insert(registration.workload_id.clone(), registration);
+        Ok(true)
+    }
+
+    pub(crate) fn validate_fleet_policy(
+        &self,
+        policy: &PolicySnapshot,
+    ) -> Result<bool, BrokerError> {
+        if let Some(previous) = self.fleet_policy.as_ref() {
+            if policy.policy_version < previous.policy_version {
+                return Err(BrokerError::Configuration("stale fleet policy"));
+            }
+            if policy.policy_version == previous.policy_version {
+                if policy == previous {
+                    return Ok(false);
+                }
+                return Err(BrokerError::Configuration(
+                    "fleet policy version was reused with different bytes",
+                ));
+            }
+        }
+        Ok(true)
+    }
+
+    pub(crate) fn apply_fleet_policy(
+        &mut self,
+        policy: PolicySnapshot,
+    ) -> Result<bool, BrokerError> {
+        if !self.validate_fleet_policy(&policy)? {
+            return Ok(false);
+        }
+        self.fleet_policy = Some(policy);
+        Ok(true)
+    }
 }
 
 pub fn provision_aad(unit: &str, credential: &str) -> String {
@@ -330,6 +409,8 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
     }
     validate_config(&config)?;
     let node_identity = Arc::new(keys::NodeIdentity::load_or_create(&config.key_directory)?);
+    let mut state = state;
+    control::restore_controller_documents(&mut state, &node_identity)?;
     let loader_listener = bind_socket(
         &config.loader_socket,
         config.socket_directory_mode,
@@ -390,6 +471,7 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
         },
     )?;
     let control_timeout = config.read_timeout;
+    let control_shared = Arc::clone(&shared);
     spawn_listener_thread(
         "blindpass-control",
         listener_error_sender.clone(),
@@ -402,6 +484,7 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
                         stream,
                         control_group_id,
                         Arc::clone(&node_identity),
+                        Arc::clone(&control_shared),
                         deadline,
                     )
                 },
@@ -1017,7 +1100,7 @@ mod tests {
             workload_id: "workload-a".to_owned(),
             unit: "agent.service".to_owned(),
             account: "uid:1001".to_owned(),
-            invocation_id: "inv-a".to_owned(),
+            invocation_id: Some("inv-a".to_owned()),
         });
         let workload_peer = PeerIdentity::fixture(1001, 1001, "agent.service", "inv-a", "uid:1001");
         let request = WorkloadRequest {

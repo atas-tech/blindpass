@@ -639,15 +639,13 @@
       "get": {
         "operationId": "listFleetWorkloads",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "query", "name": "node_id", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "node_id", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Workload page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkloadList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       },
       "post": {
         "operationId": "registerFleetWorkload",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkloadInput" } } } },
@@ -658,15 +656,13 @@
       "get": {
         "operationId": "getFleetWorkload",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Workload registration", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
       },
       "patch": {
         "operationId": "updateFleetWorkload",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkloadUpdateInput" } } } },
@@ -675,7 +671,6 @@
       "delete": {
         "operationId": "revokeFleetWorkload",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "responses": { "200": { "description": "Workload revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
@@ -685,15 +680,13 @@
       "get": {
         "operationId": "getFleetPolicy",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [],
         "responses": { "200": { "description": "Versioned fleet policy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FleetPolicy" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       },
       "put": {
         "operationId": "updateFleetPolicy",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FleetPolicyInput" } } } },
@@ -704,9 +697,8 @@
       "get": {
         "operationId": "listFleetApprovals",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string", "enum": ["pending", "approved", "rejected", "expired"] } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string", "enum": ["pending", "approved", "rejected", "expired"] } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Unified page with typed approval identities and authoritative pending count", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnifiedApprovalList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       }
     },
@@ -714,9 +706,8 @@
       "get": {
         "operationId": "countFleetApprovals",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [],
         "responses": { "200": { "description": "Authoritative pending count across approval types", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalCount" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       }
     },
@@ -724,32 +715,29 @@
       "get": {
         "operationId": "getFleetApproval",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }],
-        "responses": { "200": { "description": "Typed approval detail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationApproval" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "Typed exchange or operation approval", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/Approval" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/approvals/{id}/approve": {
       "post": {
         "operationId": "approveFleetOperations",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationDecisionInput" } } } },
-        "responses": { "200": { "description": "Exact grouped decision recorded", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationApproval" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationDecisionInput" }, { "$ref": "#/components/schemas/ApprovalDecisionInput" }] } } } },
+        "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/approvals/{id}/reject": {
       "post": {
         "operationId": "rejectFleetOperations",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationDecisionInput" } } } },
-        "responses": { "200": { "description": "Exact grouped decision recorded", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationApproval" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationDecisionInput" }, { "$ref": "#/components/schemas/ApprovalDecisionInput" }] } } } },
+        "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/grants": {
@@ -784,15 +772,13 @@
       "get": {
         "operationId": "listFleetOperations",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Operation page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       },
       "post": {
         "operationId": "requestFleetOperation",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationInput" } } } },
@@ -803,9 +789,8 @@
       "get": {
         "operationId": "getFleetOperation",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Operation metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operation" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
       },
       "delete": {
@@ -912,7 +897,7 @@
       "ExchangeRetrieved": { "type": "object", "properties": { "enc": { "type": "string" }, "ciphertext": { "type": "string" }, "secret_name": { "type": "string" }, "fulfilled_by": { "type": ["string", "null"] } }, "required": ["enc", "ciphertext", "secret_name", "fulfilled_by"], "additionalProperties": false },
       "RevokedResponse": { "type": "object", "properties": { "status": { "type": "string", "const": "revoked" } }, "required": ["status"], "additionalProperties": false },
       "BrowserStatusCapabilityResponse": { "type": "object", "properties": { "status_sig": { "type": "string", "minLength": 16 } }, "required": ["status_sig"], "additionalProperties": false },
-      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 7 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
+      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 9 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
       "NodeStatus": { "type": "string", "enum": ["online", "stale", "offline", "revoked"] },
       "Node": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "status": { "$ref": "#/components/schemas/NodeStatus" }, "protocol_version": { "type": "string" }, "capabilities": { "type": "object", "additionalProperties": true }, "key_version": { "type": "integer", "minimum": 1 }, "signing_fingerprint": { "type": "string" }, "recipient_fingerprint": { "type": "string" }, "last_seen_at": { "type": ["integer", "null"] }, "last_poll_at": { "type": ["integer", "null"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "name", "status", "protocol_version", "capabilities", "key_version", "signing_fingerprint", "recipient_fingerprint", "last_seen_at", "last_poll_at", "created_at", "version"], "additionalProperties": false },
       "NodeList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Node" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
@@ -923,16 +908,16 @@
       "EnrollmentDecisionInput": { "type": "object", "properties": { "expected_fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 }, "expected_version": { "type": "integer", "minimum": 1 } }, "required": ["expected_fingerprint", "expected_version"], "additionalProperties": false },
       "EnrollmentSubmitInput": { "type": "object", "properties": { "token": { "type": "string", "minLength": 48, "maxLength": 256 }, "signing_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "recipient_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "proof": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }, "protocol_version": { "type": "string", "maxLength": 64 }, "capabilities": { "type": "object", "additionalProperties": true }, "host_facts": { "type": "object", "additionalProperties": true } }, "required": ["token", "signing_pub", "recipient_pub", "proof", "protocol_version", "capabilities", "host_facts"], "additionalProperties": false },
       "EnrollmentSubmitted": { "type": "object", "properties": { "enrollment_id": { "type": "string" }, "node_id": { "type": "string" }, "tenant_id": { "type": "string" }, "fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 }, "status": { "type": "string", "const": "submitted" } }, "required": ["enrollment_id", "node_id", "tenant_id", "fingerprint", "status"], "additionalProperties": false },
-      "Workload": { "type": "object", "properties": { "id": { "type": "string" }, "node_id": { "type": "string" }, "name": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string" }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "registration_version": { "type": "integer", "minimum": 1 }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds", "registration_version", "status", "created_at", "version"], "additionalProperties": false },
+      "Workload": { "type": "object", "properties": { "id": { "type": "string" }, "node_id": { "type": "string" }, "name": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string" }, "consumption_mode": { "type": "string", "enum": ["file", "socket"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "registration_version": { "type": "integer", "minimum": 1 }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds", "registration_version", "status", "created_at", "version"], "additionalProperties": false },
       "WorkloadList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Workload" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
-      "WorkloadInput": { "type": "object", "properties": { "node_id": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 128 }, "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 128 }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 } }, "required": ["node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds"], "additionalProperties": false },
-      "WorkloadUpdateInput": { "type": "object", "properties": { "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 128 }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "expected_version": { "type": "integer", "minimum": 1 } }, "required": ["expected_version"], "minProperties": 2, "additionalProperties": false },
+      "WorkloadInput": { "type": "object", "properties": { "node_id": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 128 }, "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 128 }, "consumption_mode": { "type": "string", "enum": ["file", "socket"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 } }, "required": ["node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds"], "additionalProperties": false },
+      "WorkloadUpdateInput": { "type": "object", "properties": { "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 128 }, "consumption_mode": { "type": "string", "enum": ["file", "socket"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "expected_version": { "type": "integer", "minimum": 1 } }, "required": ["expected_version"], "minProperties": 2, "additionalProperties": false },
       "FleetPolicyRule": { "type": "object", "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 128 }, "action": { "type": "string", "const": "noop.marker" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "decision": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "approval_required": { "type": "boolean" }, "max_ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 } }, "required": ["id", "action", "mode", "decision", "approval_required", "max_ttl_seconds"], "additionalProperties": false },
       "FleetPolicy": { "type": "object", "properties": { "version": { "type": "integer", "minimum": 1 }, "rules": { "type": "array", "items": { "$ref": "#/components/schemas/FleetPolicyRule" }, "maxItems": 256 }, "updated_at": { "type": "integer" }, "updated_by": { "type": "string" } }, "required": ["version", "rules", "updated_at", "updated_by"], "additionalProperties": false },
       "FleetPolicyInput": { "type": "object", "properties": { "expected_version": { "type": "integer", "minimum": 1 }, "rules": { "type": "array", "items": { "$ref": "#/components/schemas/FleetPolicyRule" }, "maxItems": 256 } }, "required": ["expected_version", "rules"], "additionalProperties": false },
       "InvocationEvidence": { "type": "object", "properties": { "node_id": { "type": "string" }, "workload_id": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string" }, "invocation_id": { "type": "string" }, "observed_at": { "type": "integer" } }, "required": ["node_id", "workload_id", "unit", "account", "invocation_id", "observed_at"], "additionalProperties": false },
-      "OperationInput": { "type": "object", "properties": { "workload_id": { "type": "string" }, "action": { "type": "string", "const": "noop.marker" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "purpose": { "type": "string", "maxLength": 512 }, "resource_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "invocation_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 } }, "required": ["workload_id", "action", "mode", "purpose", "resource_id", "invocation_id", "ttl_seconds"], "additionalProperties": false },
-      "Operation": { "type": "object", "properties": { "id": { "type": "string" }, "workload_id": { "type": "string" }, "node_id": { "type": "string" }, "action": { "type": "string" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "purpose": { "type": "string" }, "policy_version": { "type": "integer" }, "decision": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "status": { "type": "string", "enum": ["requested", "awaiting_approval", "granted", "executing", "completed", "failed", "uncertain", "denied", "revoked", "cancelled"] }, "approval_id": { "type": ["string", "null"] }, "grant_id": { "type": ["string", "null"] }, "result": { "type": ["object", "null"], "additionalProperties": true }, "created_at": { "type": "integer" }, "expires_at": { "type": "integer" }, "completed_at": { "type": ["integer", "null"] }, "version": { "type": "integer" } }, "required": ["id", "workload_id", "node_id", "action", "mode", "purpose", "policy_version", "decision", "status", "approval_id", "grant_id", "result", "created_at", "expires_at", "completed_at", "version"], "additionalProperties": false },
+      "OperationInput": { "type": "object", "description": "Every operation field must match a recent operation_request event signed by the enrolled broker. The invocation is taken from that evidence; caller input alone has no authority.", "properties": { "workload_id": { "type": "string" }, "action": { "type": "string", "const": "noop.marker" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "purpose": { "type": "string", "maxLength": 512 }, "resource_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "invocation_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "broker_event_key": { "type": "string", "minLength": 16, "maxLength": 128 } }, "required": ["workload_id", "action", "mode", "purpose", "resource_id", "invocation_id", "ttl_seconds", "broker_event_key"], "additionalProperties": false },
+      "Operation": { "type": "object", "properties": { "id": { "type": "string" }, "workload_id": { "type": "string" }, "node_id": { "type": "string" }, "action": { "type": "string" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "purpose": { "type": "string" }, "resource_id": { "type": "string" }, "policy_version": { "type": "integer" }, "decision": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "status": { "type": "string", "enum": ["requested", "awaiting_approval", "granted", "executing", "completed", "failed", "uncertain", "denied", "revoked", "cancelled"] }, "approval_id": { "type": ["string", "null"] }, "grant_id": { "type": ["string", "null"] }, "result": { "type": ["object", "null"], "additionalProperties": true }, "created_at": { "type": "integer" }, "expires_at": { "type": "integer" }, "completed_at": { "type": ["integer", "null"] }, "version": { "type": "integer" } }, "required": ["id", "workload_id", "node_id", "action", "mode", "purpose", "resource_id", "policy_version", "decision", "status", "approval_id", "grant_id", "result", "created_at", "expires_at", "completed_at", "version"], "additionalProperties": false },
       "OperationList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Operation" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "OperationApproval": { "type": "object", "properties": { "id": { "type": "string", "pattern": "^oa_" }, "kind": { "type": "string", "const": "operation" }, "operation_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 10 }, "status": { "type": "string", "enum": ["pending", "approved", "rejected", "expired"] }, "requester_summary": { "type": "object", "additionalProperties": true }, "verified_identity": { "$ref": "#/components/schemas/InvocationEvidence" }, "rule_id": { "type": "string" }, "expires_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "kind", "operation_ids", "status", "requester_summary", "verified_identity", "rule_id", "expires_at", "version"], "additionalProperties": false },
       "UnifiedApprovalList": { "type": "object", "properties": { "items": { "type": "array", "items": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/Approval" }] } }, "next_cursor": { "type": ["string", "null"] }, "count": { "type": "integer", "minimum": 0 } }, "required": ["items", "next_cursor", "count"], "additionalProperties": false },
@@ -966,11 +951,12 @@
       "PolicyDocument": { "type": "object", "properties": { "version": { "type": "integer" }, "policy": { "$ref": "#/components/schemas/PolicyDocumentInput" } }, "required": ["version", "policy"], "additionalProperties": false },
       "PolicyDocumentInput": { "type": "object", "properties": { "secret_registry": { "type": "array", "items": { "type": "object", "properties": { "secretName": { "type": "string" }, "classification": { "type": "string" }, "description": { "type": "string" } }, "required": ["secretName", "classification"], "additionalProperties": true } }, "exchange_policy": { "type": "array", "items": { "type": "object", "properties": { "ruleId": { "type": "string" }, "secretName": { "type": "string" }, "mode": { "type": "string", "enum": ["allow", "pending_approval", "deny"] } }, "required": ["ruleId", "secretName"], "additionalProperties": true } } }, "required": ["secret_registry", "exchange_policy"], "additionalProperties": false },
       "PolicyValidation": { "type": "object", "properties": { "valid": { "type": "boolean" }, "errors": { "type": "array", "items": { "type": "string" } } }, "required": ["valid", "errors"], "additionalProperties": false },
-      "Approval": { "type": "object", "properties": { "reference": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected"] }, "requester_id": { "type": "string" }, "secret_name": { "type": "string" }, "purpose": { "type": "string" }, "created_at": { "type": "integer" }, "timeline": { "type": "array", "items": { "type": "object", "additionalProperties": true } } }, "required": ["reference", "status", "requester_id", "secret_name", "purpose", "created_at", "timeline"], "additionalProperties": false },
+      "Approval": { "type": "object", "properties": { "kind": { "type": "string", "const": "exchange" }, "reference": { "type": "string" }, "status": { "type": "string", "enum": ["pending", "approved", "rejected", "expired"] }, "requester_id": { "type": "string" }, "secret_name": { "type": "string" }, "purpose": { "type": "string" }, "created_at": { "type": "integer" }, "timeline": { "type": "array", "items": { "type": "object", "additionalProperties": true } } }, "required": ["kind", "reference", "status", "requester_id", "secret_name", "purpose", "created_at", "timeline"], "additionalProperties": false },
       "ApprovalList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Approval" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "ApprovalCount": { "type": "object", "properties": { "count": { "type": "integer", "minimum": 0 } }, "required": ["count"], "additionalProperties": false },
       "ApprovalDecisionInput": { "type": "object", "properties": { "expected_status": { "type": "string", "const": "pending" } }, "required": ["expected_status"], "additionalProperties": false },
       "ApprovalDecision": { "type": "object", "properties": { "approval_reference": { "type": "string" }, "status": { "type": "string", "enum": ["approved", "rejected"] }, "decided_at": { "type": "integer" }, "decided_by": { "type": "string" } }, "required": ["approval_reference", "status", "decided_at", "decided_by"], "additionalProperties": false },
+      "UnifiedExchangeDecision": { "type": "object", "properties": { "kind": { "type": "string", "const": "exchange" }, "reference": { "type": "string" }, "status": { "type": "string", "enum": ["approved", "rejected"] }, "decided_at": { "type": "integer" }, "decided_by": { "type": "string" } }, "required": ["kind", "reference", "status", "decided_at", "decided_by"], "additionalProperties": false },
       "AuditEvent": { "type": "object", "properties": { "id": { "type": "string" }, "event": { "type": "string" }, "actor_id": { "type": ["string", "null"] }, "resource_id": { "type": ["string", "null"] }, "created_at": { "type": "integer" }, "metadata": { "type": "object", "additionalProperties": true } }, "required": ["id", "event", "created_at", "metadata"], "additionalProperties": false },
       "AuditList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/AuditEvent" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "TestSeedInput": { "type": "object", "properties": { "agents": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 64, "uniqueItems": true }, "policy": { "$ref": "#/components/schemas/PolicyDocumentInput" }, "rotated_agents": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "description": "Optional agent IDs from agents to rotate before returning fixture keys" }, "revoked_agents": { "type": "array", "items": { "type": "string" }, "uniqueItems": true, "description": "Optional agent IDs from agents to revoke after creation" }, "local_admin": { "type": "boolean", "description": "Create a test-only local administrator and browser session for VM clients" } }, "required": ["agents"], "additionalProperties": false },

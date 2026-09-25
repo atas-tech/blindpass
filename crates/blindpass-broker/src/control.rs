@@ -3,9 +3,13 @@
 //! Local relay socket. This listener accepts no network connections.
 
 use crate::BrokerError;
+use crate::BrokerState;
 use crate::keys::{NodeIdentity, PinnedIssuer};
 use crate::os_identity::require_control_peer;
 use crate::os_identity::require_root_peer;
+use blindpass_core::fleet::{
+    DocumentKind, PolicySnapshot, Registration, SignedEnvelope, TimeReply,
+};
 use blindpass_core::secret::wipe;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
@@ -18,11 +22,12 @@ pub(crate) fn handle_connection(
     stream: &mut UnixStream,
     expected_group: Option<u32>,
     identity: std::sync::Arc<NodeIdentity>,
+    state: std::sync::Arc<std::sync::Mutex<BrokerState>>,
     deadline: Instant,
 ) -> Result<(), BrokerError> {
     require_control_peer(stream, expected_group)?;
     let mut command = read_line(stream, deadline)?;
-    let result = handle_command(stream, &command, &identity, deadline);
+    let result = handle_command(stream, &command, &identity, &state, deadline);
     wipe(&mut command);
     result
 }
@@ -31,6 +36,7 @@ fn handle_command(
     stream: &mut UnixStream,
     command: &[u8],
     identity: &NodeIdentity,
+    state: &std::sync::Arc<std::sync::Mutex<BrokerState>>,
     deadline: Instant,
 ) -> Result<(), BrokerError> {
     match command {
@@ -85,16 +91,105 @@ fn handle_command(
             let mut document = vec![0_u8; length];
             let read_result = read_exact_until(stream, &mut document, deadline);
             read_result?;
-            let verification = identity.verify_controller_document(&document);
+            let application = apply_controller_document(state, identity, &document, true);
             wipe(&mut document);
-            match verification {
-                Ok(kind) => writeln!(stream, "OK document_verified {kind}")?,
+            match application {
+                Ok(kind) => writeln!(stream, "OK document_applied {kind}")?,
                 Err(_) => stream.write_all(b"ERR invalid_controller_document\n")?,
             }
         }
         _ => stream.write_all(b"ERR invalid_control_command\n")?,
     }
     Ok(())
+}
+
+pub(crate) fn restore_controller_documents(
+    state: &mut BrokerState,
+    identity: &NodeIdentity,
+) -> Result<(), BrokerError> {
+    for document in identity.persisted_controller_documents()? {
+        apply_controller_document_to_state(state, identity, &document, false)?;
+    }
+    Ok(())
+}
+
+fn apply_controller_document(
+    state: &std::sync::Arc<std::sync::Mutex<BrokerState>>,
+    identity: &NodeIdentity,
+    document: &[u8],
+    persist: bool,
+) -> Result<&'static str, BrokerError> {
+    let mut state = state
+        .lock()
+        .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?;
+    apply_controller_document_to_state(&mut state, identity, document, persist)
+}
+
+fn apply_controller_document_to_state(
+    state: &mut BrokerState,
+    identity: &NodeIdentity,
+    document: &[u8],
+    persist: bool,
+) -> Result<&'static str, BrokerError> {
+    let kind = identity.verify_controller_document(document)?;
+    let source = std::str::from_utf8(document)
+        .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+    let envelope = SignedEnvelope::from_json(source)
+        .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+    let pin = identity.pinned_issuer()?.ok_or(BrokerError::Configuration(
+        "controller issuer is not pinned",
+    ))?;
+    match envelope.kind() {
+        DocumentKind::Registration => {
+            let registration = Registration::from_value(envelope.body())
+                .map_err(|_| BrokerError::Configuration("controller registration is malformed"))?;
+            if registration.node_id != pin.node_id {
+                return Err(BrokerError::Configuration(
+                    "controller registration is bound to another node",
+                ));
+            }
+            let changed = state.validate_fleet_registration(&registration)?;
+            if changed {
+                if persist {
+                    identity.persist_controller_document(document)?;
+                }
+                state.apply_fleet_registration(registration)?;
+            }
+        }
+        DocumentKind::PolicySnapshot => {
+            let policy = PolicySnapshot::from_value(envelope.body())
+                .map_err(|_| BrokerError::Configuration("controller fleet policy is malformed"))?;
+            let changed = state.validate_fleet_policy(&policy)?;
+            if changed {
+                if persist {
+                    identity.persist_controller_document(document)?;
+                }
+                state.apply_fleet_policy(policy)?;
+            }
+        }
+        DocumentKind::TimeReply => {
+            let reply = TimeReply::from_value(envelope.body())
+                .map_err(|_| BrokerError::Configuration("controller time reply is malformed"))?;
+            if reply.node_id != pin.node_id {
+                return Err(BrokerError::Configuration(
+                    "controller time reply is bound to another node",
+                ));
+            }
+        }
+        _ => {
+            return Err(BrokerError::Configuration(
+                "controller document kind is not supported by this broker",
+            ));
+        }
+    }
+    match kind.as_str() {
+        "registration" => Ok("registration"),
+        "policy_snapshot" => Ok("policy_snapshot"),
+        "time_reply" => Ok("time_reply"),
+        _ => Err(BrokerError::Configuration(
+            "controller document kind is unsupported",
+        )),
+    }
 }
 
 fn parse_pin(command: &[u8]) -> Result<PinnedIssuer, BrokerError> {
@@ -292,7 +387,9 @@ fn read_exact_until(
 #[cfg(test)]
 mod tests {
     use super::{MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_relay_length};
+    use crate::BrokerState;
     use crate::keys::NodeIdentity;
+    use blindpass_core::delivery::DeliveryPolicy;
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::time::{Duration, Instant};
@@ -313,7 +410,17 @@ mod tests {
         client.write_all(b"STATUS\n").unwrap();
         let directory = temporary_directory();
         let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
-        handle_connection(&mut broker, Some(current_gid()), identity.clone(), deadline).unwrap();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(BrokerState::new(
+            DeliveryPolicy::default(),
+        )));
+        handle_connection(
+            &mut broker,
+            Some(current_gid()),
+            identity.clone(),
+            state.clone(),
+            deadline,
+        )
+        .unwrap();
         drop(broker);
         let mut response = Vec::new();
         client.read_to_end(&mut response).unwrap();
@@ -322,7 +429,7 @@ mod tests {
         let (mut broker, mut client) = UnixStream::pair().unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         client.write_all(b"RELAY 2\n{}").unwrap();
-        handle_connection(&mut broker, Some(current_gid()), identity, deadline).unwrap();
+        handle_connection(&mut broker, Some(current_gid()), identity, state, deadline).unwrap();
         drop(broker);
         let mut response = Vec::new();
         client.read_to_end(&mut response).unwrap();

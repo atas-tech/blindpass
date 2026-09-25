@@ -142,7 +142,10 @@ pub struct WorkloadRegistration {
     pub workload_id: String,
     pub unit: String,
     pub account: String,
-    pub invocation_id: String,
+    /// Optional invocation constraint retained for test-only static mappings.
+    /// Controller-managed registrations bind each operation to the live pidfd
+    /// invocation when the broker evaluates a grant.
+    pub invocation_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -208,14 +211,17 @@ pub fn authorize_workload(
                 && candidate.workload_id == request.workload_id
                 && candidate.unit == unit
                 && candidate.account == account
-                && candidate.invocation_id == invocation_id
+                && candidate
+                    .invocation_id
+                    .as_deref()
+                    .is_none_or(|expected| expected == invocation_id)
         })
         .ok_or(IdentityError::UnknownRegistration)?;
     Ok(WorkloadAuthorization {
         node_id: registration.node_id.clone(),
         workload_id: registration.workload_id.clone(),
         unit: registration.unit.clone(),
-        invocation_id: registration.invocation_id.clone(),
+        invocation_id: invocation_id.to_owned(),
         operation: request.operation.clone(),
     })
 }
@@ -299,7 +305,7 @@ mod tests {
             workload_id: "workload-a".to_owned(),
             unit: "blindpass-agent.service".to_owned(),
             account: "blindpass-agent".to_owned(),
-            invocation_id: "invocation-a".to_owned(),
+            invocation_id: Some("invocation-a".to_owned()),
         };
         let request = WorkloadRequest {
             node_id: "node-a".to_owned(),
@@ -309,6 +315,10 @@ mod tests {
             operation: "health".to_owned(),
         };
         assert!(authorize_workload(&peer, &request, std::slice::from_ref(&registration)).is_ok());
+
+        let mut controller_registration = registration.clone();
+        controller_registration.invocation_id = None;
+        assert!(authorize_workload(&peer, &request, &[controller_registration]).is_ok());
 
         let mut stale = request;
         stale.claimed_invocation_id = "invocation-old".to_owned();

@@ -6,7 +6,8 @@ use crate::BrokerError;
 use blindpass_core::custody::RecipientKeyPair;
 use blindpass_core::fleet::SignedEnvelope;
 use blindpass_core::fleet::{
-    enrollment_proof_message, node_key_fingerprint, node_session_challenge_message,
+    DocumentKind, Registration, enrollment_proof_message, node_key_fingerprint,
+    node_session_challenge_message,
 };
 use blindpass_core::secret::wipe;
 use blindpass_core::signing::base64_url_decode;
@@ -17,10 +18,12 @@ use std::io::{Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const KEY_DIRECTORY_MODE: u32 = 0o700;
 const O_NOFOLLOW: i32 = 0x20000;
+static STATE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicIdentity {
@@ -208,6 +211,120 @@ impl NodeIdentity {
         }
         Ok(envelope.kind().as_str().to_owned())
     }
+
+    /// Persist the latest verified registration or policy envelope for broker
+    /// recovery. The signed bytes remain opaque to the relay and contain no
+    /// secret payloads.
+    pub fn persist_controller_document(&self, document: &[u8]) -> Result<(), BrokerError> {
+        let source = std::str::from_utf8(document)
+            .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+        let envelope = SignedEnvelope::from_json(source)
+            .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+        let file_name = match envelope.kind() {
+            DocumentKind::Registration => {
+                let registration = Registration::from_value(envelope.body()).map_err(|_| {
+                    BrokerError::Configuration("controller registration is malformed")
+                })?;
+                if !valid_state_component(&registration.workload_id) {
+                    return Err(BrokerError::Configuration(
+                        "controller registration id is invalid",
+                    ));
+                }
+                format!("fleet-registration-{}.json", registration.workload_id)
+            }
+            DocumentKind::PolicySnapshot => "fleet-policy.json".to_owned(),
+            _ => {
+                return Err(BrokerError::Configuration(
+                    "controller document is not durable fleet state",
+                ));
+            }
+        };
+        atomic_write_private(&self.directory.join(file_name), document)
+    }
+
+    /// Return bounded private fleet state documents in deterministic order.
+    pub fn persisted_controller_documents(&self) -> Result<Vec<Vec<u8>>, BrokerError> {
+        let mut paths = Vec::new();
+        for entry in fs::read_dir(&self.directory)? {
+            let entry = entry?;
+            let file_name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| BrokerError::Configuration("fleet state filename is invalid"))?;
+            if file_name == "fleet-policy.json"
+                || (file_name.starts_with("fleet-registration-") && file_name.ends_with(".json"))
+            {
+                paths.push(entry.path());
+            }
+        }
+        paths.sort();
+        paths
+            .iter()
+            .map(|path| read_private_document(path))
+            .collect()
+    }
+}
+
+fn valid_state_component(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn atomic_write_private(path: &Path, bytes: &[u8]) -> Result<(), BrokerError> {
+    if bytes.is_empty() || bytes.len() > 64 * 1024 {
+        return Err(BrokerError::Configuration(
+            "fleet state document size is invalid",
+        ));
+    }
+    let parent = path.parent().ok_or(BrokerError::Configuration(
+        "fleet state directory is invalid",
+    ))?;
+    let sequence = STATE_TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let temporary = parent.join(format!(
+        ".fleet-state-{}-{sequence}.tmp",
+        std::process::id()
+    ));
+    let write_result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(PRIVATE_FILE_MODE)
+            .custom_flags(O_NOFOLLOW)
+            .open(&temporary)?;
+        file.write_all(bytes)?;
+        file.sync_all()?;
+        fs::rename(&temporary, path)?;
+        File::open(parent)?.sync_all()
+    })();
+    if write_result.is_err() {
+        let _ = fs::remove_file(&temporary);
+        return Err(BrokerError::Configuration(
+            "fleet state document could not be persisted",
+        ));
+    }
+    Ok(())
+}
+
+fn read_private_document(path: &Path) -> Result<Vec<u8>, BrokerError> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(O_NOFOLLOW)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file()
+        || metadata.uid() != effective_uid()
+        || metadata.permissions().mode() & 0o777 != PRIVATE_FILE_MODE
+        || metadata.len() == 0
+        || metadata.len() > 64 * 1024
+    {
+        return Err(BrokerError::Configuration("fleet state document is unsafe"));
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
 }
 
 fn ensure_key_directory(directory: &Path) -> Result<(), BrokerError> {

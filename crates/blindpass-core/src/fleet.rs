@@ -208,7 +208,7 @@ impl DocumentKind {
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "registration" => Self::Registration,
             "policy_snapshot" => Self::PolicySnapshot,
@@ -429,7 +429,7 @@ impl ConsumptionMode {
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         Some(match value {
             "file" => Self::File,
             "socket" => Self::Socket,
@@ -445,7 +445,8 @@ pub struct Registration {
     pub workload_id: String,
     pub unit: String,
     pub account: String,
-    pub invocation_id: String,
+    pub invocation_id: Option<String>,
+    pub status: String,
     pub consumption_mode: ConsumptionMode,
     pub registration_version: u64,
     pub policy_version: u64,
@@ -461,13 +462,13 @@ impl Registration {
                 "workload_id",
                 "unit",
                 "account",
-                "invocation_id",
                 "consumption_mode",
+                "status",
                 "registration_version",
                 "policy_version",
                 "local_ceiling_seconds",
             ],
-            &[],
+            &["invocation_id"],
         )?;
         let mode = ConsumptionMode::parse(required_string(value, "consumption_mode")?)
             .ok_or(DocumentError::Invalid("consumption mode"))?;
@@ -476,7 +477,16 @@ impl Registration {
             workload_id: required_string(value, "workload_id")?.to_owned(),
             unit: required_string(value, "unit")?.to_owned(),
             account: required_string(value, "account")?.to_owned(),
-            invocation_id: required_string(value, "invocation_id")?.to_owned(),
+            invocation_id: value
+                .get("invocation_id")
+                .map(|invocation| {
+                    invocation
+                        .as_str()
+                        .map(str::to_owned)
+                        .ok_or(DocumentError::Invalid("invocation id"))
+                })
+                .transpose()?,
+            status: required_string(value, "status")?.to_owned(),
             consumption_mode: mode,
             registration_version: required_number(value, "registration_version")?,
             policy_version: required_number(value, "policy_version")?,
@@ -491,20 +501,21 @@ impl Registration {
         validate_token(&self.workload_id, "workload id")?;
         validate_unit(&self.unit)?;
         validate_account(&self.account)?;
-        validate_token(&self.invocation_id, "invocation id")?;
+        if let Some(invocation_id) = &self.invocation_id {
+            validate_token(invocation_id, "invocation id")?;
+        }
+        if !matches!(self.status.as_str(), "active" | "revoked") {
+            return Err(DocumentError::Invalid("registration status"));
+        }
         validate_ceiling(self.local_ceiling_seconds)?;
         if self.registration_version == 0 || self.policy_version == 0 {
             return Err(DocumentError::Invalid("registration or policy version"));
         }
-        Ok(Value::Object(vec![
+        let mut fields = vec![
             ("account".to_owned(), Value::String(self.account.clone())),
             (
                 "consumption_mode".to_owned(),
                 Value::String(self.consumption_mode.as_str().to_owned()),
-            ),
-            (
-                "invocation_id".to_owned(),
-                Value::String(self.invocation_id.clone()),
             ),
             (
                 "local_ceiling_seconds".to_owned(),
@@ -519,12 +530,20 @@ impl Registration {
                 "registration_version".to_owned(),
                 Value::Unsigned(self.registration_version),
             ),
+            ("status".to_owned(), Value::String(self.status.clone())),
             ("unit".to_owned(), Value::String(self.unit.clone())),
             (
                 "workload_id".to_owned(),
                 Value::String(self.workload_id.clone()),
             ),
-        ]))
+        ];
+        if let Some(invocation_id) = &self.invocation_id {
+            fields.push((
+                "invocation_id".to_owned(),
+                Value::String(invocation_id.clone()),
+            ));
+        }
+        Ok(Value::Object(fields))
     }
 }
 
@@ -584,8 +603,6 @@ impl PolicySnapshot {
     pub fn to_value(&self) -> Result<Value, DocumentError> {
         validate_ceiling(self.local_ceiling_seconds)?;
         if self.policy_version == 0
-            || self.allowed_actions.is_empty()
-            || self.allowed_modes.is_empty()
             || self.allowed_actions.len() > 100
             || self.allowed_modes.len() > 3
         {
@@ -1097,7 +1114,7 @@ fn decode_base64_url(value: &str) -> Result<Vec<u8>, DocumentError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConsumptionMode, DocumentKind, Grant, Registration, SignedEnvelope,
+        ConsumptionMode, DocumentKind, Grant, PolicySnapshot, Registration, SignedEnvelope,
         enrollment_proof_message, node_event_message, node_key_fingerprint,
         node_session_challenge_message,
     };
@@ -1329,7 +1346,8 @@ mod tests {
             workload_id: "workload-a".to_owned(),
             unit: "backup.service".to_owned(),
             account: "backup".to_owned(),
-            invocation_id: "invocation-1".to_owned(),
+            invocation_id: Some("invocation-1".to_owned()),
+            status: "active".to_owned(),
             consumption_mode: ConsumptionMode::Socket,
             registration_version: 1,
             policy_version: 2,
@@ -1364,6 +1382,19 @@ mod tests {
         let mut invalid_grant = grant;
         invalid_grant.audience = "agent".to_owned();
         assert!(invalid_grant.to_value().is_err());
+    }
+
+    #[test]
+    fn empty_policy_snapshot_is_a_valid_fail_closed_policy() {
+        let policy = PolicySnapshot {
+            policy_version: 2,
+            local_ceiling_seconds: 60,
+            allowed_actions: Vec::new(),
+            allowed_modes: Vec::new(),
+        };
+        let value = policy.to_value().unwrap();
+        let restored = PolicySnapshot::from_value(&value).unwrap();
+        assert_eq!(restored, policy);
     }
 
     #[test]

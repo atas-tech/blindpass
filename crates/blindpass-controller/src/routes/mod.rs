@@ -9,6 +9,7 @@ pub(crate) mod admin_session;
 pub(crate) mod agent_rate_limit;
 pub(crate) mod agents;
 pub(crate) mod auth;
+pub(crate) mod authorization;
 pub(crate) mod exchanges;
 pub(crate) mod fleet;
 mod node;
@@ -35,6 +36,7 @@ pub(crate) fn admin_routes() -> Router<AppState> {
         .merge(admin_agents::routes())
         .merge(admin_policy::routes())
         .merge(fleet::routes())
+        .merge(authorization::routes())
 }
 
 pub(crate) fn node_routes() -> Router<AppState> {

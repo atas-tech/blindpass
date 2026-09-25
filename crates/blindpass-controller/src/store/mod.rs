@@ -16,25 +16,30 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod authorization;
 mod exchanges;
 mod fleet;
 mod node_channel;
 mod operators;
+pub use authorization::{
+    FleetPolicyRecord, OperationApprovalDraft, OperationApprovalRecord, OperationCreateOutcome,
+    OperationDecisionOutcome, OperationRecord, WorkloadRecord,
+};
 pub use exchanges::{
     ApprovalDecisionOutcome, ApprovalRecord, AuditRecord, ExchangePolicyRecord, ExchangeRecord,
     LifecycleRecord,
 };
 pub use fleet::{EnrollmentRecord, NodeRecord};
-pub use node_channel::{InboxDocument, NodeChallenge, NodeEventInsert};
+pub use node_channel::{InboxDocument, NodeChallenge, NodeEventInsert, NodeEventRecord};
 pub use operators::{LocalOperator, LocalSession};
 
 const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
 const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
 const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
-/// Current schema version. Version 5 adds fleet state, version 6 records node
-/// enrollment metadata, and version 7 adds one-use node channel challenges.
-pub const SCHEMA_VERSION: i64 = 7;
+/// Current schema version. Versions 5-8 add fleet authorization and channel
+/// state incrementally.
+pub const SCHEMA_VERSION: i64 = 9;
 /// Tables that must exist for a database that reports the given version.
 /// A supported older version is migrated forward; a version whose tables
 /// are missing is damaged and fails closed instead of being recreated.
@@ -79,6 +84,8 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     ),
     (6, &["enrollment_requests"]),
     (7, &["node_challenges"]),
+    (8, &["operation_approvals"]),
+    (9, &["operations"]),
 ];
 /// The persisted clock high-water mark advances at most this often, so
 /// ordinary reads never take a write lock. The independent one-second clock
@@ -2253,6 +2260,12 @@ impl Database {
         if version >= 7 && !self.node_challenge_columns_present().await? {
             return Err(StoreError::UnsupportedSchemaVersion);
         }
+        if version >= 8 && !self.operation_decision_columns_present().await? {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
+        if version >= 9 && !self.operation_binding_columns_present().await? {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
         Ok(())
     }
 
@@ -2289,6 +2302,60 @@ impl Database {
                 .await
                 .map_err(StoreError::Database)?;
                 Ok(count == 6)
+            }
+        }
+    }
+
+    async fn operation_decision_columns_present(&self) -> Result<bool, StoreError> {
+        match self {
+            Self::Sqlite(pool) => {
+                let rows = sqlx::query("PRAGMA table_info(operation_approvals)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                Ok(rows.iter().any(|row| {
+                    row.try_get::<String, _>("name").ok().as_deref() == Some("decision_key_hash")
+                }))
+            }
+            Self::Postgres(pool) => {
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'operation_approvals'
+                       AND column_name = 'decision_key_hash'",
+                )
+                .fetch_one(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                Ok(count == 1)
+            }
+        }
+    }
+
+    async fn operation_binding_columns_present(&self) -> Result<bool, StoreError> {
+        match self {
+            Self::Sqlite(pool) => {
+                let rows = sqlx::query("PRAGMA table_info(operations)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let columns = rows
+                    .iter()
+                    .filter_map(|row| row.try_get::<String, _>("name").ok())
+                    .collect::<std::collections::BTreeSet<_>>();
+                Ok(["resource_id", "requested_ttl_seconds", "broker_event_key"]
+                    .iter()
+                    .all(|column| columns.contains(*column)))
+            }
+            Self::Postgres(pool) => {
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'operations'
+                       AND column_name IN ('resource_id', 'requested_ttl_seconds', 'broker_event_key')",
+                )
+                .fetch_one(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                Ok(count == 3)
             }
         }
     }
@@ -2441,6 +2508,18 @@ impl Database {
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/sqlite/0008_fleet_authorization.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/sqlite/0009_operation_bindings.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
                 Ok(())
             }
             Self::Postgres(pool) => {
@@ -2477,8 +2556,20 @@ impl Database {
                 sqlx::raw_sql(include_str!("migrations/postgres/0007_node_channel.sql"))
                     .execute(pool)
                     .await
-                    .map(|_| ())
-                    .map_err(StoreError::Database)
+                    .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0008_fleet_authorization.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0009_operation_bindings.sql"
+                ))
+                .execute(pool)
+                .await
+                .map(|_| ())
+                .map_err(StoreError::Database)
             }
         }
     }

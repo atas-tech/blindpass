@@ -472,7 +472,7 @@ async fn get_node(
     }
 }
 
-async fn require_operator(
+pub(crate) async fn require_operator(
     state: &AppState,
     headers: &HeaderMap,
     unsafe_method: bool,
@@ -646,7 +646,7 @@ fn enrollment_expired() -> Response {
     )
 }
 
-fn unavailable() -> Response {
+pub(crate) fn unavailable() -> Response {
     api_error(
         StatusCode::SERVICE_UNAVAILABLE,
         "not_ready",
@@ -654,6 +654,6 @@ fn unavailable() -> Response {
     )
 }
 
-fn api_error(status: StatusCode, error: &str, message: &str) -> Response {
+pub(crate) fn api_error(status: StatusCode, error: &str, message: &str) -> Response {
     (status, Json(json!({"error":error,"message":message}))).into_response()
 }

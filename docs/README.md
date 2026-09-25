@@ -16,7 +16,7 @@
 
 The implementation-phase plans and their paired acceptance plans are in the Obsidian vault under `blindpass/docs/product/phases/` and `blindpass/docs/testing/phases/`. The dashboard and secret-input redesign plans are under `blindpass/docs/product/`, `blindpass/docs/design/` and `blindpass/docs/testing/`. The P00 baseline artifacts and P01 execution record stay here because they describe this checkout and its executed tests.
 
-The Rust controller implements the P02 API locally on SQLite and PostgreSQL but is not yet accepted or packaged. P03 now has signed fleet contracts, one-use enrollment and an outbound node channel under implementation; workload authorization, grant consumption, operations, audit buffering and two-host acceptance remain incomplete. Protected browser session handoff and native/container parity are not implemented. Existing encrypted provisioning, OpenClaw storage and application container files are foundations for that work.
+The Rust controller implements the P02 API locally on SQLite and PostgreSQL but is not yet accepted or packaged. P03 has signed fleet contracts, one-use enrollment, an outbound node channel, administrator-managed workloads and policy, and operation approval under implementation. Grant consumption, full operation lifecycle, audit buffering and two-host acceptance remain incomplete. Protected browser session handoff and native/container parity are not implemented. Existing encrypted provisioning, OpenClaw storage and application container files are foundations for that work.
 
 ## Existing implementation and operation
 

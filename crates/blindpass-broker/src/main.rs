@@ -109,7 +109,7 @@ fn parse_workload_registration(value: &str) -> Result<WorkloadRegistration, Stri
         workload_id: workload.to_owned(),
         unit: unit.to_owned(),
         account: format!("uid:{uid}"),
-        invocation_id: invocation.to_owned(),
+        invocation_id: Some(invocation.to_owned()),
     })
 }
 

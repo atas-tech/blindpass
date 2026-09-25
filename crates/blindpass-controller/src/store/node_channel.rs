@@ -36,6 +36,16 @@ pub struct InboxDocument {
     pub envelope_json: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeEventRecord {
+    pub id: String,
+    pub node_id: String,
+    pub idempotency_key: String,
+    pub kind: String,
+    pub body_json: String,
+    pub received_at_ms: i64,
+}
+
 impl Store {
     /// Create a one-use challenge only for an active node whose stored
     /// protocol and capability snapshot exactly match the handshake.
@@ -569,6 +579,73 @@ impl Store {
             }
         }
     }
+
+    /// Return a previously signature-verified event only when it belongs to
+    /// the specified enrolled node. Operation creation uses this to bind
+    /// caller-visible requests to broker-authenticated workload evidence.
+    pub async fn node_event_by_key(
+        &self,
+        node_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<NodeEventRecord>, StoreError> {
+        self.checkpoint_clock().await?;
+        let sql = "SELECT e.id, e.node_id, e.idempotency_key, e.kind, e.body_json, e.received_at
+            FROM node_events e JOIN nodes n ON n.id = e.node_id
+            WHERE e.node_id = ? AND e.idempotency_key = ? AND n.tenant_id = ? AND n.status = 'active'";
+        match &self.database {
+            Database::Sqlite(pool) => sqlx::query(sql)
+                .bind(node_id)
+                .bind(idempotency_key)
+                .bind(&self.tenant_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(StoreError::Database)?
+                .as_ref()
+                .map(node_event_from_sqlite)
+                .transpose(),
+            Database::Postgres(pool) => {
+                let sql = "SELECT e.id, e.node_id, e.idempotency_key, e.kind, e.body_json, e.received_at
+                    FROM node_events e JOIN nodes n ON n.id = e.node_id
+                    WHERE e.node_id = $1 AND e.idempotency_key = $2 AND n.tenant_id = $3 AND n.status = 'active'";
+                sqlx::query(sql)
+                    .bind(node_id)
+                    .bind(idempotency_key)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .as_ref()
+                    .map(node_event_from_postgres)
+                    .transpose()
+            }
+        }
+    }
+}
+
+fn node_event_from_sqlite(row: &sqlx::sqlite::SqliteRow) -> Result<NodeEventRecord, StoreError> {
+    Ok(NodeEventRecord {
+        id: row.try_get("id").map_err(StoreError::Database)?,
+        node_id: row.try_get("node_id").map_err(StoreError::Database)?,
+        idempotency_key: row
+            .try_get("idempotency_key")
+            .map_err(StoreError::Database)?,
+        kind: row.try_get("kind").map_err(StoreError::Database)?,
+        body_json: row.try_get("body_json").map_err(StoreError::Database)?,
+        received_at_ms: row.try_get("received_at").map_err(StoreError::Database)?,
+    })
+}
+
+fn node_event_from_postgres(row: &sqlx::postgres::PgRow) -> Result<NodeEventRecord, StoreError> {
+    Ok(NodeEventRecord {
+        id: row.try_get("id").map_err(StoreError::Database)?,
+        node_id: row.try_get("node_id").map_err(StoreError::Database)?,
+        idempotency_key: row
+            .try_get("idempotency_key")
+            .map_err(StoreError::Database)?,
+        kind: row.try_get("kind").map_err(StoreError::Database)?,
+        body_json: row.try_get("body_json").map_err(StoreError::Database)?,
+        received_at_ms: row.try_get("received_at").map_err(StoreError::Database)?,
+    })
 }
 
 fn challenge_from_sqlite(row: &SqliteRow) -> Result<NodeChallenge, StoreError> {

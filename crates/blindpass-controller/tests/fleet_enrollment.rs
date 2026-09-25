@@ -169,6 +169,23 @@ impl NodeKeys {
     }
 }
 
+fn signed_node_event(
+    node_id: &str,
+    idempotency_key: &str,
+    kind: &str,
+    body: Value,
+    signing: &Ed25519KeyPair,
+) -> Value {
+    let body_value = parse_json(&body.to_string()).unwrap();
+    let message = node_event_message(node_id, idempotency_key, kind, &body_value).unwrap();
+    json!({"events":[{
+        "idempotency_key":idempotency_key,
+        "kind":kind,
+        "body":body,
+        "broker_signature":base64_url_encode(&signing.sign(&message).unwrap())
+    }]})
+}
+
 #[tokio::test]
 async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     let directory = TestDirectory::new();
@@ -647,6 +664,417 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(duplicate_event.status, 200);
     assert_eq!(duplicate_event.body["duplicates"], 1);
+
+    let policy_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("if-match", "\"1\""),
+    ];
+    let policy = request(
+        address,
+        "PUT",
+        "/api/v3/policies",
+        &policy_headers,
+        Some(&json!({
+            "expected_version": 1,
+            "rules": [{
+                "id": "approve-noop-file",
+                "action": "noop.marker",
+                "mode": "file",
+                "decision": "pending_approval",
+                "approval_required": true,
+                "max_ttl_seconds": 120
+            }]
+        })),
+    )
+    .await;
+    assert_eq!(policy.status, 200, "{}", policy.body);
+    assert_eq!(policy.body["version"], 2);
+
+    let workload = request(
+        address,
+        "POST",
+        "/api/v3/workloads",
+        &write_headers,
+        Some(&json!({
+            "node_id": first_node_id,
+            "name": "file-worker",
+            "unit": "blindpass-test.service",
+            "account": "blindpass-test",
+            "consumption_mode": "file",
+            "local_ceiling_seconds": 120
+        })),
+    )
+    .await;
+    assert_eq!(workload.status, 201, "{}", workload.body);
+    let workload_id = workload.body["id"].as_str().unwrap().to_owned();
+    assert_eq!(workload.body["registration_version"], 1);
+
+    let workload_documents: Vec<String> = match (&backend_pool, &pg_test_pool) {
+        (Some(pool), _) => sqlx::query_scalar(
+            "SELECT envelope_json FROM node_inbox WHERE node_id = ? ORDER BY seq DESC LIMIT 2",
+        )
+        .bind(&first_node_id)
+        .fetch_all(pool)
+        .await
+        .unwrap(),
+        (_, Some(pool)) => sqlx::query_scalar(
+            "SELECT envelope_json FROM node_inbox WHERE node_id = $1 ORDER BY seq DESC LIMIT 2",
+        )
+        .bind(&first_node_id)
+        .fetch_all(pool)
+        .await
+        .unwrap(),
+        _ => unreachable!(),
+    };
+    let inbox_kinds = workload_documents
+        .iter()
+        .map(|document| SignedEnvelope::from_json(document).unwrap().kind().as_str())
+        .collect::<Vec<_>>();
+    assert!(inbox_kinds.contains(&"policy_snapshot"));
+    assert!(inbox_kinds.contains(&"registration"));
+
+    let operation_now_ms = store.database_now_ms().await.unwrap();
+    let operation_event_body = json!({
+        "node_id": first_node_id,
+        "workload_id": workload_id,
+        "unit": "blindpass-test.service",
+        "account": "blindpass-test",
+        "invocation_id": "invocation-123",
+        "action": "noop.marker",
+        "mode": "file",
+        "purpose": "integration marker",
+        "resource_id": "marker-a",
+        "ttl_seconds": 60,
+        "observed_at_ms": operation_now_ms
+    });
+    let first_operation_event_key = "operation-event-key-0001";
+    let first_operation_event = signed_node_event(
+        &first_node_id,
+        first_operation_event_key,
+        "operation_request",
+        operation_event_body.clone(),
+        &first_keys.signing,
+    );
+    let first_operation_event_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&first_operation_event),
+    )
+    .await;
+    assert_eq!(first_operation_event_response.status, 200);
+
+    let first_operation_input = json!({
+        "workload_id": workload_id,
+        "action": "noop.marker",
+        "mode": "file",
+        "purpose": "integration marker",
+        "resource_id": "marker-a",
+        "invocation_id": "invocation-123",
+        "ttl_seconds": 60,
+        "broker_event_key": first_operation_event_key
+    });
+    let first_operation_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-request-idem-0001"),
+    ];
+    let first_operation = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &first_operation_headers,
+        Some(&first_operation_input),
+    )
+    .await;
+    assert_eq!(first_operation.status, 201, "{}", first_operation.body);
+    assert_eq!(first_operation.body["status"], "awaiting_approval");
+
+    let replayed_operation = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &first_operation_headers,
+        Some(&first_operation_input),
+    )
+    .await;
+    assert_eq!(replayed_operation.status, 200);
+    assert_eq!(replayed_operation.body["id"], first_operation.body["id"]);
+
+    let second_operation_event_key = "operation-event-key-0002";
+    let second_operation_event = signed_node_event(
+        &first_node_id,
+        second_operation_event_key,
+        "operation_request",
+        operation_event_body.clone(),
+        &first_keys.signing,
+    );
+    let second_operation_event_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&second_operation_event),
+    )
+    .await;
+    assert_eq!(second_operation_event_response.status, 200);
+    let mut second_operation_input = first_operation_input.clone();
+    second_operation_input["broker_event_key"] = json!(second_operation_event_key);
+    let second_operation_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-request-idem-0002"),
+    ];
+    let second_operation = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &second_operation_headers,
+        Some(&second_operation_input),
+    )
+    .await;
+    assert_eq!(second_operation.status, 201, "{}", second_operation.body);
+    assert_eq!(
+        second_operation.body["approval_id"],
+        first_operation.body["approval_id"]
+    );
+
+    let unified_count = request(
+        address,
+        "GET",
+        "/api/v3/approvals/count",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(unified_count.status, 200);
+    assert_eq!(unified_count.body["count"], 1);
+    let unified_approvals = request(
+        address,
+        "GET",
+        "/api/v3/approvals?limit=10",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(unified_approvals.status, 200, "{}", unified_approvals.body);
+    assert_eq!(unified_approvals.body["items"].as_array().unwrap().len(), 1);
+    let operation_approval = &unified_approvals.body["items"][0];
+    assert_eq!(operation_approval["kind"], "operation");
+    assert_eq!(
+        operation_approval["operation_ids"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        operation_approval["verified_identity"]["invocation_id"],
+        "invocation-123"
+    );
+    let approval_id = operation_approval["id"].as_str().unwrap();
+    let approval_version = operation_approval["version"].as_i64().unwrap();
+    let approve_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-approve-idem-0001"),
+        ("if-match", "\"2\""),
+    ];
+    assert_eq!(approval_version, 2);
+    let approve_body = json!({
+        "expected_status":"pending",
+        "expected_version":approval_version,
+        "operation_ids":operation_approval["operation_ids"]
+    });
+    let approved_operation_group = request(
+        address,
+        "POST",
+        &format!("/api/v3/approvals/{approval_id}/approve"),
+        &approve_headers,
+        Some(&approve_body),
+    )
+    .await;
+    assert_eq!(
+        approved_operation_group.status, 200,
+        "{}",
+        approved_operation_group.body
+    );
+    assert_eq!(approved_operation_group.body["status"], "approved");
+    let operation_after_approval = request(
+        address,
+        "GET",
+        &format!(
+            "/api/v3/operations/{}",
+            first_operation.body["id"].as_str().unwrap()
+        ),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(operation_after_approval.body["status"], "requested");
+
+    let third_operation_event_key = "operation-event-key-0003";
+    let third_operation_event = signed_node_event(
+        &first_node_id,
+        third_operation_event_key,
+        "operation_request",
+        operation_event_body.clone(),
+        &first_keys.signing,
+    );
+    let third_operation_event_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&third_operation_event),
+    )
+    .await;
+    assert_eq!(third_operation_event_response.status, 200);
+    let mut third_operation_input = first_operation_input.clone();
+    third_operation_input["broker_event_key"] = json!(third_operation_event_key);
+    let third_operation_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-request-idem-0003"),
+    ];
+    let third_operation = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &third_operation_headers,
+        Some(&third_operation_input),
+    )
+    .await;
+    assert_eq!(third_operation.status, 201);
+    let third_approval_id = third_operation.body["approval_id"].as_str().unwrap();
+    let deny_policy_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("if-match", "\"2\""),
+    ];
+    let changed_policy = request(
+        address,
+        "PUT",
+        "/api/v3/policies",
+        &deny_policy_headers,
+        Some(&json!({
+            "expected_version":2,
+            "rules":[{
+                "id":"deny-noop-file",
+                "action":"noop.marker",
+                "mode":"file",
+                "decision":"deny",
+                "approval_required":false,
+                "max_ttl_seconds":120
+            }]
+        })),
+    )
+    .await;
+    assert_eq!(changed_policy.status, 200);
+    let stale_approval_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-approve-stale-0001"),
+        ("if-match", "\"1\""),
+    ];
+    let stale_approval = request(
+        address,
+        "POST",
+        &format!("/api/v3/approvals/{third_approval_id}/approve"),
+        &stale_approval_headers,
+        Some(&json!({
+            "expected_status":"pending",
+            "expected_version":1,
+            "operation_ids":[third_operation.body["id"]]
+        })),
+    )
+    .await;
+    assert_eq!(stale_approval.status, 409);
+    let expired_approval = request(
+        address,
+        "GET",
+        &format!("/api/v3/approvals/{third_approval_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(expired_approval.body["status"], "expired");
+
+    let workload_update_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("if-match", "\"1\""),
+    ];
+    let updated_workload = request(
+        address,
+        "PATCH",
+        &format!("/api/v3/workloads/{workload_id}"),
+        &workload_update_headers,
+        Some(&json!({
+            "expected_version":1,
+            "unit":"blindpass-test-updated.service"
+        })),
+    )
+    .await;
+    assert_eq!(updated_workload.status, 200, "{}", updated_workload.body);
+    assert_eq!(
+        updated_workload.body["unit"],
+        "blindpass-test-updated.service"
+    );
+    assert_eq!(updated_workload.body["registration_version"], 2);
+    assert_eq!(updated_workload.body["version"], 2);
+
+    let stale_workload_update = request(
+        address,
+        "PATCH",
+        &format!("/api/v3/workloads/{workload_id}"),
+        &workload_update_headers,
+        Some(&json!({
+            "expected_version":1,
+            "account":"different-account"
+        })),
+    )
+    .await;
+    assert_eq!(stale_workload_update.status, 409);
+
+    let revoked_workload = request(
+        address,
+        "DELETE",
+        &format!("/api/v3/workloads/{workload_id}"),
+        &write_headers,
+        None,
+    )
+    .await;
+    assert_eq!(revoked_workload.status, 200, "{}", revoked_workload.body);
+    assert_eq!(revoked_workload.body["status"], "revoked");
+    assert_eq!(revoked_workload.body["registration_version"], 3);
 
     let changed_event_body = json!({"operation_id":"op_dummy","status":"failed"});
     let changed_event_value = parse_json(&changed_event_body.to_string()).unwrap();
