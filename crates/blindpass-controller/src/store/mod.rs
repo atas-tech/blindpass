@@ -17,19 +17,22 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 mod exchanges;
+mod fleet;
 mod operators;
 pub use exchanges::{
     ApprovalDecisionOutcome, ApprovalRecord, AuditRecord, ExchangePolicyRecord, ExchangeRecord,
     LifecycleRecord,
 };
+pub use fleet::{EnrollmentRecord, NodeRecord};
 pub use operators::{LocalOperator, LocalSession};
 
 const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
 const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
 const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
-/// Current schema version. Version 5 adds fleet identity and authorization state.
-pub const SCHEMA_VERSION: i64 = 5;
+/// Current schema version. Version 5 adds fleet state; version 6 records the
+/// operator-requested node name and submitted protocol metadata.
+pub const SCHEMA_VERSION: i64 = 6;
 /// Tables that must exist for a database that reports the given version.
 /// A supported older version is migrated forward; a version whose tables
 /// are missing is damaged and fails closed instead of being recreated.
@@ -72,6 +75,7 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
             "node_events",
         ],
     ),
+    (6, &["enrollment_requests"]),
 ];
 /// The persisted clock high-water mark advances at most this often, so
 /// ordinary reads never take a write lock. The independent one-second clock
@@ -362,6 +366,11 @@ impl Store {
     #[must_use]
     pub fn tenant_id(&self) -> &str {
         &self.tenant_id
+    }
+
+    pub async fn database_now_ms(&self) -> Result<i64, StoreError> {
+        self.checkpoint_clock().await?;
+        database_wall_now_ms(&self.database).await
     }
 
     /// Current signing recovery epoch published to enrolled nodes.
@@ -2235,7 +2244,39 @@ impl Database {
         if version >= 4 && !self.clock_anchor_columns_present().await? {
             return Err(StoreError::UnsupportedSchemaVersion);
         }
+        if version >= 6 && !self.enrollment_columns_present().await? {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
         Ok(())
+    }
+
+    async fn enrollment_columns_present(&self) -> Result<bool, StoreError> {
+        match self {
+            Self::Sqlite(pool) => {
+                let rows = sqlx::query("PRAGMA table_info(enrollment_requests)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let columns = rows
+                    .iter()
+                    .filter_map(|row| row.try_get::<String, _>("name").ok())
+                    .collect::<std::collections::BTreeSet<_>>();
+                Ok(["requested_name", "protocol_version", "capabilities_json"]
+                    .iter()
+                    .all(|column| columns.contains(*column)))
+            }
+            Self::Postgres(pool) => {
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'enrollment_requests'
+                       AND column_name IN ('requested_name', 'protocol_version', 'capabilities_json')",
+                )
+                .fetch_one(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                Ok(count == 3)
+            }
+        }
     }
 
     async fn clock_anchor_columns_present(&self) -> Result<bool, StoreError> {
@@ -2331,6 +2372,28 @@ impl Database {
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
+                let rows = sqlx::query("PRAGMA table_info(enrollment_requests)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let columns = rows
+                    .iter()
+                    .filter_map(|row| row.try_get::<String, _>("name").ok())
+                    .collect::<std::collections::BTreeSet<_>>();
+                for (column, definition) in [
+                    ("requested_name", "TEXT NOT NULL DEFAULT ''"),
+                    ("protocol_version", "TEXT"),
+                    ("capabilities_json", "TEXT"),
+                ] {
+                    if !columns.contains(column) {
+                        sqlx::query(&format!(
+                            "ALTER TABLE enrollment_requests ADD COLUMN {column} {definition}"
+                        ))
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    }
+                }
                 Ok(())
             }
             Self::Postgres(pool) => {
@@ -2357,8 +2420,14 @@ impl Database {
                 sqlx::raw_sql(include_str!("migrations/postgres/0005_fleet.sql"))
                     .execute(pool)
                     .await
-                    .map(|_| ())
-                    .map_err(StoreError::Database)
+                    .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0006_enrollment_submission.sql"
+                ))
+                .execute(pool)
+                .await
+                .map(|_| ())
+                .map_err(StoreError::Database)
             }
         }
     }

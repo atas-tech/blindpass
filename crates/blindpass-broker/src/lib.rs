@@ -8,6 +8,7 @@
 //! non-root unit/account/invocation tuple.
 
 mod control;
+mod keys;
 pub mod os_identity;
 
 use blindpass_core::custody::{CryptoError, EphemeralCustody};
@@ -286,6 +287,7 @@ pub struct BrokerConfig {
     pub workload_socket: PathBuf,
     pub provision_socket: PathBuf,
     pub control_socket: PathBuf,
+    pub key_directory: PathBuf,
     pub socket_directory_mode: u32,
     pub loader_socket_mode: u32,
     pub workload_socket_mode: u32,
@@ -305,6 +307,7 @@ impl Default for BrokerConfig {
             workload_socket: PathBuf::from("/run/blindpass/workload.sock"),
             provision_socket: PathBuf::from("/run/blindpass/provision.sock"),
             control_socket: PathBuf::from("/run/blindpass/control.sock"),
+            key_directory: PathBuf::from("/var/lib/blindpass/broker"),
             socket_directory_mode: 0o751,
             loader_socket_mode: 0o600,
             workload_socket_mode: 0o660,
@@ -326,6 +329,7 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
         ));
     }
     validate_config(&config)?;
+    let node_identity = Arc::new(keys::NodeIdentity::load_or_create(&config.key_directory)?);
     let loader_listener = bind_socket(
         &config.loader_socket,
         config.socket_directory_mode,
@@ -394,7 +398,12 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
                 control_listener,
                 control_timeout,
                 move |stream, deadline| {
-                    control::handle_connection(stream, control_group_id, deadline)
+                    control::handle_connection(
+                        stream,
+                        control_group_id,
+                        Arc::clone(&node_identity),
+                        deadline,
+                    )
                 },
                 "control",
             )
@@ -473,6 +482,7 @@ fn validate_config(config: &BrokerConfig) -> Result<(), BrokerError> {
         || !config.workload_socket.is_absolute()
         || !config.provision_socket.is_absolute()
         || !config.control_socket.is_absolute()
+        || !config.key_directory.is_absolute()
     {
         return Err(BrokerError::Configuration(
             "broker socket paths must be absolute",

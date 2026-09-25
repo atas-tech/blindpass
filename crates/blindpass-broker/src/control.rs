@@ -3,33 +3,127 @@
 //! Local relay socket. This listener accepts no network connections.
 
 use crate::BrokerError;
+use crate::keys::{NodeIdentity, PinnedIssuer};
 use crate::os_identity::require_control_peer;
+use crate::os_identity::require_root_peer;
+use blindpass_core::secret::wipe;
 use std::io::{self, Read, Write};
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
-const MAX_CONTROL_LINE_BYTES: usize = 128;
+const MAX_CONTROL_LINE_BYTES: usize = 512;
 const MAX_CONTROL_DOCUMENT_BYTES: usize = 64 * 1024;
 
 pub(crate) fn handle_connection(
     stream: &mut UnixStream,
     expected_group: Option<u32>,
+    identity: std::sync::Arc<NodeIdentity>,
     deadline: Instant,
 ) -> Result<(), BrokerError> {
     require_control_peer(stream, expected_group)?;
-    let command = read_line(stream, deadline)?;
-    match command.as_slice() {
+    let mut command = read_line(stream, deadline)?;
+    let result = handle_command(stream, &command, &identity, deadline);
+    wipe(&mut command);
+    result
+}
+
+fn handle_command(
+    stream: &mut UnixStream,
+    command: &[u8],
+    identity: &NodeIdentity,
+    deadline: Instant,
+) -> Result<(), BrokerError> {
+    match command {
         b"STATUS\n" => stream.write_all(b"OK blindpass-control/1\n")?,
         b"PULL_EVENTS\n" => stream.write_all(b"EVENTS 0\n")?,
+        b"IDENTITY\n" => {
+            let public = identity.public_identity()?;
+            writeln!(
+                stream,
+                "OK identity/1 signing_pub={} recipient_pub={} fingerprint={}",
+                public.signing_public, public.recipient_public, public.fingerprint
+            )?;
+        }
+        b"PIN_STATUS\n" => match identity.pinned_issuer()? {
+            Some(pin) => writeln!(
+                stream,
+                "PIN {} {} {} {}",
+                pin.node_id, pin.epoch, pin.key_id, pin.public_key
+            )?,
+            None => stream.write_all(b"PIN none\n")?,
+        },
+        _ if command.starts_with(b"SIGN_ENROLLMENT ") => {
+            require_root_peer(stream)?;
+            let token = std::str::from_utf8(&command[16..command.len() - 1])
+                .map_err(|_| BrokerError::Configuration("invalid_enrollment_proof_request"))?;
+            let signature = identity.enrollment_proof(token)?;
+            writeln!(stream, "PROOF {signature}")?;
+        }
+        _ if command.starts_with(b"PIN_ISSUER ") => {
+            require_root_peer(stream)?;
+            let pin = parse_pin(&command)?;
+            identity.pin_issuer(pin)?;
+            stream.write_all(b"OK issuer_pinned\n")?;
+        }
         _ if command.starts_with(b"RELAY ") => {
             let length = parse_relay_length(&command)?;
-            let mut document = vec![0; length];
-            read_exact_until(stream, &mut document, deadline)?;
+            let mut document = vec![0_u8; length];
+            let read_result = read_exact_until(stream, &mut document, deadline);
+            wipe(&mut document);
+            read_result?;
             stream.write_all(b"ERR issuer_not_configured\n")?;
         }
         _ => stream.write_all(b"ERR invalid_control_command\n")?,
     }
     Ok(())
+}
+
+fn parse_pin(command: &[u8]) -> Result<PinnedIssuer, BrokerError> {
+    let line = std::str::from_utf8(command)
+        .map_err(|_| BrokerError::Configuration("invalid_issuer_pin_request"))?;
+    let mut fields = line
+        .strip_prefix("PIN_ISSUER ")
+        .and_then(|line| line.strip_suffix('\n'))
+        .ok_or(BrokerError::Configuration("invalid_issuer_pin_request"))?
+        .split(' ');
+    let node_id = fields.next().unwrap_or_default();
+    let epoch_text = fields
+        .next()
+        .ok_or(BrokerError::Configuration("invalid_issuer_pin_request"))?;
+    let epoch = epoch_text
+        .parse::<u64>()
+        .ok()
+        .filter(|epoch| *epoch > 0 && epoch.to_string() == epoch_text)
+        .ok_or(BrokerError::Configuration("invalid_issuer_pin_request"))?;
+    let key_id = fields.next().unwrap_or_default();
+    let public_key = fields.next().unwrap_or_default();
+    let pin = PinnedIssuer {
+        node_id: node_id.to_owned(),
+        epoch,
+        key_id: key_id.to_owned(),
+        public_key: public_key.to_owned(),
+    };
+    if fields.next().is_some() {
+        return Err(BrokerError::Configuration("invalid_issuer_pin_request"));
+    }
+    if !valid_control_identifier(node_id)
+        || !valid_control_identifier(key_id)
+        || public_key.len() != 43
+        || !public_key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return Err(BrokerError::Configuration("invalid_issuer_pin_request"));
+    }
+    Ok(pin)
+}
+
+fn valid_control_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
 fn parse_relay_length(command: &[u8]) -> Result<usize, BrokerError> {
@@ -96,7 +190,8 @@ fn read_exact_until(
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_relay_length};
+    use super::{MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_relay_length};
+    use crate::keys::NodeIdentity;
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::time::{Duration, Instant};
@@ -115,7 +210,9 @@ mod tests {
         let (mut broker, mut client) = UnixStream::pair().unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         client.write_all(b"STATUS\n").unwrap();
-        handle_connection(&mut broker, Some(current_gid()), deadline).unwrap();
+        let directory = temporary_directory();
+        let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
+        handle_connection(&mut broker, Some(current_gid()), identity.clone(), deadline).unwrap();
         drop(broker);
         let mut response = Vec::new();
         client.read_to_end(&mut response).unwrap();
@@ -124,7 +221,7 @@ mod tests {
         let (mut broker, mut client) = UnixStream::pair().unwrap();
         let deadline = Instant::now() + Duration::from_secs(2);
         client.write_all(b"RELAY 2\n{}").unwrap();
-        handle_connection(&mut broker, Some(current_gid()), deadline).unwrap();
+        handle_connection(&mut broker, Some(current_gid()), identity, deadline).unwrap();
         drop(broker);
         let mut response = Vec::new();
         client.read_to_end(&mut response).unwrap();
@@ -137,5 +234,34 @@ mod tests {
         }
         // SAFETY: getgid has no arguments and always returns the caller's gid.
         unsafe { getgid() }
+    }
+
+    fn temporary_directory() -> std::path::PathBuf {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let directory = std::env::temp_dir().join(format!(
+            "blindpass-control-keys-{}-{nonce}",
+            std::process::id()
+        ));
+        std::fs::create_dir(&directory).unwrap();
+        directory
+    }
+
+    #[test]
+    fn issuer_pin_command_requires_canonical_fields() {
+        let line = format!(
+            "PIN_ISSUER nd_node 3 ed25519-{} {}\n",
+            blindpass_core::signing::base64_url_encode(&[9; 32]),
+            blindpass_core::signing::base64_url_encode(&[9; 32])
+        );
+        assert!(parse_pin(line.as_bytes()).is_ok());
+        assert!(
+            parse_pin(
+                b"PIN_ISSUER nd_node 03 ed25519-A AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+            )
+            .is_err()
+        );
     }
 }

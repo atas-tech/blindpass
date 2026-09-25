@@ -3,7 +3,7 @@
 //! Signed, versioned documents exchanged between the controller and a node.
 
 use crate::canon::{CanonicalError, Value, canonicalize_value, parse_json};
-use crate::custody::CryptoError;
+use crate::custody::{CryptoError, sha256};
 use crate::signing::base64_url_encode;
 use crate::signing::ed25519::{Ed25519KeyPair, verify};
 use std::collections::HashSet;
@@ -12,6 +12,8 @@ use std::fmt;
 const DOCUMENT_VERSION: u64 = 1;
 const DOCUMENT_DOMAIN: &[u8] = b"blindpass:fleet-document:v1\0";
 const SIGNATURE_BYTES: usize = 64;
+const ENROLLMENT_DOMAIN: &[u8] = b"blindpass:fleet-enrollment-proof:v1\0";
+const FINGERPRINT_DOMAIN: &[u8] = b"blindpass:fleet-node-fingerprint:v1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentKind {
@@ -22,6 +24,50 @@ pub enum DocumentKind {
     TimeReply,
     OperationResult,
     AuditEvent,
+}
+
+/// Construct the exact message a newly generated node signing key must sign
+/// to prove possession during one-use enrollment.
+pub fn enrollment_proof_message(
+    token: &str,
+    signing_public_key: &[u8],
+    recipient_public_key: &[u8],
+) -> Result<Vec<u8>, DocumentError> {
+    if token.len() < 48
+        || token.len() > 256
+        || signing_public_key.len() != 32
+        || recipient_public_key.len() != 32
+    {
+        return Err(DocumentError::Invalid("enrollment proof binding"));
+    }
+    let fields = [token.as_bytes(), signing_public_key, recipient_public_key];
+    let mut message = Vec::with_capacity(
+        ENROLLMENT_DOMAIN.len() + fields.iter().map(|field| field.len() + 4).sum::<usize>(),
+    );
+    message.extend_from_slice(ENROLLMENT_DOMAIN);
+    for field in fields {
+        let length = u32::try_from(field.len())
+            .map_err(|_| DocumentError::Invalid("enrollment proof field"))?;
+        message.extend_from_slice(&length.to_be_bytes());
+        message.extend_from_slice(field);
+    }
+    Ok(message)
+}
+
+/// Fingerprint both node public keys as one operator-verifiable identity.
+pub fn node_key_fingerprint(
+    signing_public_key: &[u8],
+    recipient_public_key: &[u8],
+) -> Result<String, CryptoError> {
+    if signing_public_key.len() != 32 || recipient_public_key.len() != 32 {
+        return Err(CryptoError::InvalidKeyLength);
+    }
+    let mut input = Vec::with_capacity(FINGERPRINT_DOMAIN.len() + 64);
+    input.extend_from_slice(FINGERPRINT_DOMAIN);
+    input.extend_from_slice(signing_public_key);
+    input.extend_from_slice(recipient_public_key);
+    let digest = sha256(&input)?;
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
 impl DocumentKind {
@@ -926,7 +972,10 @@ fn decode_base64_url(value: &str) -> Result<Vec<u8>, DocumentError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ConsumptionMode, DocumentKind, Grant, Registration, SignedEnvelope};
+    use super::{
+        ConsumptionMode, DocumentKind, Grant, Registration, SignedEnvelope,
+        enrollment_proof_message, node_key_fingerprint,
+    };
     use crate::canon::{Value, canonicalize_json};
     use crate::signing::ed25519::Ed25519KeyPair;
 
@@ -934,6 +983,31 @@ mod tests {
 
     fn issuer() -> Ed25519KeyPair {
         Ed25519KeyPair::from_seed(&[9; 32]).unwrap()
+    }
+
+    #[test]
+    fn enrollment_proof_binds_one_use_token_and_both_public_keys() {
+        let signing = Ed25519KeyPair::from_seed(&[7; 32]).unwrap();
+        let recipient = [8; 32];
+        let message = enrollment_proof_message(
+            "en_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            signing.public_key(),
+            &recipient,
+        )
+        .unwrap();
+        let signature = signing.sign(&message).unwrap();
+        assert!(super::verify(signing.public_key(), &message, &signature).unwrap());
+        let changed = enrollment_proof_message(
+            "en_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            signing.public_key(),
+            &recipient,
+        )
+        .unwrap();
+        assert!(!super::verify(signing.public_key(), &changed, &signature).unwrap());
+        assert_ne!(
+            node_key_fingerprint(signing.public_key(), &recipient).unwrap(),
+            node_key_fingerprint(signing.public_key(), &[9; 32]).unwrap()
+        );
     }
 
     #[test]

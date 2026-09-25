@@ -567,17 +567,15 @@
       "get": {
         "operationId": "listFleetEnrollments",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Enrollment page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       },
       "post": {
         "operationId": "createFleetEnrollment",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentCreateInput" } } } },
         "responses": { "201": { "description": "One-use enrollment token, shown once", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentCreated" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
       }
@@ -586,9 +584,8 @@
       "get": {
         "operationId": "getFleetEnrollment",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Enrollment metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Enrollment" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
       }
     },
@@ -596,7 +593,6 @@
       "post": {
         "operationId": "approveFleetEnrollment",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentDecisionInput" } } } },
@@ -607,7 +603,6 @@
       "post": {
         "operationId": "rejectFleetEnrollment",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentDecisionInput" } } } },
@@ -618,9 +613,8 @@
       "get": {
         "operationId": "listFleetNodes",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Node page with derived liveness", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NodeList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       }
     },
@@ -628,9 +622,8 @@
       "get": {
         "operationId": "getFleetNode",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "security": [{ "adminSession": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Node metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
       },
       "delete": {
@@ -838,7 +831,6 @@
       "post": {
         "operationId": "submitNodeEnrollment",
         "tags": ["Node channel"],
-        "x-blindpass-status": "planned",
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentSubmitInput" } } } },
         "responses": { "201": { "description": "Enrollment request submitted", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentSubmitted" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "410": { "$ref": "#/components/responses/AdminError" }, "426": { "description": "Protocol version not supported" } }
       }
@@ -923,17 +915,17 @@
       "ExchangeRetrieved": { "type": "object", "properties": { "enc": { "type": "string" }, "ciphertext": { "type": "string" }, "secret_name": { "type": "string" }, "fulfilled_by": { "type": ["string", "null"] } }, "required": ["enc", "ciphertext", "secret_name", "fulfilled_by"], "additionalProperties": false },
       "RevokedResponse": { "type": "object", "properties": { "status": { "type": "string", "const": "revoked" } }, "required": ["status"], "additionalProperties": false },
       "BrowserStatusCapabilityResponse": { "type": "object", "properties": { "status_sig": { "type": "string", "minLength": 16 } }, "required": ["status_sig"], "additionalProperties": false },
-      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 5 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
+      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 6 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
       "NodeStatus": { "type": "string", "enum": ["online", "stale", "offline", "revoked"] },
       "Node": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "status": { "$ref": "#/components/schemas/NodeStatus" }, "protocol_version": { "type": "string" }, "capabilities": { "type": "object", "additionalProperties": true }, "key_version": { "type": "integer", "minimum": 1 }, "signing_fingerprint": { "type": "string" }, "recipient_fingerprint": { "type": "string" }, "last_seen_at": { "type": ["integer", "null"] }, "last_poll_at": { "type": ["integer", "null"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "name", "status", "protocol_version", "capabilities", "key_version", "signing_fingerprint", "recipient_fingerprint", "last_seen_at", "last_poll_at", "created_at", "version"], "additionalProperties": false },
       "NodeList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Node" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "EnrollmentCreateInput": { "type": "object", "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 128 } }, "required": ["name"], "additionalProperties": false },
-      "EnrollmentCreated": { "type": "object", "properties": { "id": { "type": "string" }, "token": { "type": "string", "minLength": 48 }, "expires_at": { "type": "integer" } }, "required": ["id", "token", "expires_at"], "additionalProperties": false },
+      "EnrollmentCreated": { "type": "object", "properties": { "id": { "type": "string" }, "node_id": { "type": "string" }, "token": { "type": "string", "minLength": 48 }, "expires_at": { "type": "integer" } }, "required": ["id", "node_id", "token", "expires_at"], "additionalProperties": false },
       "Enrollment": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "status": { "type": "string", "enum": ["issued", "submitted", "approved", "rejected", "expired"] }, "fingerprint": { "type": ["string", "null"] }, "protocol_version": { "type": ["string", "null"] }, "capabilities": { "type": ["object", "null"], "additionalProperties": true }, "created_at": { "type": "integer" }, "expires_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "name", "status", "fingerprint", "protocol_version", "capabilities", "created_at", "expires_at", "version"], "additionalProperties": false },
       "EnrollmentList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Enrollment" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "EnrollmentDecisionInput": { "type": "object", "properties": { "expected_fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 }, "expected_version": { "type": "integer", "minimum": 1 } }, "required": ["expected_fingerprint", "expected_version"], "additionalProperties": false },
-      "EnrollmentSubmitInput": { "type": "object", "properties": { "token": { "type": "string", "minLength": 48, "maxLength": 256 }, "name": { "type": "string", "minLength": 1, "maxLength": 128 }, "signing_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "recipient_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "protocol_version": { "type": "string", "maxLength": 64 }, "capabilities": { "type": "object", "additionalProperties": true }, "host_facts": { "type": "object", "additionalProperties": true } }, "required": ["token", "name", "signing_pub", "recipient_pub", "protocol_version", "capabilities", "host_facts"], "additionalProperties": false },
-      "EnrollmentSubmitted": { "type": "object", "properties": { "enrollment_id": { "type": "string" }, "fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 }, "status": { "type": "string", "const": "submitted" } }, "required": ["enrollment_id", "fingerprint", "status"], "additionalProperties": false },
+      "EnrollmentSubmitInput": { "type": "object", "properties": { "token": { "type": "string", "minLength": 48, "maxLength": 256 }, "signing_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "recipient_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "proof": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }, "protocol_version": { "type": "string", "maxLength": 64 }, "capabilities": { "type": "object", "additionalProperties": true }, "host_facts": { "type": "object", "additionalProperties": true } }, "required": ["token", "signing_pub", "recipient_pub", "proof", "protocol_version", "capabilities", "host_facts"], "additionalProperties": false },
+      "EnrollmentSubmitted": { "type": "object", "properties": { "enrollment_id": { "type": "string" }, "node_id": { "type": "string" }, "fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 }, "status": { "type": "string", "const": "submitted" } }, "required": ["enrollment_id", "node_id", "fingerprint", "status"], "additionalProperties": false },
       "Workload": { "type": "object", "properties": { "id": { "type": "string" }, "node_id": { "type": "string" }, "name": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string" }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "registration_version": { "type": "integer", "minimum": 1 }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds", "registration_version", "status", "created_at", "version"], "additionalProperties": false },
       "WorkloadList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Workload" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "WorkloadInput": { "type": "object", "properties": { "node_id": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 128 }, "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 128 }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 } }, "required": ["node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds"], "additionalProperties": false },

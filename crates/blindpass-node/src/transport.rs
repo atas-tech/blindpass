@@ -85,15 +85,48 @@ impl HttpsTransport {
         body: &[u8],
         timeout: Duration,
     ) -> Result<Vec<u8>, TransportError> {
+        self.request_json("POST", api_path, Some(token), Some(body), timeout)
+    }
+
+    /// Make a public JSON POST without adding an Authorization header. The
+    /// one-use enrollment token stays inside the bounded stdin config pipe.
+    pub fn post_public_json(
+        &self,
+        api_path: &str,
+        body: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, TransportError> {
+        self.request_json("POST", api_path, None, Some(body), timeout)
+    }
+
+    pub fn get_json(&self, api_path: &str, timeout: Duration) -> Result<Vec<u8>, TransportError> {
+        self.request_json("GET", api_path, None, None, timeout)
+    }
+
+    fn request_json(
+        &self,
+        method: &str,
+        api_path: &str,
+        token: Option<&str>,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, TransportError> {
         validate_path(api_path)?;
-        validate_token(token)?;
-        if body.len() > MAX_CANONICAL_JSON_BYTES
-            || canonicalize_json(
-                std::str::from_utf8(body).map_err(|_| TransportError::InvalidJson)?,
-            )
-            .is_err()
-        {
-            return Err(TransportError::InvalidJson);
+        if let Some(token) = token {
+            validate_token(token)?;
+        }
+        if let Some(body) = body {
+            if body.len() > MAX_CANONICAL_JSON_BYTES
+                || canonicalize_json(
+                    std::str::from_utf8(body).map_err(|_| TransportError::InvalidJson)?,
+                )
+                .is_err()
+            {
+                return Err(TransportError::InvalidJson);
+            }
+        }
+        if method != "GET" && method != "POST" {
+            return Err(TransportError::InvalidPath);
         }
         let timeout_seconds = timeout
             .as_secs()
@@ -102,7 +135,7 @@ impl HttpsTransport {
             return Err(TransportError::InvalidTimeout);
         }
         let url = format!("{}{api_path}", self.origin);
-        let mut config = build_config(&url, token, body, timeout_seconds);
+        let mut config = build_config(&url, method, token, body, timeout_seconds);
         let mut child = Command::new(CURL_PATH)
             .arg("--disable")
             .arg("--config")
@@ -214,8 +247,16 @@ fn validate_token(token: &str) -> Result<(), TransportError> {
     Ok(())
 }
 
-fn build_config(url: &str, token: &str, body: &[u8], timeout_seconds: u64) -> Vec<u8> {
-    let mut config = Vec::with_capacity(body.len() + token.len() + url.len() + 256);
+fn build_config(
+    url: &str,
+    method: &str,
+    token: Option<&str>,
+    body: Option<&[u8]>,
+    timeout_seconds: u64,
+) -> Vec<u8> {
+    let mut config = Vec::with_capacity(
+        body.map_or(0, <[u8]>::len) + token.map_or(0, str::len) + url.len() + 256,
+    );
     append_quoted_option(&mut config, "proto", b"=https");
     append_quoted_option(&mut config, "silent", b"true");
     append_quoted_option(&mut config, "show-error", b"true");
@@ -230,13 +271,19 @@ fn build_config(url: &str, token: &str, body: &[u8], timeout_seconds: u64) -> Ve
         "max-filesize",
         (MAX_RESPONSE_BYTES as u64 + 1).to_string().as_bytes(),
     );
-    append_quoted_option(&mut config, "request", b"POST");
-    append_quoted_option(&mut config, "header", b"Content-Type: application/json");
-    let mut authorization = b"Authorization: Bearer ".to_vec();
-    authorization.extend_from_slice(token.as_bytes());
-    append_quoted_option(&mut config, "header", &authorization);
-    wipe(&mut authorization);
-    append_quoted_option(&mut config, "data-binary", body);
+    append_quoted_option(&mut config, "request", method.as_bytes());
+    if body.is_some() {
+        append_quoted_option(&mut config, "header", b"Content-Type: application/json");
+    }
+    if let Some(token) = token {
+        let mut authorization = b"Authorization: Bearer ".to_vec();
+        authorization.extend_from_slice(token.as_bytes());
+        append_quoted_option(&mut config, "header", &authorization);
+        wipe(&mut authorization);
+    }
+    if let Some(body) = body {
+        append_quoted_option(&mut config, "data-binary", body);
+    }
     append_quoted_option(&mut config, "url", url.as_bytes());
     append_quoted_option(&mut config, "write-out", b"\\n%{http_code}");
     config
@@ -315,8 +362,9 @@ mod tests {
     fn authorization_data_is_in_config_stdin_and_never_a_command_argument() {
         let config = build_config(
             "https://controller.example/api/v3/node/poll",
-            "short-lived.token_123",
-            br#"{"ack_seq":0}"#,
+            "POST",
+            Some("short-lived.token_123"),
+            Some(br#"{"ack_seq":0}"#),
             35,
         );
         let config = String::from_utf8(config).unwrap();
@@ -325,6 +373,16 @@ mod tests {
         assert!(config.contains("proto = \"=https\""));
         assert!(!validate_token("bad\ntoken").is_ok());
         assert!(validate_token("en_123.a-b").is_ok());
+        let public = build_config(
+            "https://controller.example/api/v3/capabilities",
+            "GET",
+            None,
+            None,
+            5,
+        );
+        let public = String::from_utf8(public).unwrap();
+        assert!(!public.contains("Authorization"));
+        assert!(public.contains("request = \"GET\""));
     }
 
     #[test]

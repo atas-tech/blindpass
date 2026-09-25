@@ -206,6 +206,13 @@ impl RecipientKeyPair {
         &self.public_key
     }
 
+    /// Borrow the private key only for protected persistence by a trusted
+    /// broker. Never pass these bytes to an untrusted process or log them.
+    #[must_use]
+    pub fn private_key_bytes(&self) -> &[u8] {
+        self.private_key.as_bytes()
+    }
+
     pub fn open(
         &self,
         enc: &[u8],

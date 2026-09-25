@@ -129,6 +129,14 @@ impl Ed25519KeyPair {
         &self.public_key
     }
 
+    /// Borrow the private seed for a trusted component that must persist it
+    /// under its own protected key directory. Callers must never expose it to
+    /// logs, process arguments, environment variables or untrusted peers.
+    #[must_use]
+    pub fn seed_bytes(&self) -> &[u8] {
+        self.seed.as_bytes()
+    }
+
     pub fn sign(&self, message: &[u8]) -> Result<[u8; SIGNATURE_BYTES], CryptoError> {
         let key = PKey::from_private(self.seed.as_bytes())?;
         let context = MdContext::new()?;

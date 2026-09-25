@@ -179,7 +179,7 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
   assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
-  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 5);
+  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 6);
 
   const serialized = JSON.stringify(schema.paths["/readyz"]);
   assert.doesNotMatch(serialized, /secret|token|credential|password/i);
@@ -228,7 +228,9 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
 
   for (const operation of [
     "POST /api/v3/enrollments",
+    "GET /api/v3/enrollments/{id}",
     "POST /api/v3/enrollments/{id}/approve",
+    "POST /api/v3/enrollments/{id}/reject",
     "GET /api/v3/nodes",
     "DELETE /api/v3/nodes/{id}",
     "POST /api/v3/workloads",
@@ -245,7 +247,19 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
   ]) {
     assert.ok(operations.has(operation), `missing ${operation}`);
     const [method, route] = operation.split(" ");
-    assert.equal(schema.paths[route][method.toLowerCase()]["x-blindpass-status"], "planned");
+    const mountedInEnrollmentSlice = new Set([
+      "POST /api/v3/enrollments",
+      "GET /api/v3/enrollments/{id}",
+      "POST /api/v3/enrollments/{id}/approve",
+      "POST /api/v3/enrollments/{id}/reject",
+      "GET /api/v3/nodes",
+      "GET /api/v3/nodes/{id}",
+      "POST /api/v3/node/enroll"
+    ]);
+    assert.equal(
+      schema.paths[route][method.toLowerCase()]["x-blindpass-status"],
+      mountedInEnrollmentSlice.has(operation) ? undefined : "planned"
+    );
   }
 
   const security = schema.components.securitySchemes;

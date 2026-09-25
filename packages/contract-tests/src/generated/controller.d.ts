@@ -136,7 +136,7 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3">;
       "version": string;
-      "schema_version": 5;
+      "schema_version": 6;
       "setup_required": boolean;
       "issuer_pub"?: string;
       "issuer_kid"?: string;
@@ -172,6 +172,7 @@ export interface components {
     };
     "EnrollmentCreated": {
       "id": string;
+      "node_id": string;
       "token": string;
       "expires_at": number;
     };
@@ -198,9 +199,9 @@ export interface components {
     };
     "EnrollmentSubmitInput": {
       "token": string;
-      "name": string;
       "signing_pub": string;
       "recipient_pub": string;
+      "proof": string;
       "protocol_version": string;
       "capabilities": {
         [key: string]: unknown;
@@ -211,6 +212,7 @@ export interface components {
     };
     "EnrollmentSubmitted": {
       "enrollment_id": string;
+      "node_id": string;
       "fingerprint": string;
       "status": "submitted";
     };
@@ -1984,9 +1986,7 @@ export interface operations {
       "cursor"?: string;
       "limit"?: number;
     };
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2007,7 +2007,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "createFleetEnrollment": {
   parameters: {
@@ -2016,7 +2016,6 @@ export interface operations {
     header: {
       "X-CSRF-Token": string;
       "Origin": string;
-      "Idempotency-Key": string;
     };
     cookie: never;
   };
@@ -2061,9 +2060,7 @@ export interface operations {
       "id": string;
     };
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2089,7 +2086,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "approveFleetEnrollment": {
   parameters: {
@@ -2182,9 +2179,7 @@ export interface operations {
       "cursor"?: string;
       "limit"?: number;
     };
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2205,7 +2200,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "getFleetNode": {
   parameters: {
@@ -2213,9 +2208,7 @@ export interface operations {
       "id": string;
     };
     query: never;
-    header: {
-      "X-CSRF-Token": string;
-    };
+    header: never;
     cookie: never;
   };
   requestBody: never;
@@ -2241,7 +2234,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession"]>;
   };
   "revokeFleetNode": {
   parameters: {

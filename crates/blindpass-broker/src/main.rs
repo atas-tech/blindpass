@@ -54,6 +54,9 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
             "--control-socket" => {
                 config.control_socket = PathBuf::from(next(&args, &mut index)?);
             }
+            "--key-directory" => {
+                config.key_directory = PathBuf::from(next(&args, &mut index)?);
+            }
             "--workload-group" => {
                 config.workload_group = Some(next(&args, &mut index)?);
             }
@@ -170,6 +173,7 @@ fn print_help() {
     println!(
         "blindpass-broker --loader-socket PATH --workload-socket PATH \\
          --map UNIT=CREDENTIAL --provision-socket PATH --control-socket PATH \\
+         --key-directory PATH \\
          [--workload-group GROUP] [--node-group GROUP] \\
          [--workload NODE:WORKLOAD:UNIT:UID:INVOCATION]"
     );
