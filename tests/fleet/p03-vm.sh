@@ -231,6 +231,14 @@ start_protocol_mismatch_proxy() {
         --force-protocol-mismatch --mismatch-marker "$marker"
 }
 
+start_delayed_grant_proxy() {
+    local marker=$1
+    local delay_seconds=${2:-4}
+    start_proxy_process "$(dirname "$marker")/tls-proxy-grant-delay.log" \
+        --delay-first-grant-response --grant-marker "$marker" \
+        --grant-delay-seconds "$delay_seconds"
+}
+
 start_clear_proxy() {
     local log_file=$1
     start_proxy_process "$log_file"
@@ -301,6 +309,7 @@ issue_operation() {
     local resource_id=$2
     local request_record=$3
     local purpose=$4
+    local ttl_seconds=${5:-60}
     local event_key invocation_id
     event_key=$(sed -n 's/.*event_key=\([A-Za-z0-9_-]*\).*/\1/p' <<<"$request_record")
     invocation_id=$(sed -n 's/.*invocation=\([a-f0-9]*\).*/\1/p' <<<"$request_record")
@@ -309,7 +318,7 @@ issue_operation() {
         return 1
     }
     local operation_json
-    operation_json=$(admin operation "$workload_id" "$event_key" "$invocation_id" "$resource_id" "$purpose")
+    operation_json=$(admin operation "$workload_id" "$event_key" "$invocation_id" "$resource_id" "$purpose" "$ttl_seconds")
     ISSUED_INVOCATION_ID=$invocation_id
     ISSUED_OPERATION_ID=$(json_field "$operation_json" operation_id)
     ISSUED_GRANT_ID=$(json_field "$operation_json" grant_id)
@@ -520,15 +529,30 @@ run_backend() {
     request_record=$(guest_call b wait-request)
     complete_operation b "$node_b" "$workload_b" P03-CANARY-B "$request_record" 'P03 second host'
 
-    local pending_payload pending_workload pending_request pending_operation pending_grant
-    pending_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 revoked undelivered grant",resource_id:"P03-CANARY-REVOKED",ttl_seconds:60})).toString("base64url"))')
+    local pending_payload pending_workload pending_request pending_operation pending_grant delayed_grant_marker
+    pending_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 revoked undelivered grant",resource_id:"P03-CANARY-REVOKED",ttl_seconds:8})).toString("base64url"))')
     pending_workload=$(setup_workload a "$node_a" "$current_backend-a-revoked" "$pending_payload")
     sleep 2
     guest_call a start-workload
     pending_request=$(guest_call a wait-request)
-    issue_operation "$pending_workload" P03-CANARY-REVOKED "$pending_request" 'P03 revoked undelivered grant'
+    delayed_grant_marker=$backend_dir/expired-grant-response-held
+    # Leave time for grant issuance and revocation to reach the controller
+    # while the grant is live, then hold the node response past its deadline.
+    start_delayed_grant_proxy "$delayed_grant_marker" 10
+    issue_operation "$pending_workload" P03-CANARY-REVOKED "$pending_request" 'P03 revoked undelivered grant' 8
     pending_operation=$ISSUED_OPERATION_ID
     pending_grant=$ISSUED_GRANT_ID
+    for _attempt in {1..300}; do
+        [[ -f "$delayed_grant_marker" ]] && break
+        kill -0 "$proxy_pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    [[ -f "$delayed_grant_marker" ]] || {
+        printf 'P03-FAIL TLS proxy did not hold the delayed grant response\n' >&2
+        return 1
+    }
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-delayed-expired-grant response_delay_seconds=10 ttl_seconds=8 status=observed\n' \
+        "$current_backend"
     printf 'P03-PENDING-OPERATION operation_id=%s grant_id=%s\n' "$pending_operation" "$pending_grant"
 
     local revocation_started_ms revocation_finished_ms revocation_elapsed_ms
@@ -545,6 +569,8 @@ run_backend() {
         printf 'P03-FAIL node %s did not apply and acknowledge revocation\n' "$node_a" >&2
         return 1
     }
+    guest_call a wait-outbox-empty
+    admin grant-rejection-check "$node_a" "$pending_grant"
     revocation_finished_ms=$(node -e 'process.stdout.write(String(Date.now()))')
     revocation_elapsed_ms=$((revocation_finished_ms - revocation_started_ms))
     ((revocation_elapsed_ms <= 30000)) || {

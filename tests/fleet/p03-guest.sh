@@ -272,12 +272,31 @@ EOF
         outbox=/var/lib/blindpass/node/outbox.jsonl
         broker_events=/var/lib/blindpass/broker/pending-node-events.jsonl
         for _attempt in {1..600}; do
-            if [[ ! -s "$outbox" && ! -s "$broker_events" ]]; then
+            broker_event_count=0
+            overflow_pending=false
+            if [[ -s "$broker_events" ]]; then
+                if broker_lines=$(wc -l 2>/dev/null <"$broker_events"); then
+                    if ((broker_lines > 1)); then
+                        broker_event_count=$((broker_lines - 1))
+                    fi
+                    if grep -Fq '"audit_overflow_pending":true' "$broker_events" 2>/dev/null; then
+                        overflow_pending=true
+                    fi
+                fi
+            fi
+            if [[ ! -s "$outbox" && "$broker_event_count" == 0 && "$overflow_pending" == false ]]; then
                 printf 'P03-GUEST-EVENT-QUEUES-DRAINED\n'
                 exit 0
             fi
             sleep 0.2
         done
+        printf 'P03-GUEST-QUEUE-STATE node_outbox_bytes=%s broker_event_count=%s overflow_pending=%s node_state=%s broker_state=%s\n' \
+            "$(stat -c '%s' "$outbox" 2>/dev/null || echo 0)" \
+            "$broker_event_count" "$overflow_pending" \
+            "$(systemctl show --property=ActiveState --value blindpass-node.service 2>/dev/null || true)" \
+            "$(systemctl show --property=ActiveState --value blindpass-broker.service 2>/dev/null || true)" >&2
+        journalctl -u blindpass-node.service -n 80 -o cat --no-pager >&2 2>/dev/null || true
+        journalctl -u blindpass-broker.service -n 80 -o cat --no-pager >&2 2>/dev/null || true
         fail 'broker or node event queue did not drain after application acknowledgement'
         ;;
     wait-outbox-nonempty)

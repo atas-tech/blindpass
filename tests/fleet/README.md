@@ -196,11 +196,13 @@ success or failure. With `BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1`, a failed run
 retains the protected temporary directory for diagnosis and prints its path.
 
 This runner's key-rotation, protocol-mismatch, E01/E02 output is phase-local
-evidence; it is not the complete P03 acceptance matrix. P03-I06 clock changes,
-suspend/resume, delayed-grant relay and reconnect-storm scenarios remain open.
-Portable Rust tests cover bounded queues, durable audit backpressure and
-purpose sanitization; actual disk-full and all delayed duplicate-event cases
-remain open. Broader I05 cases, pilot scenarios and inherited gates still
-require implementation or execution evidence. See
+evidence; it is not the complete P03 acceptance matrix. It holds a signed
+8-second grant response for 10 seconds and verifies one durable
+`expired_before_receipt` audit event on both SQLite and PostgreSQL. P03-I06
+clock changes, suspend/resume, reconnect-storm, and delayed/replayed policy and
+revocation scenarios remain open. Portable Rust tests cover bounded queues,
+durable audit backpressure and purpose sanitization; actual disk-full and all
+delayed duplicate-event cases remain open. Broader I05 cases, pilot scenarios
+and inherited gates still require implementation or execution evidence. See
 `docs/testing/evidence/p03-fleet-authorization-execution.md` for the last
 two-backend result and its exact limits.

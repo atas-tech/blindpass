@@ -487,6 +487,68 @@ impl Store {
                 }
                 ("node", node_id)
             }
+            "grant_rejected" => {
+                if fields.len() != 5
+                    || fields.iter().any(|(name, _)| {
+                        !matches!(
+                            name.as_str(),
+                            "action" | "expires_at_ms" | "grant_id" | "node_id" | "reason_code"
+                        )
+                    })
+                    || body.get("node_id").and_then(Value::as_str) != Some(node_id)
+                    || !body
+                        .get("grant_id")
+                        .and_then(Value::as_str)
+                        .is_some_and(|grant_id| {
+                            grant_id.starts_with("gr_") && valid_node_event_id(grant_id)
+                        })
+                    || !body
+                        .get("expires_at_ms")
+                        .and_then(Value::as_u64)
+                        .is_some_and(|value| value > 0)
+                    || body.get("reason_code").and_then(Value::as_str)
+                        != Some("expired_before_receipt")
+                {
+                    return Err(StoreError::InvalidInput("node grant rejection audit"));
+                }
+                let grant_id = body
+                    .get("grant_id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default();
+                let expires_at_ms = body
+                    .get("expires_at_ms")
+                    .and_then(Value::as_u64)
+                    .and_then(|value| i64::try_from(value).ok())
+                    .ok_or(StoreError::InvalidInput("node grant rejection expiry"))?;
+                let grant_expiry = match &self.database {
+                    Database::Sqlite(pool) => sqlx::query_scalar::<_, i64>(
+                        "SELECT expires_at FROM grants
+                         WHERE id = ? AND node_id = ? AND tenant_id = ?",
+                    )
+                    .bind(grant_id)
+                    .bind(node_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?,
+                    Database::Postgres(pool) => sqlx::query_scalar::<_, i64>(
+                        "SELECT expires_at FROM grants
+                         WHERE id = $1 AND node_id = $2 AND tenant_id = $3",
+                    )
+                    .bind(grant_id)
+                    .bind(node_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?,
+                };
+                if grant_expiry != Some(expires_at_ms) {
+                    return Err(StoreError::InvalidInput(
+                        "node grant rejection does not match a current grant expiry",
+                    ));
+                }
+                ("grant", grant_id)
+            }
             "node_revocation_applied" => {
                 if fields.len() != 3
                     || fields.iter().any(|(name, _)| {

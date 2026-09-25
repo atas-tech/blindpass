@@ -1,12 +1,12 @@
 # P03 fleet authorization execution record
 
-**Run date:** 2026-09-25
+**Run date:** 2026-09-26
 **Status:** Partial runtime evidence; P03 acceptance remains open.
-**Runner owner:** `local-kvm-p03-acceptance-20260925`
+**Runner owner:** `local-kvm-p03-i06-final-20260926`
 
 ## Environment
 
-The committed P03 runner built the controller, broker, and node relay and booted
+The P03 runner built the controller, broker, and node relay and booted
 two disposable Ubuntu 24.04 guests under QEMU/KVM. QEMU was 11.1.1, `/dev/kvm`
 was readable and writable, and the pinned image SHA-256 was
 `612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354`. The test
@@ -16,7 +16,8 @@ state, and guest overlays. The successful run removed its temporary artifacts.
 Command:
 
 ```bash
-BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-acceptance-20260925 \
+BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-i06-final-20260926 \
   ./tests/fleet/p03-vm.sh --backend both
 ```
 
@@ -36,7 +37,8 @@ keys were retained in the repository.
 | P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
 | P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration node/workload/unit/account/mode/invocation, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected; the controller rejects a forged broker-event signature. Two concurrent consumers produce exactly one successful consume and marker. |
 | P03-I06 partition/restart/replay and protocol-mismatch subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. A two-guest VM run injects HTTP 426 into the relay, confirms systemd records exit 78 with zero restarts, then restores the proxy and verifies node reconnection. |
-| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 1,484 ms | Pass; revocation applied in 1,548 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
+| P03-I06 delayed expired grant | Pass | Pass | The node's signed grant poll response was held for 10 seconds against an 8-second grant TTL. The broker discarded the expired grant, the controller stored exactly one typed `expired_before_receipt` audit event, and the durable event queues drained. The same grant was then denied by the revoked broker. |
+| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 11,828 ms | Pass; revocation applied in 12,370 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
 Portable Rust boundary tests cover the broker's 10,000-event audit buffer and
@@ -91,7 +93,7 @@ reported 101 skipped tests across 17 skipped SPS test files. Its first
 restricted run had three MCP child-process launch failures; the host-access
 rerun passed those launch checks.
 
-## Supplemental P03-I06 protocol-mismatch VM verification — 2026-09-26
+## Earlier supplemental P03-I06 protocol-mismatch VM run — 2026-09-26
 
 The two-guest harness ran on QEMU 11.1.1 with the pinned Ubuntu image and
 writable `/dev/kvm`, against SQLite and PostgreSQL. In each backend, the TLS
@@ -115,12 +117,45 @@ Rust formatting, `npm run build`, and `npm test`. The JavaScript suite reported
 workspace run hit a transient `Text file busy` in a CLI migration test; the
 serial rerun passed.
 
+## Supplemental P03-I06 delayed-grant VM verification — 2026-09-26
+
+The final two-backend QEMU/KVM run held the first signed grant poll response for
+10 seconds while the grant TTL was 8 seconds. The controller operation request
+and grant used the same signed TTL. On both SQLite and PostgreSQL, the broker
+discarded the expired grant at receipt, persisted one stable rejection event,
+and drained the event queues after the controller accepted exactly one
+`grant_rejected` audit row with reason `expired_before_receipt` and the signed
+expiry time. The revoked grant and the old workload remained denied. Connected
+revocation completed in 11,828 ms on SQLite and 12,370 ms on PostgreSQL. The
+runner then archived the revoked identity, enrolled a distinct node, and
+completed a fresh approved operation on both backends. The run ended with
+`P03-VM-COMPLETE ... backends=both guests=2 revocation=reconciled
+recovery=passed` and exit status 0; disposable artifacts were removed.
+
+## Final verification for the delayed-grant slice — 2026-09-26
+
+`cargo test --workspace --locked -- --test-threads=1`, workspace Clippy with
+warnings denied, Rust formatting, `npm run build`, and the host-access rerun of
+`npm test` passed. The npm suite reported 80 passing tests and 101 skipped
+tests across 17 gated SPS files. The PostgreSQL-only outage/recovery test was
+also run explicitly and passed. `npm run test:controller-openapi` passed all
+11 checks, and `npm run test:openapi-types --workspace=@blindpass/contract-tests`
+passed its type and test checks. The first sandboxed `npm test` run could not
+launch three MCP subprocesses; the same command passed with host process access.
+
+The requested unsandboxed Socket deep scan resolved `pkg:cargo/reqwest` to
+`reqwest` 0.12.22. Its aggregate supply-chain score was 12, with middle alerts
+for native code, install scripts, network access and shell access, and a
+transitive shell/unsafe capability. The dependency guard classifies this as
+blocked. The node continues using its existing system `curl` transport; no
+Cargo manifest or lockfile changed.
+
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves broader
-P03-I05 cases open; real VM clock changes,
-suspend/resume, delayed-grant relay and reconnect-storm cases in P03-I06; full
-P03-I07 coverage; and the broader pilot catalog, including E05–E07 and
+P03-I05 cases open; real VM clock changes, suspend/resume, reconnect-storm,
+delayed/replayed policy and revocation cases in P03-I06; full P03-I07 coverage;
+and the broader pilot catalog, including E05–E07 and
 E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated
 controller API directly; it does not exercise the administrator CLI or an

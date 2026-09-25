@@ -2583,6 +2583,54 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(recovered_poll.status, 200, "{}", recovered_poll.body);
 
+    let first_grant_expiry = first_grant.body["expires_at"].as_u64().unwrap();
+    let grant_rejected_event = signed_node_event(
+        &first_node_id,
+        "grant-rejection-event-0001",
+        "audit",
+        json!({
+            "action":"grant_rejected",
+            "expires_at_ms":first_grant_expiry,
+            "grant_id":first_grant_id,
+            "node_id":first_node_id,
+            "reason_code":"expired_before_receipt"
+        }),
+        &replacement_keys.signing,
+    );
+    let grant_rejected_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &recovered_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&grant_rejected_event),
+    )
+    .await;
+    assert_eq!(
+        grant_rejected_response.status, 200,
+        "{}",
+        grant_rejected_response.body
+    );
+    assert_eq!(grant_rejected_response.body["accepted"], 1);
+    let audit = request(
+        address,
+        "GET",
+        "/api/v3/admin/audit?limit=100",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(audit.status, 200, "{}", audit.body);
+    assert!(audit.body["items"].as_array().unwrap().iter().any(|event| {
+        event["event"] == "grant_rejected"
+            && event["actor_id"] == first_node_id
+            && event["resource_id"] == first_grant_id
+            && event["metadata"]["expires_at_ms"] == first_grant_expiry
+            && event["metadata"]["reason_code"] == "expired_before_receipt"
+    }));
+
     let revoked_first_node = request(
         address,
         "DELETE",

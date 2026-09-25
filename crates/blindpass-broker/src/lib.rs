@@ -722,6 +722,73 @@ impl BrokerState {
         Ok(())
     }
 
+    pub(crate) fn queue_expired_grant_audit(
+        &mut self,
+        node_id: &str,
+        grant_id: &str,
+        expires_at_ms: u64,
+    ) -> Result<(), BrokerError> {
+        if !valid_event_identifier(node_id)
+            || !grant_id.starts_with("gr_")
+            || !valid_event_identifier(grant_id)
+            || expires_at_ms == 0
+        {
+            return Err(BrokerError::Configuration(
+                "expired grant audit binding is invalid",
+            ));
+        }
+        let digest = blindpass_core::custody::sha256(grant_id.as_bytes())
+            .map_err(|_| BrokerError::Configuration("expired grant audit key is unavailable"))?;
+        let event_key = format!(
+            "grant_expired_{}",
+            blindpass_core::signing::base64_url_encode(&digest)
+        );
+        let body = Value::Object(vec![
+            (
+                "action".to_owned(),
+                Value::String("grant_rejected".to_owned()),
+            ),
+            ("expires_at_ms".to_owned(), Value::Unsigned(expires_at_ms)),
+            ("grant_id".to_owned(), Value::String(grant_id.to_owned())),
+            ("node_id".to_owned(), Value::String(node_id.to_owned())),
+            (
+                "reason_code".to_owned(),
+                Value::String("expired_before_receipt".to_owned()),
+            ),
+        ]);
+        if let Some(existing) = self
+            .pending_node_events
+            .iter()
+            .find(|event| event.idempotency_key == event_key)
+        {
+            if existing.kind == "audit" && existing.body == body {
+                return Ok(());
+            }
+            return Err(BrokerError::Configuration(
+                "expired grant audit key was reused with different content",
+            ));
+        }
+        if self.pending_node_events.len() >= MAX_BROKER_AUDIT_EVENTS {
+            let previous_overflow = self.audit_overflow_pending;
+            self.audit_overflow_pending = true;
+            if let Err(error) = self.persist_pending_node_events() {
+                self.audit_overflow_pending = previous_overflow;
+                return Err(error);
+            }
+            return Ok(());
+        }
+        self.pending_node_events.push_back(PendingNodeEvent {
+            idempotency_key: event_key,
+            kind: "audit".to_owned(),
+            body,
+        });
+        if let Err(error) = self.persist_pending_node_events() {
+            self.pending_node_events.pop_back();
+            return Err(error);
+        }
+        Ok(())
+    }
+
     pub(crate) fn queue_overflow_event_if_possible(
         &mut self,
         node_id: &str,

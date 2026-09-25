@@ -742,11 +742,16 @@ fn relay_document(socket: &Path, envelope: &Value) -> Result<(), String> {
             return Err("local broker control socket is unavailable".to_owned());
         }
     };
-    if !relay_response.starts_with(b"OK document_applied ") {
+    if !broker_document_response_succeeded(&relay_response) {
         eprintln!("node relay received a broker rejection for a signed controller document");
         return Err("broker rejected the signed controller document".to_owned());
     }
     Ok(())
+}
+
+fn broker_document_response_succeeded(response: &[u8]) -> bool {
+    response.starts_with(b"OK document_applied ")
+        || response == b"OK document_discarded grant_expired\n"
 }
 
 fn parse_broker_events(response: &[u8]) -> Result<Vec<NodeEvent>, &'static str> {
@@ -1071,9 +1076,9 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::{
-        PROTOCOL_MISMATCH_EXIT_CODE, exit_code_for_error, jittered_backoff, next_backoff_seconds,
-        parse_broker_events, parse_hex_fingerprint, parse_identity, parse_options,
-        valid_enrollment_token,
+        PROTOCOL_MISMATCH_EXIT_CODE, broker_document_response_succeeded, exit_code_for_error,
+        jittered_backoff, next_backoff_seconds, parse_broker_events, parse_hex_fingerprint,
+        parse_identity, parse_options, valid_enrollment_token,
     };
     use crate::outbox::NodeEvent;
     use blindpass_core::canon::{Value, canonicalize_value};
@@ -1094,6 +1099,22 @@ mod tests {
                 .lines()
                 .any(|line| line.trim() == "RestartPreventExitStatus=78")
         );
+    }
+
+    #[test]
+    fn broker_discard_of_a_verified_expired_grant_advances_the_inbox() {
+        assert!(broker_document_response_succeeded(
+            b"OK document_applied grant\n"
+        ));
+        assert!(broker_document_response_succeeded(
+            b"OK document_discarded grant_expired\n"
+        ));
+        assert!(!broker_document_response_succeeded(
+            b"OK document_discarded unsupported\n"
+        ));
+        assert!(!broker_document_response_succeeded(
+            b"ERR invalid_controller_document\n"
+        ));
     }
 
     #[test]

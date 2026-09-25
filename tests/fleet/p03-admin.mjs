@@ -32,6 +32,8 @@ async function main() {
       return revokeNode(...args);
     case 'audit-check':
       return auditCheck(...args);
+    case 'grant-rejection-check':
+      return grantRejectionCheck(...args);
     default:
       throw new Error('unknown p03-admin command');
   }
@@ -118,9 +120,13 @@ async function createWorkload(nodeId, name, account) {
   print({ id: workload.id, node_id: workload.node_id, registration_version: workload.registration_version });
 }
 
-async function createAndApproveOperation(workloadId, eventKey, invocationId, resourceId, purpose) {
+async function createAndApproveOperation(workloadId, eventKey, invocationId, resourceId, purpose, ttlSeconds = '60') {
   if (!workloadId || !eventKey || !invocationId || !resourceId || !purpose) {
     throw new Error('operation requires WORKLOAD_ID EVENT_KEY INVOCATION_ID RESOURCE_ID PURPOSE');
+  }
+  const requestedTtlSeconds = Number(ttlSeconds);
+  if (!Number.isSafeInteger(requestedTtlSeconds) || requestedTtlSeconds < 1 || requestedTtlSeconds > 3600) {
+    throw new Error('operation TTL must be an integer between 1 and 3600 seconds');
   }
   const headers = writeHeaders({
     'idempotency-key': `p03-${randomUUID().replaceAll('-', '')}`,
@@ -135,7 +141,7 @@ async function createAndApproveOperation(workloadId, eventKey, invocationId, res
       purpose,
       resource_id: resourceId,
       invocation_id: invocationId,
-      ttl_seconds: 60,
+      ttl_seconds: requestedTtlSeconds,
       broker_event_key: eventKey,
     }),
   };
@@ -288,6 +294,24 @@ async function auditCheck(nodeId, operationId) {
     result_audited: true,
     result_events: matches.length,
   });
+}
+
+async function grantRejectionCheck(nodeId, grantId) {
+  if (!nodeId || !/^gr_[A-Za-z0-9_-]{16,128}$/.test(grantId ?? '')) {
+    throw new Error('grant-rejection-check requires NODE_ID GRANT_ID');
+  }
+  const audit = await api('/api/v3/admin/audit?limit=100', { method: 'GET' });
+  const rows = audit.items ?? audit.events ?? [];
+  const matches = rows.filter((row) => row.actor_id === nodeId
+      && row.event === 'grant_rejected' && row.resource_id === grantId
+      && row.metadata?.action === 'grant_rejected'
+      && row.metadata?.grant_id === grantId
+      && row.metadata?.node_id === nodeId
+      && row.metadata?.reason_code === 'expired_before_receipt');
+  if (matches.length !== 1) {
+    throw new Error('controller audit does not contain exactly one expired-grant rejection');
+  }
+  print({ node_id: nodeId, grant_id: grantId, reason_code: 'expired_before_receipt', audit_events: 1 });
 }
 
 async function api(path, init, authenticated = true) {

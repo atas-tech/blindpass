@@ -170,6 +170,9 @@ fn handle_command(
             let application = apply_controller_document(state, identity, &document, true);
             wipe(&mut document);
             match application {
+                Ok("grant_discarded_expired") => {
+                    stream.write_all(b"OK document_discarded grant_expired\n")?
+                }
                 Ok(kind) => writeln!(stream, "OK document_applied {kind}")?,
                 Err(BrokerError::Configuration(reason)) => {
                     eprintln!("controller document rejected: {reason}");
@@ -318,18 +321,32 @@ fn apply_controller_document_to_state(
                 .as_ref()
                 .ok_or(BrokerError::Configuration("fleet policy is unavailable"))?;
             let expected_recipient_key_id = format!("{}-{}", pin.node_id, identity.key_version()?);
-            state
-                .grant_verifier
-                .accept_grant(
-                    grant,
-                    document,
-                    &pin.node_id,
-                    &expected_recipient_key_id,
-                    policy,
-                    registration,
-                    crate::grants::boottime_ms().map_err(BrokerError::Configuration)?,
-                )
-                .map_err(BrokerError::Configuration)?;
+            let grant_id = grant.id.clone();
+            let grant_expires_at_ms = grant.expires_at_ms;
+            let now_boottime_ms =
+                crate::grants::boottime_ms().map_err(BrokerError::Configuration)?;
+            match state.grant_verifier.accept_grant(
+                grant,
+                document,
+                &pin.node_id,
+                &expected_recipient_key_id,
+                policy,
+                registration,
+                now_boottime_ms,
+            ) {
+                Ok(_) => {}
+                Err("grant expired before broker receipt") => {
+                    if persist {
+                        state.queue_expired_grant_audit(
+                            &pin.node_id,
+                            &grant_id,
+                            grant_expires_at_ms,
+                        )?;
+                    }
+                    return Ok("grant_discarded_expired");
+                }
+                Err(reason) => return Err(BrokerError::Configuration(reason)),
+            }
         }
         DocumentKind::Revocation => {
             let revocation = Revocation::from_value(envelope.body())
@@ -1061,6 +1078,30 @@ mod tests {
                 .is_err()
         );
 
+        let mut expired_grant = grant.clone();
+        expired_grant.id = "gr_2123456789abcdef0123456789abcdef".to_owned();
+        expired_grant.operation_id = "op_2123456789abcdef0123456789abcdef".to_owned();
+        expired_grant.issued_at_ms = now_ms - 2_000;
+        expired_grant.expires_at_ms = now_ms - 1_000;
+        let expired_envelope = SignedEnvelope::sign(
+            DocumentKind::Grant,
+            expired_grant.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &expired_envelope),
+            b"OK document_discarded grant_expired\n"
+        );
+        assert_eq!(
+            relay_signed_document(&identity, &state, &expired_envelope),
+            b"OK document_discarded grant_expired\n"
+        );
+
         drop(state);
         let mut recovered_state = BrokerState::new(DeliveryPolicy::default());
         recovered_state.configure_grant_storage(&identity).unwrap();
@@ -1075,7 +1116,38 @@ mod tests {
                 .unwrap();
         let recovered_events = parse_json(payload).unwrap();
         let recovered_events = recovered_events.as_array().unwrap();
-        assert_eq!(recovered_events.len(), 4);
+        assert_eq!(recovered_events.len(), 5);
+        let expired_grant_audit = recovered_events
+            .iter()
+            .find(|event| {
+                event
+                    .get("body")
+                    .and_then(|body| body.get("action"))
+                    .and_then(Value::as_str)
+                    == Some("grant_rejected")
+            })
+            .expect("expired grant rejection must be durably audited");
+        assert_eq!(
+            expired_grant_audit
+                .get("body")
+                .and_then(|body| body.get("grant_id"))
+                .and_then(Value::as_str),
+            Some(expired_grant.id.as_str())
+        );
+        assert_eq!(
+            expired_grant_audit
+                .get("body")
+                .and_then(|body| body.get("expires_at_ms"))
+                .and_then(Value::as_u64),
+            Some(expired_grant.expires_at_ms)
+        );
+        assert_eq!(
+            expired_grant_audit
+                .get("body")
+                .and_then(|body| body.get("reason_code"))
+                .and_then(Value::as_str),
+            Some("expired_before_receipt")
+        );
         let result_statuses = recovered_events
             .iter()
             .filter(|event| event.get("kind").and_then(Value::as_str) == Some("operation_result"))
