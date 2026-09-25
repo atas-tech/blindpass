@@ -1,10 +1,10 @@
 # BlindPass threat model
 
-**Aligned to source:** 2026-09-23. This replaces the March threat-model snapshot in the Obsidian vault as the current interpretation. Existing TM-001–TM-007 identifiers are retained. The update inspects selected code paths; it does not rerun the original audits or public deployment probes.
+**Aligned to source:** 2026-09-23; Rust controller section 2026-09-25. This replaces the March threat-model snapshot in the Obsidian vault as the current interpretation. Existing TM-001–TM-007 identifiers are retained. The update inspects selected code paths; it does not rerun the original audits or public deployment probes.
 
 ## Scope and trusted endpoints
 
-Existing SPS, browser input, dashboard, gateway, agent runtime and OpenClaw paths are in scope. Hosted-style and local deployments have different exposure/configuration. Billing and guest code remains a maintenance surface despite frozen expansion. The host broker has a selected real-VM P01 profile; controller, fleet authorization and browser operation remain proposed boundaries. P01 evidence does not establish a complete supported-host matrix or product acceptance.
+Existing SPS, browser input, dashboard, gateway, agent runtime and OpenClaw paths are in scope. Hosted-style and local deployments have different exposure/configuration. Billing and guest code remains a maintenance surface despite frozen expansion. The host broker has a selected real-VM P01 profile. The Rust controller is implemented and tested locally but not accepted or deployed; fleet authorization and browser operation remain proposed boundaries. P01 evidence does not establish a complete supported-host matrix or product acceptance.
 
 Protect source credentials, access/refresh tokens, bootstrap API keys, signing keys, secure-input links, recipient-key integrity, workspace policy and authorization/audit state. The browser handling input and the recipient decrypting it are plaintext endpoints. HPKE protects the relay path only when endpoint code and recipient-key binding are trustworthy.
 
@@ -39,7 +39,20 @@ The earlier claim that refresh tokens were uniformly in `sessionStorage` is inco
 | Runtime custody | `SecretStore.get()` returns a plaintext copy and has no built-in expiry/use count; resolver intentionally returns plaintext | [Store](../../packages/agent-skill/src/secret-store.ts), [resolver](../../packages/openclaw-plugin/blindpass-resolver.mjs); handoff TTL is not local plaintext expiry |
 | Packaging | Current SPS Dockerfile has no explicit non-root `USER`; development Redis configuration disables persistence | [Dockerfile](../../packages/sps-server/Dockerfile), [Compose](../../docker-compose.test.yml); these files do not meet the proposed W2 contract by themselves |
 
-Other controls reported in historical audits—fail-closed signing configuration, scoped signing domains, constant-time comparisons, CORS allowlists, hashed sessions/API keys, and atomic exchange transitions—remain supported by their referenced code/tests. This limited alignment pass does not newly certify every path or mark every historical finding resolved.
+Other controls reported in historical audits—fail-closed signing configuration, scoped signing domains, constant-time comparisons, CORS allowlists, hashed sessions/API keys, and atomic exchange transitions—remain supported by their referenced SPS code/tests. The Rust controller differs on session storage; see below. This limited alignment pass does not newly certify every path or mark every historical finding resolved.
+
+## Rust controller (P02, not accepted)
+
+Source: [controller crate](../../crates/blindpass-controller). The rows below are checked by the Rust store and HTTP tests and the contract suite on SQLite and PostgreSQL ([P02 evidence](../testing/evidence/p02-controller-api-migration-rerun.md)); they do not certify a deployment.
+
+| Area | Actual behavior | Residual risk |
+|---|---|---|
+| Agent tokens | Bootstrap keys are Argon2-hashed and exchanged for HS256 access tokens. External providers need a local JWKS file and pinned issuers and audiences; tokens must carry `exp`, `iss` and `aud`, and expiry has no leeway | As in SPS, an access token stays valid until it expires after its key is rotated or revoked. `nbf` and SPIFFE claim contents are not checked |
+| Tenant scope | Tokens asserting another workspace are refused on secret-request and exchange routes, including one whose subject collides with a tenant agent | One tenant per database |
+| Operator sessions | Passwords are Argon2-hashed. Refresh tokens are SHA-256-hashed, rotated, and a replay revokes the whole family. Mutations need the CSRF header. Session creation and password changes apply only while the verified password hash is current | The `bp_session` cookie carries the raw session identifier and the CSRF secret is stored as issued, so database read access exposes live sessions. No login throttling. Refreshing extends a session family without an absolute limit. Temporary passwords do not expire |
+| Audit | Metadata events for agent token mints, exchanges, approvals and clock reconciliation | Secret-request lifecycle and administrator changes to operators, agents and policy are not audited |
+| Clock | Deadlines use the database clock with a persisted high-water mark; a clock behind the mark fails closed until `reconcile-clock` runs | The mark advances only inside store calls, including a 30-second sweep while the controller runs, so it lags by up to about 30 seconds when idle and by the whole downtime across a restart. A step back smaller than the lag goes undetected and extends deadlines by the step. Agent JWTs and signed links use the host clock |
+| Transport | Plain HTTP, loopback by default; TLS terminates at a reverse proxy (P02-D7) | Production proxy deployment is unverified until P06 |
 
 ## Threat register
 

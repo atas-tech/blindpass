@@ -249,7 +249,15 @@ test("CC03 disables entry when a signed browser link has expired", async ({ page
   const request = await createBrowserRequest("P02 CC03 expired browser flow");
   try {
     await delay(8_300);
+    // The static page renders the submit button disabled, so assert that the
+    // page received and rendered the controller's expiry answer.
+    const metadata = page.waitForResponse((response) =>
+      response.url().includes(`/api/v2/secret/metadata/${request.requestId}`));
     await page.goto(request.secretUrl);
+    expect((await metadata).status()).toBe(410);
+    const status = page.getByTestId("status");
+    await expect(status).toHaveText("Request expired or invalid.");
+    await expect(status).toHaveAttribute("data-tone", "danger");
     await expect(page.getByTestId("submit-btn")).toBeDisabled();
   } finally {
     destroyKeyPair(request.keyPair);

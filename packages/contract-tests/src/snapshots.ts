@@ -22,11 +22,12 @@ function objectAt(value: unknown, name: string): Record<string, unknown> {
 }
 
 // Keep the full P00 TypeScript baseline immutable for the SPS gate. Rust has
-// reviewed response differences in readiness, CORS implementation details and
-// audit volume, so compare an explicit projection of those legacy observations.
-// All other retained cases still compare their complete normalized snapshots.
+// reviewed response differences in readiness (no Redis check or error code),
+// CORS implementation details and audit volume, so compare an explicit
+// projection of those legacy observations. All other retained cases still
+// compare their complete normalized snapshots.
 export function projectRustSharedSnapshot(name: string, value: unknown): unknown {
-  if (name === "CT01.readyz.up") {
+  if (name === "CT01.readyz.up" || name === "CT18.error.503") {
     const response = objectAt(value, name);
     const body = objectAt(response.body, `${name}.body`);
     const checks = objectAt(body.checks, `${name}.body.checks`);

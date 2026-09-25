@@ -310,6 +310,9 @@ jobs:
           browser_port="$(docker port blindpass-p02-browser-csp-${{ matrix.backend }} 8080/tcp)"
           P02_PACKAGED_BROWSER_UI_URL="http://127.0.0.1:${browser_port##*:}" npm run test:p02-browser --workspace=packages/dashboard
 
+      - name: Test the contract progress gate
+        run: npm run test:contract-progress
+
       - name: Prove a Rust response mismatch fails the contract gate
         env:
           SUT: rust

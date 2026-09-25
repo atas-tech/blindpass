@@ -77,6 +77,15 @@ struct TokenClaims {
     force_password_change: Option<bool>,
 }
 
+/// JWT validation without clock leeway. SPS verifies with jose's default zero
+/// tolerance, so a token stops authenticating once `exp` has passed rather
+/// than 60 seconds later (the `jsonwebtoken` default).
+pub(crate) fn jwt_validation(algorithm: Algorithm) -> Validation {
+    let mut validation = Validation::new(algorithm);
+    validation.leeway = 0;
+    validation
+}
+
 pub(crate) fn bearer_token(headers: &HeaderMap) -> Option<&str> {
     let value = headers.get(header::AUTHORIZATION)?.to_str().ok()?;
     let (scheme, token) = value.split_once(' ')?;
@@ -214,7 +223,7 @@ pub(crate) fn authenticate_user(
     headers: &HeaderMap,
 ) -> Result<UserIdentity, AuthError> {
     let token = bearer_token(headers).ok_or(AuthError::MissingBearer)?;
-    let mut validation = Validation::new(Algorithm::HS256);
+    let mut validation = jwt_validation(Algorithm::HS256);
     validation.set_issuer(&["sps"]);
     validation.set_audience(&["sps-user"]);
     let decoded = decode::<TokenClaims>(
@@ -246,7 +255,7 @@ pub(crate) async fn authenticate_workload(
 }
 
 fn verify_agent_token(state: &AppState, token: &str) -> Option<WorkloadIdentity> {
-    let mut validation = Validation::new(Algorithm::HS256);
+    let mut validation = jwt_validation(Algorithm::HS256);
     validation.set_issuer(&["sps"]);
     validation.set_audience(&["sps-agent"]);
     let claims = decode::<TokenClaims>(
@@ -280,9 +289,8 @@ fn verify_external_token(state: &AppState, token: &str) -> Result<WorkloadIdenti
     let header = decode_header(token).map_err(|_| AuthError::InvalidToken)?;
     for provider in providers {
         let Some(path) = value_string(provider, &["jwks_file", "jwksFile"]) else {
-            // URL providers are rejected by config validation until a bounded
-            // HTTPS JWKS transport is configured; never silently trust an
-            // unverified token.
+            // Config validation rejects URL-only providers until a bounded
+            // HTTPS JWKS transport exists; never trust an unverified token.
             continue;
         };
         let jwks_text =
@@ -299,20 +307,21 @@ fn verify_external_token(state: &AppState, token: &str) -> Result<WorkloadIdenti
             continue;
         }
         let key = DecodingKey::from_jwk(jwk).map_err(|_| AuthError::ProviderUnavailable)?;
-        let mut validation = Validation::new(header.alg);
-        let issuers = value_list(provider, &["issuers", "issuer"]);
-        let audiences = value_list(provider, &["audiences", "audience"]);
-        if !issuers.is_empty() {
-            let values = issuers.iter().map(String::as_str).collect::<Vec<_>>();
-            validation.set_issuer(&values);
-        }
-        if !audiences.is_empty() {
-            let values = audiences.iter().map(String::as_str).collect::<Vec<_>>();
-            validation.set_audience(&values);
-        }
-        let value = decode::<Value>(token, &key, &validation)
-            .map_err(|_| AuthError::InvalidToken)?
-            .claims;
+        // Like SPS, every provider is pinned to an issuer and an audience,
+        // defaulting to `gateway` and `sps`, and a token must carry both
+        // claims: `jsonwebtoken` otherwise checks them only when present.
+        let issuers = provider_list(provider, &["issuers", "issuer"], "gateway");
+        let audiences = provider_list(provider, &["audiences", "audience"], "sps");
+        let mut validation = jwt_validation(header.alg);
+        validation.set_issuer(&issuers);
+        validation.set_audience(&audiences);
+        validation.set_required_spec_claims(&["exp", "iss", "aud"]);
+        let Ok(decoded) = decode::<Value>(token, &key, &validation) else {
+            // As in SPS, a provider that cannot verify the token leaves it to
+            // the next configured provider.
+            continue;
+        };
+        let value = decoded.claims;
         let sub = value
             .get("sub")
             .and_then(Value::as_str)
@@ -445,6 +454,21 @@ fn value_string(value: &Value, names: &[&str]) -> Option<String> {
         .iter()
         .find_map(|name| value.get(*name).and_then(Value::as_str))
         .map(str::to_owned)
+}
+
+/// Trimmed, non-empty provider list entries, or the SPS default when the
+/// provider leaves the list unset or empty.
+fn provider_list(provider: &Value, names: &[&str], default: &str) -> Vec<String> {
+    let values = value_list(provider, names)
+        .into_iter()
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        vec![default.to_owned()]
+    } else {
+        values
+    }
 }
 
 fn value_list(value: &Value, names: &[&str]) -> Vec<String> {

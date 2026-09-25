@@ -20,14 +20,23 @@ function report(statuses) {
     title: `${id} case`,
     status
   }));
+  const failed = assertions.some((assertion) => assertion.status !== "passed");
   return {
+    success: !failed,
     numTotalTests: assertions.length,
     numPendingTests: 0,
     numPendingTestSuites: 0,
     numTodoTests: 0,
-    testResults: [{ assertionResults: assertions }]
+    testResults: [{
+      name: "/repo/packages/contract-tests/tests/http-contract.test.ts",
+      status: failed ? "failed" : "passed",
+      message: "",
+      assertionResults: assertions
+    }]
   };
 }
+
+const fullManifest = { ...baseManifest, pendingIds: [], pendingReasons: {} };
 
 test("contract progress accepts only the documented red cases", () => {
   const progress = compareProgress(report({ CT01: "passed", CT02: "failed", CT19: "failed" }), baseManifest);
@@ -84,5 +93,44 @@ test("contract progress requires a reason for every excluded ID and keeps it out
   assert.throws(
     () => compareProgress(report({ CT01: "passed", CT02: "failed", CT14: "passed", CT19: "failed" }), baseManifest),
     /unexpected contract case CT14/i
+  );
+});
+
+test("contract progress rejects failures outside the contract cases", () => {
+  const vector = report({ CT01: "passed", CT02: "failed", CT19: "failed" });
+  vector.testResults.push({
+    name: "/repo/packages/contract-tests/tests/vectors.test.ts",
+    status: "failed",
+    message: "",
+    assertionResults: [{ fullName: "CV03 rejects a tampered browser signature", status: "failed" }]
+  });
+  vector.numTotalTests += 1;
+  assert.throws(() => compareProgress(vector, baseManifest), /outside the contract cases.*CV03/i);
+});
+
+test("contract progress rejects hook and load failures that no test result shows", () => {
+  // The shared snapshot comparison runs in afterAll: a mismatch fails the
+  // file while every assertion in it passed.
+  const hook = report({ CT01: "passed", CT02: "passed", CT19: "passed" });
+  hook.testResults[0].status = "failed";
+  hook.success = false;
+  assert.throws(() => compareProgress(hook, fullManifest), /http-contract\.test\.ts failed in a hook/i);
+
+  const load = report({ CT01: "passed", CT02: "passed", CT19: "passed" });
+  load.testResults.push({
+    name: "/repo/packages/contract-tests/tests/vectors.test.ts",
+    status: "failed",
+    message: "Cannot find module './missing.js'",
+    assertionResults: []
+  });
+  load.success = false;
+  assert.throws(() => compareProgress(load, fullManifest), /vectors\.test\.ts failed outside its tests.*missing/i);
+
+  const unsuccessful = report({ CT01: "passed", CT02: "passed", CT19: "passed" });
+  unsuccessful.success = false;
+  assert.throws(() => compareProgress(unsuccessful, fullManifest), /unsuccessful/i);
+  assert.deepEqual(
+    compareProgress(report({ CT01: "passed", CT02: "passed", CT19: "passed" }), fullManifest),
+    { passed: ["CT01", "CT02", "CT19"], pending: [] }
   );
 });

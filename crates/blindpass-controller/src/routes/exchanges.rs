@@ -3,6 +3,7 @@
 use crate::app::AppState;
 use crate::routes::auth::{
     AuthError, WorkloadIdentity, authenticate_user, authenticate_workload, current_seconds,
+    jwt_validation,
 };
 use crate::routes::secrets::workload_auth_error;
 use crate::store::{ApprovalRecord, ExchangePolicyRecord, ExchangeRecord, LifecycleRecord, Store};
@@ -16,8 +17,8 @@ use blindpass_core::policy::{
     ExchangePolicyRule, PolicyDocument, PolicyInput, PolicyMode, SecretRegistryEntry,
     hash_policy_decision,
 };
-use blindpass_core::signing::derive_secret;
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use blindpass_core::signing::{base64_url_encode, derive_secret};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, decode};
 use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -326,6 +327,7 @@ async fn create_exchange(
         purpose,
         &policy_hash,
         decision.policy.approval_reference.as_deref(),
+        current_seconds(),
         expires_at,
         state.root_secret.as_bytes(),
     ) {
@@ -402,11 +404,7 @@ async fn fulfill_exchange(
         )
             .into_response();
     }
-    if identity
-        .workspace_id
-        .as_deref()
-        .is_some_and(|workspace| workspace != exchange.workspace_id)
-    {
+    if foreign_workspace(&identity, &exchange.workspace_id) {
         return not_available();
     }
     if exchange.status != "pending" {
@@ -541,11 +539,7 @@ async fn submit_exchange(
         Ok(Some(exchange)) => exchange,
         _ => return not_available(),
     };
-    if identity
-        .workspace_id
-        .as_deref()
-        .is_some_and(|workspace| workspace != exchange.workspace_id)
-    {
+    if foreign_workspace(&identity, &exchange.workspace_id) {
         return not_available();
     }
     if exchange.status != "reserved" {
@@ -629,8 +623,12 @@ async fn retrieve_exchange(
         Err(error) => return workload_auth_error(error),
     };
     let exchange = match store.get_exchange(&id).await {
-        Ok(Some(exchange)) if exchange.requester_id == identity.sub => exchange,
-        Ok(Some(_)) => return not_available(),
+        Ok(Some(exchange))
+            if exchange.requester_id == identity.sub
+                && !foreign_workspace(&identity, &exchange.workspace_id) =>
+        {
+            exchange
+        }
         _ => return not_available(),
     };
     if exchange.status != "submitted" {
@@ -691,7 +689,10 @@ async fn exchange_status(
         Err(error) => return workload_auth_error(error),
     };
     match store.get_exchange(&id).await {
-        Ok(Some(exchange)) if exchange.requester_id == identity.sub => {
+        Ok(Some(exchange))
+            if exchange.requester_id == identity.sub
+                && !foreign_workspace(&identity, &exchange.workspace_id) =>
+        {
             Json(json!({"status":exchange.status})).into_response()
         }
         _ => not_available(),
@@ -716,7 +717,9 @@ async fn revoke_exchange(
     };
     let issuer_admin = identity.admin == Some(true)
         && identity.workspace_id.as_deref() == Some(exchange.workspace_id.as_str());
-    if exchange.requester_id != identity.sub && !issuer_admin {
+    let requester = exchange.requester_id == identity.sub
+        && !foreign_workspace(&identity, &exchange.workspace_id);
+    if !requester && !issuer_admin {
         return not_available();
     }
     if exchange.status == "revoked" {
@@ -781,7 +784,9 @@ async fn get_approval(
         Ok(Some(approval)) => approval,
         _ => return not_available(),
     };
-    if approval.requester_id != identity.sub && !approver_authorized(&approval, &identity.sub) {
+    if foreign_workspace(&identity, &approval.workspace_id)
+        || (approval.requester_id != identity.sub && !approver_authorized(&approval, &identity.sub))
+    {
         return not_available();
     }
     Json(approval_response(&approval)).into_response()
@@ -834,10 +839,7 @@ async fn decide_agent_approval(
         _ => return not_available(),
     };
     if !approver_authorized(&approval, &identity.sub)
-        || identity
-            .workspace_id
-            .as_deref()
-            .is_some_and(|workspace| workspace != approval.workspace_id)
+        || foreign_workspace(&identity, &approval.workspace_id)
     {
         return not_available();
     }
@@ -1017,21 +1019,7 @@ async fn resolve_policy_for_exchange(
                 serde_json::from_str(state.exchange_policy_json.as_deref()?).ok()?,
             ),
         };
-    let registry = registry_values
-        .iter()
-        .filter_map(|entry| {
-            Some(SecretRegistryEntry {
-                secret_name: alias_string(entry, &["secretName", "secret_name"])?,
-                classification: alias_string(entry, &["classification"])?,
-                description: alias_string(entry, &["description"]),
-            })
-        })
-        .collect::<Vec<_>>();
-    let rules = rule_values
-        .iter()
-        .filter_map(parse_policy_rule)
-        .collect::<Vec<_>>();
-    let policy = PolicyDocument::new(registry, rules);
+    let policy = policy_document_from_values(&registry_values, &rule_values);
     let evaluation = policy.evaluate(&PolicyInput {
         requester_id,
         requester_workspace_id,
@@ -1245,6 +1233,15 @@ fn approver_authorized(approval: &ApprovalRecord, agent_id: &str) -> bool {
             }))
 }
 
+/// P02-D11: a workload whose token names another workspace never acts in
+/// this tenant, even when its subject matches a tenant agent.
+fn foreign_workspace(identity: &WorkloadIdentity, workspace_id: &str) -> bool {
+    identity
+        .workspace_id
+        .as_deref()
+        .is_some_and(|workspace| workspace != workspace_id)
+}
+
 fn ring_from_agent_id(agent_id: &str) -> Option<String> {
     let (_, suffix) = agent_id.split_once("/ring/")?;
     let ring = suffix.split('/').next()?.trim();
@@ -1278,11 +1275,31 @@ fn approval_reference(
     format!("apr_{}", hex(&digest[..12]))
 }
 
+fn policy_document_from_values(registry_values: &[Value], rule_values: &[Value]) -> PolicyDocument {
+    let registry = registry_values
+        .iter()
+        .filter_map(|entry| {
+            Some(SecretRegistryEntry {
+                secret_name: alias_string(entry, &["secretName", "secret_name"])?,
+                classification: alias_string(entry, &["classification"])?,
+                description: alias_string(entry, &["description"]),
+            })
+        })
+        .collect::<Vec<_>>();
+    let rules = rule_values
+        .iter()
+        .filter_map(parse_policy_rule)
+        .collect::<Vec<_>>();
+    PolicyDocument::new(registry, rules)
+}
+
 fn parse_policy_rule(value: &Value) -> Option<ExchangePolicyRule> {
-    let mode = match alias_string(value, &["mode"]).as_deref().unwrap_or("allow") {
-        "pending_approval" => PolicyMode::PendingApproval,
-        "deny" => PolicyMode::Deny,
-        _ => PolicyMode::Allow,
+    // Policy validation rejects unknown modes before a document is used; an
+    // unrecognized value that still reaches evaluation fails closed.
+    let mode = match alias_string(value, &["mode"]).as_deref().map(str::trim) {
+        None | Some("allow") => PolicyMode::Allow,
+        Some("pending_approval") => PolicyMode::PendingApproval,
+        Some(_) => PolicyMode::Deny,
     };
     Some(ExchangePolicyRule {
         rule_id: alias_string(value, &["ruleId", "rule_id"])?,
@@ -1350,11 +1367,11 @@ fn sign_fulfillment_token(
     purpose: &str,
     policy_hash: &str,
     approval_reference: Option<&str>,
+    issued_at: u64,
     expires_at: u64,
     root_secret: &[u8],
 ) -> Result<String, ()> {
     let secret = derive_secret(root_secret, "agent-fulfillment").map_err(|_| ())?;
-    let now = current_seconds();
     let claims = FulfillmentClaims {
         exchange_id: exchange_id.to_owned(),
         requester_id: requester_id.to_owned(),
@@ -1366,20 +1383,27 @@ fn sign_fulfillment_token(
         sub: workspace_id.unwrap_or(requester_id).to_owned(),
         iss: "sps".to_owned(),
         aud: "agent-fulfill".to_owned(),
-        iat: now,
+        iat: issued_at,
         exp: expires_at,
     };
-    encode(
-        &Header::new(Algorithm::HS256),
-        &claims,
+    // SPS (jose) writes the protected header as {"alg","typ"}; jsonwebtoken's
+    // `Header` serializes `typ` first. Build the header in jose's order so the
+    // token is byte-identical to SPS (CV03).
+    let header = base64_url_encode(br#"{"alg":"HS256","typ":"JWT"}"#);
+    let payload = base64_url_encode(&serde_json::to_vec(&claims).map_err(|_| ())?);
+    let signing_input = format!("{header}.{payload}");
+    let signature = jsonwebtoken::crypto::sign(
+        signing_input.as_bytes(),
         &EncodingKey::from_secret(secret.as_bytes()),
+        Algorithm::HS256,
     )
-    .map_err(|_| ())
+    .map_err(|_| ())?;
+    Ok(format!("{signing_input}.{signature}"))
 }
 
 fn verify_fulfillment_token(token: &str, root_secret: &[u8]) -> Result<FulfillmentClaims, ()> {
     let secret = derive_secret(root_secret, "agent-fulfillment").map_err(|_| ())?;
-    let mut validation = Validation::new(Algorithm::HS256);
+    let mut validation = jwt_validation(Algorithm::HS256);
     validation.set_issuer(&["sps"]);
     validation.set_audience(&["agent-fulfill"]);
     decode::<FulfillmentClaims>(
@@ -1474,4 +1498,210 @@ fn validation_error(message: &str) -> Response {
         Json(json!({"statusCode":400,"code":"FST_ERR_VALIDATION","error":"Bad Request","message":message})),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        FulfillmentClaims, policy_document_from_values, sign_fulfillment_token,
+        verify_fulfillment_token,
+    };
+    use blindpass_core::policy::{PolicyDecision, PolicyInput, PolicyMode, hash_policy_decision};
+    use blindpass_core::signing::derive_secret;
+    use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+    use serde_json::Value;
+
+    const CV01: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/contract-tests/fixtures/cv01-signed-link.json"
+    ));
+    const CV03: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/contract-tests/fixtures/cv03-fulfillment-token.json"
+    ));
+    const CV05: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/contract-tests/fixtures/cv05-policy.json"
+    ));
+    const CV05_ESCAPING: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/contract-tests/fixtures/cv05-hash-escaping.json"
+    ));
+
+    fn fixture(text: &str) -> Value {
+        serde_json::from_str(text).expect("shared contract fixture is JSON")
+    }
+
+    fn text<'a>(value: &'a Value, key: &str) -> &'a str {
+        value[key]
+            .as_str()
+            .unwrap_or_else(|| panic!("fixture field {key}"))
+    }
+
+    fn optional_text(value: &Value, key: &str) -> Option<String> {
+        value.get(key).and_then(Value::as_str).map(str::to_owned)
+    }
+
+    #[test]
+    fn cv03_fulfillment_tokens_are_byte_identical_to_sps() {
+        let root_secret = fixture(CV01)["root_secret"]
+            .as_str()
+            .expect("root secret")
+            .to_owned();
+        let vectors = fixture(CV03);
+        let claims = &vectors["claims"];
+        let issued_at = vectors["issued_at"].as_u64().expect("issued_at");
+        let tokens = vectors["vectors"].as_array().expect("token vectors");
+        assert_eq!(tokens.len(), 2);
+        for vector in tokens {
+            let token = sign_fulfillment_token(
+                text(claims, "exchange_id"),
+                text(claims, "requester_id"),
+                claims["workspace_id"].as_str(),
+                text(claims, "secret_name"),
+                text(claims, "purpose"),
+                text(claims, "policy_hash"),
+                claims["approval_reference"].as_str(),
+                issued_at,
+                vector["expires_at"].as_u64().expect("expires_at"),
+                root_secret.as_bytes(),
+            )
+            .expect("sign fulfillment token");
+            assert_eq!(token, text(vector, "token"));
+        }
+
+        // The far-future SPS token verifies; the 2023 one is expired.
+        let live = verify_fulfillment_token(text(&tokens[1], "token"), root_secret.as_bytes())
+            .expect("SPS-minted live token verifies");
+        assert_eq!(live.exchange_id, text(claims, "exchange_id"));
+        assert_eq!(live.workspace_id.as_deref(), Some("workspace-p00"));
+        assert_eq!(live.policy_hash, text(claims, "policy_hash"));
+        assert_eq!(live.approval_reference, None);
+        assert!(
+            verify_fulfillment_token(text(&tokens[0], "token"), root_secret.as_bytes()).is_err()
+        );
+
+        let secret = derive_secret(root_secret.as_bytes(), "agent-fulfillment").unwrap();
+        let wrong_audience = encode(
+            &Header::new(Algorithm::HS256),
+            &FulfillmentClaims {
+                aud: "wrong-audience".to_owned(),
+                ..live
+            },
+            &EncodingKey::from_secret(secret.as_bytes()),
+        )
+        .unwrap();
+        assert!(verify_fulfillment_token(&wrong_audience, root_secret.as_bytes()).is_err());
+    }
+
+    #[test]
+    fn cv05_policy_rows_and_hashes_match_sps_through_the_controller_parser() {
+        let vectors = fixture(CV05);
+        let policy = policy_document_from_values(
+            vectors["registry"].as_array().expect("registry"),
+            vectors["rules"].as_array().expect("rules"),
+        );
+        // Hashes are the TypeScript values asserted in vectors.test.ts (CV05).
+        let expected_hashes = [
+            Some("6b81aae31baf41a8d34abdc5cf033d111ff6ae2abd25510fb9304f6622407eb4"),
+            Some("2725cbdd7c1da2ad27e7fc73b27745d7fef175f962d4c4210dbebbe6845551b3"),
+            None,
+            None,
+            Some("9788fc2bef8cff976f886422e95e24f9024fb244ecef4a07162acb7252389fd4"),
+        ];
+        let cases = vectors["cases"].as_array().expect("cases");
+        assert_eq!(cases.len(), expected_hashes.len());
+        for (case, expected_hash) in cases.iter().zip(expected_hashes) {
+            let evaluation = policy.evaluate(&PolicyInput {
+                requester_id: text(case, "requesterId"),
+                requester_workspace_id: None,
+                secret_name: text(case, "secretName"),
+                purpose: text(case, "purpose"),
+                fulfiller_hint: text(case, "fulfillerHint"),
+                fulfiller_workspace_id: None,
+            });
+            let mode = evaluation
+                .as_ref()
+                .map_or("none", |evaluation| evaluation.decision.mode.as_str());
+            assert_eq!(mode, text(case, "expectedMode"), "{case}");
+            assert_eq!(
+                evaluation
+                    .as_ref()
+                    .map(|evaluation| evaluation.decision.rule_id.as_str()),
+                case["expectedRuleId"].as_str(),
+                "{case}"
+            );
+            let hash = evaluation.as_ref().map(|evaluation| {
+                hash_policy_decision(
+                    &evaluation.decision,
+                    evaluation.allowed_fulfiller_id.as_deref(),
+                    Some("workspace-p00"),
+                )
+                .expect("hash decision")
+            });
+            assert_eq!(hash.as_deref(), expected_hash, "{case}");
+        }
+    }
+
+    #[test]
+    fn an_unrecognized_rule_mode_fails_closed() {
+        for mode in ["Deny", "pending-approval", "block"] {
+            let rule = super::parse_policy_rule(&serde_json::json!({
+                "ruleId": "rule", "secretName": "finance.api_key", "mode": mode
+            }))
+            .expect("rule parses");
+            assert_eq!(rule.mode, PolicyMode::Deny, "{mode}");
+        }
+        for (mode, expected) in [
+            (Some(" deny "), PolicyMode::Deny),
+            (Some("pending_approval"), PolicyMode::PendingApproval),
+            (Some("allow"), PolicyMode::Allow),
+            (None, PolicyMode::Allow),
+        ] {
+            let mut value = serde_json::json!({"ruleId": "rule", "secretName": "finance.api_key"});
+            if let Some(mode) = mode {
+                value["mode"] = mode.into();
+            }
+            assert_eq!(super::parse_policy_rule(&value).unwrap().mode, expected);
+        }
+    }
+
+    #[test]
+    fn cv05_decision_hashes_escape_strings_like_javascript() {
+        let cases = fixture(CV05_ESCAPING)["cases"]
+            .as_array()
+            .expect("escaping cases")
+            .clone();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let decision = &case["decision"];
+            let mode = match text(decision, "mode") {
+                "allow" => PolicyMode::Allow,
+                "pending_approval" => PolicyMode::PendingApproval,
+                "deny" => PolicyMode::Deny,
+                other => panic!("unexpected mode {other}"),
+            };
+            let decision = PolicyDecision {
+                mode,
+                approval_required: decision["approvalRequired"].as_bool().expect("flag"),
+                rule_id: text(decision, "ruleId").to_owned(),
+                reason: text(decision, "reason").to_owned(),
+                approval_reference: optional_text(decision, "approvalReference"),
+                requester_ring: optional_text(decision, "requesterRing"),
+                fulfiller_ring: optional_text(decision, "fulfillerRing"),
+                secret_name: text(decision, "secretName").to_owned(),
+            };
+            assert_eq!(
+                hash_policy_decision(
+                    &decision,
+                    case["allowedFulfillerId"].as_str(),
+                    case["workspaceId"].as_str(),
+                )
+                .expect("hash decision"),
+                text(&case, "hash"),
+                "{}",
+                text(&case, "label")
+            );
+        }
+    }
 }

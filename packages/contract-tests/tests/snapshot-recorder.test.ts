@@ -10,6 +10,9 @@ describe("contract snapshot failure detection", () => {
     expect(projectRustSharedSnapshot("CT01.readyz.up", baseline["CT01.readyz.up"])).toEqual({
       status: 200, ok: true, database: "up"
     });
+    expect(projectRustSharedSnapshot("CT18.error.503", baseline["CT18.error.503"])).toEqual({
+      status: 503, ok: false, database: "down"
+    });
     expect(projectRustSharedSnapshot("CT16.cors.disallowed", baseline["CT16.cors.disallowed"])).toEqual({
       allow_origin: null
     });

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,7 @@ import { renderControllerTypes } from "../generate-controller-types.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const schemaPath = path.join(repoRoot, "docs/api/controller.openapi.yaml");
+const controllerSource = path.join(repoRoot, "crates/blindpass-controller/src");
 
 const legacyMachineRoutes = [
   ["POST", "/api/v2/secret/request"],
@@ -22,6 +23,50 @@ const legacyMachineRoutes = [
   ["DELETE", "/api/v2/secret/exchange/revoke/{id}"],
   ["POST", "/api/v2/agents/token"]
 ];
+
+// Legacy v2 routes the controller mounts outside the reviewed contract. Each
+// needs a decision (document, restrict to test mode, or remove) before P02
+// acceptance; until then this list must match the router exactly.
+const undocumentedMountedRoutes = [
+  ["DELETE", "/api/v2/agents/{}"],
+  ["POST", "/api/v2/agents/{}/rotate-key"],
+  ["GET", "/api/v2/audit/"],
+  ["DELETE", "/api/v2/secret/revoke/{}"],
+  ["POST", "/api/v2/secret/exchange/admin/approval/{}/approve"],
+  ["POST", "/api/v2/secret/exchange/admin/approval/{}/reject"],
+  ["GET", "/api/v2/secret/exchange/approval/{}"],
+  ["POST", "/api/v2/secret/exchange/approval/{}/approve"],
+  ["POST", "/api/v2/secret/exchange/approval/{}/reject"]
+];
+
+async function rustSources(directory = controllerSource) {
+  const files = [];
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const entryPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await rustSources(entryPath));
+    } else if (entry.name.endsWith(".rs")) {
+      files.push(await readFile(entryPath, "utf8"));
+    }
+  }
+  return files;
+}
+
+function routeKey(method, route) {
+  return `${method} ${route.replace(/\{[^}]+\}/g, "{}")}`;
+}
+
+async function mountedRoutes() {
+  const routes = new Set();
+  for (const text of await rustSources()) {
+    for (const match of text.matchAll(/\.route\(\s*"([^"]+)",\s*((?:[a-z]+\([A-Za-z_:]+\)\s*\.?\s*)+),?\s*\)/g)) {
+      for (const method of match[2].matchAll(/([a-z]+)\(/g)) {
+        routes.add(routeKey(method[1].toUpperCase(), match[1]));
+      }
+    }
+  }
+  return routes;
+}
 
 function resolveReference(schema, reference) {
   return reference.slice(2).split("/").reduce((value, key) => value?.[key], schema);
@@ -147,7 +192,7 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/readyz"]?.get);
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
-  assert.equal(schema.info["x-blindpass-legacy-route-count"], 13);
+  assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
 
   const serialized = JSON.stringify(schema.paths["/readyz"]);
   assert.doesNotMatch(serialized, /secret|token|credential|password/i);
@@ -196,6 +241,37 @@ test("test seed schema matches the exercised compatibility fixture response", as
   const response = schema.components.schemas.TestSeedResponse;
   assert.deepEqual(response.required, ["access_token", "workspace_id", "user_id", "agents"]);
   assert.equal(response.properties.local_admin.$ref, "#/components/schemas/TestSeedLocalAdmin");
+
+  const auth = await readFile(path.join(controllerSource, "routes/auth.rs"), "utf8");
+  const header = auth.match(/async fn test_seed\([\s\S]*?\.get\("([^"]+)"\)/)?.[1];
+  assert.equal(schema.components.securitySchemes.seedToken.name, header);
+});
+
+test("controller OpenAPI server matches the default listen address", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const config = await readFile(path.join(controllerSource, "config.rs"), "utf8");
+  const listen = config.match(/"BLINDPASS_LISTEN"\)\s*\.unwrap_or\("([^"]+)"\)/)?.[1];
+  assert.ok(listen, "default BLINDPASS_LISTEN not found");
+  assert.deepEqual(schema.servers.map((server) => new URL(server.url).host), [listen]);
+});
+
+test("every mounted controller route is documented or explicitly pending a decision", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const documented = new Set();
+  for (const [route, pathItem] of Object.entries(schema.paths ?? {})) {
+    for (const method of ["get", "post", "put", "patch", "delete"]) {
+      if (pathItem[method]) {
+        documented.add(routeKey(method.toUpperCase(), route));
+      }
+    }
+  }
+  const mounted = await mountedRoutes();
+  assert.ok(mounted.size > documented.size / 2, "route parser found too few routes");
+  assert.deepEqual([...documented].filter((route) => !mounted.has(route)).sort(), []);
+  assert.deepEqual(
+    [...mounted].filter((route) => !documented.has(route)).sort(),
+    undocumentedMountedRoutes.map(([method, route]) => routeKey(method, route)).sort()
+  );
 });
 
 test("admin session scheme documents the forced password change gate", async () => {

@@ -52,10 +52,12 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     (3, &["controller_clock"]),
 ];
 /// The persisted clock high-water mark advances at most this often, so
-/// ordinary reads never take a write lock. Every expiry predicate still
-/// compares against the mark: a regression larger than this interval fails
-/// closed, while a smaller one can go undetected and extend a deadline by
-/// at most this amount.
+/// ordinary reads never take a write lock. The mark moves only inside store
+/// calls, including the 30-second retention sweep, so it trails the clock by
+/// up to that sweep period on an idle controller and by the whole downtime
+/// across a restart. Every expiry predicate compares against the mark: a
+/// clock that falls behind it fails closed, while a smaller step back goes
+/// undetected and extends deadlines by the step.
 const CLOCK_ADVANCE_INTERVAL_MS: i64 = 1_000;
 
 #[derive(Debug)]
@@ -1425,6 +1427,14 @@ impl Store {
                     .is_some())
             }
             Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::SecretRequest,
+                    request_id,
+                    &self.tenant_id,
+                )
+                .await?;
                 let sql = format!(
                     "UPDATE secret_requests
                      SET status = 'submitted', enc = $1, ciphertext = $2,
@@ -1434,17 +1444,19 @@ impl Store {
                        AND status = 'pending' AND expires_at > {POSTGRES_NOW_MS}
                      RETURNING id"
                 );
-                Ok(sqlx::query(&sql)
+                let submitted = sqlx::query(&sql)
                     .bind(enc)
                     .bind(ciphertext)
                     .bind(ttl_ms)
                     .bind(request_id)
                     .bind(&self.tenant_id)
                     .bind(requester_agent_id)
-                    .fetch_optional(pool)
+                    .fetch_optional(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?
-                    .is_some())
+                    .is_some();
+                transaction.commit().await.map_err(StoreError::Database)?;
+                Ok(submitted)
             }
         }
     }
@@ -1533,6 +1545,13 @@ impl Store {
             }
             Database::Postgres(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::SecretRequest,
+                    request_id,
+                    &self.tenant_id,
+                )
+                .await?;
                 let sql = format!(
                     "DELETE FROM secret_requests
                      WHERE id = $1 AND tenant_id = $2 AND requester_agent_id = $3
@@ -1836,6 +1855,49 @@ async fn database_now_ms(database: &Database) -> Result<i64, StoreError> {
             row.try_get::<i64, _>(0).map_err(StoreError::Database)
         }
     }
+}
+
+/// Rows whose expiring PostgreSQL transitions lock them before the change.
+#[derive(Clone, Copy)]
+pub(super) enum LockedRow {
+    SecretRequest,
+    Exchange,
+    Approval,
+}
+
+/// Lock one tenant row before a conditional PostgreSQL transition.
+///
+/// PostgreSQL evaluates an UPDATE or DELETE `WHERE` clause before it waits for
+/// a row lock and re-checks it afterwards only when the blocking transaction
+/// changed the row. A blocker that only locked the row, or rolled back, would
+/// let the transition commit on a row whose deadline passed during the wait.
+/// Locking first makes the transition's own statement sample the database
+/// clock after any wait (P02-D9). A missing row is not an error: the
+/// transition then matches nothing.
+pub(super) async fn lock_postgres_row(
+    connection: &mut sqlx::PgConnection,
+    row: LockedRow,
+    key: &str,
+    tenant_id: &str,
+) -> Result<(), StoreError> {
+    let sql = match row {
+        LockedRow::SecretRequest => {
+            "SELECT 1 FROM secret_requests WHERE id = $1 AND tenant_id = $2 FOR UPDATE"
+        }
+        LockedRow::Exchange => {
+            "SELECT 1 FROM exchanges WHERE id = $1 AND tenant_id = $2 FOR UPDATE"
+        }
+        LockedRow::Approval => {
+            "SELECT 1 FROM approvals WHERE reference = $1 AND tenant_id = $2 FOR UPDATE"
+        }
+    };
+    sqlx::query(sql)
+        .bind(key)
+        .bind(tenant_id)
+        .fetch_optional(connection)
+        .await
+        .map_err(StoreError::Database)?;
+    Ok(())
 }
 
 fn positive_milliseconds(seconds: u64, field: &'static str) -> Result<i64, StoreError> {

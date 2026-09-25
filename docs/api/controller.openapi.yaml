@@ -5,10 +5,10 @@
     "version": "0.1.0",
     "description": "P02 controller contract. This file uses JSON-compatible YAML 1.2 syntax so the checked-in type generator can use Node's standard library without installing a YAML parser.",
     "x-blindpass-ct19": "adopted",
-    "x-blindpass-legacy-route-count": 13
+    "x-blindpass-legacy-route-count": 12
   },
   "servers": [
-    { "url": "http://127.0.0.1:8080", "description": "Local controller" }
+    { "url": "http://127.0.0.1:3200", "description": "Local controller" }
   ],
   "tags": [
     { "name": "Health" },
@@ -131,7 +131,7 @@
         "operationId": "issueBrowserStatusCapability",
         "tags": ["Compatibility"],
         "summary": "Exchange the metadata signature for a status-only capability",
-        "description": "Issuance is idempotent for the same live metadata signature. The resulting capability expires no later than that signature or the request deadline; retries never extend authority. It cannot submit, retrieve, or call the agent-authenticated status route.",
+        "description": "Issuance is idempotent for the same live metadata signature while the request deadline is unchanged. The capability expires no later than that signature or the request deadline; a retry after submission is clamped to the shorter submitted deadline, and retries never extend authority. It cannot submit, retrieve, or call the agent-authenticated status route.",
         "security": [{ "browserSignedLink": [] }],
         "parameters": [
           { "in": "path", "name": "id", "required": true, "schema": { "type": "string" } },
@@ -572,7 +572,7 @@
       "adminSession": { "type": "apiKey", "in": "cookie", "name": "bp_session", "description": "Local operator session cookie. While the operator must change a temporary password (bootstrap, local reset or test fixture), every administrative route other than session read, refresh, logout and change-password answers 403 with error password_change_required." },
       "adminRefresh": { "type": "apiKey", "in": "cookie", "name": "bp_refresh" },
       "csrfCookie": { "type": "apiKey", "in": "cookie", "name": "bp_csrf" },
-      "seedToken": { "type": "apiKey", "in": "header", "name": "x-blindpass-test-seed-token" }
+      "seedToken": { "type": "apiKey", "in": "header", "name": "x-blindpass-seed-token" }
     },
     "parameters": {
       "Origin": { "name": "Origin", "in": "header", "required": true, "schema": { "type": "string", "format": "uri" } },

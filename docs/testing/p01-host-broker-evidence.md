@@ -15,11 +15,12 @@ rejection: those three rounds checked recovery after a broker restart, without
 asserting denial of the old invocation. It also does not establish P01-I06
 absence: the scanner had no positive control, could treat scan errors as
 absence, skipped large files and ended before the final scenarios. Both rows
-are **not established** for W0 acceptance. The working-tree run below tests
-the revised scanner and loader denial. The workload race remains incomplete,
-and a committed-SHA VM run is still required before W0 acceptance.
+were **not established** for W0 acceptance at that point. The working-tree
+run below tested the revised scanner and loader denial; the revised
+committed-SHA run on `6d41a1f` later closed both rows, and the user accepted
+W0 as NARROW on 2026-09-24.
 
-## Current review working-tree VM run (not final acceptance evidence)
+## Review working-tree VM run, 2026-09-23 (not acceptance evidence)
 
 On 2026-09-23, `./tests/fleet/p01-vm.sh` exited 0 with runner owner
 `local-kvm-p01-review-20260923-r6` on dirty HEAD
@@ -322,12 +323,12 @@ evidence or expand the supported host matrix. The exclusions and unmeasured
 checks below remain explicit limitations and require new evidence before a
 broader rollout.
 
-**Recorded:** 2026-09-23. **Historical disposition:** NARROW for the earlier
-profile. **Current technical disposition:** NARROW as a scope boundary only;
-P01-I01 and P01-I06 are not established and W0 acceptance remains open. The
-selected live HPKE, dedicated non-root, Ubuntu 24.04/systemd 255 run on
-`a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` passed its original harness,
-but the two gaps above prevent using it as complete W0 evidence.
+**2026-09-23 record, superseded by the decision above:** NARROW for the
+earlier profile. P01-I01 and P01-I06 were not established at that time. The
+live HPKE, dedicated non-root, Ubuntu 24.04/systemd 255 run on
+`a45c3d027f27fcaf5a870c6f2ca3b334c2d16a57` passed its original harness, but
+those two gaps prevented using it as complete W0 evidence until the revised
+run on `6d41a1f` closed them.
 
 The selected P01 profile is x86_64 Linux with system-scope systemd, kernel
 6.8.0-139-generic, systemd 255, root-only loader socket `0600`, workload socket

@@ -54,7 +54,6 @@ pub struct Config {
     revoked_ttl_seconds: u64,
     approval_ttl_seconds: u64,
     refresh_token_ttl_seconds: u64,
-    rate_limit_window_ms: u64,
     agent_token_rate_window_ms: u64,
     admin_socket_path: PathBuf,
     test_mode: bool,
@@ -163,11 +162,7 @@ impl Config {
         )?;
 
         let agent_auth_providers_json = value(values, "BLINDPASS_AGENT_AUTH_PROVIDERS_JSON")
-            .map(|source| {
-                serde_json::from_str::<serde_json::Value>(source)
-                    .map_err(|_| ConfigError::Invalid("BLINDPASS_AGENT_AUTH_PROVIDERS_JSON"))?;
-                Ok::<String, ConfigError>(source.to_owned())
-            })
+            .map(validate_auth_providers)
             .transpose()?;
 
         let secret_registry_json = value(values, "BLINDPASS_SECRET_REGISTRY_JSON")
@@ -176,6 +171,26 @@ impl Config {
         let exchange_policy_json = value(values, "BLINDPASS_EXCHANGE_POLICY_JSON")
             .map(|source| validate_json_array(source, "BLINDPASS_EXCHANGE_POLICY_JSON"))
             .transpose()?;
+        if secret_registry_json.is_some() || exchange_policy_json.is_some() {
+            let array = |source: Option<&String>| {
+                source
+                    .and_then(|source| serde_json::from_str::<Vec<serde_json::Value>>(source).ok())
+                    .unwrap_or_default()
+            };
+            let errors = crate::routes::admin_policy::environment_policy_errors(
+                array(secret_registry_json.as_ref()),
+                array(exchange_policy_json.as_ref()),
+            );
+            if let Some(error) = errors.first() {
+                return Err(ConfigError::Invalid(
+                    if error.starts_with("secret_registry") {
+                        "BLINDPASS_SECRET_REGISTRY_JSON"
+                    } else {
+                        "BLINDPASS_EXCHANGE_POLICY_JSON"
+                    },
+                ));
+            }
+        }
 
         let allowed_origins = value(values, "BLINDPASS_CORS_ALLOWED_ORIGINS")
             .unwrap_or("")
@@ -246,13 +261,6 @@ impl Config {
             1,
             365 * 24 * 60 * 60,
         )?;
-        let rate_limit_window_ms = parse_range(
-            values,
-            "BLINDPASS_TEST_RATE_LIMIT_WINDOW_MS",
-            60_000,
-            100,
-            3_600_000,
-        )?;
         let agent_token_rate_window_ms = parse_range(
             values,
             "BLINDPASS_TEST_AGENT_TOKEN_RATE_WINDOW_MS",
@@ -306,7 +314,6 @@ impl Config {
             revoked_ttl_seconds,
             approval_ttl_seconds,
             refresh_token_ttl_seconds,
-            rate_limit_window_ms,
             agent_token_rate_window_ms,
             admin_socket_path,
             test_mode,
@@ -426,11 +433,6 @@ impl Config {
     }
 
     #[must_use]
-    pub fn rate_limit_window_ms(&self) -> u64 {
-        self.rate_limit_window_ms
-    }
-
-    #[must_use]
     pub fn agent_token_rate_window_ms(&self) -> u64 {
         self.agent_token_rate_window_ms
     }
@@ -453,6 +455,33 @@ fn required<'a>(
     key: &'static str,
 ) -> Result<&'a str, ConfigError> {
     value(values, key).ok_or(ConfigError::Missing(key))
+}
+
+/// External workload providers must name a JWKS file. URL providers are
+/// rejected rather than skipped at request time, because the controller has
+/// no bounded HTTPS JWKS transport.
+fn validate_auth_providers(source: &str) -> Result<String, ConfigError> {
+    const KEY: &str = "BLINDPASS_AGENT_AUTH_PROVIDERS_JSON";
+    let providers =
+        serde_json::from_str::<serde_json::Value>(source).map_err(|_| ConfigError::Invalid(KEY))?;
+    let providers = providers.as_array().ok_or(ConfigError::Invalid(KEY))?;
+    for provider in providers {
+        let text = |names: [&str; 2]| {
+            names
+                .iter()
+                .find_map(|name| provider.get(*name))
+                .and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+        };
+        if !provider.is_object()
+            || text(["jwks_url", "jwksUrl"]).is_some()
+            || text(["jwks_file", "jwksFile"]).is_none()
+        {
+            return Err(ConfigError::Invalid(KEY));
+        }
+    }
+    Ok(source.to_owned())
 }
 
 fn validate_json_array(source: &str, key: &'static str) -> Result<String, ConfigError> {

@@ -14,10 +14,10 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `packages/gateway` | `MIT` | Interception / delivery middleware |
 | `packages/openclaw-plugin` | `MIT` | Runtime integration plugin |
 | `packages/contract-tests` | `AGPL-3.0-only` | Black-box compatibility and acceptance harness; private test package |
-| `crates/blindpass-core` | `AGPL-3.0-only` | Shared identity, delivery, custody and protocol contracts |
+| `crates/blindpass-core` | `AGPL-3.0-only` | Shared identity, delivery, custody, signing, policy and protocol primitives |
 | `crates/blindpass-broker` | `AGPL-3.0-only` | Root host broker and native consumer probes |
-| `crates/blindpass-controller` | `AGPL-3.0-only` | Rust controller implementation in progress |
-| `crates/blindpass-cli` | `AGPL-3.0-only` | Local controller administration CLI implementation in progress |
+| `crates/blindpass-controller` | `AGPL-3.0-only` | Rust controller (P02; implemented, not yet accepted) |
+| `crates/blindpass-cli` | `AGPL-3.0-only` | Local controller administration CLI |
 
 ## Repository Notes
 
@@ -51,7 +51,9 @@ This approval is for the P02 dependency proposal and its resolved Cargo graph. I
 
 - MIT packages are intended to remain separable integrations around the protocol and service.
 - MIT packages should not vendor or embed AGPL application code.
-- The Rust broker uses host `libsystemd` and `libcrypto` through a narrow FFI
-  surface; no third-party Cargo crypto or zeroization dependency is included
-  in this phase.
+- The Rust broker and `blindpass-core` use host `libsystemd` and `libcrypto`
+  through a narrow FFI surface and have no third-party Cargo crypto or
+  zeroization dependency. The controller and CLI use the reviewed crate set
+  above; its graph includes `jsonwebtoken`, `argon2`, and sqlx with `rustls`,
+  `ring` and a bundled SQLite.
 - If package boundaries change materially, the licensing split should be reviewed again.

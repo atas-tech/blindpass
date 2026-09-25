@@ -3,7 +3,8 @@
 //! Durable exchange, approval, lifecycle, and metadata-only audit transitions.
 
 use super::{
-    Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, new_hex_id, positive_milliseconds,
+    Database, LockedRow, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, lock_postgres_row,
+    new_hex_id, positive_milliseconds,
 };
 use blindpass_core::custody::sha256;
 use serde::{Deserialize, Serialize};
@@ -253,6 +254,14 @@ impl Store {
                 }
             }
             Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::Exchange,
+                    exchange_id,
+                    &self.tenant_id,
+                )
+                .await?;
                 let sql = format!(
                     "UPDATE exchanges SET status = 'reserved', fulfilled_by = $1
                      WHERE id = $2 AND tenant_id = $3 AND status = 'pending'
@@ -263,9 +272,10 @@ impl Store {
                     .bind(fulfiller_id)
                     .bind(exchange_id)
                     .bind(&self.tenant_id)
-                    .fetch_optional(pool)
+                    .fetch_optional(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
                 if row.is_none() {
                     return Ok(None);
                 }
@@ -311,6 +321,14 @@ impl Store {
                 }
             }
             Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::Exchange,
+                    exchange_id,
+                    &self.tenant_id,
+                )
+                .await?;
                 let sql = format!(
                     "UPDATE exchanges SET status = 'submitted', enc = $1, ciphertext = $2,
                          expires_at = {POSTGRES_NOW_MS} + $3::BIGINT
@@ -325,9 +343,10 @@ impl Store {
                     .bind(exchange_id)
                     .bind(&self.tenant_id)
                     .bind(fulfiller_id)
-                    .fetch_optional(pool)
+                    .fetch_optional(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
                 if row.is_none() {
                     return Ok(None);
                 }
@@ -376,6 +395,13 @@ impl Store {
             }
             Database::Postgres(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::Exchange,
+                    exchange_id,
+                    &self.tenant_id,
+                )
+                .await?;
                 let sql = format!(
                     "DELETE FROM exchanges WHERE id = $1 AND tenant_id = $2
                      AND requester_agent_id = $3 AND status = 'submitted'
@@ -440,6 +466,14 @@ impl Store {
                 }
             }
             Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::Exchange,
+                    exchange_id,
+                    &self.tenant_id,
+                )
+                .await?;
                 let sql = format!(
                     "UPDATE exchanges SET status = 'revoked', enc = NULL, ciphertext = NULL,
                          expires_at = CASE WHEN status = 'revoked' THEN expires_at ELSE {POSTGRES_NOW_MS} + $1::BIGINT END
@@ -453,9 +487,10 @@ impl Store {
                     .bind(exchange_id)
                     .bind(&self.tenant_id)
                     .bind(requester_id)
-                    .fetch_optional(pool)
+                    .fetch_optional(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
                 if result.is_none() {
                     return Ok(None);
                 }
@@ -852,6 +887,13 @@ impl Store {
             }
             Database::Postgres(pool) => {
                 let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::Approval,
+                    reference,
+                    &self.tenant_id,
+                )
+                .await?;
                 let existing_sql = format!(
                     "SELECT request_hash, response_json FROM idempotency_keys
                     WHERE tenant_id = $1 AND actor_id = $2 AND operation = 'approval_decision'
@@ -980,6 +1022,14 @@ impl Store {
                 }
             }
             Database::Postgres(pool) => {
+                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                lock_postgres_row(
+                    &mut transaction,
+                    LockedRow::Approval,
+                    reference,
+                    &self.tenant_id,
+                )
+                .await?;
                 let sql = format!("UPDATE approvals SET status = $1, decided_at = {POSTGRES_NOW_MS}, decided_by = $2
                     WHERE reference = $3 AND tenant_id = $4 AND status = 'pending'
                     AND expires_at > {POSTGRES_NOW_MS} RETURNING reference");
@@ -988,9 +1038,10 @@ impl Store {
                     .bind(decided_by)
                     .bind(reference)
                     .bind(&self.tenant_id)
-                    .fetch_optional(pool)
+                    .fetch_optional(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
+                transaction.commit().await.map_err(StoreError::Database)?;
                 if row.is_none() {
                     return Ok(None);
                 }

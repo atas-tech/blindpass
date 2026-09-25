@@ -169,7 +169,12 @@ pub async fn seed_fixture(
         let refresh_token = random_seed_token();
         let refresh_hash = hash_refresh_token(&refresh_token).ok_or(SeedError::Internal)?;
         let session = store
-            .create_browser_session(&operator_id, &refresh_hash, 30 * 24 * 60 * 60)
+            .create_browser_session(
+                &operator_id,
+                &password_hash,
+                &refresh_hash,
+                30 * 24 * 60 * 60,
+            )
             .await
             .map_err(|_| SeedError::Internal)?
             .ok_or(SeedError::Internal)?;

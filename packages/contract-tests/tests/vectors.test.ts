@@ -6,9 +6,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CONFIRMATION_CODE_ADJECTIVES,
   CONFIRMATION_CODE_NOUNS,
+  signFulfillmentToken,
   verifyFulfillmentToken,
   verifyPayload
 } from "../../sps-server/src/services/crypto.js";
+import { hashPolicyDecision } from "../../sps-server/src/services/policy.js";
 import { deriveAgentFulfillmentTokenSecret, deriveBrowserSigSecret } from "../../sps-server/src/utils/signing-secrets.js";
 import { buildVectorResults, evaluatePolicyVectors, openHpkeInteropFixture, openRfc9180Vector, runHpkeRoundTrip } from "../src/vectors.js";
 
@@ -119,6 +121,18 @@ describe("P00 golden vectors", () => {
       .sign(tokenSecret);
     await expect(verifyFulfillmentToken(wrongAudience, fixture.root_secret)).rejects.toThrow("Invalid fulfillment token");
     await expect(verifyFulfillmentToken(expired, fixture.root_secret)).rejects.toThrow("Invalid fulfillment token");
+
+    // The shared token fixture pins exact bytes for the Rust controller test.
+    const tokenFixture = JSON.parse(await readFile(path.join(HERE, "../fixtures/cv03-fulfillment-token.json"), "utf8")) as {
+      claims: Parameters<typeof signFulfillmentToken>[0];
+      issued_at: number;
+      vectors: Array<{ expires_at: number; token: string }>;
+    };
+    expect(tokenFixture.issued_at * 1_000).toBe(Date.now());
+    expect(tokenFixture.vectors[0]?.token).toBe(vectors.cv03.token);
+    for (const vector of tokenFixture.vectors) {
+      await expect(signFulfillmentToken(tokenFixture.claims, fixture.root_secret, vector.expires_at)).resolves.toBe(vector.token);
+    }
   });
 
   it("CV04 preserves the confirmation-code dictionary and shape", async () => {
@@ -151,6 +165,13 @@ describe("P00 golden vectors", () => {
       null, null,
       "9788fc2bef8cff976f886422e95e24f9024fb244ecef4a07162acb7252389fd4"
     ]);
+
+    const escaping = JSON.parse(await readFile(path.join(HERE, "../fixtures/cv05-hash-escaping.json"), "utf8")) as {
+      cases: Array<{ decision: Record<string, unknown>; allowedFulfillerId: string | null; workspaceId: string | null; hash: string }>;
+    };
+    expect(escaping.cases.length).toBeGreaterThan(0);
+    expect(escaping.cases.map((testCase) => hashPolicyDecision(testCase.decision as never, testCase.allowedFulfillerId, testCase.workspaceId)))
+      .toEqual(escaping.cases.map((testCase) => testCase.hash));
   });
 
   it("CV06 runs the TypeScript HPKE round trip with the accepted suite", async () => {

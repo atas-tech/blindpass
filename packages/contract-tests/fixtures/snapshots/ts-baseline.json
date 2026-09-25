@@ -267,6 +267,16 @@
       "access-control-allow-credentials": "true"
     }
   },
+  "CT03.request.just-expired-external": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
   "CT03.request.missing-auth": {
     "status": 401,
     "content_type": "application/json",
@@ -288,6 +298,26 @@
     }
   },
   "CT03.request.wrong-audience": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT03.request.missing-issuer": {
+    "status": 401,
+    "content_type": "application/json",
+    "body": {
+      "error": "Invalid token"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT03.request.missing-audience": {
     "status": 401,
     "content_type": "application/json",
     "body": {
@@ -368,6 +398,19 @@
     "content_type": "application/json",
     "body": {
       "error": "Already submitted"
+    },
+    "headers": {
+      "access-control-allow-credentials": "true"
+    }
+  },
+  "CT05.metadata.after-submit": {
+    "status": 200,
+    "content_type": "application/json",
+    "body": {
+      "confirmation_code": "<confirmation-code>",
+      "description": "CT05 submit request",
+      "expiry": "<timestamp>",
+      "public_key": "<public-key>"
     },
     "headers": {
       "access-control-allow-credentials": "true"

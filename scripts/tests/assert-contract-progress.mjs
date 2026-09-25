@@ -73,8 +73,21 @@ export function compareProgress(reportValue, manifestValue) {
 
   const observed = new Map();
   for (const suite of reportValue.testResults) {
-    for (const assertion of suite.assertionResults ?? []) {
+    const suiteName = path.basename(suite.name ?? "unnamed suite");
+    const assertions = suite.assertionResults ?? [];
+    if (typeof suite.message === "string" && suite.message.trim() !== "") {
+      throw new Error(`Suite ${suiteName} failed outside its tests: ${suite.message.trim().split("\n", 1)[0]}`);
+    }
+    // Vitest reports afterAll failures, such as the shared snapshot
+    // comparison, only as a failed file whose assertions all passed.
+    if (suite.status === "failed" && !assertions.some((assertion) => assertion.status === "failed")) {
+      throw new Error(`Suite ${suiteName} failed in a hook or setup without a failed test.`);
+    }
+    for (const assertion of assertions) {
       const name = assertion.fullName ?? assertion.title ?? "";
+      if (!/\bCT\d{2}\b/.test(name) && assertion.status !== "passed") {
+        throw new Error(`Unexpected failure outside the contract cases: ${name} (${assertion.status}).`);
+      }
       for (const match of name.matchAll(/\bCT\d{2}\b/g)) {
         const id = match[0];
         if (!required.has(id)) {
@@ -113,6 +126,13 @@ export function compareProgress(reportValue, manifestValue) {
       throw new Error(`Unexpected failure for ${id}: status ${result.status}.`);
     }
     passed.push(id);
+  }
+
+  // With no expected-red case, any unsuccessful run is a failure the
+  // per-case results above could not attribute (for example an afterAll hook
+  // in a file that also has a failing contract case).
+  if (pending.size === 0 && reportValue.success !== true) {
+    throw new Error("Vitest report is unsuccessful although no contract case is pending.");
   }
 
   return { passed, pending: incomplete };

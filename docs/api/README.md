@@ -1,4 +1,4 @@
-# SPS API reference
+# API reference
 
 [openapi.yaml](openapi.yaml) is a manually maintained snapshot of existing SPS routes. It is not a complete generated schema, a release declaration, or the API for the proposed fleet controller. Route schemas and handlers in [SPS routes](../../packages/sps-server/src/routes) remain the implementation authority.
 
@@ -10,7 +10,7 @@ The local server entry is an example endpoint. Configure your deployment's API U
 
 ## Rust controller contract
 
-[controller.openapi.yaml](controller.openapi.yaml) is the P02 contract for the Rust controller. It records the 12 retained machine routes, the two adopted CT19 browser-status routes, the local administration API, readiness and capability discovery. Hosted user auth, including `/api/v2/auth/refresh`, stays in the TypeScript SPS. It is separate from the SPS snapshot above and does not claim that controller behavior is implemented. Its YAML document uses JSON-compatible YAML 1.2 syntax so the repository-owned Node generator can produce TypeScript declarations without an added parser dependency. `npm run generate:api` updates `packages/contract-tests/src/generated/controller.d.ts`; the OpenAPI drift CI check verifies the generated file.
+[controller.openapi.yaml](controller.openapi.yaml) is the P02 contract for the Rust controller. It records the 12 retained machine routes, the two adopted CT19 browser-status routes, the local administration API, readiness and capability discovery. Hosted user auth, including `/api/v2/auth/refresh`, stays in the TypeScript SPS. It is separate from the SPS snapshot above. The controller implements it and the [contract suite](../testing/Controller%20Contract%20Suite.md) checks it over HTTP; response bodies are not validated against the schema. `npm run test:controller-openapi` compares the documented routes with the routes the controller mounts. Nine mounted routes are not yet documented and are pinned by that test until a decision: agent revoke and key rotation, `GET /api/v2/audit/`, secret-request revoke, and the v2 approval read/approve/reject routes for agents and administrators. Its YAML document uses JSON-compatible YAML 1.2 syntax so the repository-owned Node generator can produce TypeScript declarations without an added parser dependency. `npm run generate:api` updates `packages/contract-tests/src/generated/controller.d.ts`; the OpenAPI drift CI check verifies the generated file.
 
 ## Authentication modes
 

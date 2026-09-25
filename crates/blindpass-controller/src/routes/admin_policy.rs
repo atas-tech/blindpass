@@ -37,6 +37,19 @@ impl PolicyDocumentInput {
     }
 }
 
+/// Validate a policy supplied through the environment with the same rules as
+/// an administrator write. Like SPS, the controller refuses to start on an
+/// invalid bootstrap policy instead of evaluating a partial one.
+pub(crate) fn environment_policy_errors(
+    secret_registry: Vec<Value>,
+    exchange_policy: Vec<Value>,
+) -> Vec<String> {
+    validate_policy(&PolicyDocumentInput {
+        secret_registry,
+        exchange_policy,
+    })
+}
+
 pub(crate) fn validated_seed_policy_json(value: Value) -> Option<String> {
     let document: PolicyDocumentInput = serde_json::from_value(value).ok()?;
     if !validate_policy(&document).is_empty() {
@@ -211,8 +224,11 @@ fn validate_policy(document: &PolicyDocumentInput) -> Vec<String> {
                 "exchange_policy[{index}].secretName: unknown registry entry"
             ));
         }
-        if let Some(mode) = rule.get("mode").and_then(Value::as_str)
-            && !matches!(mode, "allow" | "pending_approval" | "deny")
+        if let Some(mode) = rule.get("mode")
+            && !mode
+                .as_str()
+                .map(str::trim)
+                .is_some_and(|mode| matches!(mode, "allow" | "pending_approval" | "deny"))
         {
             errors.push(format!("exchange_policy[{index}].mode: unsupported value"));
         }
@@ -233,14 +249,26 @@ fn validate_policy(document: &PolicyDocumentInput) -> Vec<String> {
             "allowedRings",
             "allowed_rings",
         ] {
-            if let Some(value) = rule.get(key)
-                && !value
-                    .as_array()
-                    .is_some_and(|values| values.iter().all(Value::is_string))
-            {
-                errors.push(format!(
+            let Some(value) = rule.get(key) else {
+                continue;
+            };
+            match value.as_array() {
+                Some(values) if values.iter().all(Value::is_string) => {
+                    // A blank entry would be dropped during matching and could
+                    // leave an empty list, which matches every agent.
+                    if values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .any(|item| item.trim().is_empty())
+                    {
+                        errors.push(format!(
+                            "exchange_policy[{index}].{key}: entries must be non-empty"
+                        ));
+                    }
+                }
+                _ => errors.push(format!(
                     "exchange_policy[{index}].{key}: must be an array of strings"
-                ));
+                )),
             }
         }
         for key in ["sameRing", "same_ring"] {

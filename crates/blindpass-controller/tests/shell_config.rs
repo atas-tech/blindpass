@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use blindpass_controller::{app::build_app, config::Config, store::Store};
+use blindpass_controller::{
+    app::build_app,
+    config::{Config, ConfigError},
+    store::Store,
+};
 use serde_json::Value;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::collections::BTreeMap;
@@ -109,11 +113,19 @@ fn test_overrides_are_rejected_unless_test_mode_is_explicit_and_nonproduction() 
         ),
     ]);
 
-    assert!(Config::from_variables(base.clone()).is_err());
+    assert_eq!(
+        Config::from_variables(base.clone()).err(),
+        Some(ConfigError::Invalid(
+            "BLINDPASS_TEST_* requires BLINDPASS_TEST_MODE=1"
+        ))
+    );
     let mut production = base.clone();
     production.insert("BLINDPASS_TEST_MODE".to_owned(), "1".to_owned());
     production.insert("NODE_ENV".to_owned(), "production".to_owned());
-    assert!(Config::from_variables(production).is_err());
+    assert_eq!(
+        Config::from_variables(production).err(),
+        Some(ConfigError::Invalid("BLINDPASS_TEST_MODE in production"))
+    );
     let mut enabled = base;
     enabled.insert("BLINDPASS_TEST_MODE".to_owned(), "1".to_owned());
     let config = Config::from_variables(enabled).expect("explicit test overrides are accepted");
@@ -164,6 +176,191 @@ fn production_configuration_requires_file_backed_database_and_key_material() {
         "sqlite::memory:".to_owned(),
     );
     assert!(Config::from_variables(conflicting).is_err());
+}
+
+#[test]
+fn production_defaults_match_sps_and_test_overrides_are_bounded() {
+    let files = TestFiles::new();
+    let database = files.credential("database.url", b"sqlite::memory:");
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let base = BTreeMap::from([
+        (
+            "BLINDPASS_DATABASE_URL_FILE".to_owned(),
+            database.display().to_string(),
+        ),
+        (
+            "BLINDPASS_ROOT_SECRET_FILE".to_owned(),
+            root_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
+            agent_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_PUBLIC_URL".to_owned(),
+            "https://blindpass.example".to_owned(),
+        ),
+        (
+            "BLINDPASS_UI_BASE_URL".to_owned(),
+            "https://input.blindpass.example".to_owned(),
+        ),
+    ]);
+
+    // SPS defaults: sps-server/src/utils/test-timing.ts and routes/agents.ts.
+    let config = Config::from_variables(base.clone()).expect("production defaults");
+    assert_eq!(config.listen().to_string(), "127.0.0.1:3200");
+    assert_eq!(config.request_ttl_seconds(), 180);
+    assert_eq!(config.submitted_ttl_seconds(), 60);
+    assert_eq!(config.revoked_ttl_seconds(), 300);
+    assert_eq!(config.approval_ttl_seconds(), 600);
+    assert_eq!(config.agent_token_rate_limit(), 5);
+    assert_eq!(config.agent_token_rate_window_ms(), 60_000);
+
+    for (key, value) in [
+        ("BLINDPASS_TEST_REQUEST_TTL_SECONDS", "0"),
+        ("BLINDPASS_TEST_REQUEST_TTL_SECONDS", "86401"),
+        ("BLINDPASS_TEST_SUBMITTED_TTL_SECONDS", "ten"),
+        ("BLINDPASS_TEST_APPROVAL_TTL_SECONDS", "-1"),
+        ("BLINDPASS_TEST_AGENT_TOKEN_RATE_WINDOW_MS", "99"),
+    ] {
+        let mut values = base.clone();
+        values.insert("BLINDPASS_TEST_MODE".to_owned(), "1".to_owned());
+        values.insert(key.to_owned(), value.to_owned());
+        assert_eq!(
+            Config::from_variables(values).err(),
+            Some(ConfigError::Invalid(key)),
+            "{key}={value}"
+        );
+    }
+}
+
+#[test]
+fn external_providers_must_name_a_jwks_file() {
+    let files = TestFiles::new();
+    let database = files.credential("database.url", b"sqlite::memory:");
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let with_providers = |providers: &str| {
+        Config::from_variables(BTreeMap::from([
+            (
+                "BLINDPASS_DATABASE_URL_FILE".to_owned(),
+                database.display().to_string(),
+            ),
+            (
+                "BLINDPASS_ROOT_SECRET_FILE".to_owned(),
+                root_secret.display().to_string(),
+            ),
+            (
+                "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
+                agent_secret.display().to_string(),
+            ),
+            (
+                "BLINDPASS_PUBLIC_URL".to_owned(),
+                "https://blindpass.example".to_owned(),
+            ),
+            (
+                "BLINDPASS_UI_BASE_URL".to_owned(),
+                "https://input.blindpass.example".to_owned(),
+            ),
+            (
+                "BLINDPASS_AGENT_AUTH_PROVIDERS_JSON".to_owned(),
+                providers.to_owned(),
+            ),
+        ]))
+        .err()
+    };
+    let invalid = Some(ConfigError::Invalid("BLINDPASS_AGENT_AUTH_PROVIDERS_JSON"));
+    assert_eq!(
+        with_providers(r#"[{"name":"file","jwks_file":"/etc/blindpass/jwks.json"}]"#),
+        None
+    );
+    // A URL provider would otherwise be skipped for every request.
+    assert_eq!(
+        with_providers(r#"[{"name":"url","jwks_url":"https://idp.example/jwks"}]"#),
+        invalid
+    );
+    assert_eq!(
+        with_providers(r#"[{"jwks_file":"/etc/jwks.json","jwksUrl":"https://idp.example/jwks"}]"#),
+        invalid
+    );
+    assert_eq!(with_providers(r#"[{"name":"none"}]"#), invalid);
+    assert_eq!(with_providers(r#"[{"jwks_file":"  "}]"#), invalid);
+    assert_eq!(with_providers(r#"{"jwks_file":"/etc/jwks.json"}"#), invalid);
+    assert_eq!(with_providers(r#"["/etc/jwks.json"]"#), invalid);
+}
+
+#[test]
+fn environment_policy_is_validated_like_an_administrator_write() {
+    let files = TestFiles::new();
+    let database = files.credential("database.url", b"sqlite::memory:");
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let with_policy = |registry: &str, rules: &str| {
+        Config::from_variables(BTreeMap::from([
+            (
+                "BLINDPASS_DATABASE_URL_FILE".to_owned(),
+                database.display().to_string(),
+            ),
+            (
+                "BLINDPASS_ROOT_SECRET_FILE".to_owned(),
+                root_secret.display().to_string(),
+            ),
+            (
+                "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
+                agent_secret.display().to_string(),
+            ),
+            (
+                "BLINDPASS_PUBLIC_URL".to_owned(),
+                "https://blindpass.example".to_owned(),
+            ),
+            (
+                "BLINDPASS_UI_BASE_URL".to_owned(),
+                "https://input.blindpass.example".to_owned(),
+            ),
+            (
+                "BLINDPASS_SECRET_REGISTRY_JSON".to_owned(),
+                registry.to_owned(),
+            ),
+            (
+                "BLINDPASS_EXCHANGE_POLICY_JSON".to_owned(),
+                rules.to_owned(),
+            ),
+        ]))
+        .err()
+    };
+    let registry = r#"[{"secretName":"finance.api_key","classification":"finance"}]"#;
+    let rules = ConfigError::Invalid("BLINDPASS_EXCHANGE_POLICY_JSON");
+    assert_eq!(
+        with_policy(
+            registry,
+            r#"[{"ruleId":"block","secretName":"finance.api_key","mode":"deny"}]"#
+        ),
+        None
+    );
+    // Each of these is refused at startup instead of widening access at run time.
+    for policy in [
+        r#"[{"ruleId":"block","secretName":"finance.api_key","mode":"Deny"}]"#,
+        r#"[{"ruleId":"block","secretName":"finance.api_key","mode":"pending-approval"}]"#,
+        r#"[{"id":"block","secretName":"finance.api_key","mode":"deny"}]"#,
+        r#"[{"ruleId":"only-a","secretName":"finance.api_key","requesterIds":[""]}]"#,
+        r#"[{"ruleId":"only-a","secretName":"finance.api_key","fulfillerIds":["  "]}]"#,
+        r#"[{"ruleId":"only-a","secretName":"finance.api_key","requesterIds":null}]"#,
+        r#"[{"ruleId":"other","secretName":"unregistered.secret"}]"#,
+    ] {
+        assert_eq!(
+            with_policy(registry, policy),
+            Some(rules.clone()),
+            "{policy}"
+        );
+    }
+    assert_eq!(
+        with_policy(
+            r#"[{"secretName":"finance.api_key"}]"#,
+            r#"[{"ruleId":"allow","secretName":"finance.api_key"}]"#
+        ),
+        Some(ConfigError::Invalid("BLINDPASS_SECRET_REGISTRY_JSON"))
+    );
 }
 
 #[test]

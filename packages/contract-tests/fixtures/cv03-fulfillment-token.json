@@ -1,0 +1,23 @@
+{
+  "description": "CV03 agent fulfillment tokens minted by the TypeScript SPS with a fixed issued-at; the root secret is cv01-signed-link.json root_secret",
+  "claims": {
+    "exchange_id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "requester_id": "agent-a",
+    "workspace_id": "workspace-p00",
+    "secret_name": "finance.api_key",
+    "purpose": "deploy",
+    "policy_hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "approval_reference": null
+  },
+  "issued_at": 1700000000,
+  "vectors": [
+    {
+      "expires_at": 1700000300,
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleGNoYW5nZV9pZCI6ImJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJyZXF1ZXN0ZXJfaWQiOiJhZ2VudC1hIiwid29ya3NwYWNlX2lkIjoid29ya3NwYWNlLXAwMCIsInNlY3JldF9uYW1lIjoiZmluYW5jZS5hcGlfa2V5IiwicHVycG9zZSI6ImRlcGxveSIsInBvbGljeV9oYXNoIjoiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsImFwcHJvdmFsX3JlZmVyZW5jZSI6bnVsbCwic3ViIjoid29ya3NwYWNlLXAwMCIsImlzcyI6InNwcyIsImF1ZCI6ImFnZW50LWZ1bGZpbGwiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6MTcwMDAwMDMwMH0.Ia6yMQOsaw7DSkiUtveQWvB-Zts5gbcvJD4bUFhy4Lk"
+    },
+    {
+      "expires_at": 4102444800,
+      "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleGNoYW5nZV9pZCI6ImJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmIiLCJyZXF1ZXN0ZXJfaWQiOiJhZ2VudC1hIiwid29ya3NwYWNlX2lkIjoid29ya3NwYWNlLXAwMCIsInNlY3JldF9uYW1lIjoiZmluYW5jZS5hcGlfa2V5IiwicHVycG9zZSI6ImRlcGxveSIsInBvbGljeV9oYXNoIjoiY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjYyIsImFwcHJvdmFsX3JlZmVyZW5jZSI6bnVsbCwic3ViIjoid29ya3NwYWNlLXAwMCIsImlzcyI6InNwcyIsImF1ZCI6ImFnZW50LWZ1bGZpbGwiLCJpYXQiOjE3MDAwMDAwMDAsImV4cCI6NDEwMjQ0NDgwMH0.HfzGUB9lky7VBX3v36372KZ2WUEHhvKxhFkVikFmZD0"
+    }
+  ]
+}

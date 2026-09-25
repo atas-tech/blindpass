@@ -1614,3 +1614,114 @@ async fn admin_operator_and_viewer_role_matrix_is_enforced_without_side_effects(
 
     server.stop().await;
 }
+
+fn hs256_token(secret: &[u8], claims: &Value) -> String {
+    jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+        claims,
+        &jsonwebtoken::EncodingKey::from_secret(secret),
+    )
+    .expect("sign test token")
+}
+
+#[tokio::test]
+async fn bearer_and_fulfillment_tokens_are_rejected_once_exp_passes() {
+    // SPS verifies these tokens with jose's zero clock tolerance. Each pair
+    // differs only in `exp`: the live token proves the route reached its
+    // lookup, the token expired five seconds ago must fail authentication.
+    let server = AdminServer::start("token_expiry").await;
+    let address = server.address;
+    let tenant = server.store.tenant_id().to_owned();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time after Unix epoch")
+        .as_secs();
+    let agent_secret = "A".repeat(32);
+    let agent_token = |exp: u64| {
+        hs256_token(
+            agent_secret.as_bytes(),
+            &json!({
+                "sub": "expiry-agent", "role": "gateway", "workspace_id": tenant,
+                "iss": "sps", "aud": "sps-agent", "iat": now - 600, "exp": exp
+            }),
+        )
+    };
+    let user_token = |exp: u64| {
+        hs256_token(
+            agent_secret.as_bytes(),
+            &json!({
+                "sub": "expiry-admin", "role": "workspace_admin", "workspace_id": tenant,
+                "iss": "sps", "aud": "sps-user", "iat": now - 600, "exp": exp
+            }),
+        )
+    };
+    let fulfillment_secret =
+        blindpass_core::signing::derive_secret("R".repeat(32).as_bytes(), "agent-fulfillment")
+            .expect("derive fulfillment secret");
+    let fulfillment_token = |exp: u64| {
+        hs256_token(
+            fulfillment_secret.as_bytes(),
+            &json!({
+                "exchange_id": "e".repeat(64), "requester_id": "expiry-requester",
+                "workspace_id": tenant, "secret_name": "stripe.api_key.prod",
+                "purpose": "token expiry", "policy_hash": "0".repeat(64),
+                "approval_reference": null, "sub": "expiry-agent",
+                "iss": "sps", "aud": "agent-fulfill", "iat": now - 600, "exp": exp
+            }),
+        )
+    };
+    let status_path = format!("/api/v2/secret/status/{}", "a".repeat(64));
+    let approval_path = "/api/v2/secret/exchange/admin/approval/apr_expiry/approve";
+
+    for (label, exp, expected) in [("live", now + 300, 410), ("expired", now - 5, 401)] {
+        let bearer = format!("Bearer {}", agent_token(exp));
+        let status = request(
+            address,
+            "GET",
+            &status_path,
+            &[("authorization", &bearer)],
+            None,
+        )
+        .await;
+        assert_eq!(
+            status.status, expected,
+            "{label} agent token: {:?}",
+            status.body
+        );
+
+        let bearer = format!("Bearer {}", user_token(exp));
+        let approval = request(
+            address,
+            "POST",
+            approval_path,
+            &[("authorization", &bearer)],
+            None,
+        )
+        .await;
+        assert_eq!(
+            approval.status, expected,
+            "{label} user token: {:?}",
+            approval.body
+        );
+
+        let bearer = format!("Bearer {}", agent_token(now + 300));
+        let fulfilled = request(
+            address,
+            "POST",
+            "/api/v2/secret/exchange/fulfill",
+            &[
+                ("authorization", &bearer),
+                ("content-type", "application/json"),
+            ],
+            Some(&json!({"fulfillment_token": fulfillment_token(exp)})),
+        )
+        .await;
+        assert_eq!(
+            fulfilled.status, expected,
+            "{label} fulfillment token: {:?}",
+            fulfilled.body
+        );
+    }
+
+    server.stop().await;
+}

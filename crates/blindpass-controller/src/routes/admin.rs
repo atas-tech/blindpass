@@ -105,6 +105,7 @@ async fn bootstrap(
             match store
                 .create_browser_session(
                     &operator_id,
+                    &password_hash,
                     &refresh_hash,
                     state.refresh_token_ttl_seconds,
                 )

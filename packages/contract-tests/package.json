@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
-    "test:openapi-types": "vitest run tests/openapi-types.test.ts",
+    "test:openapi-types": "tsc -p tsconfig.types.json && vitest run tests/openapi-types.test.ts",
     "test:update": "UPDATE_CONTRACT_SNAPSHOTS=1 vitest run"
   }
 }

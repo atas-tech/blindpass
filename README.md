@@ -10,7 +10,7 @@ The next product direction is an Omarchy-first Linux access pilot: one controlle
 - [Landing page](landing/README.md): human-to-agent secret provisioning, agent-to-agent exchange, and a separately labeled browser-pilot illustration.
 - [Quick start](docs/guides/quickstart.md): run the existing source-based development stack.
 - [Self-hosting](docs/guides/self-hosting.md): configuration and operational limits of the current SPS stack.
-- [Testing](docs/testing/README.md): unit, Redis, PostgreSQL and dashboard E2E commands.
+- [Testing](docs/testing/README.md): unit, Redis, PostgreSQL, dashboard E2E, HTTP contract and Rust commands.
 - [Linux fleet pilot test plan](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md): proposed acceptance gates, distinct from existing tests.
 
 ## Current implementation
@@ -22,6 +22,7 @@ The next product direction is an Omarchy-first Linux access pilot: one controlle
 | Administration | Dashboard authentication, agent/member management, policy, audit and existing billing/guest surfaces |
 | Runtime integration | OpenClaw transport adapters, optional SOPS storage and an exec resolver |
 | MCP | An entry point exists, but its framing, input transport and stock-client consumption gaps remain W1 work; do not assume clean-client compatibility |
+| Rust workspace | P01 host broker, and the P02 controller and `blindpass` CLI on SQLite or PostgreSQL. The controller passes the HTTP contract suite locally but is not yet accepted or packaged |
 | Deployment | Source configuration, application Dockerfiles and Unraid templates; release availability and deployment validation are separate from files existing in the repo |
 
 Default plugin URLs must be overridden with the intended `SPS_BASE_URL` until the endpoint/distribution gate is completed. Previously documented `atas.tech` hosts are deployment history, not a service-availability guarantee. Billing, x402, guest intake and integration expansion follow the [freeze register](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#freeze-register).
@@ -31,7 +32,7 @@ Default plugin URLs must be overridden with the intended `SPS_BASE_URL` until th
 ```text
 docs/
   product/       P00 source evidence and dependency decision
-  api/           Current SPS API snapshot
+  api/           SPS API snapshot and Rust controller contract
   architecture/  Current code architecture
   guides/        Source setup, self-hosting and exchange policy
   security/      Current threat model and dated evidence
@@ -44,7 +45,14 @@ packages/
   browser-ui/    Vite secret-input page
   dashboard/     React/Vite administration
   i18n/          Shared translations
+  contract-tests/  Black-box HTTP contract harness for SPS and the Rust controller
+crates/
+  blindpass-core/        Shared signing, policy, HPKE and protocol primitives
+  blindpass-broker/      P01 host broker
+  blindpass-controller/  P02 controller
+  blindpass-cli/         Local administration CLI
 scripts/         Tests, demos and packaging
+tests/fleet/     P01 disposable-VM harness
 deploy/          Platform templates
 ```
 

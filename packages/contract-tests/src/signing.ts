@@ -45,16 +45,21 @@ export function createExternalJwtIdentity(): ExternalJwtIdentity {
 export function signExternalJwt(
   identity: ExternalJwtIdentity,
   claims: Record<string, unknown>,
-  nowSeconds = Math.floor(Date.now() / 1000)
+  nowSeconds = Math.floor(Date.now() / 1000),
+  omitClaims: ReadonlyArray<"iss" | "aud"> = []
 ): string {
   const header = base64Url(JSON.stringify({ alg: "EdDSA", kid: "contract-ed25519", typ: "JWT" }));
-  const payload = base64Url(JSON.stringify({
+  const body: Record<string, unknown> = {
     ...claims,
     iat: nowSeconds,
     exp: nowSeconds + 300,
     iss: claims.iss ?? "contract-gateway",
     aud: claims.aud ?? "contract-sps"
-  }));
+  };
+  for (const claim of omitClaims) {
+    delete body[claim];
+  }
+  const payload = base64Url(JSON.stringify(body));
   const signingInput = `${header}.${payload}`;
   const signature = signBytes(null, Buffer.from(signingInput), identity.privateKey);
   return `${signingInput}.${base64Url(signature)}`;

@@ -301,7 +301,113 @@ async fn persisted_clock_regression_denies_expiring_state_and_readiness() {
     fixture.close().await;
 }
 
+/// Read the persisted clock high-water mark and the database wall clock.
+async fn read_clock(fixture: &StoreFixture) -> (i64, i64) {
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL fixture");
+        let clock = sqlx::query_as(
+            "SELECT last_observed_ms, FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT
+             FROM controller_clock WHERE id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("read PostgreSQL clock");
+        pool.close().await;
+        clock
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite fixture");
+        let clock = sqlx::query_as(
+            "SELECT last_observed_ms, CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)
+             FROM controller_clock WHERE id = 1",
+        )
+        .fetch_one(&pool)
+        .await
+        .expect("read SQLite clock");
+        pool.close().await;
+        clock
+    }
+}
+
+async fn write_clock_mark(fixture: &StoreFixture, mark: i64) {
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = $1 WHERE id = 1")
+            .bind(mark)
+            .execute(&pool)
+            .await
+            .expect("write PostgreSQL clock mark");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite fixture");
+        sqlx::query("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1")
+            .bind(mark)
+            .execute(&pool)
+            .await
+            .expect("write SQLite clock mark");
+        pool.close().await;
+    }
+}
+
 #[tokio::test]
+async fn persisted_clock_mark_advances_per_interval_and_a_small_regression_fails_closed() {
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store();
+    let (initial, _) = read_clock(&fixture).await;
+
+    // After the one-second interval the next checked operation advances the
+    // mark to the database clock; within the interval it writes nothing.
+    tokio::time::sleep(Duration::from_millis(1_100)).await;
+    store
+        .list_admin_agents()
+        .await
+        .expect("read under a healthy clock");
+    let (advanced, now) = read_clock(&fixture).await;
+    assert!(
+        advanced >= initial + 1_000,
+        "mark advanced from {initial} to {advanced}"
+    );
+    assert!(
+        advanced <= now,
+        "mark {advanced} never passes database time {now}"
+    );
+    store
+        .list_admin_agents()
+        .await
+        .expect("read within the interval");
+    assert_eq!(read_clock(&fixture).await.0, advanced);
+
+    // A realistic regression: the database clock is 1.5 s behind the mark.
+    let (_, now) = read_clock(&fixture).await;
+    write_clock_mark(&fixture, now + 1_500).await;
+    assert!(!store.is_ready().await);
+    assert!(matches!(
+        store.list_admin_agents().await,
+        Err(StoreError::ClockRegression)
+    ));
+    assert!(matches!(
+        Store::connect(&fixture.url).await,
+        Err(StoreError::ClockRegression)
+    ));
+
+    // It fails closed only until the database clock passes the mark.
+    tokio::time::sleep(Duration::from_millis(1_700)).await;
+    assert!(store.is_ready().await);
+    store
+        .list_admin_agents()
+        .await
+        .expect("operations resume once the clock passes the mark");
+    fixture.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn conditional_submit_and_consume_allow_one_winner_under_concurrency() {
     let fixture = StoreFixture::new().await;
     let store = fixture.store().clone();
@@ -373,10 +479,35 @@ async fn expiry_is_enforced_before_sweep_and_after_database_restart() {
         store.request_status(&expiring, "requester").await.unwrap(),
         Some(SecretRequestStatus::Pending)
     );
+    let submitted_expiring = store
+        .create_secret_request("requester", "key-submitted", "short submit", "code", 60)
+        .await
+        .expect("create request with a short submitted window");
+    assert!(
+        store
+            .submit_secret_request(&submitted_expiring, "requester", "enc", "ciphertext", 1)
+            .await
+            .unwrap()
+    );
     tokio::time::sleep(Duration::from_millis(1_100)).await;
     assert_eq!(
         store.request_status(&expiring, "requester").await.unwrap(),
         None
+    );
+    assert_eq!(
+        store
+            .request_status(&submitted_expiring, "requester")
+            .await
+            .unwrap(),
+        None
+    );
+    assert!(
+        store
+            .consume_secret_request(&submitted_expiring, "requester")
+            .await
+            .unwrap()
+            .is_none(),
+        "submitted ciphertext past its deadline must not be consumable before the sweep"
     );
     assert!(
         store
@@ -413,12 +544,30 @@ async fn expiry_is_enforced_before_sweep_and_after_database_restart() {
             .unwrap(),
         Some(SecretRequestStatus::Submitted)
     );
+    assert!(
+        fixture
+            .store()
+            .consume_secret_request(&submitted_expiring, "requester")
+            .await
+            .unwrap()
+            .is_none(),
+        "expired submitted ciphertext stays unconsumable after restart"
+    );
+    assert!(
+        fixture
+            .store()
+            .consume_secret_request(&durable, "other-requester")
+            .await
+            .unwrap()
+            .is_none(),
+        "only the requesting agent can consume its submitted payload"
+    );
     let payload = fixture
         .store()
         .consume_secret_request(&durable, "requester")
         .await
         .unwrap()
-        .expect("submitted data persists across restart");
+        .expect("submitted data persists across restart and a foreign attempt");
     assert_eq!(payload.ciphertext, "ciphertext");
     fixture.close().await;
 }
@@ -568,7 +717,7 @@ async fn agent_key_rotation_revocation_and_ip_windows_are_atomic() {
     fixture.close().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exchange_reservation_submit_and_one_use_retrieval_are_durable_and_atomic() {
     let mut fixture = StoreFixture::new().await;
     let store = fixture.store().clone();
@@ -579,6 +728,14 @@ async fn exchange_reservation_submit_and_one_use_retrieval_are_durable_and_atomi
         .expect("create exchange");
     assert_eq!(created.status, "pending");
     assert!(created.expires_at_ms > created.created_at_ms);
+    assert!(
+        store
+            .reserve_exchange(&exchange_id, "other-fulfiller")
+            .await
+            .unwrap()
+            .is_none(),
+        "only the policy-selected fulfiller can reserve the exchange"
+    );
 
     let reservations = (0..12).map(|_| {
         let store = store.clone();
@@ -631,7 +788,7 @@ async fn exchange_reservation_submit_and_one_use_retrieval_are_durable_and_atomi
     fixture.close().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exchange_submit_racing_revocation_never_restores_ciphertext() {
     let fixture = StoreFixture::new().await;
     let store = fixture.store().clone();
@@ -677,35 +834,53 @@ async fn exchange_submit_racing_revocation_never_restores_ciphertext() {
 }
 
 #[tokio::test]
-async fn foreign_tenant_exchange_cannot_be_read_reserved_or_revoked() {
+async fn foreign_tenant_exchange_cannot_be_read_reserved_revoked_or_retrieved() {
     let fixture = StoreFixture::new().await;
     let exchange_id = "e".repeat(64);
-    let insert = format!(
-        "INSERT INTO exchanges
-         (id, tenant_id, requester_agent_id, requester_public_key, secret_name,
-          purpose, fulfiller_hint, policy_decision_json, policy_hash, status,
-          created_at, expires_at)
-         VALUES ('{exchange_id}', 'foreign-tenant', 'requester', 'public-key',
-                 'dummy.secret', 'tenant boundary', 'fulfiller', '{{}}', 'hash',
-                 'pending', 0, 4102444800000)"
-    );
+    let submitted_id = "d".repeat(64);
+    let inserts = [
+        format!(
+            "INSERT INTO exchanges
+             (id, tenant_id, requester_agent_id, requester_public_key, secret_name,
+              purpose, fulfiller_hint, allowed_fulfiller_id, policy_decision_json,
+              policy_hash, status, created_at, expires_at)
+             VALUES ('{exchange_id}', 'foreign-tenant', 'requester', 'public-key',
+                     'dummy.secret', 'tenant boundary', 'fulfiller', 'fulfiller', '{{}}',
+                     'hash', 'pending', 0, 4102444800000)"
+        ),
+        format!(
+            "INSERT INTO exchanges
+             (id, tenant_id, requester_agent_id, requester_public_key, secret_name,
+              purpose, fulfiller_hint, allowed_fulfiller_id, fulfilled_by,
+              policy_decision_json, policy_hash, status, created_at, expires_at,
+              enc, ciphertext)
+             VALUES ('{submitted_id}', 'foreign-tenant', 'requester', 'public-key',
+                     'dummy.secret', 'tenant boundary', 'fulfiller', 'fulfiller',
+                     'fulfiller', '{{}}', 'hash', 'submitted', 0, 4102444800000,
+                     'enc', 'foreign-ciphertext')"
+        ),
+    ];
     if fixture.postgres_schema.is_some() {
         let pool = PgPool::connect(&fixture.url)
             .await
             .expect("connect PostgreSQL tenant fixture");
-        sqlx::query(&insert)
-            .execute(&pool)
-            .await
-            .expect("insert foreign tenant exchange");
+        for insert in &inserts {
+            sqlx::query(insert)
+                .execute(&pool)
+                .await
+                .expect("insert foreign tenant exchange");
+        }
         pool.close().await;
     } else {
         let pool = sqlx::SqlitePool::connect(&fixture.url)
             .await
             .expect("connect SQLite tenant fixture");
-        sqlx::query(&insert)
-            .execute(&pool)
-            .await
-            .expect("insert foreign tenant exchange");
+        for insert in &inserts {
+            sqlx::query(insert)
+                .execute(&pool)
+                .await
+                .expect("insert foreign tenant exchange");
+        }
         pool.close().await;
     }
 
@@ -725,72 +900,91 @@ async fn foreign_tenant_exchange_cannot_be_read_reserved_or_revoked() {
             .unwrap()
             .is_none()
     );
-    if fixture.postgres_schema.is_some() {
+    assert!(
+        store
+            .consume_exchange(&submitted_id, "requester")
+            .await
+            .unwrap()
+            .is_none(),
+        "a matching requester ID cannot retrieve a foreign-tenant payload"
+    );
+    let select = if fixture.postgres_schema.is_some() {
+        "SELECT status, ciphertext FROM exchanges WHERE id = $1"
+    } else {
+        "SELECT status, ciphertext FROM exchanges WHERE id = ?"
+    };
+    let rows: Vec<(String, Option<String>)> = if fixture.postgres_schema.is_some() {
         let pool = PgPool::connect(&fixture.url)
             .await
             .expect("reopen PostgreSQL tenant fixture");
-        let status: String = sqlx::query_scalar("SELECT status FROM exchanges WHERE id = $1")
-            .bind(&exchange_id)
-            .fetch_one(&pool)
-            .await
-            .expect("read foreign tenant exchange");
-        assert_eq!(status, "pending");
+        let mut rows = Vec::new();
+        for id in [&exchange_id, &submitted_id] {
+            rows.push(
+                sqlx::query_as(select)
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("read foreign tenant exchange"),
+            );
+        }
         pool.close().await;
+        rows
     } else {
         let pool = sqlx::SqlitePool::connect(&fixture.url)
             .await
             .expect("reopen SQLite tenant fixture");
-        let status: String = sqlx::query_scalar("SELECT status FROM exchanges WHERE id = ?")
-            .bind(&exchange_id)
-            .fetch_one(&pool)
-            .await
-            .expect("read foreign tenant exchange");
-        assert_eq!(status, "pending");
+        let mut rows = Vec::new();
+        for id in [&exchange_id, &submitted_id] {
+            rows.push(
+                sqlx::query_as(select)
+                    .bind(id)
+                    .fetch_one(&pool)
+                    .await
+                    .expect("read foreign tenant exchange"),
+            );
+        }
         pool.close().await;
-    }
+        rows
+    };
+    assert_eq!(rows[0], ("pending".to_owned(), None));
+    assert_eq!(
+        rows[1],
+        (
+            "submitted".to_owned(),
+            Some("foreign-ciphertext".to_owned())
+        )
+    );
     fixture.close().await;
 }
 
-#[tokio::test]
-async fn exchange_expiring_while_waiting_for_lock_cannot_be_reserved() {
-    let fixture = StoreFixture::new().await;
-    let exchange_id = "f".repeat(64);
-    fixture
-        .store()
-        .create_exchange(exchange_record(&exchange_id), 1)
-        .await
-        .expect("create short-lived exchange");
-
+/// Hold a row lock (PostgreSQL) or the database writer lock (SQLite) while a
+/// store transition starts, keep it past the transition's deadline, then
+/// release it and return the transition's result.
+async fn after_lock_wait<T: Send + 'static>(
+    fixture: &StoreFixture,
+    postgres_lock_sql: &str,
+    key: &str,
+    transition: impl std::future::Future<Output = T> + Send + 'static,
+) -> T {
+    let hold = Duration::from_millis(1_100);
     if fixture.postgres_schema.is_some() {
         let pool = PgPool::connect(&fixture.url)
             .await
             .expect("connect PostgreSQL lock fixture");
         let mut transaction = pool.begin().await.expect("begin row lock transaction");
-        sqlx::query("SELECT id FROM exchanges WHERE id = $1 FOR UPDATE")
-            .bind(&exchange_id)
-            .execute(&mut *transaction)
+        sqlx::query(postgres_lock_sql)
+            .bind(key)
+            .fetch_one(&mut *transaction)
             .await
-            .expect("lock exchange row");
-        let store = fixture.store().clone();
-        let raced_id = exchange_id.clone();
-        let reservation =
-            tokio::spawn(async move { store.reserve_exchange(&raced_id, "fulfiller").await });
+            .expect("lock the transition row");
+        let task = tokio::spawn(transition);
         tokio::time::sleep(Duration::from_millis(150)).await;
-        assert!(
-            !reservation.is_finished(),
-            "reservation must wait on row lock"
-        );
-        tokio::time::sleep(Duration::from_millis(1_100)).await;
+        assert!(!task.is_finished(), "transition must wait on the row lock");
+        tokio::time::sleep(hold).await;
         transaction.commit().await.expect("release row lock");
-        assert!(
-            reservation
-                .await
-                .expect("reservation task")
-                .expect("reservation query")
-                .is_none(),
-            "expired exchange must not become reserved after lock release"
-        );
+        let result = task.await.expect("transition task");
         pool.close().await;
+        result
     } else {
         let pool = sqlx::SqlitePool::connect(&fixture.url)
             .await
@@ -803,35 +997,344 @@ async fn exchange_expiring_while_waiting_for_lock_cannot_be_reserved() {
             .execute(&mut *connection)
             .await
             .expect("hold SQLite writer lock");
-        let store = fixture.store().clone();
-        let raced_id = exchange_id.clone();
-        let reservation =
-            tokio::spawn(async move { store.reserve_exchange(&raced_id, "fulfiller").await });
+        let task = tokio::spawn(transition);
         tokio::time::sleep(Duration::from_millis(150)).await;
         assert!(
-            !reservation.is_finished(),
-            "reservation must wait on writer lock"
+            !task.is_finished(),
+            "transition must wait on the writer lock"
         );
-        tokio::time::sleep(Duration::from_millis(1_100)).await;
+        tokio::time::sleep(hold).await;
         sqlx::query("COMMIT")
             .execute(&mut *connection)
             .await
             .expect("release SQLite writer lock");
-        assert!(
-            reservation
-                .await
-                .expect("reservation task")
-                .expect("reservation query")
-                .is_none(),
-            "expired exchange must not become reserved after lock release"
-        );
+        let result = task.await.expect("transition task");
         drop(connection);
         pool.close().await;
+        result
     }
+}
+
+async fn count_rows(fixture: &StoreFixture, table: &str) -> i64 {
+    count_query(fixture, &format!("SELECT COUNT(*) FROM {table}")).await
+}
+
+async fn count_query(fixture: &StoreFixture, sql: &str) -> i64 {
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL fixture");
+        let count = sqlx::query_scalar(sql)
+            .fetch_one(&pool)
+            .await
+            .expect("count rows");
+        pool.close().await;
+        count
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite fixture");
+        let count = sqlx::query_scalar(sql)
+            .fetch_one(&pool)
+            .await
+            .expect("count rows");
+        pool.close().await;
+        count
+    }
+}
+
+/// Read two text columns of one stored row, bypassing every store filter.
+async fn stored_row(fixture: &StoreFixture, sql: &str, key: &str) -> (String, Option<String>) {
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL fixture");
+        let row = sqlx::query_as(&sql.replace('?', "$1"))
+            .bind(key)
+            .fetch_one(&pool)
+            .await
+            .expect("read stored row");
+        pool.close().await;
+        row
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite fixture");
+        let row = sqlx::query_as(sql)
+            .bind(key)
+            .fetch_one(&pool)
+            .await
+            .expect("read stored row");
+        pool.close().await;
+        row
+    }
+}
+
+fn short_lived_approval(store: &Store, reference: &str) -> ApprovalRecord {
+    let now_ms = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock after Unix epoch")
+            .as_millis(),
+    )
+    .expect("current time fits i64");
+    ApprovalRecord {
+        approval_reference: reference.to_owned(),
+        requester_id: "requester".to_owned(),
+        workspace_id: store.tenant_id().to_owned(),
+        secret_name: "restricted.secret".to_owned(),
+        purpose: "lock wait approval".to_owned(),
+        fulfiller_hint: "fulfiller".to_owned(),
+        rule_id: Some("approval-rule".to_owned()),
+        reason: "requires approval".to_owned(),
+        requester_ring: None,
+        fulfiller_ring: None,
+        approver_ids: vec!["approver".to_owned()],
+        approver_rings: Vec::new(),
+        status: "pending".to_owned(),
+        created_at_ms: now_ms,
+        // create_approval stores the database clock plus this one-second TTL.
+        expires_at_ms: now_ms + 1_000,
+        decided_at_ms: None,
+        decided_by: None,
+    }
+}
+
+/// P02-D9: every expiring transition samples its deadline after any lock
+/// wait. The results are re-read through expiry-filtered queries, so each case
+/// also checks the stored row: a transition that committed on an expired row
+/// would change it even though the store returns nothing.
+#[tokio::test]
+async fn expiring_transitions_recheck_their_deadline_after_a_lock_wait() {
+    const LOCK_EXCHANGE: &str = "SELECT 1 FROM exchanges WHERE id = $1 FOR UPDATE";
+    const LOCK_REQUEST: &str = "SELECT 1 FROM secret_requests WHERE id = $1 FOR UPDATE";
+    const LOCK_APPROVAL: &str = "SELECT 1 FROM approvals WHERE reference = $1 FOR UPDATE";
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store().clone();
+
+    let reserve_id = "f".repeat(64);
+    store
+        .create_exchange(exchange_record(&reserve_id), 1)
+        .await
+        .expect("create exchange that expires during the reservation wait");
+    let (raced, id) = (store.clone(), reserve_id.clone());
+    let reserved = after_lock_wait(&fixture, LOCK_EXCHANGE, &reserve_id, async move {
+        raced.reserve_exchange(&id, "fulfiller").await
+    })
+    .await
+    .expect("reservation query");
+    assert!(reserved.is_none());
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, fulfilled_by FROM exchanges WHERE id = ?",
+            &reserve_id
+        )
+        .await,
+        ("pending".to_owned(), None),
+        "an expired exchange must not be reserved after the lock is released"
+    );
+
+    let submit_id = "c".repeat(64);
+    store
+        .create_exchange(exchange_record(&submit_id), 1)
+        .await
+        .expect("create exchange that expires during the submission wait");
+    store
+        .reserve_exchange(&submit_id, "fulfiller")
+        .await
+        .unwrap()
+        .expect("reserve before the deadline");
+    let (raced, id) = (store.clone(), submit_id.clone());
+    let submitted = after_lock_wait(&fixture, LOCK_EXCHANGE, &submit_id, async move {
+        raced
+            .submit_exchange(&id, "fulfiller", "ZW5j", "Y2lwaGVydGV4dA", 60)
+            .await
+    })
+    .await
+    .expect("exchange submission query");
+    assert!(submitted.is_none());
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, ciphertext FROM exchanges WHERE id = ?",
+            &submit_id
+        )
+        .await,
+        ("reserved".to_owned(), None),
+        "no ciphertext may be stored on an expired exchange"
+    );
+
+    let retrieve_id = "b".repeat(64);
+    store
+        .create_exchange(exchange_record(&retrieve_id), 60)
+        .await
+        .expect("create exchange for retrieval");
+    store
+        .reserve_exchange(&retrieve_id, "fulfiller")
+        .await
+        .unwrap()
+        .expect("reserve exchange for retrieval");
+    store
+        .submit_exchange(&retrieve_id, "fulfiller", "ZW5j", "Y2lwaGVydGV4dA", 1)
+        .await
+        .unwrap()
+        .expect("submit ciphertext that expires during the retrieval wait");
+    let (raced, id) = (store.clone(), retrieve_id.clone());
+    let retrieved = after_lock_wait(&fixture, LOCK_EXCHANGE, &retrieve_id, async move {
+        raced.consume_exchange(&id, "requester").await
+    })
+    .await
+    .expect("exchange retrieval query");
+    assert!(
+        retrieved.is_none(),
+        "expired exchange ciphertext must not be returned after a lock wait"
+    );
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, ciphertext FROM exchanges WHERE id = ?",
+            &retrieve_id
+        )
+        .await,
+        ("submitted".to_owned(), Some("Y2lwaGVydGV4dA".to_owned()))
+    );
+
+    let revoke_id = "9".repeat(64);
+    store
+        .create_exchange(exchange_record(&revoke_id), 1)
+        .await
+        .expect("create exchange that expires during the revocation wait");
+    let (raced, id) = (store.clone(), revoke_id.clone());
+    let revoked = after_lock_wait(&fixture, LOCK_EXCHANGE, &revoke_id, async move {
+        raced.revoke_exchange(&id, Some("requester"), 60).await
+    })
+    .await
+    .expect("exchange revocation query");
+    assert!(revoked.is_none());
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, fulfilled_by FROM exchanges WHERE id = ?",
+            &revoke_id
+        )
+        .await,
+        ("pending".to_owned(), None)
+    );
+
+    let pending_request = store
+        .create_secret_request("requester", "key-lock-submit", "lock wait", "code", 1)
+        .await
+        .expect("create request that expires during the submission wait");
+    let (raced, id) = (store.clone(), pending_request.clone());
+    let accepted = after_lock_wait(&fixture, LOCK_REQUEST, &pending_request, async move {
+        raced
+            .submit_secret_request(&id, "requester", "enc", "ciphertext", 60)
+            .await
+    })
+    .await
+    .expect("secret submission query");
+    assert!(!accepted);
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, ciphertext FROM secret_requests WHERE id = ?",
+            &pending_request
+        )
+        .await,
+        ("pending".to_owned(), None),
+        "no ciphertext may be stored on an expired request"
+    );
+
+    let submitted_request = store
+        .create_secret_request("requester", "key-lock-retrieve", "lock wait", "code", 60)
+        .await
+        .expect("create request for retrieval");
+    assert!(
+        store
+            .submit_secret_request(&submitted_request, "requester", "enc", "ciphertext", 1)
+            .await
+            .unwrap()
+    );
+    let (raced, id) = (store.clone(), submitted_request.clone());
+    let consumed = after_lock_wait(&fixture, LOCK_REQUEST, &submitted_request, async move {
+        raced.consume_secret_request(&id, "requester").await
+    })
+    .await
+    .expect("secret retrieval query");
+    assert!(
+        consumed.is_none(),
+        "expired secret ciphertext must not be returned after a lock wait"
+    );
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, ciphertext FROM secret_requests WHERE id = ?",
+            &submitted_request
+        )
+        .await,
+        ("submitted".to_owned(), Some("ciphertext".to_owned()))
+    );
+
+    let idempotent = short_lived_approval(&store, "apr_cccccccccccccccccccccccc");
+    store.create_approval(&idempotent).await.unwrap();
+    let (raced, reference) = (store.clone(), idempotent.approval_reference.clone());
+    let decided = after_lock_wait(
+        &fixture,
+        LOCK_APPROVAL,
+        &idempotent.approval_reference,
+        async move {
+            raced
+                .decide_approval_idempotent(&reference, "approved", "approver", "lock-wait-key")
+                .await
+        },
+    )
+    .await
+    .expect("idempotent approval decision query");
+    assert!(matches!(
+        decided,
+        blindpass_controller::store::ApprovalDecisionOutcome::NotFound
+    ));
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, decided_by FROM approvals WHERE reference = ?",
+            &idempotent.approval_reference
+        )
+        .await,
+        ("pending".to_owned(), None),
+        "an expired approval must not be decided after the lock is released"
+    );
+
+    let plain = short_lived_approval(&store, "apr_dddddddddddddddddddddddd");
+    store.create_approval(&plain).await.unwrap();
+    let (raced, reference) = (store.clone(), plain.approval_reference.clone());
+    let decided = after_lock_wait(
+        &fixture,
+        LOCK_APPROVAL,
+        &plain.approval_reference,
+        async move {
+            raced
+                .decide_approval(&reference, "rejected", "approver")
+                .await
+        },
+    )
+    .await
+    .expect("approval decision query");
+    assert!(decided.is_none());
+    assert_eq!(
+        stored_row(
+            &fixture,
+            "SELECT status, decided_by FROM approvals WHERE reference = ?",
+            &plain.approval_reference
+        )
+        .await,
+        ("pending".to_owned(), None)
+    );
     fixture.close().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn exchange_revocation_and_approval_decision_use_expiry_and_compare_and_set() {
     let fixture = StoreFixture::new().await;
     let store = fixture.store().clone();
@@ -956,10 +1459,42 @@ async fn exchange_revocation_and_approval_decision_use_expiry_and_compare_and_se
             .len(),
         1
     );
+
+    // create_approval stores expires_at as the database clock plus
+    // (expires_at_ms - created_at_ms), so this approval lives for one second.
+    let expiring = ApprovalRecord {
+        approval_reference: "apr_bbbbbbbbbbbbbbbbbbbbbbbb".to_owned(),
+        expires_at_ms: approval.created_at_ms + 1_000,
+        ..approval.clone()
+    };
+    store.create_approval(&expiring).await.unwrap();
+    assert_eq!(store.count_pending_approvals().await.unwrap(), 1);
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+    assert!(
+        store
+            .decide_approval(&expiring.approval_reference, "approved", "approver")
+            .await
+            .unwrap()
+            .is_none(),
+        "an expired approval cannot be decided"
+    );
+    assert!(matches!(
+        store
+            .decide_approval_idempotent(
+                &expiring.approval_reference,
+                "approved",
+                "approver",
+                "expired-approval-key",
+            )
+            .await
+            .unwrap(),
+        blindpass_controller::store::ApprovalDecisionOutcome::NotFound
+    ));
+    assert_eq!(store.count_pending_approvals().await.unwrap(), 0);
     fixture.close().await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn bootstrap_serializes_first_admin_creation_and_consumes_setup_tokens_once() {
     let fixture = StoreFixture::new().await;
     let store = fixture.store().clone();
@@ -969,7 +1504,9 @@ async fn bootstrap_serializes_first_admin_creation_and_consumes_setup_tokens_onc
             store
                 .bootstrap_local_operator(
                     &format!("00000000-0000-4000-8000-{index:012}"),
-                    "first-admin",
+                    // Distinct usernames: only bootstrap serialization, not a
+                    // username constraint, may limit this to one operator.
+                    &format!("first-admin-{index}"),
                     "First administrator",
                     "argon2id$fixture-hash",
                 )
@@ -985,6 +1522,7 @@ async fn bootstrap_serializes_first_admin_creation_and_consumes_setup_tokens_onc
             .count(),
         1
     );
+    assert_eq!(count_rows(&fixture, "operators").await, 1);
     assert!(store.has_active_admin().await.unwrap());
     assert!(
         !store
@@ -1026,7 +1564,74 @@ async fn bootstrap_serializes_first_admin_creation_and_consumes_setup_tokens_onc
             .await
             .unwrap()
     );
+    assert_eq!(count_rows(&fixture, "operators").await, 1);
     assert!(store.has_active_admin().await.unwrap());
+    fixture.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_refresh_replay_revokes_the_family_without_store_errors() {
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store().clone();
+    let operator_id = "00000000-0000-4000-8000-000000000021";
+    assert!(
+        store
+            .bootstrap_local_operator(operator_id, "admin", "Local Admin", "password-hash")
+            .await
+            .unwrap()
+    );
+    store
+        .create_browser_session(operator_id, "password-hash", "shared-refresh-hash", 3_600)
+        .await
+        .expect("create session")
+        .expect("operator is active");
+    // Two tabs, or an attacker replaying a stolen refresh token, present the
+    // same token at once: one rotation commits and the replays revoke the
+    // whole family instead of failing with a store error. The rotating caller
+    // may itself observe that revocation before it returns.
+    let attempts = (0..8).map(|index| {
+        let store = store.clone();
+        tokio::spawn(async move {
+            store
+                .rotate_browser_session("shared-refresh-hash", &format!("rotated-{index}"), 3_600)
+                .await
+        })
+    });
+    let results = futures_join(attempts).await;
+    assert!(
+        results.iter().all(Result::is_ok),
+        "store errors: {:?}",
+        results
+            .iter()
+            .filter(|result| result.is_err())
+            .collect::<Vec<_>>()
+    );
+    let winners = results
+        .into_iter()
+        .filter_map(|result| result.unwrap())
+        .collect::<Vec<_>>();
+    assert!(winners.len() <= 1, "at most one rotation succeeds");
+    for winner in &winners {
+        assert!(
+            store
+                .browser_session_by_id(&winner.session_id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+    let sessions =
+        format!("SELECT COUNT(*) FROM operator_sessions WHERE operator_id = '{operator_id}'");
+    assert_eq!(
+        count_query(&fixture, &sessions).await,
+        2,
+        "one rotated row was inserted"
+    );
+    assert_eq!(
+        count_query(&fixture, &format!("{sessions} AND revoked_at IS NULL")).await,
+        0,
+        "a replayed refresh token revokes the whole session family"
+    );
     fixture.close().await;
 }
 
@@ -1043,18 +1648,101 @@ async fn local_browser_sessions_are_operator_bound_idle_checked_and_revocable() 
     );
 
     let session = store
-        .create_browser_session(operator_id, "refresh-token-hash", 60)
+        .create_browser_session(operator_id, "password-hash", "refresh-token-hash", 60)
         .await
         .unwrap()
         .expect("active operator receives a browser session");
     let other_session = store
-        .create_browser_session(operator_id, "other-refresh-token-hash", 60)
+        .create_browser_session(operator_id, "password-hash", "other-refresh-token-hash", 60)
         .await
         .unwrap()
         .expect("active operator can have another browser session");
     assert_eq!(session.operator.id, operator_id);
     assert_eq!(session.operator.role, "admin");
     assert!(!session.csrf_secret.is_empty());
+
+    let idle = store
+        .create_browser_session(operator_id, "password-hash", "idle-refresh-token-hash", 60)
+        .await
+        .unwrap()
+        .expect("active operator receives an idle-test session");
+    let nearly_idle = store
+        .create_browser_session(
+            operator_id,
+            "password-hash",
+            "nearly-idle-refresh-token-hash",
+            60,
+        )
+        .await
+        .unwrap()
+        .expect("active operator receives a nearly idle session");
+    const IDLE_LIMIT_MS: i64 = 12 * 60 * 60 * 1_000;
+    let age = [
+        (idle.session_id.as_str(), IDLE_LIMIT_MS + 1_000),
+        (nearly_idle.session_id.as_str(), IDLE_LIMIT_MS - 60_000),
+    ];
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL session fixture");
+        for (id, age_ms) in age {
+            sqlx::query(
+                "UPDATE operator_sessions SET last_seen_at = last_seen_at - $1 WHERE id = $2",
+            )
+            .bind(age_ms)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("age PostgreSQL browser session");
+        }
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite session fixture");
+        for (id, age_ms) in age {
+            sqlx::query(
+                "UPDATE operator_sessions SET last_seen_at = last_seen_at - ? WHERE id = ?",
+            )
+            .bind(age_ms)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("age SQLite browser session");
+        }
+        pool.close().await;
+    }
+    assert!(
+        store
+            .browser_session_by_id(&idle.session_id)
+            .await
+            .unwrap()
+            .is_none(),
+        "a session idle past 12 hours is rejected"
+    );
+    assert!(!store.touch_browser_session(&idle.session_id).await.unwrap());
+    assert!(
+        store
+            .rotate_browser_session("idle-refresh-token-hash", "idle-rotated-hash", 60)
+            .await
+            .unwrap()
+            .is_none(),
+        "an idle session cannot be refreshed back into use"
+    );
+    assert!(
+        store
+            .browser_session_by_id(&nearly_idle.session_id)
+            .await
+            .unwrap()
+            .is_some(),
+        "a session inside the 12 hour idle bound stays valid"
+    );
+    assert!(
+        store
+            .touch_browser_session(&nearly_idle.session_id)
+            .await
+            .unwrap()
+    );
     assert!(
         store
             .touch_browser_session(&session.session_id)
@@ -1072,7 +1760,12 @@ async fn local_browser_sessions_are_operator_bound_idle_checked_and_revocable() 
     );
     assert!(
         store
-            .change_operator_password(operator_id, &session.session_id, "new-password-hash")
+            .change_operator_password(
+                operator_id,
+                &session.session_id,
+                "password-hash",
+                "new-password-hash",
+            )
             .await
             .unwrap()
     );
@@ -1116,6 +1809,194 @@ async fn local_browser_sessions_are_operator_bound_idle_checked_and_revocable() 
 }
 
 #[tokio::test]
+async fn sessions_and_password_changes_are_bound_to_the_verified_password() {
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store();
+    let operator_id = "00000000-0000-4000-8000-000000000031";
+    assert!(
+        store
+            .bootstrap_local_operator(operator_id, "admin", "Local Admin", "original-hash")
+            .await
+            .unwrap()
+    );
+    let sessions =
+        format!("SELECT COUNT(*) FROM operator_sessions WHERE operator_id = '{operator_id}'");
+    let first = store
+        .create_browser_session(operator_id, "original-hash", "first-refresh-hash", 60)
+        .await
+        .unwrap()
+        .expect("a login verified against the stored hash receives a session");
+    assert!(
+        store
+            .create_browser_session(operator_id, "stale-hash", "stale-refresh-hash", 60)
+            .await
+            .unwrap()
+            .is_none(),
+        "a login verified against another hash receives no session"
+    );
+    assert_eq!(count_query(&fixture, &sessions).await, 1);
+
+    // An administrator resets the password while a login and a password
+    // change, both verified against the original hash, are still in flight.
+    assert!(
+        store
+            .reset_local_operator_password(operator_id, "temporary-hash")
+            .await
+            .unwrap()
+    );
+    assert!(
+        store
+            .create_browser_session(operator_id, "original-hash", "late-refresh-hash", 60)
+            .await
+            .unwrap()
+            .is_none(),
+        "a login verified before the reset does not survive it"
+    );
+    assert_eq!(count_query(&fixture, &sessions).await, 1);
+    let temporary = store
+        .create_browser_session(operator_id, "temporary-hash", "temporary-refresh-hash", 60)
+        .await
+        .unwrap()
+        .expect("the temporary password signs in");
+    assert!(
+        !store
+            .change_operator_password(
+                operator_id,
+                &temporary.session_id,
+                "original-hash",
+                "attacker-chosen-hash",
+            )
+            .await
+            .unwrap(),
+        "a change verified before the reset cannot overwrite it"
+    );
+    assert!(
+        !store
+            .change_operator_password(
+                operator_id,
+                &first.session_id,
+                "temporary-hash",
+                "revoked-session-hash"
+            )
+            .await
+            .unwrap(),
+        "a session revoked by the reset cannot change the password"
+    );
+    let operator = store.operator_by_id(operator_id).await.unwrap().unwrap();
+    assert_eq!(operator.password_hash, "temporary-hash");
+    assert!(
+        operator.must_change_password,
+        "the reset still forces a change"
+    );
+
+    assert!(
+        store
+            .change_operator_password(
+                operator_id,
+                &temporary.session_id,
+                "temporary-hash",
+                "chosen-hash"
+            )
+            .await
+            .unwrap()
+    );
+    let operator = store.operator_by_id(operator_id).await.unwrap().unwrap();
+    assert_eq!(operator.password_hash, "chosen-hash");
+    assert!(!operator.must_change_password);
+    assert!(
+        store
+            .browser_session_by_id(&temporary.session_id)
+            .await
+            .unwrap()
+            .is_some(),
+        "the changing session stays signed in"
+    );
+    fixture.close().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn password_changes_revoke_sessions_created_or_rotated_concurrently() {
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store().clone();
+    for round in 0..20 {
+        let operator_id = format!("00000000-0000-4000-8000-{round:012}");
+        store
+            .create_local_operator(
+                &operator_id,
+                &format!("race-operator-{round}"),
+                "Race Operator",
+                "operator",
+                "old-hash",
+            )
+            .await
+            .unwrap();
+        let current = store
+            .create_browser_session(&operator_id, "old-hash", &format!("current-{round}"), 60)
+            .await
+            .unwrap()
+            .unwrap();
+        store
+            .create_browser_session(&operator_id, "old-hash", &format!("other-{round}"), 60)
+            .await
+            .unwrap()
+            .unwrap();
+        // Another tab refreshes and a login verified against the old
+        // password finishes while the password changes. Neither may leave a
+        // session the change did not revoke.
+        let change = {
+            let store = store.clone();
+            let operator_id = operator_id.clone();
+            let session_id = current.session_id.clone();
+            tokio::spawn(async move {
+                store
+                    .change_operator_password(&operator_id, &session_id, "old-hash", "new-hash")
+                    .await
+            })
+        };
+        let refresh = {
+            let store = store.clone();
+            tokio::spawn(async move {
+                store
+                    .rotate_browser_session(
+                        &format!("other-{round}"),
+                        &format!("rotated-{round}"),
+                        60,
+                    )
+                    .await
+                    .map(|_| ())
+            })
+        };
+        let login = {
+            let store = store.clone();
+            let operator_id = operator_id.clone();
+            tokio::spawn(async move {
+                store
+                    .create_browser_session(&operator_id, "old-hash", &format!("login-{round}"), 60)
+                    .await
+                    .map(|_| ())
+            })
+        };
+        assert!(
+            change.await.unwrap().unwrap(),
+            "round {round}: the change applies"
+        );
+        refresh.await.unwrap().unwrap();
+        login.await.unwrap().unwrap();
+        let survivors = format!(
+            "SELECT COUNT(*) FROM operator_sessions WHERE operator_id = '{operator_id}'
+            AND id <> '{}' AND revoked_at IS NULL",
+            current.session_id
+        );
+        assert_eq!(
+            count_query(&fixture, &survivors).await,
+            0,
+            "round {round}: a session outlived the password change"
+        );
+    }
+    fixture.close().await;
+}
+
+#[tokio::test]
 async fn browser_refresh_rotation_and_replay_revoke_the_session_family() {
     let fixture = StoreFixture::new().await;
     let store = fixture.store();
@@ -1127,7 +2008,7 @@ async fn browser_refresh_rotation_and_replay_revoke_the_session_family() {
             .unwrap()
     );
     let first = store
-        .create_browser_session(operator_id, "first-refresh-hash", 60)
+        .create_browser_session(operator_id, "password-hash", "first-refresh-hash", 60)
         .await
         .unwrap()
         .unwrap();
@@ -1216,7 +2097,7 @@ async fn local_operator_management_preserves_a_final_admin_and_revokes_reset_ses
         Some(true)
     );
     let session = store
-        .create_browser_session(second_admin, "reset-refresh-hash", 60)
+        .create_browser_session(second_admin, "hash-2", "reset-refresh-hash", 60)
         .await
         .unwrap()
         .unwrap();
@@ -1469,8 +2350,12 @@ fn exchange_record(exchange_id: &str) -> ExchangeRecord {
     }
 }
 
+/// Await tasks that are all already running. Collecting first matters: the
+/// callers pass a lazy `map` that spawns on iteration, so awaiting inside the
+/// same loop would start each task only after the previous one finished.
 async fn futures_join<T>(tasks: impl IntoIterator<Item = tokio::task::JoinHandle<T>>) -> Vec<T> {
-    let mut results = Vec::new();
+    let tasks: Vec<_> = tasks.into_iter().collect();
+    let mut results = Vec::with_capacity(tasks.len());
     for task in tasks {
         results.push(task.await.expect("concurrent store worker"));
     }
@@ -1702,6 +2587,28 @@ async fn clock_reconciliation_purges_expiring_state_and_restores_startup() {
         .await
         .expect("reject before regression")
         .expect("pending approval is decided");
+    let mut idempotent = approval.clone();
+    idempotent.approval_reference = "apr_clock_reconcile_idempotent".to_owned();
+    store
+        .create_approval(&idempotent)
+        .await
+        .expect("create approval to reject idempotently");
+    assert!(matches!(
+        store
+            .decide_approval_idempotent(
+                &idempotent.approval_reference,
+                "rejected",
+                "approver",
+                &"d".repeat(64),
+            )
+            .await
+            .expect("idempotent rejection before regression"),
+        blindpass_controller::store::ApprovalDecisionOutcome::Applied(_)
+    ));
+    store
+        .consume_rate_limit("agent-token:203.0.113.7", 5, 60_000)
+        .await
+        .expect("open a rate window before regression");
     assert!(
         store
             .issue_bootstrap_token("dummy-token-hash", 900)
@@ -1715,7 +2622,7 @@ async fn clock_reconciliation_purges_expiring_state_and_restores_startup() {
             .expect("bootstrap operator")
     );
     let session = store
-        .create_browser_session("op-clock", "dummy-refresh-hash", 3_600)
+        .create_browser_session("op-clock", "dummy-hash", "dummy-refresh-hash", 3_600)
         .await
         .expect("create session")
         .expect("operator is active");
@@ -1768,7 +2675,22 @@ async fn clock_reconciliation_purges_expiring_state_and_restores_startup() {
     assert_eq!(repaired.removed_exchanges, 1);
     assert_eq!(repaired.removed_approvals, 2);
     assert_eq!(repaired.removed_bootstrap_tokens, 1);
+    assert_eq!(repaired.removed_rate_windows, 1);
+    assert_eq!(repaired.removed_idempotency_keys, 1);
     assert_eq!(repaired.revoked_sessions, 1);
+    assert_eq!(repaired.persisted_ms, i64::MAX / 2);
+    let host_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after Unix epoch")
+        .as_millis() as i64;
+    assert!(
+        (repaired.database_now_ms - host_ms).abs() < 5_000,
+        "database clock {} reported near host clock {host_ms}",
+        repaired.database_now_ms
+    );
+    for table in ["rate_windows", "idempotency_keys", "bootstrap_tokens"] {
+        assert_eq!(count_rows(&fixture, table).await, 0, "{table} purged");
+    }
 
     let reopened = Store::connect(&fixture.url)
         .await
@@ -1807,6 +2729,15 @@ async fn clock_reconciliation_purges_expiring_state_and_restores_startup() {
             .get_approval(&rejected.approval_reference)
             .await
             .expect("read rejected approval")
+            .expect("rejected approval is kept")
+            .status,
+        "rejected"
+    );
+    assert_eq!(
+        reopened
+            .get_approval(&idempotent.approval_reference)
+            .await
+            .expect("read idempotently rejected approval")
             .expect("rejected approval is kept")
             .status,
         "rejected"

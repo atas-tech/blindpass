@@ -1,0 +1,47 @@
+{
+  "description": "CV05 decision hashes computed by the TypeScript hashPolicyDecision for strings that need JSON escaping",
+  "cases": [
+    {
+      "label": "quotes and backslashes",
+      "decision": {
+        "mode": "allow",
+        "approvalRequired": false,
+        "ruleId": "rule \"quoted\" \\ back",
+        "reason": "Needs \"CFO\" sign-off \\ finance/ops",
+        "secretName": "finance.api_key"
+      },
+      "allowedFulfillerId": "agent-b",
+      "workspaceId": "workspace \"p00\"",
+      "hash": "6812a2b789c10b77ce5b824f1adeada72132f76c85111e5e49ac6f5c04776524"
+    },
+    {
+      "label": "control characters",
+      "decision": {
+        "mode": "pending_approval",
+        "approvalRequired": true,
+        "ruleId": "ctl",
+        "reason": "line1\nline2\ttab\rcr\bbs\fff\u0001\u001f\u007fdel",
+        "approvalReference": "apr_\u0000nul",
+        "secretName": "restricted.secret"
+      },
+      "allowedFulfillerId": null,
+      "workspaceId": null,
+      "hash": "5eb9fd822cccbf6c02d2e687c99b19848aa153efcf0d2894316d676240be45f5"
+    },
+    {
+      "label": "non-ASCII and separators",
+      "decision": {
+        "mode": "allow",
+        "approvalRequired": false,
+        "ruleId": "r\u00e8gle-\u00e9t\u00e9",
+        "reason": "Genehmigung \u2014 f\u00fcr Produktion \u2713 \ud83d\udd10 \u2028\u2029 end",
+        "requesterRing": "bl\u00e5",
+        "fulfillerRing": "\u7d2b",
+        "secretName": "stripe.api_key.prod"
+      },
+      "allowedFulfillerId": "agent-b/ring/\u7d2b",
+      "workspaceId": "workspace-p00",
+      "hash": "74b5df365f934b1594bf37a0837c2a791bdd6ceb4f375b489b6c115b7c459d6c"
+    }
+  ]
+}

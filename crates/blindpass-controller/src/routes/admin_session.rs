@@ -92,7 +92,12 @@ async fn login(
         return unavailable();
     };
     let session = match store
-        .create_browser_session(&operator.id, &refresh_hash, state.refresh_token_ttl_seconds)
+        .create_browser_session(
+            &operator.id,
+            &operator.password_hash,
+            &refresh_hash,
+            state.refresh_token_ttl_seconds,
+        )
         .await
     {
         Ok(Some(session)) => session,
@@ -283,7 +288,12 @@ async fn change_password(
         return unavailable();
     };
     match store
-        .change_operator_password(&session.operator.id, &session.session_id, &password_hash)
+        .change_operator_password(
+            &session.operator.id,
+            &session.session_id,
+            &session.operator.password_hash,
+            &password_hash,
+        )
         .await
     {
         Ok(true) => StatusCode::NO_CONTENT.into_response(),

@@ -203,8 +203,10 @@ async fn metadata(
     let Some(store) = state.store.as_ref() else {
         return service_unavailable();
     };
+    // Like SPS, a live signed link keeps metadata authority after submission
+    // until the request's own deadline; the store query enforces that deadline.
     let metadata = match store.secret_request_metadata(&id).await {
-        Ok(Some(metadata)) if capability_within_expiry(expiry, metadata.expires_at_ms) => metadata,
+        Ok(Some(metadata)) => metadata,
         _ => return expired_request(),
     };
     Json(json!({
@@ -410,11 +412,15 @@ async fn issue_browser_status_capability(
     let Some(store) = state.store.as_ref() else {
         return service_unavailable();
     };
-    let metadata = match store.secret_request_metadata(&id).await {
-        Ok(Some(metadata)) if capability_within_expiry(expiry, metadata.expires_at_ms) => metadata,
+    let expiry = match store.secret_request_metadata(&id).await {
+        Ok(Some(metadata)) => {
+            match status_capability_expiry(expiry, metadata.expires_at_ms, current_seconds()) {
+                Some(expiry) => expiry,
+                None => return gone_status(),
+            }
+        }
         _ => return gone_status(),
     };
-    let _ = metadata;
     match sign_browser_payload(
         &id,
         expiry,
@@ -503,9 +509,17 @@ fn valid_request_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
-fn capability_within_expiry(token_expiry_seconds: u64, request_expiry_milliseconds: i64) -> bool {
-    i64::try_from(token_expiry_seconds.saturating_mul(1_000))
-        .is_ok_and(|token_expiry| token_expiry <= request_expiry_milliseconds)
+/// Status authority expires no later than the metadata credential or the
+/// request deadline (P02-D5). Submission shortens the deadline, so a retry
+/// after submit is clamped to it rather than refused or extended.
+fn status_capability_expiry(
+    metadata_expiry_seconds: u64,
+    request_expiry_milliseconds: i64,
+    now_seconds: u64,
+) -> Option<u64> {
+    let deadline_seconds = u64::try_from(request_expiry_milliseconds.div_euclid(1_000)).ok()?;
+    let expiry = metadata_expiry_seconds.min(deadline_seconds);
+    (expiry >= now_seconds).then_some(expiry)
 }
 
 fn valid_base64(value: &str, maximum: usize) -> bool {
@@ -578,4 +592,44 @@ fn service_unavailable() -> Response {
         Json(json!({"error":"service_unavailable"})),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CONFIRMATION_ADJECTIVES, CONFIRMATION_NOUNS, confirmation_code};
+    use serde_json::Value;
+
+    const CV04: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/contract-tests/fixtures/cv04-confirmation-code.json"
+    ));
+
+    #[test]
+    fn cv04_confirmation_codes_use_the_shared_dictionary_and_shape() {
+        let fixture: Value = serde_json::from_str(CV04).expect("CV04 fixture is JSON");
+        let words = |key: &str| -> Vec<String> {
+            fixture[key]
+                .as_array()
+                .expect("word list")
+                .iter()
+                .map(|word| word.as_str().expect("word").to_owned())
+                .collect()
+        };
+        assert_eq!(words("adjectives"), CONFIRMATION_ADJECTIVES);
+        assert_eq!(words("nouns"), CONFIRMATION_NOUNS);
+        assert_eq!(fixture["number_min"], 0);
+        assert_eq!(fixture["number_max"], 99);
+        assert_eq!(fixture["format"], "ADJECTIVE-NOUN-00");
+        for _ in 0..512 {
+            let code = confirmation_code();
+            let parts = code.split('-').collect::<Vec<_>>();
+            assert_eq!(parts.len(), 3, "{code}");
+            assert!(CONFIRMATION_ADJECTIVES.contains(&parts[0]), "{code}");
+            assert!(CONFIRMATION_NOUNS.contains(&parts[1]), "{code}");
+            assert!(
+                parts[2].len() == 2 && parts[2].bytes().all(|byte| byte.is_ascii_digit()),
+                "{code}"
+            );
+        }
+    }
 }

@@ -40,8 +40,9 @@ interface RedisLike {
 interface ServerAdapter {
   baseUrl: string;
   fixture: ContractFixture;
-  externalJwt(claims?: Record<string, unknown>, nowSeconds?: number): string;
+  externalJwt(claims?: Record<string, unknown>, nowSeconds?: number, omitClaims?: ReadonlyArray<"iss" | "aud">): string;
   restartController?(): Promise<void>;
+  withReadinessFailure?<T>(run: () => Promise<T>): Promise<T>;
   close(): Promise<void>;
 }
 
@@ -437,14 +438,14 @@ class TsServerAdapter implements ServerAdapter {
     }
   }
 
-  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number): string {
+  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number, omitClaims: ReadonlyArray<"iss" | "aud"> = []): string {
     const token = signExternalJwt(this.externalIdentity, {
       role: "gateway",
       sub: "contract-external/ring/blue",
       workspace_id: this.fixture.workspaceId,
       workload_mode: "external",
       ...claims
-    }, nowSeconds);
+    }, nowSeconds, omitClaims);
     this.fixture?.canaries.push(token);
     return token;
   }
@@ -571,14 +572,14 @@ class BaseUrlAdapter implements ServerAdapter {
     this.fixture = await seedFixture(this.baseUrl, seedToken, hmacSecret);
   }
 
-  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number): string {
+  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number, omitClaims: ReadonlyArray<"iss" | "aud"> = []): string {
     const token = signExternalJwt(this.externalIdentity, {
       role: "gateway",
       sub: "contract-external/ring/blue",
       workspace_id: this.fixture.workspaceId,
       workload_mode: "external",
       ...claims
-    }, nowSeconds);
+    }, nowSeconds, omitClaims);
     this.fixture?.canaries.push(token);
     return token;
   }
@@ -701,7 +702,6 @@ class RustServerAdapter implements RustCrashTestAdapter {
       BLINDPASS_TEST_REVOKED_TTL_SECONDS: process.env.CONTRACT_REVOKED_TTL_SECONDS ?? "4",
       BLINDPASS_TEST_APPROVAL_TTL_SECONDS: process.env.CONTRACT_APPROVAL_TTL_SECONDS ?? "20",
       BLINDPASS_TEST_REFRESH_TOKEN_TTL_SECONDS: process.env.CONTRACT_REFRESH_TOKEN_TTL_SECONDS ?? "10",
-      BLINDPASS_TEST_RATE_LIMIT_WINDOW_MS: process.env.CONTRACT_RATE_LIMIT_WINDOW_MS ?? "1000",
       BLINDPASS_TEST_AGENT_TOKEN_RATE_WINDOW_MS: process.env.CONTRACT_AGENT_TOKEN_RATE_WINDOW_MS ?? "1000"
     };
 
@@ -717,14 +717,14 @@ class RustServerAdapter implements RustCrashTestAdapter {
     }
   }
 
-  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number): string {
+  externalJwt(claims: Record<string, unknown> = {}, nowSeconds?: number, omitClaims: ReadonlyArray<"iss" | "aud"> = []): string {
     const token = signExternalJwt(this.externalIdentity, {
       role: "gateway",
       sub: "contract-external/ring/blue",
       workspace_id: this.fixture.workspaceId,
       workload_mode: "external",
       ...claims
-    }, nowSeconds);
+    }, nowSeconds, omitClaims);
     this.fixture?.canaries.push(token);
     return token;
   }
@@ -743,6 +743,56 @@ class RustServerAdapter implements RustCrashTestAdapter {
       this.child = null;
     }
     await this.launchController();
+  }
+
+  // The controller fails closed while its persisted clock mark is ahead of the
+  // database clock (P02-D9). Moving the mark an hour ahead gives CT18 the real
+  // Rust readiness failure on either store without stopping the shared
+  // database; the previous mark is restored afterwards.
+  async withReadinessFailure<T>(run: () => Promise<T>): Promise<T> {
+    const previous = await this.replaceClockMark(Date.now() + 3_600_000);
+    try {
+      return await run();
+    } finally {
+      await this.replaceClockMark(previous);
+    }
+  }
+
+  private async replaceClockMark(value: number): Promise<number> {
+    if (this.adminPool) {
+      const table = `${quoteIdentifier(this.schema)}.controller_clock`;
+      const result = await this.adminPool.query<{ previous: string | number }>(
+        `WITH previous AS (SELECT last_observed_ms FROM ${table} WHERE id = 1 FOR UPDATE)
+        UPDATE ${table} SET last_observed_ms = $1 FROM previous WHERE ${table}.id = 1
+        RETURNING previous.last_observed_ms AS previous`,
+        [value]
+      );
+      if (result.rows.length !== 1) {
+        throw new Error("Rust controller clock mark is missing");
+      }
+      return Number(result.rows[0]!.previous);
+    }
+    const { DatabaseSync } = await import("node:sqlite");
+    const database = new DatabaseSync(path.join(this.tempDir, "controller.db"));
+    try {
+      database.exec("PRAGMA busy_timeout = 5000");
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const row = database.prepare("SELECT last_observed_ms FROM controller_clock WHERE id = 1").get() as
+          { last_observed_ms: number } | undefined;
+        if (!row) {
+          throw new Error("Rust controller clock mark is missing");
+        }
+        database.prepare("UPDATE controller_clock SET last_observed_ms = ? WHERE id = 1").run(value);
+        database.exec("COMMIT");
+        return Number(row.last_observed_ms);
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    } finally {
+      database.close();
+    }
   }
 
   async assertCrashAndRestart(): Promise<void> {

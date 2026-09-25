@@ -280,6 +280,13 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     }));
     expect(expiredExternal.status).toBe(401);
 
+    // SPS verifies workload JWTs with zero clock tolerance: five seconds past
+    // `exp` is expired, not inside a leeway window.
+    const justExpiredExternal = await call("CT03.request.just-expired-external", "/api/v2/secret/request", withBearer(adapter.externalJwt({}, Math.floor(Date.now() / 1000) - 305), {
+      ...jsonRequestBody({ public_key: "Y29udHJhY3Q=", description: "external token expired five seconds ago" })
+    }));
+    expect(justExpiredExternal.status).toBe(401);
+
     const missing = await call("CT03.request.missing-auth", "/api/v2/secret/request", jsonRequestBody({
       public_key: "Y29udHJhY3Q=",
       description: "missing auth"
@@ -295,6 +302,18 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       ...jsonRequestBody({ public_key: "Y29udHJhY3Q=", description: "wrong audience" })
     }));
     expect(wrongAudience.status).toBe(401);
+
+    // A configured issuer and audience are required claims, not checks that
+    // apply only when the token happens to carry them.
+    const missingIssuer = await call("CT03.request.missing-issuer", "/api/v2/secret/request", withBearer(adapter.externalJwt({}, undefined, ["iss"]), {
+      ...jsonRequestBody({ public_key: "Y29udHJhY3Q=", description: "missing issuer" })
+    }));
+    expect(missingIssuer.status).toBe(401);
+
+    const missingAudience = await call("CT03.request.missing-audience", "/api/v2/secret/request", withBearer(adapter.externalJwt({}, undefined, ["aud"]), {
+      ...jsonRequestBody({ public_key: "Y29udHJhY3Q=", description: "missing audience" })
+    }));
+    expect(missingAudience.status).toBe(401);
 
     const invalidPublicKey = await call("CT03.request.invalid-public-key", "/api/v2/secret/request", withBearer(agent(fixture, "requester").token, {
       ...jsonRequestBody({ public_key: "not base64!", description: "invalid public key" })
@@ -340,6 +359,11 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       ...jsonRequestBody({ enc: "ZW5jLXBvbGljeQ==", ciphertext: "Q0FOQVJZX0NJUEhFUl9QMDA" })
     });
     expect(repeated.status).toBe(409);
+
+    // The signed link keeps its metadata authority after submission until the
+    // request's submitted deadline, so a reloaded page is not told it expired.
+    const afterSubmit = await call("CT05.metadata.after-submit", `/api/v2/secret/metadata/${created.requestId}?sig=${encodeURIComponent(created.metadataSig)}`);
+    expect(afterSubmit.status).toBe(200);
 
     const wrongScopeRequest = await createSecretRequest("requester", "CT05 wrong scope request");
     const wrongScope = await submitSecret(wrongScopeRequest.requestId, wrongScopeRequest.metadataSig);
@@ -536,6 +560,21 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
 
     const wrongRetrieve = await call("CT11.retrieve.wrong-agent", `/api/v2/secret/exchange/retrieve/${created.exchange_id}`, withBearer(agent(fixture, "observer").token));
     expect(wrongRetrieve.status).toBe(410);
+
+    // A configured issuer's claim for another workspace never acts as the
+    // requester, even when its subject collides with the requester's. The
+    // denied calls add no audit events, so the P00 audit snapshot is unchanged.
+    const requesterSub = (JSON.parse(Buffer.from(agent(fixture, "requester").token.split(".")[1]!, "base64url").toString()) as { sub: string }).sub;
+    const collidingToken = adapter.externalJwt({ sub: requesterSub, workspace_id: "foreign-workspace" });
+    for (const [method, route] of [
+      ["GET", "status"],
+      ["GET", "retrieve"],
+      ["DELETE", "revoke"]
+    ] as const) {
+      const denied = await httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/${route}/${created.exchange_id}`, withBearer(collidingToken, { method }));
+      expect(denied.status, `${method} ${route} with a colliding foreign-workspace subject`).toBe(410);
+      expect(containsCanary(denied.body, fixture.canaries)).toEqual([]);
+    }
 
     const before = await call("CT11.retrieve.requester", `/api/v2/secret/exchange/retrieve/${created.exchange_id}`, withBearer(agent(fixture, "requester").token));
     expect(before.status).toBe(200);
@@ -846,6 +885,23 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(oversized?.status).toBe(400);
     snapshots.recordValue("CT18.error.validation", { status: oversized?.status, body: oversized?.body });
 
+    if (process.env.SUT === "rust") {
+      if (!adapter.withReadinessFailure) {
+        throw new Error("CT18 requires the Rust adapter to force a readiness failure");
+      }
+      const readiness = await adapter.withReadinessFailure(() => httpRequest(adapter.baseUrl, "/readyz"));
+      expect(readiness.status).toBe(503);
+      expect(readiness.body).toEqual({ ok: false, checks: { database: "down" } });
+      snapshots.recordValue("CT18.error.503", {
+        status: readiness.status,
+        ok: (readiness.body as { ok: boolean }).ok,
+        database: (readiness.body as { checks: { database: string } }).checks.database
+      });
+      const recovered = await httpRequest(adapter.baseUrl, "/readyz");
+      expect(recovered.status).toBe(200);
+      return;
+    }
+
     const unavailableApp = await buildApp({
       store: new InMemoryRequestStore(),
       useInMemoryStore: true,
@@ -1011,6 +1067,30 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       const consumed = await httpRequest(fixture.baseUrl, statusPath);
       expect(consumed.status).toBe(410);
       expect(consumed.body).toEqual({ status: "expired" });
+
+      // A reloaded page retries issuance after its submit response was lost.
+      // Submitting shortens the request deadline below the metadata
+      // credential's expiry; the retry must still succeed, clamped to that
+      // shorter deadline rather than extending authority.
+      const reloaded = await createSecretRequest("requester", "CT19 capability after submit");
+      const reloadedSubmit = await submitSecret(reloaded.requestId, reloaded.submitSig, "Y2lwaGVydGV4dC1jdDE5LXJlbG9hZA==");
+      expect(reloadedSubmit.status).toBe(201);
+      const submittedDeadline = Math.floor(
+        (Date.now() + Number(process.env.CONTRACT_SUBMITTED_TTL_SECONDS ?? 3) * 1_000) / 1_000
+      );
+      const reissued = await httpRequest<{ status_sig: string }>(fixture.baseUrl,
+        `/api/v2/secret/browser-status/${reloaded.requestId}/capability?sig=${encodeURIComponent(reloaded.metadataSig)}`,
+        { method: "POST" });
+      expect(reissued.status).toBe(200);
+      addCanaries(fixture, reissued.body?.status_sig);
+      const reissuedExpiry = Number(reissued.body?.status_sig.split(".", 1)[0]);
+      expect(reissuedExpiry).toBeLessThanOrEqual(Number(reloaded.metadataSig.split(".", 1)[0]));
+      expect(reissuedExpiry).toBeLessThanOrEqual(submittedDeadline);
+      expect(reissuedExpiry * 1_000).toBeGreaterThan(Date.now());
+      const reloadedStatus = await httpRequest<{ status: string }>(fixture.baseUrl,
+        `/api/v2/secret/browser-status/${reloaded.requestId}?sig=${encodeURIComponent(reissued.body?.status_sig ?? "")}`);
+      expect(reloadedStatus.status).toBe(200);
+      expect(reloadedStatus.body).toEqual({ status: "submitted" });
 
       const expiring = await createSecretRequest("requester", "CT19 expired capability");
       const expiringCapability = await httpRequest<{ status_sig: string }>(fixture.baseUrl,

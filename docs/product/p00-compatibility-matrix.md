@@ -16,7 +16,7 @@ This matrix is the implementation boundary for the baseline contract. It records
 | Workspace policy and admin session | Keep as the TypeScript fixture/provisioning path | Contract adapter seed + policy PATCH |
 | Redis request/exchange state | Keep TTL, atomic one-use and lifecycle semantics | CT05–CT12, CT17 |
 | PostgreSQL management/audit state | Keep tenant, role, policy and audit mapping | CT01, CT09–CT17 and SPS integration tests |
-| Rust controller/broker | Controller scaffold and local broker are present; no controller parity claim | P01 broker evidence; P02 contract gate |
+| Rust controller/broker | Controller implements the retained envelope and passes the P02 contract gate locally on SQLite and PostgreSQL; not accepted until hosted CI runs. Local broker present | P01 broker evidence; [P02 evidence](../testing/evidence/p02-controller-api-migration-rerun.md) |
 | Native/container host fleet | Not present; no deployment claim | Linux Fleet Pilot W0–W6 |
 | Hosted paid-tier billing branches | Excluded from the P00 controller envelope | Explicit freeze; existing SPS code remains |
 | Guest intake, x402 and public-offer surfaces | Excluded from the P00 controller envelope | Existing SPS code remains; later scope decision required |
@@ -27,12 +27,12 @@ The following 12 routes are the retained machine contract. The later controller 
 
 | Route | Auth boundary | P00 scenarios |
 |---|---|---|
-| `POST /api/v2/secret/request` | SPS/agent access token or configured external JWKS workload token | CT02, CT03, CT15, CT16–CT18 |
+| `POST /api/v2/secret/request` | SPS/agent access token or configured external JWKS workload token | CT02, CT03, CT16–CT18 |
 | `GET /api/v2/secret/metadata/:id` | Signed browser metadata link | CT04, CT18 |
 | `POST /api/v2/secret/submit/:id` | Signed browser submit link | CT05, CT18 |
 | `GET /api/v2/secret/status/:id` | Requester agent access token | CT06, CT18 |
 | `GET /api/v2/secret/retrieve/:id` | Owning requester agent access token | CT07, CT08, CT17–CT18 |
-| `POST /api/v2/secret/exchange/request` | Requester agent access token | CT09, CT10, CT15, CT17–CT18 |
+| `POST /api/v2/secret/exchange/request` | Requester agent access token | CT09, CT10, CT17–CT18 |
 | `GET /api/v2/secret/exchange/status/:id` | Requester agent access token | CT10, CT18 |
 | `POST /api/v2/secret/exchange/fulfill` | Authorized fulfiller agent access token + fulfillment token | CT11, CT17–CT18 |
 | `POST /api/v2/secret/exchange/submit/:id` | Authorized fulfiller agent access token | CT11, CT17–CT18 |
@@ -67,8 +67,8 @@ On the 2026-09-23 review tree, the revised `SUT=ts` suite passed 35/35 with no s
 
 - **CT12 (accepted 2026-09-24):** A configured external issuer may authorize cross-requester revoke using its `admin: true` claim and asserted `workspace_id` when that workspace matches the target. The TypeScript SPS accepts this; CT12 covers `admin: false` and foreign-workspace negatives. The claim grants no local or fleet administration.
 - **CT14 (scope accepted 2026-09-24):** The TypeScript snapshot uses hosted user auth under `NODE_ENV=test`, where the refresh token appears in both the cookie and response body. Hosted production omits the body token. This is SPS regression coverage only. The Rust controller's local operator refresh is `/api/v3/admin/session/refresh` and has its own cookie/CSRF contract. The Rust API has 12 retained machine routes plus two CT19 routes.
-- **CT15:** Decide whether local tenant request/exchange quotas and burst throttling are retained P02 safety behavior. Hosted paid-tier quota and billing behavior is excluded; the current contract run still covers only agent-token IP rate limiting and reset.
+- **CT15 (P02-D12 recorded 2026-09-24, needs reconciliation):** The recorded envelope names per-IP agent token mints and per-agent request/exchange rate windows. A 2026-09-25 source check found that neither self-hosted SPS nor the Rust controller limits requests or exchanges per agent: SPS applies workspace burst and daily quotas only in hosted mode, and both servers limit only token mints per client IP. CT15 tests that limit and its reset. Either amend the decision to the per-IP limit or add per-agent windows to the controller. Hosted paid-tier quota and billing behavior is excluded.
 
-The full `ts-baseline.json` remains the P00 SPS snapshot. Rust derives three explicit shared projections from that file: CT01 compares status, liveness and database readiness because the Rust controller has no Redis; CT16 compares the allowed origin, credentials flag and relevant statuses because Axum and Fastify emit different ancillary preflight headers; CT17 compares status, content type, exact record-field shape and required event presence because the two fixture adapters emit different audit volumes. The Rust tests also reject ciphertext canaries in audit output. Every other retained case compares its full normalized TypeScript snapshot. The projection code is in `packages/contract-tests/src/snapshots.ts`; it cannot rewrite the TypeScript baseline during a Rust run.
+The full `ts-baseline.json` remains the P00 SPS snapshot. Rust derives four explicit shared projections from that file: CT01 readiness and CT18's readiness 503 compare status, `ok` and the database check because the Rust controller has no Redis check or error code; CT16 compares the allowed origin, credentials flag and relevant statuses because Axum and Fastify emit different ancillary preflight headers; CT17 compares status, content type, exact record-field shape and required event presence because the two fixture adapters emit different audit volumes. The Rust tests also reject ciphertext canaries in audit output. Every other retained case compares its full normalized TypeScript snapshot. The projection code is in `packages/contract-tests/src/snapshots.ts`; it cannot rewrite the TypeScript baseline during a Rust run.
 
-P00 exit remains open until the CT15 decision is recorded in the vault and the revised evidence is reconciled on a committed SHA with hosted PR CI. The CT12 and CT14 decisions were accepted on 2026-09-24 and recorded in the paired P02 plans.
+P00 exit remains open until the CT15 record is reconciled with the implemented limit and the revised evidence runs on a committed SHA with hosted PR CI. The CT12 and CT14 decisions were accepted on 2026-09-24 and recorded in the paired P02 plans.

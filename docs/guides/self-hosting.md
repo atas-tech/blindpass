@@ -4,7 +4,7 @@ This guide covers the repository's existing source and application-container con
 
 ## Deployment choices in the repository
 
-Run SPS from source or its Dockerfile, serve the dashboard and browser-input builds, and supply PostgreSQL plus Redis. The controller/brokers described in the product specification are new work. Existing application images are not evidence of their host identity, service delivery, non-root packaging, recovery or migration guarantees.
+Run SPS from source or its Dockerfile, serve the dashboard and browser-input builds, and supply PostgreSQL plus Redis. The Rust controller in `crates/` implements the P02 API for local testing but is not yet accepted or packaged; its settings are listed under [controller configuration](../architecture/README.md#controller-configuration). The fleet controller/brokers described in the product specification are new work. Existing application images are not evidence of their host identity, service delivery, non-root packaging, recovery or migration guarantees.
 
 For source development, follow the [quick start](quickstart.md). PostgreSQL and Redis can be provided natively or externally; Docker is needed only for the supplied development harness or a chosen container deployment. [Unraid](../deployment/Unraid.md) documents the template files and image build assumptions.
 
