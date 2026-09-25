@@ -194,15 +194,15 @@ start_guest() {
     printf 'P03-GUEST-READY backend=%s guest=%s ssh_port=%s\n' "$backend" "$guest" "$port"
 }
 
-start_proxy() {
-    local marker=$1
+start_proxy_process() {
+    local log_file=$1
+    shift
     stop_pid "$proxy_pid"
     [[ -n "$proxy_pid" ]] && wait "$proxy_pid" 2>/dev/null || true
     python3 "$repo_root/tests/fleet/p03-tls-proxy.py" \
         --certificate "$run_dir/controller.crt" \
         --private-key "$run_dir/controller.key" \
-        --drop-first-events-response --drop-marker "$marker" --drop-hold-seconds 3 \
-        >"$(dirname "$marker")/tls-proxy.log" 2>&1 &
+        "$@" >"$log_file" 2>&1 &
     proxy_pid=$!
     for _attempt in {1..30}; do
         kill -0 "$proxy_pid" 2>/dev/null || break
@@ -217,6 +217,23 @@ start_proxy() {
     done
     printf 'P03-FAIL TLS proxy did not become ready\n' >&2
     return 1
+}
+
+start_proxy() {
+    local marker=$1
+    start_proxy_process "$(dirname "$marker")/tls-proxy.log" \
+        --drop-first-events-response --drop-marker "$marker" --drop-hold-seconds 3
+}
+
+start_protocol_mismatch_proxy() {
+    local marker=$1
+    start_proxy_process "$(dirname "$marker")/tls-proxy-mismatch.log" \
+        --force-protocol-mismatch --mismatch-marker "$marker"
+}
+
+start_clear_proxy() {
+    local log_file=$1
+    start_proxy_process "$log_file"
 }
 
 stop_proxy() {
@@ -437,6 +454,36 @@ run_backend() {
     request_record=$(guest_call a wait-request)
     complete_operation a "$node_a" "$workload_a" P03-CANARY-A "$request_record" 'P03 partition replay'
     printf 'P03-SCENARIO backend=%s scenario=P03-I06-partition-restart-replay status=passed\n' "$current_backend"
+
+    local mismatch_marker=$backend_dir/protocol-mismatch-seen
+    guest_call a stop-node
+    start_protocol_mismatch_proxy "$mismatch_marker"
+    guest_call a start-node-async
+    guest_call a assert-node-protocol-mismatch
+    [[ -s "$mismatch_marker" ]] || {
+        printf 'P03-FAIL TLS proxy did not serve the incompatible-protocol response\n' >&2
+        return 1
+    }
+    start_clear_proxy "$backend_dir/tls-proxy-recovery.log"
+    guest_call a restart-channel
+    local channel_recovered=false mismatch_node_status mismatch_last_seen
+    for _attempt in {1..60}; do
+        mismatch_node_status=$(admin node-status "$node_a")
+        mismatch_last_seen=$(json_field "$mismatch_node_status" last_seen_at)
+        if [[ "$mismatch_last_seen" =~ ^[0-9]+$ ]] \
+            && (( $(node -e 'process.stdout.write(String(Date.now()))') - mismatch_last_seen < 5000 )); then
+            channel_recovered=true
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$channel_recovered" == true ]] || {
+        printf 'P03-FAIL node did not recover after the controller protocol mismatch was cleared\n' >&2
+        return 1
+    }
+    guest_call a assert-node-channel-active
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-protocol-mismatch incompatible_exit=78 restart_loop=false recovery=passed status=passed\n' \
+        "$current_backend"
 
     local rotation_metadata rotation_result rotation_pending rotation_version
     rotation_metadata=$(guest_call a rotate-prepare)

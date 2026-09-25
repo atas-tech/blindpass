@@ -35,7 +35,7 @@ keys were retained in the repository.
 | P03-I03 approval decision subset | Pass | Pass | Two distinct authenticated administrators race approve and reject on one approval; exactly one receives 200 and the other receives 409. Operation scoping and stale-policy rejection also pass. |
 | P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
 | P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration node/workload/unit/account/mode/invocation, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected; the controller rejects a forged broker-event signature. Two concurrent consumers produce exactly one successful consume and marker. |
-| P03-I06 partition/restart/replay subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. |
+| P03-I06 partition/restart/replay and protocol-mismatch subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. A two-guest VM run injects HTTP 426 into the relay, confirms systemd records exit 78 with zero restarts, then restores the proxy and verifies node reconnection. |
 | P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 1,484 ms | Pass; revocation applied in 1,548 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
@@ -91,13 +91,37 @@ reported 101 skipped tests across 17 skipped SPS test files. Its first
 restricted run had three MCP child-process launch failures; the host-access
 rerun passed those launch checks.
 
+## Supplemental P03-I06 protocol-mismatch VM verification — 2026-09-26
+
+The two-guest harness ran on QEMU 11.1.1 with the pinned Ubuntu image and
+writable `/dev/kvm`, against SQLite and PostgreSQL. In each backend, the TLS
+proxy injected HTTP 426 into the live node relay. The systemd service reached
+`failed` with `ExecMainStatus=78` and `NRestarts=0`, and its journal reported
+the incompatible controller protocol. After the proxy returned to normal
+forwarding, the same node reconnected and reported a fresh `last_seen_at`.
+Both backend runs completed the existing two-host operation, connected
+revocation and distinct-identity recovery scenarios; revocation applied in
+1,489 ms on SQLite and 896 ms on PostgreSQL. The harness ended with
+`P03-VM-COMPLETE ... backends=both guests=2 revocation=reconciled
+recovery=passed` and exit status 0.
+
+The relay now maps HTTP 426 to exit status 78, and its systemd unit prevents
+that status from entering an automatic restart loop. Unit coverage checks the
+exit mapping, unit setting, exponential backoff cap and 80–120% jitter bounds.
+Final gates passed: `cargo test --workspace --locked -- --test-threads=1`
+(the existing PostgreSQL-outage test remained ignored), workspace Clippy,
+Rust formatting, `npm run build`, and `npm test`. The JavaScript suite reported
+101 skipped tests across 17 skipped SPS test files. The initial parallel Rust
+workspace run hit a transient `Text file busy` in a CLI migration test; the
+serial rerun passed.
+
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves broader
 P03-I05 cases open; real VM clock changes,
-suspend/resume, delayed-grant relay, version-mismatch and reconnect-storm cases
-in P03-I06; full P03-I07 coverage; and the broader pilot catalog, including
-E05–E07 and E10–E13. The broader P01/P02 inherited gates and P02.6 controller
+suspend/resume, delayed-grant relay and reconnect-storm cases in P03-I06; full
+P03-I07 coverage; and the broader pilot catalog, including E05–E07 and
+E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated
 controller API directly; it does not exercise the administrator CLI or an
 operator fleet UI. The CLI has separate authenticated HTTP integration tests.

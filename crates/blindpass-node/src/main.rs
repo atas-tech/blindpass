@@ -19,11 +19,20 @@ const DEFAULT_CONTROL_SOCKET: &str = "/run/blindpass/control.sock";
 const MAX_CONTROL_RESPONSE: usize = 64 * 1024 + 64;
 const NODE_PROTOCOL_VERSION: &str = "blindpass-node/1";
 const DEFAULT_STATE_DIRECTORY: &str = "/var/lib/blindpass/node";
+const PROTOCOL_MISMATCH_EXIT_CODE: i32 = 78;
 
 fn main() {
     if let Err(error) = run(std::env::args().skip(1).collect()) {
         eprintln!("blindpass-node: {error}");
-        std::process::exit(1);
+        std::process::exit(exit_code_for_error(&error));
+    }
+}
+
+fn exit_code_for_error(error: &str) -> i32 {
+    if error == "controller requires an unsupported node protocol" {
+        PROTOCOL_MISMATCH_EXIT_CODE
+    } else {
+        1
     }
 }
 
@@ -409,7 +418,7 @@ fn run_channel(socket: &Path, state_dir: PathBuf, controller: &str) -> Result<()
                     "node channel unavailable during {retry_stage}; retrying with bounded backoff"
                 );
                 sleep_with_jitter(backoff_seconds);
-                backoff_seconds = (backoff_seconds.saturating_mul(2)).min(60);
+                backoff_seconds = next_backoff_seconds(backoff_seconds);
             }
         }
     }
@@ -847,12 +856,20 @@ fn sleep_with_jitter(base_seconds: u64) {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .subsec_nanos();
+    std::thread::sleep(jittered_backoff(base_seconds, nanos));
+}
+
+fn next_backoff_seconds(current: u64) -> u64 {
+    current.saturating_mul(2).min(60)
+}
+
+fn jittered_backoff(base_seconds: u64, nanos: u32) -> Duration {
     let jitter_permille = 800 + (nanos % 401);
     let milliseconds = base_seconds
         .saturating_mul(1_000)
         .saturating_mul(u64::from(jitter_permille))
         / 1_000;
-    std::thread::sleep(Duration::from_millis(milliseconds));
+    Duration::from_millis(milliseconds)
 }
 
 #[derive(Debug)]
@@ -1054,6 +1071,7 @@ fn print_help() {
 #[cfg(test)]
 mod tests {
     use super::{
+        PROTOCOL_MISMATCH_EXIT_CODE, exit_code_for_error, jittered_backoff, next_backoff_seconds,
         parse_broker_events, parse_hex_fingerprint, parse_identity, parse_options,
         valid_enrollment_token,
     };
@@ -1061,6 +1079,38 @@ mod tests {
     use blindpass_core::canon::{Value, canonicalize_value};
     use blindpass_core::signing::base64_url_encode;
     use std::path::PathBuf;
+
+    const NODE_SYSTEMD_UNIT: &str = include_str!("../../../deploy/native/blindpass-node.service");
+
+    #[test]
+    fn protocol_mismatch_is_reported_without_a_systemd_restart_loop() {
+        assert_eq!(
+            exit_code_for_error("controller requires an unsupported node protocol"),
+            PROTOCOL_MISMATCH_EXIT_CODE
+        );
+        assert_eq!(exit_code_for_error("node channel unavailable"), 1);
+        assert!(
+            NODE_SYSTEMD_UNIT
+                .lines()
+                .any(|line| line.trim() == "RestartPreventExitStatus=78")
+        );
+    }
+
+    #[test]
+    fn reconnect_backoff_grows_to_a_fixed_cap_and_has_bounded_jitter() {
+        let mut interval = 1;
+        let mut observed = Vec::new();
+        for _ in 0..8 {
+            observed.push(interval);
+            interval = next_backoff_seconds(interval);
+        }
+        assert_eq!(observed, [1, 2, 4, 8, 16, 32, 60, 60]);
+
+        let minimum = jittered_backoff(60, 0);
+        let maximum = jittered_backoff(60, 400);
+        assert_eq!(minimum.as_millis(), 48_000);
+        assert_eq!(maximum.as_millis(), 72_000);
+    }
 
     #[test]
     fn enrollment_cli_requires_stdin_and_operator_issuer_pin() {

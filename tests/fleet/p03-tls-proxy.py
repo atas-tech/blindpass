@@ -31,6 +31,29 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.send_error(413)
                 return
             body = self.rfile.read(length) if length else None
+            if self.command == "POST" and self.path == "/api/v3/node/session":
+                with self.server.mismatch_lock:
+                    force_protocol_mismatch = self.server.force_protocol_mismatch
+                if force_protocol_mismatch:
+                    if self.server.mismatch_marker:
+                        marker_fd = os.open(
+                            self.server.mismatch_marker,
+                            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                            0o600,
+                        )
+                        with os.fdopen(marker_fd, "wb") as marker:
+                            marker.write(b"P03-PROTOCOL-MISMATCH-RESPONSE\n")
+                            marker.flush()
+                            os.fsync(marker.fileno())
+                    payload = b'{"error":"unsupported_protocol"}'
+                    self.send_response(426)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    self.close_connection = True
+                    return
             headers = {
                 name: value
                 for name, value in self.headers.items()
@@ -83,6 +106,8 @@ def main():
     parser.add_argument("--drop-first-events-response", action="store_true")
     parser.add_argument("--drop-marker")
     parser.add_argument("--drop-hold-seconds", type=float, default=0.0)
+    parser.add_argument("--force-protocol-mismatch", action="store_true")
+    parser.add_argument("--mismatch-marker")
     args = parser.parse_args()
     server = ThreadingHTTPServer(("0.0.0.0", 8443), ProxyHandler)
     server.daemon_threads = True
@@ -91,6 +116,9 @@ def main():
     server.drop_lock = threading.Lock()
     server.drop_marker = args.drop_marker
     server.drop_hold_seconds = max(0.0, min(args.drop_hold_seconds, 10.0))
+    server.force_protocol_mismatch = args.force_protocol_mismatch
+    server.mismatch_marker = args.mismatch_marker
+    server.mismatch_lock = threading.Lock()
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(args.certificate, args.private_key)

@@ -65,6 +65,40 @@ case "$command" in
         systemctl enable --now blindpass-node.service
         printf 'P03-GUEST-NODE-STARTED\n'
         ;;
+    stop-node)
+        systemctl stop blindpass-node.service
+        printf 'P03-GUEST-NODE-STOPPED\n'
+        ;;
+    start-node-async)
+        systemctl reset-failed blindpass-node.service >/dev/null 2>&1 || true
+        systemctl start --no-block blindpass-node.service
+        printf 'P03-GUEST-NODE-START-QUEUED\n'
+        ;;
+    assert-node-protocol-mismatch)
+        for _attempt in {1..50}; do
+            state=$(systemctl show --property=ActiveState --value blindpass-node.service 2>/dev/null || true)
+            result=$(systemctl show --property=Result --value blindpass-node.service 2>/dev/null || true)
+            exit_status=$(systemctl show --property=ExecMainStatus --value blindpass-node.service 2>/dev/null || true)
+            if [[ "$state" == failed && "$result" == exit-code && "$exit_status" == 78 ]]; then
+                break
+            fi
+            sleep 0.2
+        done
+        [[ "$state" == failed && "$result" == exit-code && "$exit_status" == 78 ]] || \
+            fail 'protocol mismatch did not leave the node service in its explicit incompatible state'
+        journalctl -u blindpass-node.service -o cat --no-pager 2>/dev/null |
+            grep -Fq 'blindpass-node: controller requires an unsupported node protocol' || \
+            fail 'node service did not report the incompatible controller protocol'
+        sleep 2
+        restarts=$(systemctl show --property=NRestarts --value blindpass-node.service 2>/dev/null || true)
+        [[ "$restarts" == 0 ]] || fail 'node service restarted after a permanent protocol mismatch'
+        printf 'P03-GUEST-NODE-PROTOCOL-MISMATCH-STOPPED exit_status=%s restarts=%s\n' \
+            "$exit_status" "$restarts"
+        ;;
+    assert-node-channel-active)
+        systemctl is-active --quiet blindpass-node.service || fail 'node channel service is not active'
+        printf 'P03-GUEST-NODE-CHANNEL-ACTIVE\n'
+        ;;
     rotate-prepare)
         /usr/libexec/blindpass-node rotate-prepare
         ;;
