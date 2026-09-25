@@ -611,7 +611,7 @@ mod tests {
     use blindpass_core::delivery::DeliveryPolicy;
     use blindpass_core::fleet::{
         ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeRevocation, PolicySnapshot,
-        Registration, SignedEnvelope, TimeReply, node_event_message,
+        Registration, Revocation, SignedEnvelope, TimeReply, node_event_message,
     };
     use blindpass_core::identity::{PeerIdentity, WorkloadRequest};
     use blindpass_core::signing::base64_url_encode;
@@ -767,6 +767,328 @@ mod tests {
         assert!(restored.node_revoked);
         assert!(restored.node_revocation_acknowledged);
         assert!(restored.pending_node_events.is_empty());
+
+        let restored = std::sync::Arc::new(std::sync::Mutex::new(restored));
+        assert_eq!(
+            relay_signed_document(&identity, &restored, &document),
+            b"OK document_applied node_revocation\n"
+        );
+        let restored = restored.lock().unwrap();
+        assert!(restored.node_revoked);
+        assert!(restored.node_revocation_acknowledged);
+        assert!(restored.pending_node_events.is_empty());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn delayed_policy_replay_cannot_restore_an_older_version_before_or_after_restart() {
+        let directory = temporary_directory();
+        let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
+        let issuer = Ed25519KeyPair::from_seed(&[23; 32]).unwrap();
+        let issuer_public = base64_url_encode(issuer.public_key());
+        let issuer_key_id = format!("ed25519-{issuer_public}");
+        identity
+            .pin_issuer(crate::keys::PinnedIssuer {
+                tenant_id: "tenant-a".to_owned(),
+                node_id: "nd_node-a".to_owned(),
+                epoch: 1,
+                key_id: issuer_key_id.clone(),
+                public_key: issuer_public,
+            })
+            .unwrap();
+
+        let stale_policy = PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        let current_policy = PolicySnapshot {
+            policy_version: 5,
+            local_ceiling_seconds: 30,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        let sign_policy = |policy: &PolicySnapshot| {
+            SignedEnvelope::sign(
+                DocumentKind::PolicySnapshot,
+                policy.to_value().unwrap(),
+                &issuer_key_id,
+                1,
+                &issuer,
+            )
+            .unwrap()
+            .to_json()
+            .unwrap()
+        };
+        let stale_document = sign_policy(&stale_policy);
+        let current_document = sign_policy(&current_policy);
+        let mut state = BrokerState::new(DeliveryPolicy::default());
+        state.configure_grant_storage(&identity).unwrap();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(state));
+
+        assert_eq!(
+            relay_signed_document(&identity, &state, &current_document),
+            b"OK document_applied policy_snapshot\n"
+        );
+        assert_eq!(
+            relay_signed_document(&identity, &state, &stale_document),
+            b"OK document_applied policy_snapshot\n"
+        );
+        assert_eq!(
+            state
+                .lock()
+                .unwrap()
+                .fleet_policy
+                .as_ref()
+                .unwrap()
+                .policy_version,
+            5
+        );
+        drop(state);
+
+        let mut restored = BrokerState::new(DeliveryPolicy::default());
+        restored.configure_grant_storage(&identity).unwrap();
+        restore_controller_documents(&mut restored, &identity).unwrap();
+        assert_eq!(restored.fleet_policy.as_ref().unwrap().policy_version, 5);
+        let restored = std::sync::Arc::new(std::sync::Mutex::new(restored));
+        assert_eq!(
+            relay_signed_document(&identity, &restored, &stale_document),
+            b"OK document_applied policy_snapshot\n"
+        );
+        assert_eq!(
+            restored
+                .lock()
+                .unwrap()
+                .fleet_policy
+                .as_ref()
+                .unwrap()
+                .policy_version,
+            5
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn replayed_grant_revocation_survives_broker_restart_and_denies_old_grant() {
+        let directory = temporary_directory();
+        let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
+        let issuer = Ed25519KeyPair::from_seed(&[29; 32]).unwrap();
+        let issuer_public = base64_url_encode(issuer.public_key());
+        let issuer_key_id = format!("ed25519-{issuer_public}");
+        identity
+            .pin_issuer(crate::keys::PinnedIssuer {
+                tenant_id: "tenant-a".to_owned(),
+                node_id: "nd_node-a".to_owned(),
+                epoch: 1,
+                key_id: issuer_key_id.clone(),
+                public_key: issuer_public,
+            })
+            .unwrap();
+
+        let mut initial = BrokerState::new(DeliveryPolicy::default());
+        initial.operation_directory = directory.join("ops");
+        std::fs::create_dir_all(&initial.operation_directory).unwrap();
+        initial.configure_grant_storage(&identity).unwrap();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(initial));
+        let registration = Registration {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            unit: "worker.service".to_owned(),
+            account: "worker".to_owned(),
+            invocation_id: None,
+            status: "active".to_owned(),
+            consumption_mode: ConsumptionMode::File,
+            registration_version: 1,
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+        };
+        let policy = PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        for (kind, body) in [
+            (DocumentKind::Registration, registration.to_value().unwrap()),
+            (DocumentKind::PolicySnapshot, policy.to_value().unwrap()),
+        ] {
+            let document = SignedEnvelope::sign(kind, body, &issuer_key_id, 1, &issuer)
+                .unwrap()
+                .to_json()
+                .unwrap();
+            assert!(
+                relay_signed_document(&identity, &state, &document)
+                    .starts_with(b"OK document_applied ")
+            );
+        }
+
+        let challenge_response = control_exchange(&identity, &state, b"TIME_CHALLENGE\n");
+        let challenge = std::str::from_utf8(&challenge_response)
+            .unwrap()
+            .strip_prefix("TIME ")
+            .unwrap()
+            .strip_suffix('\n')
+            .unwrap()
+            .to_owned();
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let time_document = SignedEnvelope::sign(
+            DocumentKind::TimeReply,
+            TimeReply {
+                node_id: "nd_node-a".to_owned(),
+                challenge,
+                controller_time_ms: now_ms,
+                issuer_epoch: 1,
+            }
+            .to_value()
+            .unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &time_document),
+            b"OK document_applied time_reply\n"
+        );
+
+        let grant = Grant {
+            id: "gr_2123456789abcdef0123456789abcdef".to_owned(),
+            operation_id: "op_2123456789abcdef0123456789abcdef".to_owned(),
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            invocation_id: "invocation-a".to_owned(),
+            unit: "worker.service".to_owned(),
+            account: "worker".to_owned(),
+            resource_id: "marker-revoked".to_owned(),
+            recipient_key_id: "nd_node-a-1".to_owned(),
+            policy_version: 4,
+            approval_reference: None,
+            action: "noop.marker".to_owned(),
+            mode: ConsumptionMode::File,
+            audience: "blindpass-node".to_owned(),
+            issuer_epoch: 1,
+            issued_at_ms: now_ms,
+            expires_at_ms: now_ms + 120_000,
+            local_ceiling_seconds: 60,
+        };
+        let grant_document = SignedEnvelope::sign(
+            DocumentKind::Grant,
+            grant.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &grant_document),
+            b"OK document_applied grant\n"
+        );
+        let revocation = Revocation {
+            grant_id: grant.id.clone(),
+            node_id: "nd_node-a".to_owned(),
+            reason: "operator".to_owned(),
+            revoked_at_ms: now_ms,
+            retain_until_ms: now_ms + 7 * 24 * 60 * 60 * 1_000,
+            issuer_epoch: 1,
+        };
+        let revocation_document = SignedEnvelope::sign(
+            DocumentKind::Revocation,
+            revocation.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &revocation_document),
+            b"OK document_applied revocation\n"
+        );
+        assert_eq!(
+            relay_signed_document(&identity, &state, &grant_document),
+            b"ERR invalid_controller_document\n"
+        );
+        drop(state);
+
+        let mut restarted = BrokerState::new(DeliveryPolicy::default());
+        restarted.operation_directory = directory.join("ops");
+        restarted.configure_grant_storage(&identity).unwrap();
+        restore_controller_documents(&mut restarted, &identity).unwrap();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(restarted));
+        assert_eq!(
+            relay_signed_document(&identity, &state, &revocation_document),
+            b"OK document_applied revocation\n"
+        );
+
+        let challenge_response = control_exchange(&identity, &state, b"TIME_CHALLENGE\n");
+        let challenge = std::str::from_utf8(&challenge_response)
+            .unwrap()
+            .strip_prefix("TIME ")
+            .unwrap()
+            .strip_suffix('\n')
+            .unwrap()
+            .to_owned();
+        let fresh_time = SignedEnvelope::sign(
+            DocumentKind::TimeReply,
+            TimeReply {
+                node_id: "nd_node-a".to_owned(),
+                challenge,
+                controller_time_ms: now_ms + 1,
+                issuer_epoch: 1,
+            }
+            .to_value()
+            .unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &fresh_time),
+            b"OK document_applied time_reply\n"
+        );
+        assert_eq!(
+            relay_signed_document(&identity, &state, &grant_document),
+            b"ERR invalid_controller_document\n"
+        );
+        let peer = PeerIdentity::fixture(
+            1000,
+            current_gid(),
+            "worker.service",
+            "invocation-a",
+            "worker",
+        );
+        let request = WorkloadRequest {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            claimed_unit: "worker.service".to_owned(),
+            claimed_invocation_id: "invocation-a".to_owned(),
+            operation: format!("consume:{}", grant.id),
+        };
+        assert!(
+            state
+                .lock()
+                .unwrap()
+                .process_workload(&peer, &request)
+                .is_err()
+        );
+        assert!(
+            !directory
+                .join("ops")
+                .join(format!("{}.marker", grant.id))
+                .exists()
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 

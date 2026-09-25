@@ -206,10 +206,16 @@ two hours, and verifies no operation marker appears. After broker and node
 restart, the TLS test proxy replays one captured signed time reply against the
 new broker challenge; the broker rejects it and then recovers with fresh signed
 time on both backends. Controller time rollback, guest/node reboot cases beyond
-this broker-restart replay, and delayed/replayed policy and revocation scenarios
-remain open. Portable Rust tests cover bounded queues,
+this broker-restart replay, and full transport-level delayed/replayed policy
+and revocation scenarios remain open. Portable Rust tests cover bounded queues,
 durable audit backpressure and purpose sanitization; actual disk-full and all
 delayed duplicate-event cases remain open. Broader I05 cases, pilot scenarios
 and inherited gates still require implementation or execution evidence. See
 `docs/testing/evidence/p03-fleet-authorization-execution.md` for the last
 two-backend result and its exact limits.
+
+Focused broker control-socket tests also reject an older signed policy after a
+newer snapshot has been applied, keep that policy across broker restart, and
+preserve grant and node revocations when their signed documents are replayed.
+They verify the revoked grant remains denied after a fresh signed time reply.
+These tests do not exercise delays or replays through the node HTTPS transport.

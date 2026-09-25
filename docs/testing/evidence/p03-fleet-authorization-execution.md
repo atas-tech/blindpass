@@ -184,6 +184,23 @@ on both backends. The runner ended with
 backends=both guests=2 revocation=reconciled recovery=passed` and exit status
 0; disposable artifacts were removed.
 
+## Supplemental P03-I06 broker policy and revocation replay tests — 2026-09-26
+
+Focused broker control-socket tests passed for delayed policy version 4 after
+version 5, both before and after broker restart; the newer policy stayed
+active and persisted. Replaying a grant revocation after restart remained
+idempotent, and presenting the revoked signed grant again was denied after a
+fresh signed time challenge. Replaying an acknowledged node revocation after
+restart left the node revoked and did not create a duplicate acknowledgement
+event. These broker-local checks use the same code for both controller
+database backends; they do not exercise the controller database or
+delays/replays through the node HTTPS transport. The focused command passed
+all 7 matching tests:
+
+```bash
+cargo test -p blindpass-broker --locked control::tests:: -- --test-threads=1
+```
+
 ## Final verification for the delayed-grant slice — 2026-09-26
 
 `cargo test --workspace --locked -- --test-threads=1`, workspace Clippy with
@@ -206,8 +223,8 @@ Cargo manifest or lockfile changed.
 
 This execution does not establish complete P03 acceptance. It leaves broader
 P03-I05 cases open; controller clock rollback, guest/node reboot cases beyond
-the broker-restart time-reply replay, delayed/replayed policy and revocation
-cases in P03-I06; full P03-I07 coverage;
+the broker-restart time-reply replay, full transport-level delayed/replayed
+policy and revocation cases in P03-I06; full P03-I07 coverage;
 and the broader pilot catalog, including E05–E07 and
 E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated
