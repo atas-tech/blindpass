@@ -172,6 +172,22 @@ pub fn require_root_peer(stream: &UnixStream) -> Result<(), OsIdentityError> {
     Ok(())
 }
 
+/// The relay may submit opaque controller documents only through its
+/// dedicated local group. Root remains the trusted local operator boundary.
+pub fn require_control_peer(
+    stream: &UnixStream,
+    expected_group: Option<u32>,
+) -> Result<(), OsIdentityError> {
+    let credentials = peer_credentials(stream.as_raw_fd())?;
+    if credentials.uid == 0 || expected_group == Some(credentials.gid) {
+        Ok(())
+    } else {
+        Err(OsIdentityError::PermissionDenied(
+            "control socket requires root or the blindpass-node group",
+        ))
+    }
+}
+
 fn peer_credentials(fd: RawFd) -> Result<Ucred, OsIdentityError> {
     let mut credentials = Ucred {
         _pid: 0,

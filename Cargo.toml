@@ -5,6 +5,7 @@ members = [
     "crates/blindpass-broker",
     "crates/blindpass-controller",
     "crates/blindpass-cli",
+    "crates/blindpass-node",
 ]
 
 [workspace.package]

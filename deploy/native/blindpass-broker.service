@@ -9,7 +9,7 @@ Type=notify
 KillMode=control-group
 User=root
 Group=root
-ExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --provision-socket /run/blindpass/provision.sock --workload-group blindpass-workload --map blindpass-consumer.service=api-key --map blindpass-backup.service=api-key
+ExecStart=/usr/libexec/blindpass-broker --loader-socket /run/blindpass/loader.sock --workload-socket /run/blindpass/workload.sock --provision-socket /run/blindpass/provision.sock --control-socket /run/blindpass/control.sock --workload-group blindpass-workload --node-group blindpass-node --map blindpass-consumer.service=api-key --map blindpass-backup.service=api-key
 Restart=on-failure
 RestartSec=1s
 RuntimeDirectory=blindpass

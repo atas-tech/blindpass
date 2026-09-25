@@ -51,8 +51,14 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
             "--provision-socket" => {
                 config.provision_socket = PathBuf::from(next(&args, &mut index)?);
             }
+            "--control-socket" => {
+                config.control_socket = PathBuf::from(next(&args, &mut index)?);
+            }
             "--workload-group" => {
                 config.workload_group = Some(next(&args, &mut index)?);
+            }
+            "--node-group" => {
+                config.node_group = Some(next(&args, &mut index)?);
             }
             "--map" => {
                 let mapping = next(&args, &mut index)?;
@@ -163,7 +169,8 @@ fn next(args: &[String], index: &mut usize) -> Result<String, String> {
 fn print_help() {
     println!(
         "blindpass-broker --loader-socket PATH --workload-socket PATH \\
-         --map UNIT=CREDENTIAL --provision-socket PATH [--workload-group GROUP] \\
+         --map UNIT=CREDENTIAL --provision-socket PATH --control-socket PATH \\
+         [--workload-group GROUP] [--node-group GROUP] \\
          [--workload NODE:WORKLOAD:UNIT:UID:INVOCATION]"
     );
 }

@@ -7,6 +7,7 @@
 //! system unit/invocation. The workload socket requires a registered
 //! non-root unit/account/invocation tuple.
 
+mod control;
 pub mod os_identity;
 
 use blindpass_core::custody::{CryptoError, EphemeralCustody};
@@ -284,14 +285,17 @@ pub struct BrokerConfig {
     pub loader_socket: PathBuf,
     pub workload_socket: PathBuf,
     pub provision_socket: PathBuf,
+    pub control_socket: PathBuf,
     pub socket_directory_mode: u32,
     pub loader_socket_mode: u32,
     pub workload_socket_mode: u32,
     pub provision_socket_mode: u32,
+    pub control_socket_mode: u32,
     pub read_timeout: Duration,
     pub identity_lookup_delay: Duration,
     pub delivery_fault: Option<DeliveryFault>,
     pub workload_group: Option<String>,
+    pub node_group: Option<String>,
 }
 
 impl Default for BrokerConfig {
@@ -300,14 +304,17 @@ impl Default for BrokerConfig {
             loader_socket: PathBuf::from("/run/blindpass/loader.sock"),
             workload_socket: PathBuf::from("/run/blindpass/workload.sock"),
             provision_socket: PathBuf::from("/run/blindpass/provision.sock"),
+            control_socket: PathBuf::from("/run/blindpass/control.sock"),
             socket_directory_mode: 0o751,
             loader_socket_mode: 0o600,
             workload_socket_mode: 0o660,
             provision_socket_mode: 0o600,
+            control_socket_mode: 0o660,
             read_timeout: Duration::from_secs(2),
             identity_lookup_delay: Duration::ZERO,
             delivery_fault: None,
             workload_group: None,
+            node_group: None,
         }
     }
 }
@@ -338,6 +345,15 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
         config.socket_directory_mode,
         config.provision_socket_mode,
     )?;
+    let control_listener = bind_socket(
+        &config.control_socket,
+        config.socket_directory_mode,
+        config.control_socket_mode,
+    )?;
+    let control_group_id = config.node_group.as_deref().map(lookup_gid).transpose()?;
+    if let Some(gid) = control_group_id {
+        chown(&config.control_socket, None, Some(gid))?;
+    }
     let shared = Arc::new(Mutex::new(state));
     let purge_shared = Arc::clone(&shared);
     std::thread::Builder::new()
@@ -366,6 +382,21 @@ pub fn run(config: BrokerConfig, state: BrokerState) -> Result<(), BrokerError> 
                 loader_timeout,
                 loader_identity_lookup_delay,
                 loader_fault,
+            )
+        },
+    )?;
+    let control_timeout = config.read_timeout;
+    spawn_listener_thread(
+        "blindpass-control",
+        listener_error_sender.clone(),
+        move || {
+            serve_connections(
+                control_listener,
+                control_timeout,
+                move |stream, deadline| {
+                    control::handle_connection(stream, control_group_id, deadline)
+                },
+                "control",
             )
         },
     )?;
@@ -432,14 +463,16 @@ fn validate_config(config: &BrokerConfig) -> Result<(), BrokerError> {
         || config.loader_socket_mode != 0o600
         || config.workload_socket_mode != 0o660
         || config.provision_socket_mode != 0o600
+        || config.control_socket_mode != 0o660
     {
         return Err(BrokerError::Configuration(
-            "broker socket modes must be directory 0751, loader/provision 0600 and workload 0660",
+            "broker socket modes must be directory 0751, loader/provision 0600 and workload/control 0660",
         ));
     }
     if !config.loader_socket.is_absolute()
         || !config.workload_socket.is_absolute()
         || !config.provision_socket.is_absolute()
+        || !config.control_socket.is_absolute()
     {
         return Err(BrokerError::Configuration(
             "broker socket paths must be absolute",
@@ -448,9 +481,12 @@ fn validate_config(config: &BrokerConfig) -> Result<(), BrokerError> {
     if config.loader_socket == config.workload_socket
         || config.loader_socket == config.provision_socket
         || config.workload_socket == config.provision_socket
+        || config.loader_socket == config.control_socket
+        || config.workload_socket == config.control_socket
+        || config.provision_socket == config.control_socket
     {
         return Err(BrokerError::Configuration(
-            "loader, workload and provision sockets must be distinct",
+            "loader, workload, provision and control sockets must be distinct",
         ));
     }
     if config.read_timeout.is_zero() {
@@ -470,6 +506,15 @@ fn validate_config(config: &BrokerConfig) -> Result<(), BrokerError> {
     {
         return Err(BrokerError::Configuration(
             "workload group must be a non-empty group name",
+        ));
+    }
+    if config
+        .node_group
+        .as_deref()
+        .is_some_and(|group| group.is_empty() || group.contains('/'))
+    {
+        return Err(BrokerError::Configuration(
+            "node group must be a non-empty group name",
         ));
     }
     Ok(())

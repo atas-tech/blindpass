@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass unprivileged fleet node relay
+Requires=blindpass-broker.service
+After=network-online.target blindpass-broker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+KillMode=control-group
+User=blindpass-node
+Group=blindpass-node
+ExecStart=/usr/libexec/blindpass-node run
+Restart=on-failure
+RestartSec=1s
+StateDirectory=blindpass/node
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/blindpass/node
+InaccessiblePaths=/var/lib/blindpass/broker
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+LimitCORE=0
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service @network-io
+CapabilityBoundingSet=
+RestrictNamespaces=yes
+
+[Install]
+WantedBy=multi-user.target

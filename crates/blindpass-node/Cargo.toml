@@ -1,0 +1,17 @@
+[package]
+name = "blindpass-node"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "blindpass-node"
+path = "src/main.rs"
+
+[dependencies]
+blindpass-core = { path = "../blindpass-core" }
+
+[lints]
+workspace = true

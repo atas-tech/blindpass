@@ -217,7 +217,7 @@ if [[ "${BLINDPASS_FLEET_P02_CLOCK_TEST:-0}" == 1 ]]; then
         "$guest_target:/tmp/"
 fi
 scp "${scp_options[@]}" deploy/native/*.service "$guest_target:/tmp/"
-scp "${scp_options[@]}" deploy/native/blindpass-workload.sysusers "$guest_target:/tmp/"
+scp "${scp_options[@]}" deploy/native/*.sysusers "$guest_target:/tmp/"
 if ((${#tpm_debs[@]} > 0)); then
     ssh "${ssh_options[@]}" "$guest_target" 'mkdir -m 0700 -p /tmp/p01-tpm-debs'
     scp "${scp_options[@]}" "${tpm_debs[@]}" "$guest_target:/tmp/p01-tpm-debs/"

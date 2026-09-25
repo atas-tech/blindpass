@@ -209,13 +209,18 @@ command -v systemd-sysusers >/dev/null 2>&1 || {
 }
 install -d -m 0755 /usr/lib/sysusers.d
 install -m 0644 /tmp/blindpass-workload.sysusers /usr/lib/sysusers.d/blindpass-workload.conf
-systemd-sysusers /usr/lib/sysusers.d/blindpass-workload.conf
+install -m 0644 /tmp/blindpass-node.sysusers /usr/lib/sysusers.d/blindpass-node.conf
+systemd-sysusers /usr/lib/sysusers.d/blindpass-workload.conf /usr/lib/sysusers.d/blindpass-node.conf
 for account in blindpass-agent blindpass-consumer blindpass-backup; do
     id "$account" >/dev/null 2>&1 || {
         printf 'P01-FAIL sysusers did not create %s\n' "$account" >&2
         exit 1
     }
 done
+id blindpass-node >/dev/null 2>&1 || {
+    printf 'P01-FAIL sysusers did not create blindpass-node\n' >&2
+    exit 1
+}
 
 umask 077
 install -d -m 0700 /run/blindpass-source
