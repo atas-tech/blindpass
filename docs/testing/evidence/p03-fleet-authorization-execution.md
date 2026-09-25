@@ -34,18 +34,30 @@ keys were retained in the repository.
 | P03-I02 workload identity and API authorization subset | Pass | Pass | Core identity tests reject changed node, workload, unit, invocation, and peer-account bindings; protocol parsing rejects an extra caller-supplied account. HTTP integration rejects signed broker evidence with mismatched node, workload, unit, account, or invocation, and unauthenticated mapping and policy edits return 401. Purpose text asking to bypass approval remains approval-gated; control characters are sanitized and markup remains text data. |
 | P03-I03 approval decision subset | Pass | Pass | Two distinct authenticated administrators race approve and reject on one approval; exactly one receives 200 and the other receives 409. Operation scoping and stale-policy rejection also pass. |
 | P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
-| P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration binding, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected. Two concurrent consumers produce exactly one successful consume and marker. |
+| P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration node/workload/unit/account/mode/invocation, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected; the controller rejects a forged broker-event signature. Two concurrent consumers produce exactly one successful consume and marker. |
 | P03-I06 partition/restart/replay subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. |
 | P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 1,484 ms | Pass; revocation applied in 1,548 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
 Portable Rust boundary tests cover the broker's 10,000-event audit buffer and
 the relay's 1,000-event durable outbox. They verify fail-closed behavior at
-capacity, recording overflow and recovery after space returns, and queue
-restoration after reopening its state file, and durable one-use consume intent.
-Purpose tests confirm bypass wording cannot skip approval and control characters
-are sanitized. These checks do not simulate a disk-full filesystem or exercise
-all delayed duplicate events and full audit-queue recovery paths.
+capacity, recording overflow and recovery after space returns, queue restoration
+after reopening its state file, and a simulated broker restart after fsynced
+consume intent but before the operation marker effect. The grant remains
+unreceivable and no marker is created after restart. Purpose tests confirm
+bypass wording cannot skip approval and control characters are sanitized. These
+checks do not simulate a disk-full filesystem or exercise all delayed duplicate
+events and full audit-queue recovery paths.
+
+## Supplemental P03-I05 verification — 2026-09-26
+
+The focused grant-binding and simulated crash-boundary tests passed. The fleet
+enrollment HTTP integration passed against SQLite and PostgreSQL, including
+rejection of a forged broker-event signature. `cargo test --workspace --locked`
+passed with the existing PostgreSQL-outage test ignored; workspace Clippy,
+formatting, and `git diff --check` passed. The initial sandboxed workspace run
+was interrupted after socket-dependent tests failed and stalled; the successful
+workspace run used host socket permissions.
 
 ## Remaining acceptance work
 

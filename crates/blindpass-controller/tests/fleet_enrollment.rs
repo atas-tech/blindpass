@@ -837,6 +837,22 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         "body":event_body,
         "broker_signature":event_signature
     }]});
+    let mut forged_event_input = event_input.clone();
+    forged_event_input["events"][0]["broker_signature"] = json!(base64_url_encode(&[0_u8; 64]));
+    let forged_event = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&forged_event_input),
+    )
+    .await;
+    assert_eq!(forged_event.status, 400, "{}", forged_event.body);
+    assert_eq!(forged_event.body["error"], "invalid_node_event");
+
     let accepted_event = request(
         address,
         "POST",

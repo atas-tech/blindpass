@@ -1060,6 +1060,21 @@ mod tests {
                 },
                 registration.clone(),
             ),
+            ("different registered node", grant(), {
+                let mut value = registration.clone();
+                value.node_id = "nd_node-b".to_owned();
+                value
+            }),
+            ("different registered workload", grant(), {
+                let mut value = registration.clone();
+                value.workload_id = "wl_worker-b".to_owned();
+                value
+            }),
+            ("different registered unit", grant(), {
+                let mut value = registration.clone();
+                value.unit = "other.service".to_owned();
+                value
+            }),
             ("different registered invocation", grant(), {
                 let mut value = registration.clone();
                 value.invocation_id = Some("invocation-other".to_owned());
@@ -1097,6 +1112,119 @@ mod tests {
                 "{label} must fail the broker's grant binding checks"
             );
         }
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn consumed_grant_intent_survives_crash_before_the_operation_effect() {
+        let path = temporary_path();
+        let time_path = path.parent().unwrap().join("trusted-time");
+        let revocation_path = path.parent().unwrap().join("revoked-grants.jsonl");
+        let mut verifier =
+            GrantVerifier::with_state_files(&path, &time_path, &revocation_path).unwrap();
+        verifier.pending_time = Some(super::TimeChallenge {
+            value: "challenge-before-consume".to_owned(),
+            sent_at_boottime_ms: 1_000,
+        });
+        let first_time = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-before-consume".to_owned(),
+            controller_time_ms: 1_800_000_000_000,
+            issuer_epoch: 1,
+        };
+        verifier
+            .accept_time_reply(&first_time, "nd_node-a", 1, 2_000)
+            .unwrap();
+
+        let grant = grant();
+        let policy = PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        assert!(
+            verifier
+                .accept_grant(
+                    grant.clone(),
+                    b"signed-grant-before-crash",
+                    "nd_node-a",
+                    "nd_node-a-1",
+                    &policy,
+                    &registration(),
+                    2_100,
+                )
+                .unwrap()
+        );
+        let authorization = WorkloadAuthorization {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            unit: "worker.service".to_owned(),
+            invocation_id: "invocation-a".to_owned(),
+            operation: format!("consume:{}", grant.id),
+        };
+
+        // This is the durable boundary: consume writes the one-use intent. A
+        // process loss here happens before the caller can create the marker.
+        assert_eq!(
+            verifier
+                .consume(&grant.id, &authorization, policy.policy_version, 2_200)
+                .unwrap(),
+            grant
+        );
+        let marker_path = path
+            .parent()
+            .unwrap()
+            .join("ops")
+            .join("gr_0123456789abcdef0123456789abcdef.marker");
+        assert!(
+            !marker_path.exists(),
+            "the simulated crash precedes the effect"
+        );
+        drop(verifier);
+
+        let mut restarted =
+            GrantVerifier::with_state_files(&path, &time_path, &revocation_path).unwrap();
+        restarted.pending_time = Some(super::TimeChallenge {
+            value: "challenge-after-crash".to_owned(),
+            sent_at_boottime_ms: 3_000,
+        });
+        let fresh_time = TimeReply {
+            challenge: "challenge-after-crash".to_owned(),
+            controller_time_ms: first_time.controller_time_ms + 100,
+            ..first_time
+        };
+        restarted
+            .accept_time_reply(&fresh_time, "nd_node-a", 1, 4_000)
+            .unwrap();
+        assert!(
+            restarted
+                .accept_grant(
+                    grant.clone(),
+                    b"signed-grant-before-crash",
+                    "nd_node-a",
+                    "nd_node-a-1",
+                    &policy,
+                    &registration(),
+                    4_100,
+                )
+                .is_err()
+        );
+        assert!(
+            restarted
+                .consume(&grant.id, &authorization, policy.policy_version, 4_200)
+                .is_err()
+        );
+        assert!(
+            !marker_path.exists(),
+            "replay must not run the operation effect"
+        );
+        assert!(
+            GrantJournal::open(&path)
+                .unwrap()
+                .consumed
+                .contains_key(&grant.id)
+        );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
