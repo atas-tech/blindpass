@@ -30,7 +30,7 @@ keys were retained in the repository.
 
 | Phase scenario | SQLite | PostgreSQL | Evidence |
 |---|---|---|---|
-| P03-I01 enrollment and key-rotation subset | Pass | Pass | HTTP integration covers one-use enrollment, key/fingerprint binding, replay and expiry rejection, staged rotation, candidate-key reconnect, old-key rejection, and revocation of the old session. The VM prepared a candidate pair in the broker, delivered the signed rotation, and observed broker application acknowledgement and controller key version 2 on each backend. |
+| P03-I01 enrollment, key rotation and revocation | Pass | Pass | HTTP integration covers one-use enrollment, signing- and recipient-key substitution rejection, key/fingerprint binding, replay and expiry rejection, staged rotation, candidate-key reconnect, old-key rejection, node revocation and old-identity reconnect rejection. The VM prepared a candidate pair in the broker, delivered the signed rotation, and observed broker application acknowledgement and controller key version 2 on each backend. |
 | P03-I02 workload identity and API authorization subset | Pass | Pass | Core identity tests reject changed node, workload, unit, invocation, and peer-account bindings; protocol parsing rejects an extra caller-supplied account. HTTP integration rejects signed broker evidence with mismatched node, workload, unit, account, or invocation, and unauthenticated mapping and policy edits return 401. Purpose text asking to bypass approval remains approval-gated; control characters are sanitized and markup remains text data. |
 | P03-I03 approval decision subset | Pass | Pass | Two distinct authenticated administrators race approve and reject on one approval; exactly one receives 200 and the other receives 409. Operation scoping and stale-policy rejection also pass. |
 | P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
@@ -74,10 +74,27 @@ A forced atomic outbox-commit failure denies an operation request, leaves the
 queue unchanged, and removes the temporary file. This exercises persistence
 failure handling but does not simulate a disk-full filesystem.
 
+## Supplemental P03-I01 verification — 2026-09-26
+
+The enrollment HTTP integration now changes only `recipient_pub` while keeping
+the original proof and requires HTTP 400. The legitimate key submission then
+succeeds, and replaying that one-use submission returns HTTP 410. The focused
+`fleet_enrollment` integration passed against SQLite and the disposable local
+PostgreSQL service; both runs include the one-use, expiry, fingerprint,
+rotation, revocation and reconnect checks listed above. The PostgreSQL run
+used an isolated schema, which the test dropped on completion.
+
+The final repository gates for this slice passed: `cargo test --workspace
+--locked` (the existing PostgreSQL-outage test remained ignored), workspace
+Clippy, Rust formatting, `npm run build`, and `npm test`. The JavaScript suite
+reported 101 skipped tests across 17 skipped SPS test files. Its first
+restricted run had three MCP child-process launch failures; the host-access
+rerun passed those launch checks.
+
 ## Remaining acceptance work
 
-This execution does not establish complete P03 acceptance. It leaves the
-remaining P03-I01 and broader P03-I05 cases open; real VM clock changes,
+This execution does not establish complete P03 acceptance. It leaves broader
+P03-I05 cases open; real VM clock changes,
 suspend/resume, delayed-grant relay, version-mismatch and reconnect-storm cases
 in P03-I06; full P03-I07 coverage; and the broader pilot catalog, including
 E05–E07 and E10–E13. The broader P01/P02 inherited gates and P02.6 controller

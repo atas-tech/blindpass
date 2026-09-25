@@ -541,6 +541,19 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(substituted_response.status, 400);
 
+    let mut substituted_recipient = first_keys.submission(&first_token);
+    substituted_recipient["recipient_pub"] =
+        json!(base64_url_encode(second_keys.recipient.public_key()));
+    let substituted_recipient_response = request(
+        address,
+        "POST",
+        "/api/v3/node/enroll",
+        &[("content-type", "application/json")],
+        Some(&substituted_recipient),
+    )
+    .await;
+    assert_eq!(substituted_recipient_response.status, 400);
+
     let submitted = request(
         address,
         "POST",
