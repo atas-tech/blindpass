@@ -95,6 +95,11 @@ impl NodeIdentity {
     }
 
     #[must_use]
+    pub fn revoked_grant_journal_path(&self) -> PathBuf {
+        self.directory.join("revoked-grants.jsonl")
+    }
+
+    #[must_use]
     pub fn trusted_time_path(&self) -> PathBuf {
         self.directory.join("trusted-controller-time")
     }

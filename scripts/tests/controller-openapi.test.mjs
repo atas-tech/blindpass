@@ -291,8 +291,10 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
       "GET /api/v3/operations",
       "POST /api/v3/operations",
       "GET /api/v3/operations/{id}",
+      "DELETE /api/v3/operations/{id}",
       "GET /api/v3/grants",
-      "GET /api/v3/grants/{id}"
+      "GET /api/v3/grants/{id}",
+      "DELETE /api/v3/grants/{id}"
     ]);
     assert.equal(
       schema.paths[route][method.toLowerCase()]["x-blindpass-status"],

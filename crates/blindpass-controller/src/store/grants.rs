@@ -9,7 +9,7 @@ use super::{
     },
 };
 use blindpass_core::canon::canonicalize_value;
-use blindpass_core::fleet::{DocumentKind, Grant, SignedEnvelope};
+use blindpass_core::fleet::{DocumentKind, Grant, Revocation, SignedEnvelope};
 use sqlx::{Row, postgres::PgRow, sqlite::SqliteRow};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +51,23 @@ pub enum GrantIssueOutcome {
     Stale,
     Conflict,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GrantRevocationOutcome {
+    Revoked {
+        grant_id: String,
+        offline: bool,
+    },
+    Consumed {
+        grant_id: String,
+        consumer_lifetime_seconds: i64,
+    },
+    NotFound,
+    Conflict,
+}
+
+const TOMBSTONE_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+const NODE_OFFLINE_MS: i64 = 120_000;
 
 #[derive(Debug)]
 struct GrantContext {
@@ -207,6 +224,298 @@ impl Store {
             }
         }
     }
+
+    /// Revoke an active grant and atomically persist its signed tombstone for
+    /// node delivery. A consumed grant reports its registered consumer bound.
+    pub async fn revoke_grant(
+        &self,
+        grant_id: &str,
+        reason: &str,
+        envelope_json: &str,
+    ) -> Result<GrantRevocationOutcome, StoreError> {
+        self.checkpoint_clock().await?;
+        if !matches!(reason, "operator" | "cancelled") {
+            return Err(StoreError::InvalidInput("grant revocation reason"));
+        }
+        match &self.database {
+            Database::Sqlite(pool) => {
+                revoke_grant_sqlite(pool, &self.tenant_id, grant_id, reason, envelope_json).await
+            }
+            Database::Postgres(pool) => {
+                revoke_grant_postgres(pool, &self.tenant_id, grant_id, reason, envelope_json).await
+            }
+        }
+    }
+}
+
+async fn revoke_grant_sqlite(
+    pool: &sqlx::SqlitePool,
+    tenant_id: &str,
+    grant_id: &str,
+    reason: &str,
+    envelope_json: &str,
+) -> Result<GrantRevocationOutcome, StoreError> {
+    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
+    sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::Database)?;
+    let now: i64 = sqlx::query_scalar(&format!("SELECT {SQLITE_NOW_MS}"))
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(StoreError::Database)?;
+    let row = sqlx::query(
+        "SELECT g.status, g.node_id, g.workload_id, g.operation_id, g.expires_at,
+                w.local_ceiling_seconds, n.last_seen_at, o.status AS operation_status
+         FROM grants g JOIN workloads w ON w.id = g.workload_id
+         JOIN nodes n ON n.id = g.node_id JOIN operations o ON o.id = g.operation_id
+         WHERE g.id = ? AND g.tenant_id = ?",
+    )
+    .bind(grant_id)
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(StoreError::Database)?;
+    let Some(row) = row else {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::NotFound);
+    };
+    let status: String = row.try_get("status").map_err(StoreError::Database)?;
+    let node_id: String = row.try_get("node_id").map_err(StoreError::Database)?;
+    let operation_id: String = row.try_get("operation_id").map_err(StoreError::Database)?;
+    let expires_at: i64 = row.try_get("expires_at").map_err(StoreError::Database)?;
+    let consumer_lifetime: i64 = row
+        .try_get("local_ceiling_seconds")
+        .map_err(StoreError::Database)?;
+    let last_seen_at: Option<i64> = row.try_get("last_seen_at").map_err(StoreError::Database)?;
+    let operation_status: String = row
+        .try_get("operation_status")
+        .map_err(StoreError::Database)?;
+    let offline =
+        last_seen_at.is_none_or(|last_seen| now.saturating_sub(last_seen) > NODE_OFFLINE_MS);
+    if status == "consumed" {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Consumed {
+            grant_id: grant_id.to_owned(),
+            consumer_lifetime_seconds: consumer_lifetime,
+        });
+    }
+    if status == "revoked" {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Revoked {
+            grant_id: grant_id.to_owned(),
+            offline,
+        });
+    }
+    if status != "issued" && status != "delivered"
+        || now >= expires_at
+        || !matches!(operation_status.as_str(), "granted" | "executing")
+    {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Conflict);
+    }
+    let revocation = validate_revocation_envelope(envelope_json, grant_id, &node_id, reason)?;
+    validate_revocation_time(&revocation, now, expires_at)?;
+    let result_json = format!("{{\"reason\":\"{reason}\"}}");
+    let updated_grant = sqlx::query(
+        "UPDATE grants SET status = 'revoked', revoked_at = ?
+        WHERE id = ? AND tenant_id = ? AND status IN ('issued', 'delivered')",
+    )
+    .bind(now)
+    .bind(grant_id)
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(StoreError::Database)?;
+    let updated_operation = sqlx::query("UPDATE operations SET status = 'revoked', result_json = ?, completed_at = ?, version = version + 1
+        WHERE id = ? AND tenant_id = ? AND status IN ('granted', 'executing')")
+        .bind(&result_json)
+        .bind(now)
+        .bind(&operation_id)
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::Database)?;
+    if updated_grant.rows_affected() != 1 || updated_operation.rows_affected() != 1 {
+        tx.rollback().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Conflict);
+    }
+    sqlx::query(
+        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
+        VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(grant_id)
+    .bind(&node_id)
+    .bind(reason)
+    .bind(now)
+    .bind(to_i64(revocation.retain_until_ms, "tombstone retention")?)
+    .execute(&mut *tx)
+    .await
+    .map_err(StoreError::Database)?;
+    enqueue_node_document_sqlite(&mut tx, &node_id, envelope_json).await?;
+    tx.commit().await.map_err(StoreError::Database)?;
+    Ok(GrantRevocationOutcome::Revoked {
+        grant_id: grant_id.to_owned(),
+        offline,
+    })
+}
+
+async fn revoke_grant_postgres(
+    pool: &sqlx::PgPool,
+    tenant_id: &str,
+    grant_id: &str,
+    reason: &str,
+    envelope_json: &str,
+) -> Result<GrantRevocationOutcome, StoreError> {
+    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
+    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(StoreError::Database)?;
+    let now: i64 = sqlx::query_scalar(&format!("SELECT {POSTGRES_NOW_MS}"))
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(StoreError::Database)?;
+    let row = sqlx::query(
+        "SELECT g.status, g.node_id, g.workload_id, g.operation_id, g.expires_at,
+                w.local_ceiling_seconds, n.last_seen_at, o.status AS operation_status
+         FROM grants g JOIN workloads w ON w.id = g.workload_id
+         JOIN nodes n ON n.id = g.node_id JOIN operations o ON o.id = g.operation_id
+         WHERE g.id = $1 AND g.tenant_id = $2 FOR UPDATE OF g",
+    )
+    .bind(grant_id)
+    .bind(tenant_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(StoreError::Database)?;
+    let Some(row) = row else {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::NotFound);
+    };
+    let status: String = row.try_get("status").map_err(StoreError::Database)?;
+    let node_id: String = row.try_get("node_id").map_err(StoreError::Database)?;
+    let operation_id: String = row.try_get("operation_id").map_err(StoreError::Database)?;
+    let expires_at: i64 = row.try_get("expires_at").map_err(StoreError::Database)?;
+    let consumer_lifetime: i64 = row
+        .try_get("local_ceiling_seconds")
+        .map_err(StoreError::Database)?;
+    let last_seen_at: Option<i64> = row.try_get("last_seen_at").map_err(StoreError::Database)?;
+    let operation_status: String = row
+        .try_get("operation_status")
+        .map_err(StoreError::Database)?;
+    let offline =
+        last_seen_at.is_none_or(|last_seen| now.saturating_sub(last_seen) > NODE_OFFLINE_MS);
+    if status == "consumed" {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Consumed {
+            grant_id: grant_id.to_owned(),
+            consumer_lifetime_seconds: consumer_lifetime,
+        });
+    }
+    if status == "revoked" {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Revoked {
+            grant_id: grant_id.to_owned(),
+            offline,
+        });
+    }
+    if status != "issued" && status != "delivered"
+        || now >= expires_at
+        || !matches!(operation_status.as_str(), "granted" | "executing")
+    {
+        tx.commit().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Conflict);
+    }
+    let revocation = validate_revocation_envelope(envelope_json, grant_id, &node_id, reason)?;
+    validate_revocation_time(&revocation, now, expires_at)?;
+    let result_json = format!("{{\"reason\":\"{reason}\"}}");
+    let updated_grant = sqlx::query(
+        "UPDATE grants SET status = 'revoked', revoked_at = $1
+        WHERE id = $2 AND tenant_id = $3 AND status IN ('issued', 'delivered')",
+    )
+    .bind(now)
+    .bind(grant_id)
+    .bind(tenant_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(StoreError::Database)?;
+    let updated_operation = sqlx::query("UPDATE operations SET status = 'revoked', result_json = $1, completed_at = $2, version = version + 1
+        WHERE id = $3 AND tenant_id = $4 AND status IN ('granted', 'executing')")
+        .bind(&result_json)
+        .bind(now)
+        .bind(&operation_id)
+        .bind(tenant_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::Database)?;
+    if updated_grant.rows_affected() != 1 || updated_operation.rows_affected() != 1 {
+        tx.rollback().await.map_err(StoreError::Database)?;
+        return Ok(GrantRevocationOutcome::Conflict);
+    }
+    sqlx::query(
+        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
+        VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(grant_id)
+    .bind(&node_id)
+    .bind(reason)
+    .bind(now)
+    .bind(to_i64(revocation.retain_until_ms, "tombstone retention")?)
+    .execute(&mut *tx)
+    .await
+    .map_err(StoreError::Database)?;
+    enqueue_node_document_postgres(&mut tx, &node_id, envelope_json).await?;
+    tx.commit().await.map_err(StoreError::Database)?;
+    Ok(GrantRevocationOutcome::Revoked {
+        grant_id: grant_id.to_owned(),
+        offline,
+    })
+}
+
+fn validate_revocation_envelope(
+    envelope_json: &str,
+    grant_id: &str,
+    node_id: &str,
+    reason: &str,
+) -> Result<Revocation, StoreError> {
+    if envelope_json.is_empty() || envelope_json.len() > 64 * 1024 {
+        return Err(StoreError::InvalidInput("revocation document size"));
+    }
+    let envelope = SignedEnvelope::from_json(envelope_json)
+        .map_err(|_| StoreError::InvalidInput("revocation document"))?;
+    let revocation = Revocation::from_value(envelope.body())
+        .map_err(|_| StoreError::InvalidInput("revocation body"))?;
+    if envelope.kind() != DocumentKind::Revocation
+        || envelope.epoch() != revocation.issuer_epoch
+        || revocation.grant_id != grant_id
+        || revocation.node_id != node_id
+        || revocation.reason != reason
+    {
+        return Err(StoreError::InvalidInput("revocation document binding"));
+    }
+    Ok(revocation)
+}
+
+fn validate_revocation_time(
+    revocation: &Revocation,
+    now_ms: i64,
+    expires_at_ms: i64,
+) -> Result<(), StoreError> {
+    let revoked_at = i64::try_from(revocation.revoked_at_ms)
+        .map_err(|_| StoreError::InvalidInput("revocation time"))?;
+    let retain_until = i64::try_from(revocation.retain_until_ms)
+        .map_err(|_| StoreError::InvalidInput("tombstone retention"))?;
+    let minimum_retain = now_ms
+        .max(expires_at_ms)
+        .checked_add(TOMBSTONE_RETENTION_MS)
+        .ok_or(StoreError::InvalidInput("tombstone retention"))?;
+    if revoked_at < now_ms.saturating_sub(60_000)
+        || revoked_at > now_ms.saturating_add(5_000)
+        || retain_until < minimum_retain
+    {
+        return Err(StoreError::InvalidInput("revocation time or retention"));
+    }
+    Ok(())
 }
 
 async fn issue_operation_grants_sqlite(

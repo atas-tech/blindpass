@@ -8,7 +8,7 @@ use crate::keys::{NodeIdentity, PinnedIssuer};
 use crate::os_identity::require_control_peer;
 use crate::os_identity::require_root_peer;
 use blindpass_core::fleet::{
-    DocumentKind, Grant, PolicySnapshot, Registration, SignedEnvelope, TimeReply,
+    DocumentKind, Grant, PolicySnapshot, Registration, Revocation, SignedEnvelope, TimeReply,
 };
 use blindpass_core::secret::wipe;
 use std::io::{self, Read, Write};
@@ -226,6 +226,19 @@ fn apply_controller_document_to_state(
                 )
                 .map_err(BrokerError::Configuration)?;
         }
+        DocumentKind::Revocation => {
+            let revocation = Revocation::from_value(envelope.body())
+                .map_err(|_| BrokerError::Configuration("controller revocation is malformed"))?;
+            if revocation.node_id != pin.node_id {
+                return Err(BrokerError::Configuration(
+                    "controller revocation is bound to another node",
+                ));
+            }
+            state
+                .grant_verifier
+                .revoke(&revocation)
+                .map_err(BrokerError::Configuration)?;
+        }
         _ => {
             return Err(BrokerError::Configuration(
                 "controller document kind is not supported by this broker",
@@ -236,6 +249,7 @@ fn apply_controller_document_to_state(
         "registration" => Ok("registration"),
         "policy_snapshot" => Ok("policy_snapshot"),
         "grant" => Ok("grant"),
+        "revocation" => Ok("revocation"),
         "time_reply" => Ok("time_reply"),
         _ => Err(BrokerError::Configuration(
             "controller document kind is unsupported",
@@ -511,6 +525,8 @@ mod tests {
             })
             .unwrap();
         let mut broker_state = BrokerState::new(DeliveryPolicy::default());
+        let operation_directory = directory.join("ops");
+        broker_state.operation_directory = operation_directory.clone();
         broker_state.configure_grant_storage(&identity).unwrap();
         let state = std::sync::Arc::new(std::sync::Mutex::new(broker_state));
 
@@ -635,13 +651,59 @@ mod tests {
             .unwrap();
         assert_eq!(
             consumed,
-            format!("OK grant_consumed {}\n", grant.id).as_bytes()
+            format!("OK operation_completed {}\n", grant.id).as_bytes()
         );
+        let marker = operation_directory.join(format!("{}.marker", grant.id));
+        assert_eq!(std::fs::metadata(marker).unwrap().len(), 0);
         assert!(
             state
                 .lock()
                 .unwrap()
                 .process_workload(&peer, &request)
+                .is_err()
+        );
+
+        let mut uncertain_grant = grant.clone();
+        uncertain_grant.id = "gr_1123456789abcdef0123456789abcdef".to_owned();
+        uncertain_grant.operation_id = "op_1123456789abcdef0123456789abcdef".to_owned();
+        uncertain_grant.resource_id = "marker-b".to_owned();
+        let uncertain_envelope = SignedEnvelope::sign(
+            DocumentKind::Grant,
+            uncertain_grant.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &uncertain_envelope),
+            b"OK document_applied grant\n"
+        );
+        std::fs::write(
+            operation_directory.join(format!("{}.marker", uncertain_grant.id)),
+            [],
+        )
+        .unwrap();
+        let uncertain_request = WorkloadRequest {
+            operation: format!("consume:{}", uncertain_grant.id),
+            ..request.clone()
+        };
+        let uncertain_result = state
+            .lock()
+            .unwrap()
+            .process_workload(&peer, &uncertain_request)
+            .unwrap();
+        assert_eq!(
+            uncertain_result,
+            format!("OK operation_uncertain {}\n", uncertain_grant.id).as_bytes()
+        );
+        assert!(
+            state
+                .lock()
+                .unwrap()
+                .process_workload(&peer, &uncertain_request)
                 .is_err()
         );
 

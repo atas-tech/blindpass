@@ -1138,7 +1138,40 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(direct_allow.status, 201, "{}", direct_allow.body);
     assert_eq!(direct_allow.body["status"], "granted");
-    assert!(direct_allow.body["grant_id"].as_str().is_some());
+    let direct_allow_grant_id = direct_allow.body["grant_id"].as_str().unwrap();
+    let direct_allow_operation_id = direct_allow.body["id"].as_str().unwrap();
+
+    let cancelled = request(
+        address,
+        "DELETE",
+        &format!("/api/v3/operations/{direct_allow_operation_id}"),
+        &write_headers,
+        None,
+    )
+    .await;
+    assert_eq!(cancelled.status, 200, "{}", cancelled.body);
+    assert_eq!(cancelled.body["status"], "grant_revoked");
+    assert_eq!(cancelled.body["grant_id"], direct_allow_grant_id);
+    let cancelled_operation = request(
+        address,
+        "GET",
+        &format!("/api/v3/operations/{direct_allow_operation_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(cancelled_operation.status, 200);
+    assert_eq!(cancelled_operation.body["status"], "revoked");
+    let cancelled_grant = request(
+        address,
+        "GET",
+        &format!("/api/v3/grants/{direct_allow_grant_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(cancelled_grant.status, 200);
+    assert_eq!(cancelled_grant.body["status"], "revoked");
 
     let workload_update_headers = [
         ("origin", ORIGIN),

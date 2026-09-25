@@ -31,7 +31,7 @@ pub use exchanges::{
     LifecycleRecord,
 };
 pub use fleet::{EnrollmentRecord, NodeRecord};
-pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord};
+pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord, GrantRevocationOutcome};
 pub use node_channel::{InboxDocument, NodeChallenge, NodeEventInsert, NodeEventRecord};
 pub use operators::{LocalOperator, LocalSession};
 

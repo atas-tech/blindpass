@@ -10,6 +10,7 @@
 mod control;
 mod grants;
 mod keys;
+mod ops;
 pub mod os_identity;
 
 use blindpass_core::custody::{CryptoError, EphemeralCustody};
@@ -38,6 +39,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const MAX_ACTIVE_CONNECTIONS: usize = 32;
+const DEFAULT_OPERATION_DIRECTORY: &str = "/run/blindpass/ops";
 pub const DEFAULT_CUSTODY_KEY_LIFETIME: Duration = Duration::from_secs(30);
 pub const DEFAULT_CREDENTIAL_LIFETIME: Duration = Duration::from_secs(60 * 60);
 
@@ -153,6 +155,7 @@ pub struct BrokerState {
     fleet_registrations: BTreeMap<String, Registration>,
     fleet_policy: Option<PolicySnapshot>,
     grant_verifier: grants::GrantVerifier,
+    operation_directory: PathBuf,
     pub credentials: CredentialRegistry,
     pub custody: EphemeralCustody,
     credential_expiries: BTreeMap<String, Instant>,
@@ -180,6 +183,7 @@ impl BrokerState {
             fleet_registrations: BTreeMap::new(),
             fleet_policy: None,
             grant_verifier: grants::GrantVerifier::default(),
+            operation_directory: PathBuf::from(DEFAULT_OPERATION_DIRECTORY),
             credentials: CredentialRegistry::new(delivery_policy),
             custody: EphemeralCustody::new(custody_key_lifetime),
             credential_expiries: BTreeMap::new(),
@@ -284,10 +288,19 @@ impl BrokerState {
                 .map(|policy| policy.policy_version)
                 .ok_or(BrokerError::Configuration("fleet policy is unavailable"))?;
             let now = grants::boottime_ms().map_err(BrokerError::Configuration)?;
-            self.grant_verifier
+            let grant = self
+                .grant_verifier
                 .consume(grant_id, &authorization, policy_version, now)
                 .map_err(BrokerError::Configuration)?;
-            return Ok(format!("OK grant_consumed {grant_id}\n").into_bytes());
+            match grant.action.as_str() {
+                "noop.marker" => {
+                    if ops::noop_marker::create_in(&self.operation_directory, &grant.id).is_err() {
+                        return Ok(format!("OK operation_uncertain {}\n", grant.id).into_bytes());
+                    }
+                }
+                _ => return Ok(format!("OK operation_uncertain {}\n", grant.id).into_bytes()),
+            }
+            return Ok(format!("OK operation_completed {grant_id}\n").into_bytes());
         }
         Ok(workload_ok(request))
     }
@@ -299,6 +312,7 @@ impl BrokerState {
         self.grant_verifier = grants::GrantVerifier::with_state_files(
             &identity.consumed_grant_journal_path(),
             &identity.trusted_time_path(),
+            &identity.revoked_grant_journal_path(),
         )
         .map_err(BrokerError::Configuration)?;
         Ok(())

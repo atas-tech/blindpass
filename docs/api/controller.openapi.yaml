@@ -629,7 +629,6 @@
       "delete": {
         "operationId": "revokeFleetNode",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "responses": { "200": { "description": "Node revoked; queued documents are tombstoned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
@@ -760,7 +759,6 @@
       "delete": {
         "operationId": "revokeFleetGrant",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "responses": { "200": { "description": "Typed grant revocation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantRevocationResult" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
@@ -794,7 +792,6 @@
       "delete": {
         "operationId": "cancelFleetOperation",
         "tags": ["Fleet administration"],
-        "x-blindpass-status": "planned",
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "responses": { "200": { "description": "Typed cancellation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantRevocationResult" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }

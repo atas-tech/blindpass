@@ -3,7 +3,7 @@
 //! Freshness-bound grant deadlines and durable one-use consumption records.
 
 use blindpass_core::custody::sha256;
-use blindpass_core::fleet::{Grant, PolicySnapshot, Registration, TimeReply};
+use blindpass_core::fleet::{Grant, PolicySnapshot, Registration, Revocation, TimeReply};
 use blindpass_core::identity::WorkloadAuthorization;
 use blindpass_core::signing::base64_url_encode;
 use std::collections::BTreeMap;
@@ -50,6 +50,7 @@ pub(crate) struct GrantVerifier {
     trusted_time_path: Option<PathBuf>,
     accepted: BTreeMap<String, AcceptedGrant>,
     journal: Option<GrantJournal>,
+    revocations: Option<RevocationJournal>,
 }
 
 #[derive(Debug, Default)]
@@ -58,15 +59,23 @@ struct GrantJournal {
     consumed: BTreeMap<String, u64>,
 }
 
+#[derive(Debug, Default)]
+struct RevocationJournal {
+    path: Option<PathBuf>,
+    tombstones: BTreeMap<String, u64>,
+}
+
 impl GrantVerifier {
     pub(crate) fn with_state_files(
         journal_path: &Path,
         trusted_time_path: &Path,
+        revocation_path: &Path,
     ) -> Result<Self, &'static str> {
         Ok(Self {
             highest_controller_time_ms: read_trusted_time(trusted_time_path)?,
             trusted_time_path: Some(trusted_time_path.to_owned()),
             journal: Some(GrantJournal::open(journal_path)?),
+            revocations: Some(RevocationJournal::open(revocation_path)?),
             ..Self::default()
         })
     }
@@ -132,14 +141,17 @@ impl GrantVerifier {
         if let Some(path) = self.trusted_time_path.as_deref() {
             write_trusted_time(path, highest_controller_time_ms)?;
         }
+        if let Some(journal) = self.journal.as_mut() {
+            journal.prune(controller_now_ms)?;
+        }
+        if let Some(revocations) = self.revocations.as_mut() {
+            revocations.prune(controller_now_ms)?;
+        }
         self.highest_controller_time_ms = Some(highest_controller_time_ms);
         self.trusted_time = Some(TrustedTime {
             estimated_controller_ms: controller_now_ms,
             received_at_boottime_ms: now_boottime_ms,
         });
-        if let Some(journal) = self.journal.as_mut() {
-            journal.prune(controller_now_ms)?;
-        }
         Ok(())
     }
 
@@ -195,6 +207,13 @@ impl GrantVerifier {
             || grant.expires_at_ms.saturating_sub(grant.issued_at_ms) > 3_600_000
         {
             return Err("grant is stale or exceeds the broker lifetime maximum");
+        }
+        if self
+            .revocations
+            .as_ref()
+            .is_some_and(|journal| journal.contains_at(&grant.id, now_controller_ms))
+        {
+            return Err("grant has an active revocation tombstone");
         }
         if self
             .journal
@@ -263,6 +282,15 @@ impl GrantVerifier {
     pub(crate) fn revoke_workload(&mut self, workload_id: &str) {
         self.accepted
             .retain(|_, accepted| accepted.grant.workload_id != workload_id);
+    }
+
+    pub(crate) fn revoke(&mut self, revocation: &Revocation) -> Result<(), &'static str> {
+        self.revocations
+            .as_mut()
+            .ok_or("durable grant revocation journal is unavailable")?
+            .record(&revocation.grant_id, revocation.retain_until_ms)?;
+        self.accepted.remove(&revocation.grant_id);
+        Ok(())
     }
 
     pub(crate) fn revoke_stale_policy(&mut self, policy_version: u64) {
@@ -405,6 +433,143 @@ impl GrantJournal {
     }
 }
 
+impl RevocationJournal {
+    fn open(path: &Path) -> Result<Self, &'static str> {
+        let mut journal = Self {
+            path: Some(path.to_owned()),
+            tombstones: BTreeMap::new(),
+        };
+        let mut file = match open_private(path, false) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(journal),
+            Err(_) => return Err("grant revocation journal could not be opened safely"),
+        };
+        let metadata = file
+            .metadata()
+            .map_err(|_| "grant revocation journal metadata is unavailable")?;
+        if metadata.len() > GRANT_JOURNAL_MAX_BYTES {
+            return Err("grant revocation journal exceeds its configured size bound");
+        }
+        let mut contents = Vec::with_capacity(metadata.len() as usize);
+        file.read_to_end(&mut contents)
+            .map_err(|_| "grant revocation journal could not be read")?;
+        if !contents.is_empty() && contents.last() != Some(&b'\n') {
+            return Err("grant revocation journal ends with an incomplete record");
+        }
+        for line in contents
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+        {
+            let (id, retain_until) = parse_revocation_line(line)?;
+            journal
+                .tombstones
+                .entry(id.to_owned())
+                .and_modify(|previous| *previous = (*previous).max(retain_until))
+                .or_insert(retain_until);
+        }
+        if journal.tombstones.len() > GRANT_JOURNAL_MAX_RECORDS {
+            return Err("grant revocation journal exceeds its record bound");
+        }
+        Ok(journal)
+    }
+
+    fn contains_at(&self, grant_id: &str, controller_time_ms: u64) -> bool {
+        self.tombstones
+            .get(grant_id)
+            .is_some_and(|retain_until| *retain_until > controller_time_ms)
+    }
+
+    fn record(&mut self, grant_id: &str, retain_until_ms: u64) -> Result<(), &'static str> {
+        if let Some(existing) = self.tombstones.get(grant_id)
+            && *existing >= retain_until_ms
+        {
+            return Ok(());
+        }
+        if self.tombstones.len() >= GRANT_JOURNAL_MAX_RECORDS
+            && !self.tombstones.contains_key(grant_id)
+        {
+            return Err("grant revocation journal is full; revocation is denied");
+        }
+        let path = self
+            .path
+            .as_ref()
+            .ok_or("grant revocation journal path is unavailable")?;
+        let line =
+            format!("{{\"grant_id\":\"{grant_id}\",\"retain_until_ms\":{retain_until_ms}}}\n");
+        let existed = match fs::symlink_metadata(path) {
+            Ok(_) => true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+            Err(_) => return Err("grant revocation journal could not be inspected safely"),
+        };
+        let mut file = open_private(path, true)
+            .map_err(|_| "grant revocation journal could not be opened for append")?;
+        let length = file
+            .metadata()
+            .map_err(|_| "grant revocation journal metadata is unavailable")?
+            .len();
+        if length.saturating_add(line.len() as u64) > GRANT_JOURNAL_MAX_BYTES {
+            return Err("grant revocation journal is full; revocation is denied");
+        }
+        file.write_all(line.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|_| "grant revocation tombstone could not be flushed")?;
+        self.tombstones.insert(grant_id.to_owned(), retain_until_ms);
+        if !existed {
+            let parent = path
+                .parent()
+                .ok_or("grant revocation journal parent directory is unavailable")?;
+            File::open(parent)
+                .and_then(|directory| directory.sync_all())
+                .map_err(|_| "grant revocation journal directory could not be synchronized")?;
+        }
+        Ok(())
+    }
+
+    fn prune(&mut self, authenticated_time_ms: u64) -> Result<(), &'static str> {
+        let pruned = self
+            .tombstones
+            .iter()
+            .filter(|(_, retain_until)| **retain_until > authenticated_time_ms)
+            .map(|(id, retain_until)| (id.clone(), *retain_until))
+            .collect::<BTreeMap<_, _>>();
+        if pruned.len() == self.tombstones.len() {
+            return Ok(());
+        }
+        let path = self
+            .path
+            .as_ref()
+            .ok_or("grant revocation journal path is unavailable")?;
+        let parent = path
+            .parent()
+            .ok_or("grant revocation journal parent directory is unavailable")?;
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp = parent.join(format!(".revoked-grants-{}-{sequence}.tmp", process_id()));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(PRIVATE_FILE_MODE)
+            .custom_flags(NO_FOLLOW)
+            .open(&temp)
+            .map_err(|_| "grant revocation compaction file could not be created")?;
+        for (id, retain_until) in &pruned {
+            let line = format!("{{\"grant_id\":\"{id}\",\"retain_until_ms\":{retain_until}}}\n");
+            if file.write_all(line.as_bytes()).is_err() {
+                let _ = fs::remove_file(&temp);
+                return Err("grant revocation compaction could not be written");
+            }
+        }
+        if file.sync_all().is_err() || fs::rename(&temp, path).is_err() {
+            let _ = fs::remove_file(&temp);
+            return Err("grant revocation compaction could not be committed");
+        }
+        File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| "grant revocation directory could not be synchronized")?;
+        self.tombstones = pruned;
+        Ok(())
+    }
+}
+
 fn read_trusted_time(path: &Path) -> Result<Option<u64>, &'static str> {
     let mut file = match open_private(path, false) {
         Ok(file) => file,
@@ -502,6 +667,31 @@ fn parse_journal_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
     Ok((id, expiry))
 }
 
+fn parse_revocation_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
+    let text = std::str::from_utf8(line).map_err(|_| "grant revocation journal is not UTF-8")?;
+    let value = text
+        .strip_prefix("{\"grant_id\":\"")
+        .and_then(|value| value.strip_suffix('}'))
+        .ok_or("grant revocation record is malformed")?;
+    let (id, retain_until) = value
+        .split_once("\",\"retain_until_ms\":")
+        .ok_or("grant revocation record is malformed")?;
+    if id.is_empty()
+        || id.len() > 128
+        || !id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return Err("grant revocation id is malformed");
+    }
+    let retain_until = retain_until
+        .parse::<u64>()
+        .ok()
+        .filter(|value| *value > 0 && value.to_string() == retain_until)
+        .ok_or("grant revocation retention is malformed")?;
+    Ok((id, retain_until))
+}
+
 pub(crate) fn boottime_ms() -> Result<u64, &'static str> {
     #[repr(C)]
     struct Timespec {
@@ -548,7 +738,7 @@ fn process_id() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{GrantJournal, GrantVerifier};
+    use super::{GrantJournal, GrantVerifier, RevocationJournal};
     use blindpass_core::fleet::{ConsumptionMode, Grant, PolicySnapshot, Registration, TimeReply};
     use blindpass_core::identity::WorkloadAuthorization;
     use std::path::PathBuf;
@@ -648,7 +838,9 @@ mod tests {
     fn persisted_time_high_water_rejects_controller_rollback_after_restart() {
         let journal_path = temporary_path();
         let time_path = journal_path.parent().unwrap().join("trusted-time");
-        let mut verifier = GrantVerifier::with_state_files(&journal_path, &time_path).unwrap();
+        let revocation_path = journal_path.parent().unwrap().join("revoked-grants.jsonl");
+        let mut verifier =
+            GrantVerifier::with_state_files(&journal_path, &time_path, &revocation_path).unwrap();
         verifier.pending_time = Some(super::TimeChallenge {
             value: "challenge-new".to_owned(),
             sent_at_boottime_ms: 1_000,
@@ -663,7 +855,8 @@ mod tests {
             .accept_time_reply(&reply, "nd_node-a", 1, 2_000)
             .unwrap();
 
-        let mut restarted = GrantVerifier::with_state_files(&journal_path, &time_path).unwrap();
+        let mut restarted =
+            GrantVerifier::with_state_files(&journal_path, &time_path, &revocation_path).unwrap();
         restarted.pending_time = Some(super::TimeChallenge {
             value: "challenge-after-restart".to_owned(),
             sent_at_boottime_ms: 5_000,
@@ -776,6 +969,19 @@ mod tests {
                 .record_consumption("gr_0123456789abcdef0123456789abcdef", 1_800_000_060_000)
                 .is_err()
         );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn revocation_tombstones_survive_restart_until_authenticated_retention_expires() {
+        let path = temporary_path();
+        let mut journal = RevocationJournal::open(&path).unwrap();
+        journal
+            .record("gr_0123456789abcdef0123456789abcdef", 1_800_604_800_000)
+            .unwrap();
+        let restored = RevocationJournal::open(&path).unwrap();
+        assert!(restored.contains_at("gr_0123456789abcdef0123456789abcdef", 1_800_000_000_000));
+        assert!(!restored.contains_at("gr_0123456789abcdef0123456789abcdef", 1_800_700_000_000));
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

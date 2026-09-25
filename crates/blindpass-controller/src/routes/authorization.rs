@@ -6,8 +6,8 @@ use crate::app::AppState;
 use crate::routes::fleet::{api_error, require_operator, unavailable};
 use crate::store::{
     ApprovalDecisionOutcome, ApprovalRecord, FleetPolicyRecord, GrantIssueDraft, GrantIssueOutcome,
-    GrantRecord, OperationApprovalDraft, OperationApprovalRecord, OperationCreateOutcome,
-    OperationDecisionOutcome, OperationRecord, WorkloadRecord,
+    GrantRecord, GrantRevocationOutcome, OperationApprovalDraft, OperationApprovalRecord,
+    OperationCreateOutcome, OperationDecisionOutcome, OperationRecord, WorkloadRecord,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -18,7 +18,9 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blindpass_core::canon::canonicalize_json;
 use blindpass_core::custody::sha256;
-use blindpass_core::fleet::{ConsumptionMode, DocumentKind, Grant, Registration, SignedEnvelope};
+use blindpass_core::fleet::{
+    ConsumptionMode, DocumentKind, Grant, Registration, Revocation, SignedEnvelope,
+};
 use serde::Deserialize;
 use serde_json::{Value as JsonValue, json};
 
@@ -39,9 +41,12 @@ pub(crate) fn routes() -> Router<AppState> {
             "/api/v3/operations",
             get(list_operations).post(create_operation),
         )
-        .route("/api/v3/operations/{id}", get(get_operation))
+        .route(
+            "/api/v3/operations/{id}",
+            get(get_operation).delete(cancel_operation),
+        )
         .route("/api/v3/grants", get(list_grants))
-        .route("/api/v3/grants/{id}", get(get_grant))
+        .route("/api/v3/grants/{id}", get(get_grant).delete(revoke_grant))
         .route("/api/v3/approvals", get(list_unified_approvals))
         .route("/api/v3/approvals/count", get(count_unified_approvals))
         .route("/api/v3/approvals/{id}", get(get_unified_approval))
@@ -1049,6 +1054,38 @@ async fn get_operation(
     }
 }
 
+async fn cancel_operation(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_fleet_operator(&state, &headers, true).await {
+        return response;
+    }
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    let operation = match store.operation_by_id(&id).await {
+        Ok(Some(operation)) => operation,
+        Ok(None) => {
+            return api_error(
+                StatusCode::NOT_FOUND,
+                "operation_not_found",
+                "operation was not found",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    let Some(grant_id) = operation.grant_id else {
+        return api_error(
+            StatusCode::CONFLICT,
+            "operation_not_cancellable",
+            "operation has no active grant to cancel",
+        );
+    };
+    perform_grant_revocation(&state, store, &grant_id, "cancelled").await
+}
+
 async fn list_grants(
     State(state): State<AppState>,
     headers: HeaderMap,
@@ -1132,6 +1169,129 @@ async fn get_grant(
             StatusCode::NOT_FOUND,
             "grant_not_found",
             "grant was not found",
+        ),
+        Err(_) => unavailable(),
+    }
+}
+
+async fn revoke_grant(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_fleet_operator(&state, &headers, true).await {
+        return response;
+    }
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    perform_grant_revocation(&state, store, &id, "operator").await
+}
+
+async fn perform_grant_revocation(
+    state: &AppState,
+    store: &crate::store::Store,
+    grant_id: &str,
+    reason: &str,
+) -> Response {
+    let grant = match store.grant_by_id(grant_id).await {
+        Ok(Some(grant)) => grant,
+        Ok(None) => {
+            return api_error(
+                StatusCode::NOT_FOUND,
+                "grant_not_found",
+                "grant was not found",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    let envelope_json = if matches!(grant.status.as_str(), "consumed" | "revoked") {
+        String::new()
+    } else {
+        let (Some(issuer), Some(key_id)) = (
+            state.issuer_keypair.as_ref(),
+            state.issuer_key_id.as_deref(),
+        ) else {
+            return api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "fleet_disabled",
+                "fleet authorization is not configured",
+            );
+        };
+        let now_ms = match store.database_now_ms().await {
+            Ok(value) => value,
+            Err(_) => return unavailable(),
+        };
+        let issuer_epoch = match store.issuer_epoch().await {
+            Ok(value) => value,
+            Err(_) => return unavailable(),
+        };
+        let Ok(revoked_at_ms) = u64::try_from(now_ms) else {
+            return unavailable();
+        };
+        let retain_until_ms = now_ms
+            .max(grant.expires_at_ms)
+            .checked_add(7 * 24 * 60 * 60 * 1_000)
+            .and_then(|value| u64::try_from(value).ok());
+        let Some(retain_until_ms) = retain_until_ms else {
+            return unavailable();
+        };
+        let revocation = Revocation {
+            grant_id: grant_id.to_owned(),
+            node_id: grant.node_id.clone(),
+            reason: reason.to_owned(),
+            revoked_at_ms,
+            retain_until_ms,
+            issuer_epoch,
+        };
+        let body = match revocation.to_value() {
+            Ok(body) => body,
+            Err(_) => return unavailable(),
+        };
+        let envelope = match SignedEnvelope::sign(
+            DocumentKind::Revocation,
+            body,
+            key_id,
+            issuer_epoch,
+            issuer,
+        ) {
+            Ok(envelope) => envelope,
+            Err(_) => return unavailable(),
+        };
+        let encoded = match envelope.to_json() {
+            Ok(encoded) => encoded,
+            Err(_) => return unavailable(),
+        };
+        match String::from_utf8(encoded) {
+            Ok(value) => value,
+            Err(_) => return unavailable(),
+        }
+    };
+    match store.revoke_grant(grant_id, reason, &envelope_json).await {
+        Ok(GrantRevocationOutcome::Revoked { grant_id, offline }) => Json(json!({
+            "status": if offline { "not_revocable_offline" } else { "grant_revoked" },
+            "grant_id": grant_id,
+            "consumer_lifetime_seconds": null
+        }))
+        .into_response(),
+        Ok(GrantRevocationOutcome::Consumed {
+            grant_id,
+            consumer_lifetime_seconds,
+        }) => Json(json!({
+            "status":"grant_revoked_after_consumption",
+            "grant_id":grant_id,
+            "consumer_lifetime_seconds":consumer_lifetime_seconds
+        }))
+        .into_response(),
+        Ok(GrantRevocationOutcome::NotFound) => api_error(
+            StatusCode::NOT_FOUND,
+            "grant_not_found",
+            "grant was not found",
+        ),
+        Ok(GrantRevocationOutcome::Conflict) => api_error(
+            StatusCode::CONFLICT,
+            "grant_not_revocable",
+            "grant is no longer eligible for revocation",
         ),
         Err(_) => unavailable(),
     }
