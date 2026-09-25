@@ -160,6 +160,7 @@ start_guest() {
     qemu-system-x86_64 \
         -name "blindpass-p03-$backend-$guest,debug-threads=on" \
         -enable-kvm -cpu host -m 1536 -smp 2 \
+        -global PIIX4_PM.disable_s3=0 \
         -drive "file=$image_dir/guest-overlay.qcow2,if=virtio,format=qcow2" \
         -drive "file=$image_dir/seed.iso,if=virtio,media=cdrom,readonly=on,format=raw" \
         -netdev "user,id=net0,hostfwd=tcp:127.0.0.1:$port-:22" \
@@ -263,6 +264,46 @@ admin() {
         "P03_UI_ORIGIN=http://127.0.0.1:5175" \
         "P03_ADMIN_SEED_FILE=$admin_seed_file" \
         node "$repo_root/tests/fleet/p03-admin.mjs" "$@"
+}
+
+grant_acknowledged() {
+    local node_id=$1 grant_id=$2
+    if [[ "$current_backend" == sqlite ]]; then
+        python3 - "$backend_dir/controller.sqlite" "$node_id" "$grant_id" <<'PY'
+import json
+import sqlite3
+import sys
+
+database, node_id, grant_id = sys.argv[1:]
+connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True)
+try:
+    rows = connection.execute(
+        "SELECT envelope_json FROM node_inbox WHERE node_id = ? AND acked_at IS NOT NULL",
+        (node_id,),
+    )
+    acknowledged = any(
+        (lambda envelope: envelope.get("kind") == "grant"
+         and envelope.get("body", {}).get("id") == grant_id)(json.loads(row[0]))
+        for row in rows
+    )
+    print(str(acknowledged).lower())
+finally:
+    connection.close()
+PY
+    else
+        node "$repo_root/tests/fleet/p03-postgres.mjs" grant-acknowledged \
+            "$database_url_file" "$node_id" "$grant_id"
+    fi
+}
+
+wait_for_grant_acknowledgement() {
+    local node_id=$1 grant_id=$2
+    for _attempt in {1..60}; do
+        [[ $(grant_acknowledged "$node_id" "$grant_id") == true ]] && return 0
+        sleep 0.1
+    done
+    printf 'P03-FAIL broker did not acknowledge grant application before its lifetime elapsed\n' >&2
+    return 1
 }
 
 json_field() {
@@ -584,6 +625,45 @@ PY
     }
     printf 'P03-SCENARIO backend=%s scenario=P03-I01-in-place-key-rotation key_version=%s status=passed\n' \
         "$current_backend" "$rotation_version"
+
+    local suspend_payload suspend_workload suspend_request suspend_operation suspend_grant
+    suspend_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 suspend-aware grant expiry",resource_id:"P03-CANARY-SUSPENDED",ttl_seconds:20})).toString("base64url"))')
+    suspend_workload=$(setup_workload a "$node_a" "$current_backend-a-suspend" "$suspend_payload")
+    guest_call a start-workload
+    suspend_request=$(guest_call a wait-request)
+    issue_operation "$suspend_workload" P03-CANARY-SUSPENDED "$suspend_request" \
+        'P03 suspend-aware grant expiry' 20
+    suspend_operation=$ISSUED_OPERATION_ID
+    suspend_grant=$ISSUED_GRANT_ID
+    wait_for_grant_acknowledgement "$node_a" "$suspend_grant"
+    local suspend_grant_json suspend_expires_at suspend_now suspend_remaining_ms
+    suspend_grant_json=$(admin grant-status "$suspend_grant")
+    suspend_expires_at=$(json_field "$suspend_grant_json" expires_at)
+    suspend_now=$(node -e 'process.stdout.write(String(Date.now()))')
+    [[ "$suspend_expires_at" =~ ^[0-9]+$ ]] || {
+        printf 'P03-FAIL controller returned a malformed suspend-test grant expiry\n' >&2
+        return 1
+    }
+    suspend_remaining_ms=$((suspend_expires_at - suspend_now))
+    ((suspend_remaining_ms > 5000)) || {
+        printf 'P03-FAIL suspend-test grant was not live at broker acknowledgement (%s ms remained)\n' \
+            "$suspend_remaining_ms" >&2
+        return 1
+    }
+    local suspend_seconds=25 suspend_output clock_restore_epoch
+    suspend_output=$(guest_call a suspend-resume "$suspend_seconds")
+    [[ "$suspend_output" =~ P03-GUEST-SUSPEND-RESUME\ boottime_elapsed_ms=([0-9]+) ]] || {
+        printf 'P03-FAIL guest did not report a completed suspend/resume interval\n' >&2
+        return 1
+    }
+    printf '%s\n' "$suspend_output"
+    guest_call a roll-clock-back 7200
+    printf '%s\n' "$suspend_grant" | guest_call a provide-grant
+    guest_call a assert-expired-workload "$suspend_grant"
+    clock_restore_epoch=$(node -e 'process.stdout.write(String(Math.floor(Date.now()/1000)))')
+    guest_call a restore-clock "$clock_restore_epoch"
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-suspend-clock-rollback ttl_seconds=20 suspend_seconds=%s grant_live_before_suspend_ms=%s operation_id=%s grant_denied=true marker_created=false status=passed\n' \
+        "$current_backend" "$suspend_seconds" "$suspend_remaining_ms" "$suspend_operation"
 
     node_b=$(create_enrollment b "p03-$current_backend-node-b")
     payload_b=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 second host",resource_id:"P03-CANARY-B",ttl_seconds:60})).toString("base64url"))')

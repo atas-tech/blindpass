@@ -105,6 +105,42 @@ case "$command" in
         [[ "$restarts" == 0 ]] || fail 'transient channel failures restarted the node service'
         printf 'P03-GUEST-NODE-CHANNEL-STABLE restarts=%s\n' "$restarts"
         ;;
+    suspend-resume)
+        seconds=${1:-}
+        [[ "$seconds" =~ ^[0-9]+$ ]] && ((seconds >= 5 && seconds <= 60)) || \
+            fail 'suspend duration must be an integer from 5 to 60 seconds'
+        command -v rtcwake >/dev/null 2>&1 || fail 'rtcwake is unavailable in the guest'
+        before_boottime_ms=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
+        if ! rtcwake --mode mem --seconds "$seconds" >/tmp/p03-rtcwake.log 2>&1; then
+            cat /tmp/p03-rtcwake.log >&2 || true
+            rm -f /tmp/p03-rtcwake.log
+            fail 'guest could not suspend and wake from its RTC alarm'
+        fi
+        rm -f /tmp/p03-rtcwake.log
+        after_boottime_ms=$(awk '{printf "%.0f", $1 * 1000}' /proc/uptime)
+        elapsed_boottime_ms=$((after_boottime_ms - before_boottime_ms))
+        ((elapsed_boottime_ms >= seconds * 1000 - 250)) || \
+            fail 'CLOCK_BOOTTIME did not include the guest suspend interval'
+        printf 'P03-GUEST-SUSPEND-RESUME boottime_elapsed_ms=%s\n' "$elapsed_boottime_ms"
+        ;;
+    roll-clock-back)
+        seconds=${1:-}
+        [[ "$seconds" =~ ^[0-9]+$ ]] && ((seconds >= 60 && seconds <= 86400)) || \
+            fail 'clock rollback must be between 60 and 86400 seconds'
+        timedatectl set-ntp false >/dev/null 2>&1 || true
+        current_epoch=$(date +%s)
+        target_epoch=$((current_epoch - seconds))
+        date --set="@$target_epoch" >/dev/null || fail 'guest wall clock rollback failed'
+        observed_epoch=$(date +%s)
+        ((observed_epoch <= target_epoch + 2)) || fail 'guest wall clock did not remain behind the target'
+        printf 'P03-GUEST-CLOCK-ROLLED-BACK seconds=%s current_epoch=%s\n' "$seconds" "$observed_epoch"
+        ;;
+    restore-clock)
+        epoch=${1:-}
+        [[ "$epoch" =~ ^[0-9]{9,12}$ ]] || fail 'clock restore epoch is invalid'
+        date --set="@$epoch" >/dev/null || fail 'guest wall clock restore failed'
+        printf 'P03-GUEST-CLOCK-RESTORED epoch=%s\n' "$epoch"
+        ;;
     rotate-prepare)
         /usr/libexec/blindpass-node rotate-prepare
         ;;
@@ -245,6 +281,27 @@ EOF
             sleep 0.2
         done
         fail 'revoked grant did not fail closed in the workload'
+        ;;
+    assert-expired-workload)
+        grant_id=${1:-}
+        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
+        for _attempt in {1..300}; do
+            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
+            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
+            if [[ "$state" == failed && "$result" == exit-code ]]; then
+                marker=/run/blindpass/ops/"$grant_id".marker
+                [[ ! -e "$marker" && ! -L "$marker" ]] || fail 'expired grant created a marker'
+                if journalctl -u "$unit" -o cat --no-pager 2>/dev/null |
+                    grep -Fq "OPERATION_COMPLETED $grant_id"; then
+                    fail 'expired grant reported operation completion'
+                fi
+                printf 'P03-GUEST-EXPIRED-GRANT-DENIED\n'
+                exit 0
+            fi
+            sleep 0.2
+        done
+        journalctl -u "$unit" -n 30 -o cat --no-pager >&2 || true
+        fail 'expired grant did not fail closed in the workload'
         ;;
     stop-workload)
         systemctl stop "$unit" >/dev/null 2>&1 || true

@@ -24,6 +24,8 @@ async function main() {
       return createAndApproveOperation(...args);
     case 'operation-status':
       return operationStatus(...args);
+    case 'grant-status':
+      return grantStatus(...args);
     case 'node-status':
       return nodeStatus(...args);
     case 'rotate-node-key':
@@ -186,6 +188,17 @@ async function operationStatus(id) {
   if (!id) throw new Error('operation-status requires OPERATION_ID');
   const operation = await api(`/api/v3/operations/${encodeURIComponent(id)}`, { method: 'GET' });
   print({ id: operation.id, status: operation.status, grant_id: operation.grant_id ?? null });
+}
+
+async function grantStatus(id) {
+  if (!id) throw new Error('grant-status requires GRANT_ID');
+  const grant = await api(`/api/v3/grants/${encodeURIComponent(id)}`, { method: 'GET' });
+  print({
+    id: grant.id,
+    status: grant.status,
+    issued_at: grant.issued_at,
+    expires_at: grant.expires_at,
+  });
 }
 
 async function nodeStatus(id) {

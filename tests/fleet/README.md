@@ -200,7 +200,9 @@ is phase-local evidence; it is not the complete P03 acceptance matrix. It holds
 a signed 8-second grant response for 10 seconds and verifies one durable
 `expired_before_receipt` audit event on both SQLite and PostgreSQL. A controlled
 three-failure poll storm recovered with bounded backoff and zero systemd
-restarts on both backends. P03-I06 clock changes, suspend/resume,
+restarts on both backends. It also suspends each guest until after a broker-
+acknowledged 20-second grant expires, rolls the guest wall clock back by two
+hours, and verifies no operation marker appears. Controller time rollback,
 reboot/time-challenge replay, and delayed/replayed policy and revocation
 scenarios remain open. Portable Rust tests cover bounded queues,
 durable audit backpressure and purpose sanitization; actual disk-full and all
