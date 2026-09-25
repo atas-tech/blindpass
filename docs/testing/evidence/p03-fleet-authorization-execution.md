@@ -65,6 +65,15 @@ BOOTTIME value to its deadline denies use. Expired and over-age grants, plus a
 time reply beyond the 35-second challenge bound, are rejected. The BOOTTIME
 advance is deterministic simulation, not evidence from suspending a guest VM.
 
+## Supplemental P03-I07 verification — 2026-09-26
+
+The full broker audit buffer now writes its 10,000 queued events and overflow
+state to the private mode-0600 outbox, restores them after broker restart, and
+records the overflow event after an authenticated acknowledgement frees space.
+A forced atomic outbox-commit failure denies an operation request, leaves the
+queue unchanged, and removes the temporary file. This exercises persistence
+failure handling but does not simulate a disk-full filesystem.
+
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves the

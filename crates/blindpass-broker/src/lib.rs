@@ -1966,7 +1966,7 @@ mod tests {
     use blindpass_core::canon::Value;
     use blindpass_core::custody::RecipientKeyPair;
     use blindpass_core::delivery::{CredentialFormat, DeliveryPolicy};
-    use blindpass_core::fleet::TimeReply;
+    use blindpass_core::fleet::{ConsumptionMode, PolicySnapshot, Registration, TimeReply};
     use blindpass_core::identity::{PeerIdentity, WorkloadRegistration, WorkloadRequest};
     use std::fs;
     use std::io::Write;
@@ -2087,7 +2087,12 @@ mod tests {
 
     #[test]
     fn full_broker_audit_buffer_denies_new_operation_requests() {
+        let directory = unique_test_path("audit-overflow");
+        fs::create_dir(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let identity = NodeIdentity::load_or_create(&directory).unwrap();
         let mut state = BrokerState::new(DeliveryPolicy::default());
+        state.configure_grant_storage(&identity).unwrap();
         state.workloads.push(WorkloadRegistration {
             node_id: "node-a".to_owned(),
             workload_id: "workload-a".to_owned(),
@@ -2120,6 +2125,24 @@ mod tests {
         ));
         assert_eq!(state.pending_node_events.len(), MAX_BROKER_AUDIT_EVENTS);
         assert!(state.audit_overflow_pending);
+        let pending_events_path = identity.pending_node_events_path();
+        assert!(fs::metadata(&pending_events_path).unwrap().is_file());
+        assert_eq!(
+            fs::metadata(&pending_events_path)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777,
+            0o600
+        );
+
+        drop(state);
+        drop(identity);
+        let identity = NodeIdentity::load_or_create(&directory).unwrap();
+        let mut state = BrokerState::new(DeliveryPolicy::default());
+        state.configure_grant_storage(&identity).unwrap();
+        assert_eq!(state.pending_node_events.len(), MAX_BROKER_AUDIT_EVENTS);
+        assert!(state.audit_overflow_pending);
 
         let challenge = state.grant_verifier.begin_time_challenge().unwrap();
         let received_at_ms = super::grants::boottime_ms().unwrap();
@@ -2147,6 +2170,96 @@ mod tests {
             state.pending_node_events.back().unwrap().body.get("action"),
             Some(&Value::String("audit_overflow".to_owned()))
         );
+        drop(state);
+        drop(identity);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn broker_rejects_operation_request_when_outbox_commit_fails() {
+        let directory = unique_test_path("audit-commit-failure");
+        fs::create_dir(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let queue_path = directory.join("pending-node-events.jsonl");
+        fs::create_dir(&queue_path).unwrap();
+
+        let mut state = BrokerState::new(DeliveryPolicy::default());
+        state.pending_node_events_path = Some(queue_path.clone());
+        state.workloads.push(WorkloadRegistration {
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            unit: "agent.service".to_owned(),
+            account: "uid:1001".to_owned(),
+            invocation_id: None,
+        });
+        state.fleet_registrations.insert(
+            "workload-a".to_owned(),
+            Registration {
+                node_id: "node-a".to_owned(),
+                workload_id: "workload-a".to_owned(),
+                unit: "agent.service".to_owned(),
+                account: "uid:1001".to_owned(),
+                invocation_id: None,
+                status: "active".to_owned(),
+                consumption_mode: ConsumptionMode::File,
+                registration_version: 1,
+                policy_version: 1,
+                local_ceiling_seconds: 60,
+            },
+        );
+        state.fleet_policy = Some(PolicySnapshot {
+            policy_version: 1,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        });
+        let challenge = state.grant_verifier.begin_time_challenge().unwrap();
+        let received_at_ms = super::grants::boottime_ms().unwrap();
+        state
+            .grant_verifier
+            .accept_time_reply(
+                &TimeReply {
+                    node_id: "node-a".to_owned(),
+                    challenge,
+                    controller_time_ms: 1_800_000_000_000,
+                    issuer_epoch: 1,
+                },
+                "node-a",
+                1,
+                received_at_ms,
+            )
+            .unwrap();
+        let peer = PeerIdentity::fixture(1001, 1001, "agent.service", "inv-live", "uid:1001");
+        let payload = br#"{"action":"noop.marker","mode":"file","purpose":"outbox durability","resource_id":"marker-commit-failure","ttl_seconds":60}"#;
+        let request = WorkloadRequest {
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            claimed_unit: "agent.service".to_owned(),
+            claimed_invocation_id: "inv-live".to_owned(),
+            operation: format!(
+                "request:{}",
+                blindpass_core::signing::base64_url_encode(payload)
+            ),
+        };
+
+        let result = state.process_workload(&peer, &request);
+        assert!(
+            matches!(
+                &result,
+                Err(BrokerError::Configuration(
+                    "pending node event queue could not be committed"
+                ))
+            ),
+            "outbox commit failure must deny the operation request: {result:?}"
+        );
+        assert!(state.pending_node_events.is_empty());
+        assert!(fs::metadata(&queue_path).unwrap().is_dir());
+        assert_eq!(
+            fs::read_dir(&directory).unwrap().count(),
+            1,
+            "failed atomic commit must remove its temporary file"
+        );
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
