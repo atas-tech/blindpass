@@ -2,7 +2,7 @@
 
 **Run date:** 2026-09-25
 **Status:** Partial runtime evidence; P03 acceptance remains open.
-**Runner owner:** `local-kvm-p03-final-rotation-20260925`
+**Runner owner:** `local-kvm-p03-acceptance-20260925`
 
 ## Environment
 
@@ -16,7 +16,7 @@ state, and guest overlays. The successful run removed its temporary artifacts.
 Command:
 
 ```bash
-BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-final-rotation-20260925 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-acceptance-20260925 \
   ./tests/fleet/p03-vm.sh --backend both
 ```
 
@@ -31,22 +31,26 @@ keys were retained in the repository.
 | Phase scenario | SQLite | PostgreSQL | Evidence |
 |---|---|---|---|
 | P03-I01 enrollment and key-rotation subset | Pass | Pass | HTTP integration covers one-use enrollment, key/fingerprint binding, replay and expiry rejection, staged rotation, candidate-key reconnect, old-key rejection, and revocation of the old session. The VM prepared a candidate pair in the broker, delivered the signed rotation, and observed broker application acknowledgement and controller key version 2 on each backend. |
-| P03-I03/I04 approval queue subset | Pass | Pass | Two operations share an explicitly scoped group; a decision naming an operation from another group returns 409. The unified queue paginates two pending groups with `limit=1`, and the count converges from two to one after rejection. The test also updates policy before a stale decision. It does not race distinct operators or paginate beyond the legacy audit window. |
+| P03-I02 workload identity and API authorization subset | Pass | Pass | Core identity tests reject changed node, workload, unit, invocation, and peer-account bindings; protocol parsing rejects an extra caller-supplied account. HTTP integration rejects signed broker evidence with mismatched node, workload, unit, account, or invocation, and unauthenticated mapping and policy edits return 401. Purpose text asking to bypass approval remains approval-gated; control characters are sanitized and markup remains text data. |
+| P03-I03 approval decision subset | Pass | Pass | Two distinct authenticated administrators race approve and reject on one approval; exactly one receives 200 and the other receives 409. Operation scoping and stale-policy rejection also pass. |
+| P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
+| P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration binding, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected. Two concurrent consumers produce exactly one successful consume and marker. |
 | P03-I06 partition/restart/replay subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. |
-| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 1,499 ms | Pass; revocation applied in 955 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
+| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 1,484 ms | Pass; revocation applied in 1,548 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
 Portable Rust boundary tests cover the broker's 10,000-event audit buffer and
 the relay's 1,000-event durable outbox. They verify fail-closed behavior at
 capacity, recording overflow and recovery after space returns, and queue
-restoration after reopening its state file. These checks do not simulate a
-disk-full filesystem or exercise delayed duplicate events and purpose
-sanitization.
+restoration after reopening its state file, and durable one-use consume intent.
+Purpose tests confirm bypass wording cannot skip approval and control characters
+are sanitized. These checks do not simulate a disk-full filesystem or exercise
+all delayed duplicate events and full audit-queue recovery paths.
 
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves the
-remaining P03-I01 and P03-I02/I03/I04/I05 cases open; clock rollback,
+remaining P03-I01 and broader P03-I05 cases open; clock rollback,
 suspend/resume, delayed-grant, version-mismatch and reconnect-storm cases in
 P03-I06; full P03-I07 coverage; and the broader pilot catalog, including
 E05–E07 and E10–E13. The broader P01/P02 inherited gates and P02.6 controller

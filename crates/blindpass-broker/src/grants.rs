@@ -189,7 +189,12 @@ impl GrantVerifier {
             || registration.workload_id != grant.workload_id
             || registration.unit != grant.unit
             || registration.account != grant.account
+            || registration
+                .invocation_id
+                .as_deref()
+                .is_some_and(|expected| expected != grant.invocation_id)
             || registration.consumption_mode != grant.mode
+            || grant.audience != "blindpass-node"
             || !policy
                 .allowed_actions
                 .iter()
@@ -973,34 +978,125 @@ mod tests {
                 )
                 .is_ok_and(|inserted| !inserted)
         );
-        let mut wrong_invocation = WorkloadAuthorization {
+        let authorization = WorkloadAuthorization {
             node_id: "nd_node-a".to_owned(),
             workload_id: "wl_worker-a".to_owned(),
             unit: "worker.service".to_owned(),
-            invocation_id: "invocation-old".to_owned(),
+            invocation_id: "invocation-a".to_owned(),
             operation: format!("consume:{}", grant.id),
         };
+        let mut wrong_node = authorization.clone();
+        wrong_node.node_id = "nd_node-b".to_owned();
+        assert!(verifier.consume(&grant.id, &wrong_node, 4, 2_300).is_err());
+        let mut wrong_workload = authorization.clone();
+        wrong_workload.workload_id = "wl_worker-b".to_owned();
+        assert!(
+            verifier
+                .consume(&grant.id, &wrong_workload, 4, 2_300)
+                .is_err()
+        );
+        let mut wrong_unit = authorization.clone();
+        wrong_unit.unit = "other.service".to_owned();
+        assert!(verifier.consume(&grant.id, &wrong_unit, 4, 2_300).is_err());
+        let mut wrong_invocation = authorization.clone();
+        wrong_invocation.invocation_id = "invocation-old".to_owned();
         assert!(
             verifier
                 .consume(&grant.id, &wrong_invocation, 4, 2_300)
                 .is_err()
         );
-        wrong_invocation.invocation_id = "invocation-a".to_owned();
+        let mut wrong_operation = authorization.clone();
+        wrong_operation.operation = "consume:other-grant".to_owned();
         assert!(
             verifier
-                .consume(&grant.id, &wrong_invocation, 3, 2_300)
+                .consume(&grant.id, &wrong_operation, 4, 2_300)
+                .is_err()
+        );
+        assert!(
+            verifier
+                .consume(&grant.id, &authorization, 3, 2_300)
                 .is_err()
         );
         verifier
-            .consume(&grant.id, &wrong_invocation, 4, 2_300)
+            .consume(&grant.id, &authorization, 4, 2_300)
             .unwrap();
         assert!(
             verifier
-                .consume(&grant.id, &wrong_invocation, 4, 2_301)
+                .consume(&grant.id, &authorization, 4, 2_301)
                 .is_err()
         );
         let restored = GrantJournal::open(&path).unwrap();
         assert!(restored.consumed.contains_key(&grant.id));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn grant_acceptance_rejects_registration_and_audience_binding_changes() {
+        let path = temporary_path();
+        let mut verifier = verifier(&path, 1_000);
+        let time_reply = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-a".to_owned(),
+            controller_time_ms: 1_800_000_000_000,
+            issuer_epoch: 1,
+        };
+        verifier
+            .accept_time_reply(&time_reply, "nd_node-a", 1, 2_000)
+            .unwrap();
+        let policy = PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        let registration = registration();
+        let cases = [
+            (
+                "wrong audience",
+                {
+                    let mut value = grant();
+                    value.audience = "other-audience".to_owned();
+                    value
+                },
+                registration.clone(),
+            ),
+            ("different registered invocation", grant(), {
+                let mut value = registration.clone();
+                value.invocation_id = Some("invocation-other".to_owned());
+                value
+            }),
+            ("different registered account", grant(), {
+                let mut value = registration.clone();
+                value.account = "other-account".to_owned();
+                value
+            }),
+            ("different registered mode", grant(), {
+                let mut value = registration.clone();
+                value.consumption_mode = ConsumptionMode::Socket;
+                value
+            }),
+            ("revoked registration", grant(), {
+                let mut value = registration.clone();
+                value.status = "revoked".to_owned();
+                value
+            }),
+        ];
+        for (label, grant, registration) in cases {
+            assert!(
+                verifier
+                    .accept_grant(
+                        grant,
+                        label.as_bytes(),
+                        "nd_node-a",
+                        "nd_node-a-1",
+                        &policy,
+                        &registration,
+                        2_100,
+                    )
+                    .is_err(),
+                "{label} must fail the broker's grant binding checks"
+            );
+        }
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 

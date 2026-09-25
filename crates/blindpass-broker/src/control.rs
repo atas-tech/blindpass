@@ -976,11 +976,33 @@ mod tests {
             claimed_invocation_id: "invocation-a".to_owned(),
             operation: format!("consume:{}", grant.id),
         };
-        let consumed = state
-            .lock()
-            .unwrap()
-            .process_workload(&peer, &request)
-            .unwrap();
+        let first_state = std::sync::Arc::clone(&state);
+        let first_peer = peer.clone();
+        let first_request = request.clone();
+        let second_state = std::sync::Arc::clone(&state);
+        let second_peer = peer.clone();
+        let second_request = request.clone();
+        let first_consume = std::thread::spawn(move || {
+            first_state
+                .lock()
+                .unwrap()
+                .process_workload(&first_peer, &first_request)
+        });
+        let second_consume = std::thread::spawn(move || {
+            second_state
+                .lock()
+                .unwrap()
+                .process_workload(&second_peer, &second_request)
+        });
+        let first_result = first_consume.join().unwrap();
+        let second_result = second_consume.join().unwrap();
+        let consumed = match (first_result, second_result) {
+            (Ok(consumed), Err(_)) | (Err(_), Ok(consumed)) => consumed,
+            (Ok(_), Ok(_)) => panic!("concurrent consumers both consumed one grant"),
+            (Err(first), Err(second)) => {
+                panic!("both concurrent grant consumers failed: {first}; {second}")
+            }
+        };
         assert_eq!(
             consumed,
             format!("OK operation_completed {}\n", grant.id).as_bytes()

@@ -128,6 +128,13 @@ mod tests {
             "health"
         );
         assert_eq!(
+            parse_workload_request(
+                b"WORK node-a workload-a agent.service inv-a account:root health\n"
+            ),
+            Err(ProtocolError::InvalidFrame),
+            "the workload protocol does not accept a caller-provided account claim"
+        );
+        assert_eq!(
             parse_loader_request(b"LOAD backup.service api-key"),
             Err(ProtocolError::InvalidFrame)
         );

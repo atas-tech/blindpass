@@ -341,4 +341,71 @@ mod tests {
             ))
         );
     }
+
+    #[test]
+    fn workload_cannot_change_claimed_routing_or_os_identity() {
+        let peer = PeerIdentity::fixture(
+            1001,
+            1001,
+            "blindpass-agent.service",
+            "invocation-a",
+            "blindpass-agent",
+        );
+        let registration = WorkloadRegistration {
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            unit: "blindpass-agent.service".to_owned(),
+            account: "blindpass-agent".to_owned(),
+            invocation_id: Some("invocation-a".to_owned()),
+        };
+        let request = WorkloadRequest {
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            claimed_unit: "blindpass-agent.service".to_owned(),
+            claimed_invocation_id: "invocation-a".to_owned(),
+            operation: "health".to_owned(),
+        };
+
+        for (field, value) in [("node", "node-forged"), ("workload", "workload-forged")] {
+            let mut forged = request.clone();
+            if field == "node" {
+                forged.node_id = value.to_owned();
+            } else {
+                forged.workload_id = value.to_owned();
+            }
+            assert_eq!(
+                authorize_workload(&peer, &forged, std::slice::from_ref(&registration)),
+                Err(IdentityError::UnknownRegistration),
+                "forged {field} must not select another registration"
+            );
+        }
+
+        for (field, value) in [("unit", "forged.service"), ("invocation", "invocation-old")] {
+            let mut forged = request.clone();
+            if field == "unit" {
+                forged.claimed_unit = value.to_owned();
+            } else {
+                forged.claimed_invocation_id = value.to_owned();
+            }
+            assert_eq!(
+                authorize_workload(&peer, &forged, std::slice::from_ref(&registration)),
+                Err(IdentityError::BindingMismatch(
+                    "self-reported unit or invocation differs from OS identity"
+                )),
+                "forged {field} must be checked against OS identity"
+            );
+        }
+
+        let mut changed_os_account = peer;
+        changed_os_account.account = Some("other-account".to_owned());
+        assert_eq!(
+            authorize_workload(
+                &changed_os_account,
+                &request,
+                std::slice::from_ref(&registration)
+            ),
+            Err(IdentityError::UnknownRegistration),
+            "the account comes from peer credentials and must match the admin mapping"
+        );
+    }
 }

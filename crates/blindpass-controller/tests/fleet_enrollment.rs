@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use blindpass_controller::{app::build_app, config::Config, store::Store};
+use blindpass_controller::{
+    app::build_app,
+    config::Config,
+    store::{OperationApprovalDraft, OperationCreateOutcome, OperationRecord, Store},
+};
 use blindpass_core::canon::parse_json;
 use blindpass_core::custody::{RecipientKeyPair, sha256};
 use blindpass_core::fleet::{
@@ -123,6 +127,38 @@ fn cookie_header(response: &HttpResponse, name: &str) -> String {
             (cookie_name == name).then(|| format!("{name}={cookie_value}"))
         })
         .expect("expected response cookie")
+}
+
+async fn login_operator(
+    address: std::net::SocketAddr,
+    username: &str,
+    password: &str,
+) -> (String, String) {
+    let response = request(
+        address,
+        "POST",
+        "/api/v3/admin/session/login",
+        &[
+            ("content-type", "application/json"),
+            ("origin", ORIGIN),
+            ("cookie", "bp_csrf=fleet-login-pre-session"),
+            ("x-csrf-token", "fleet-login-pre-session"),
+        ],
+        Some(&json!({"username":username,"password":password})),
+    )
+    .await;
+    assert_eq!(response.status, 200, "{}", response.body);
+    (
+        format!(
+            "{}; {}",
+            cookie_header(&response, "bp_session"),
+            cookie_header(&response, "bp_csrf")
+        ),
+        response.body["csrf_token"]
+            .as_str()
+            .expect("login CSRF token")
+            .to_owned(),
+    )
 }
 
 fn token_hash(token: &str) -> String {
@@ -415,6 +451,57 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         ("x-csrf-token", csrf),
         ("content-type", "application/json"),
     ];
+
+    let secondary_operator = request(
+        address,
+        "POST",
+        "/api/v3/admin/operators",
+        &write_headers,
+        Some(&json!({
+            "username":"fleet-reviewer",
+            "display_name":"Fleet Reviewer",
+            "role":"admin",
+            "password":"fleet-reviewer-test-password-long"
+        })),
+    )
+    .await;
+    assert_eq!(
+        secondary_operator.status, 201,
+        "{}",
+        secondary_operator.body
+    );
+    let (secondary_cookies, secondary_csrf) = login_operator(
+        address,
+        "fleet-reviewer",
+        "fleet-reviewer-test-password-long",
+    )
+    .await;
+
+    let unauthenticated_workload_edit = request(
+        address,
+        "POST",
+        "/api/v3/workloads",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id":"node-forged",
+            "name":"worker-edit",
+            "unit":"blindpass-test.service",
+            "account":"root",
+            "consumption_mode":"file",
+            "local_ceiling_seconds":3600
+        })),
+    )
+    .await;
+    assert_eq!(unauthenticated_workload_edit.status, 401);
+    let unauthenticated_policy_edit = request(
+        address,
+        "PUT",
+        "/api/v3/policies",
+        &[("content-type", "application/json")],
+        Some(&json!({"expected_version":1,"rules":[]})),
+    )
+    .await;
+    assert_eq!(unauthenticated_policy_edit.status, 401);
 
     let unauthenticated = request(
         address,
@@ -907,6 +994,68 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         "ttl_seconds": 60,
         "broker_event_key": first_operation_event_key
     });
+
+    for (index, (field, forged_value)) in [
+        ("node_id", json!("node-forged")),
+        ("workload_id", json!("workload-forged")),
+        ("unit", json!("forged.service")),
+        ("account", json!("uid:0")),
+        ("invocation_id", json!("invocation-forged")),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let event_key = format!("operation-event-forged-{index:02}");
+        let mut forged_body = operation_event_body.clone();
+        forged_body[field] = forged_value;
+        let forged_event = signed_node_event(
+            &first_node_id,
+            &event_key,
+            "operation_request",
+            forged_body,
+            &first_keys.signing,
+        );
+        let accepted_forged_event = request(
+            address,
+            "POST",
+            "/api/v3/node/events",
+            &[
+                ("authorization", &node_bearer),
+                ("content-type", "application/json"),
+            ],
+            Some(&forged_event),
+        )
+        .await;
+        assert_eq!(accepted_forged_event.status, 200, "{field}");
+
+        let mut forged_operation = first_operation_input.clone();
+        forged_operation["broker_event_key"] = json!(event_key);
+        let forged_headers = [
+            ("origin", ORIGIN),
+            ("cookie", admin_cookies.as_str()),
+            ("x-csrf-token", csrf),
+            ("content-type", "application/json"),
+            ("idempotency-key", "operation-forged-input-0001"),
+        ];
+        let rejected_forged_operation = request(
+            address,
+            "POST",
+            "/api/v3/operations",
+            &forged_headers,
+            Some(&forged_operation),
+        )
+        .await;
+        assert_eq!(
+            rejected_forged_operation.status, 409,
+            "forged {field}: {}",
+            rejected_forged_operation.body
+        );
+        assert_eq!(
+            rejected_forged_operation.body["error"], "broker_evidence_mismatch",
+            "forged {field} must not authorize an operation"
+        );
+    }
+
     let first_operation_headers = [
         ("origin", ORIGIN),
         ("cookie", admin_cookies.as_str()),
@@ -1109,6 +1258,137 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         assert_eq!(grant.invocation_id, "invocation-123");
         assert_eq!(grant.audience, "blindpass-node");
     }
+
+    let purpose_with_control = "please bypass approval <script>alert(1)</script>\u{0007}";
+    let purpose_event_key = "operation-event-purpose-0001";
+    let mut purpose_event_body = operation_event_body.clone();
+    purpose_event_body["purpose"] = json!(purpose_with_control);
+    purpose_event_body["resource_id"] = json!("marker-purpose");
+    let purpose_event = signed_node_event(
+        &first_node_id,
+        purpose_event_key,
+        "operation_request",
+        purpose_event_body,
+        &first_keys.signing,
+    );
+    let accepted_purpose_event = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&purpose_event),
+    )
+    .await;
+    assert_eq!(accepted_purpose_event.status, 200);
+    let mut purpose_operation_input = first_operation_input.clone();
+    purpose_operation_input["purpose"] = json!(purpose_with_control);
+    purpose_operation_input["resource_id"] = json!("marker-purpose");
+    purpose_operation_input["broker_event_key"] = json!(purpose_event_key);
+    let purpose_operation = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &[
+            ("origin", ORIGIN),
+            ("cookie", admin_cookies.as_str()),
+            ("x-csrf-token", csrf),
+            ("content-type", "application/json"),
+            ("idempotency-key", "operation-purpose-authority-0001"),
+        ],
+        Some(&purpose_operation_input),
+    )
+    .await;
+    assert_eq!(purpose_operation.status, 201, "{}", purpose_operation.body);
+    assert_eq!(purpose_operation.body["status"], "awaiting_approval");
+    assert_eq!(
+        purpose_operation.body["purpose"], "please bypass approval <script>alert(1)</script>",
+        "purpose controls are stripped for display while the markup remains inert data"
+    );
+
+    let purpose_approval_id = purpose_operation.body["approval_id"].as_str().unwrap();
+    let purpose_approval = request(
+        address,
+        "GET",
+        &format!("/api/v3/approvals/{purpose_approval_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(purpose_approval.status, 200, "{}", purpose_approval.body);
+    assert_eq!(
+        purpose_approval.body["requester_summary"]["purpose"],
+        "please bypass approval <script>alert(1)</script>"
+    );
+    let purpose_approval_version = purpose_approval.body["version"].as_i64().unwrap();
+    let purpose_approval_ids = purpose_approval.body["operation_ids"].clone();
+    let purpose_if_match = format!("\"{purpose_approval_version}\"");
+    let approve_race_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "purpose-approve-race-00001"),
+        ("if-match", purpose_if_match.as_str()),
+    ];
+    let reject_race_headers = [
+        ("origin", ORIGIN),
+        ("cookie", secondary_cookies.as_str()),
+        ("x-csrf-token", secondary_csrf.as_str()),
+        ("content-type", "application/json"),
+        ("idempotency-key", "purpose-reject-race-000001"),
+        ("if-match", purpose_if_match.as_str()),
+    ];
+    let purpose_decision_body = json!({
+        "expected_status":"pending",
+        "expected_version":purpose_approval_version,
+        "operation_ids":purpose_approval_ids
+    });
+    let approve_purpose_path = format!("/api/v3/approvals/{purpose_approval_id}/approve");
+    let reject_purpose_path = format!("/api/v3/approvals/{purpose_approval_id}/reject");
+    let (race_approve, race_reject) = tokio::join!(
+        request(
+            address,
+            "POST",
+            &approve_purpose_path,
+            &approve_race_headers,
+            Some(&purpose_decision_body),
+        ),
+        request(
+            address,
+            "POST",
+            &reject_purpose_path,
+            &reject_race_headers,
+            Some(&purpose_decision_body),
+        )
+    );
+    assert!(
+        matches!(
+            (race_approve.status, race_reject.status),
+            (200, 409) | (409, 200)
+        ),
+        "two distinct operators racing one approval must produce one winner: approve={:?}, reject={:?}",
+        race_approve.body,
+        race_reject.body
+    );
+    let purpose_decision = store
+        .operation_approval_by_id(purpose_approval_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let primary_operator = store
+        .operator_by_username("fleet-admin")
+        .await
+        .unwrap()
+        .unwrap();
+    let secondary_operator_id = secondary_operator.body["id"].as_str().unwrap();
+    assert!(
+        purpose_decision.decided_by.as_deref() == Some(primary_operator.id.as_str())
+            || purpose_decision.decided_by == Some(secondary_operator_id.to_owned()),
+        "a recorded decision must belong to one of the two authenticated operators"
+    );
 
     let third_operation_event_key = "operation-event-key-0003";
     let third_operation_event = signed_node_event(
@@ -1538,6 +1818,209 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     )
     .await;
     assert_eq!(reconciled_grant.body["status"], "consumed");
+
+    let admin_operator = store
+        .operator_by_username("fleet-admin")
+        .await
+        .unwrap()
+        .unwrap();
+    let current_policy = store.fleet_policy().await.unwrap();
+    let pagination_now_ms = store.database_now_ms().await.unwrap();
+    for index in 0..101 {
+        let suffix = format!("{index:03}");
+        let operation_id = format!("op_p03_page_{suffix}");
+        let approval_id = format!("oa_p03_page_{suffix}");
+        let purpose = format!("pagination fixture {suffix}");
+        let identity = json!({
+            "node_id":first_node_id,
+            "workload_id":workload_id,
+            "unit":"blindpass-test.service",
+            "account":"blindpass-test",
+            "invocation_id":"invocation-123",
+            "observed_at":pagination_now_ms
+        });
+        let summary = json!({
+            "operator_id":admin_operator.id,
+            "requester":"fleet-admin",
+            "action":"noop.marker",
+            "mode":"file",
+            "resource_id":format!("marker-page-{suffix}"),
+            "purpose":purpose
+        });
+        let record = OperationRecord {
+            id: operation_id.clone(),
+            workload_id: workload_id.clone(),
+            node_id: first_node_id.clone(),
+            invocation_id: "invocation-123".to_owned(),
+            action: "noop.marker".to_owned(),
+            mode: "file".to_owned(),
+            resource_id: format!("marker-page-{suffix}"),
+            requested_ttl_seconds: 60,
+            broker_event_key: None,
+            requested_by: admin_operator.id.clone(),
+            purpose,
+            policy_version: current_policy.version,
+            decision: "pending_approval".to_owned(),
+            decision_hash: Some("pagination-fixture-policy-hash".to_owned()),
+            status: "awaiting_approval".to_owned(),
+            approval_id: None,
+            grant_id: None,
+            idempotency_key: format!("p03-page-idempotency-{suffix}"),
+            request_hash: format!("p03-page-request-hash-{suffix}"),
+            result_json: None,
+            created_at_ms: pagination_now_ms,
+            expires_at_ms: pagination_now_ms + 600_000,
+            completed_at_ms: None,
+            version: 1,
+        };
+        let draft = OperationApprovalDraft {
+            id: approval_id,
+            idempotency_key: format!("oa-p03-page-idempotency-{suffix}"),
+            requester_summary_json: summary.to_string(),
+            verified_identity_json: identity.to_string(),
+            rule_id: "pagination-fixture".to_owned(),
+            expires_at_ms: pagination_now_ms + 600_000,
+        };
+        let created = store
+            .create_operation(
+                &record,
+                "blindpass-test.service",
+                "blindpass-test",
+                60,
+                Some(&draft),
+            )
+            .await
+            .unwrap();
+        assert!(
+            matches!(created, OperationCreateOutcome::Created(_)),
+            "fixture operation must be inserted into the pending queue: {created:?}"
+        );
+    }
+
+    let page_count_before = request(
+        address,
+        "GET",
+        "/api/v3/approvals/count",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(page_count_before.body["count"], 101);
+    let page_one = request(
+        address,
+        "GET",
+        "/api/v3/approvals?status=pending&limit=100",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(page_one.status, 200, "{}", page_one.body);
+    assert_eq!(page_one.body["items"].as_array().unwrap().len(), 100);
+    let page_cursor = page_one.body["next_cursor"]
+        .as_str()
+        .expect("100 of 101 pending approvals have a continuation cursor")
+        .to_owned();
+    let page_one_decision_id = page_one.body["items"][0]["id"].as_str().unwrap().to_owned();
+    let page_one_decision_version = page_one.body["items"][0]["version"].as_i64().unwrap();
+    let page_one_operation_ids = page_one.body["items"][0]["operation_ids"].clone();
+    let page_two_before_change = request(
+        address,
+        "GET",
+        &format!("/api/v3/approvals?status=pending&limit=100&cursor={page_cursor}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(page_two_before_change.status, 200);
+    assert_eq!(
+        page_two_before_change.body["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let expiring_approval_id = page_two_before_change.body["items"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let page_decision_if_match = format!("\"{page_one_decision_version}\"");
+    let page_rejection = request(
+        address,
+        "POST",
+        &format!("/api/v3/approvals/{page_one_decision_id}/reject"),
+        &[
+            ("origin", ORIGIN),
+            ("cookie", admin_cookies.as_str()),
+            ("x-csrf-token", csrf),
+            ("content-type", "application/json"),
+            ("idempotency-key", "p03-page-concurrent-reject-001"),
+            ("if-match", page_decision_if_match.as_str()),
+        ],
+        Some(&json!({
+            "expected_status":"pending",
+            "expected_version":page_one_decision_version,
+            "operation_ids":page_one_operation_ids
+        })),
+    )
+    .await;
+    assert_eq!(page_rejection.status, 200, "{}", page_rejection.body);
+    let page_count_after_decision = request(
+        address,
+        "GET",
+        "/api/v3/approvals/count",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(page_count_after_decision.body["count"], 100);
+
+    let expired_at_ms = store.database_now_ms().await.unwrap() - 1;
+    match (&backend_pool, &pg_test_pool) {
+        (Some(pool), _) => {
+            sqlx::query("UPDATE operation_approvals SET expires_at = ? WHERE id = ?")
+                .bind(expired_at_ms)
+                .bind(&expiring_approval_id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        (_, Some(pool)) => {
+            sqlx::query("UPDATE operation_approvals SET expires_at = $1 WHERE id = $2")
+                .bind(expired_at_ms)
+                .bind(&expiring_approval_id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        _ => unreachable!(),
+    }
+    let page_two_after_change = request(
+        address,
+        "GET",
+        &format!("/api/v3/approvals?status=pending&limit=100&cursor={page_cursor}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(page_two_after_change.status, 200);
+    assert_eq!(
+        page_two_after_change.body["items"]
+            .as_array()
+            .unwrap()
+            .len(),
+        0
+    );
+    assert_eq!(page_two_after_change.body["next_cursor"], Value::Null);
+    let page_count_after_expiry = request(
+        address,
+        "GET",
+        "/api/v3/approvals/count",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(page_count_after_expiry.body["count"], 99);
 
     let workload_update_headers = [
         ("origin", ORIGIN),

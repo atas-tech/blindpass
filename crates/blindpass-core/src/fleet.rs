@@ -1565,6 +1565,21 @@ mod tests {
             .replace("\"epoch\":3", "\"epoch\":4");
         let modified = SignedEnvelope::from_json(&modified).unwrap();
         assert!(!modified.verify(issuer.public_key(), KEY_ID, 3).unwrap());
+
+        let source = std::str::from_utf8(&envelope.to_json().unwrap())
+            .unwrap()
+            .to_owned();
+        let changed_kind =
+            source.replace("\"kind\":\"operation_result\"", "\"kind\":\"audit_event\"");
+        let changed_kind = SignedEnvelope::from_json(&changed_kind).unwrap();
+        assert!(!changed_kind.verify(issuer.public_key(), KEY_ID, 3).unwrap());
+        let changed_key_id = source.replace("\"kid\":\"controller-1\"", "\"kid\":\"controller-2\"");
+        let changed_key_id = SignedEnvelope::from_json(&changed_key_id).unwrap();
+        assert!(
+            !changed_key_id
+                .verify(issuer.public_key(), "controller-2", 3)
+                .unwrap()
+        );
     }
 
     #[test]
