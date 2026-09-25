@@ -136,7 +136,7 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3">;
       "version": string;
-      "schema_version": 6;
+      "schema_version": 7;
       "setup_required": boolean;
       "issuer_pub"?: string;
       "issuer_kid"?: string;
@@ -213,6 +213,7 @@ export interface components {
     "EnrollmentSubmitted": {
       "enrollment_id": string;
       "node_id": string;
+      "tenant_id": string;
       "fingerprint": string;
       "status": "submitted";
     };
@@ -379,27 +380,37 @@ export interface components {
     };
     "NodeSessionChallenge": {
       "nonce": string;
-      "controller_time": number;
+      "controller_time_ms": number;
+      "expires_at_ms": number;
       "issuer_pub": string;
       "issuer_kid": string;
       "issuer_epoch": number;
       "min_protocol_version": string;
+      "audience": "blindpass-node";
+      "tenant_id": string;
+      "node_id": string;
+      "key_version": number;
+      "capabilities_hash": string;
     };
     "NodeSessionToken": {
       "token": string;
-      "expires_at": number;
+      "expires_at_ms": number;
+      "session_id": string;
     };
     "NodePollInput": {
-      "ack_seq": number | null;
-      "health": {
+      "ack_seq"?: number | null;
+      "health"?: {
         [key: string]: unknown;
       };
     };
+    "NodeInboxDocument": {
+      "seq": number;
+      "envelope": components["schemas"]["SignedDocument"];
+    };
     "NodePollResponse": {
-      "sequence": number;
-      "documents": Array<components["schemas"]["SignedDocument"]>;
-      "controller_time": number;
-      "wait_seconds": number;
+      "documents": Array<components["schemas"]["NodeInboxDocument"]>;
+      "highest_seq": number | null;
+      "server_time_ms": number;
     };
     "NodeEvent": {
       "idempotency_key": string;
@@ -409,7 +420,9 @@ export interface components {
       };
       "broker_signature": string;
     };
-    "NodeEventsInput": Array<components["schemas"]["NodeEvent"]>;
+    "NodeEventsInput": {
+      "events": Array<components["schemas"]["NodeEvent"]>;
+    };
     "NodeEventsResponse": {
       "accepted": number;
       "duplicates": number;
@@ -3096,22 +3109,22 @@ export interface operations {
         "application/json": components["schemas"]["NodeSessionChallenge"] | components["schemas"]["NodeSessionToken"];
       };
     };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
     "401": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
     };
-    "409": {
-      content: {
-        "application/json": components["schemas"]["AdminError"];
-      };
-    };
-    "410": {
-      content: {
-        "application/json": components["schemas"]["AdminError"];
-      };
-    };
     "426": Record<string, never>;
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: never;
   };
@@ -3134,12 +3147,12 @@ export interface operations {
         "application/json": components["schemas"]["NodePollResponse"];
       };
     };
-    "401": {
+    "400": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
     };
-    "409": {
+    "401": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -3187,6 +3200,11 @@ export interface operations {
       };
     };
     "413": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };

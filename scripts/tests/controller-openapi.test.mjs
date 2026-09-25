@@ -179,7 +179,7 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
   assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
-  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 6);
+  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 7);
 
   const serialized = JSON.stringify(schema.paths["/readyz"]);
   assert.doesNotMatch(serialized, /secret|token|credential|password/i);
@@ -254,7 +254,10 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
       "POST /api/v3/enrollments/{id}/reject",
       "GET /api/v3/nodes",
       "GET /api/v3/nodes/{id}",
-      "POST /api/v3/node/enroll"
+      "POST /api/v3/node/enroll",
+      "POST /api/v3/node/session",
+      "POST /api/v3/node/poll",
+      "POST /api/v3/node/events"
     ]);
     assert.equal(
       schema.paths[route][method.toLowerCase()]["x-blindpass-status"],

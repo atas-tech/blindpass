@@ -4,8 +4,12 @@
 
 use crate::BrokerError;
 use blindpass_core::custody::RecipientKeyPair;
-use blindpass_core::fleet::{enrollment_proof_message, node_key_fingerprint};
+use blindpass_core::fleet::SignedEnvelope;
+use blindpass_core::fleet::{
+    enrollment_proof_message, node_key_fingerprint, node_session_challenge_message,
+};
 use blindpass_core::secret::wipe;
+use blindpass_core::signing::base64_url_decode;
 use blindpass_core::signing::base64_url_encode;
 use blindpass_core::signing::ed25519::Ed25519KeyPair;
 use std::fs::{self, File, OpenOptions};
@@ -27,6 +31,7 @@ pub struct PublicIdentity {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PinnedIssuer {
+    pub tenant_id: String,
     pub node_id: String,
     pub epoch: u64,
     pub key_id: String,
@@ -107,6 +112,47 @@ impl NodeIdentity {
         Ok(base64_url_encode(&signature))
     }
 
+    pub fn node_challenge_signature(
+        &self,
+        tenant_id: &str,
+        node_id: &str,
+        protocol_version: &str,
+        nonce: &str,
+        capabilities_hash: &str,
+        key_version: u64,
+        issuer_epoch: u64,
+        controller_time_ms: i64,
+        expires_at_ms: i64,
+    ) -> Result<String, BrokerError> {
+        let pin = self.pinned_issuer()?.ok_or(BrokerError::Configuration(
+            "controller issuer is not pinned",
+        ))?;
+        if pin.tenant_id != tenant_id
+            || pin.node_id != node_id
+            || pin.epoch != issuer_epoch
+            || key_version != 1
+        {
+            return Err(BrokerError::Configuration(
+                "node challenge does not match pinned identity",
+            ));
+        }
+        let mut message = node_session_challenge_message(
+            tenant_id,
+            node_id,
+            protocol_version,
+            nonce,
+            capabilities_hash,
+            key_version,
+            issuer_epoch,
+            controller_time_ms,
+            expires_at_ms,
+        )
+        .map_err(|_| BrokerError::Configuration("invalid node challenge request"))?;
+        let signature = self.signing.sign(&message);
+        wipe(&mut message);
+        Ok(base64_url_encode(&signature?))
+    }
+
     pub fn pin_issuer(&self, candidate: PinnedIssuer) -> Result<(), BrokerError> {
         validate_pin(&candidate)?;
         let mut current = self
@@ -134,6 +180,33 @@ impl NodeIdentity {
             .lock()
             .map(|pin| pin.clone())
             .map_err(|_| BrokerError::Configuration("node issuer pin is unavailable"))
+    }
+
+    pub fn verify_controller_document(&self, document: &[u8]) -> Result<String, BrokerError> {
+        let pin = self.pinned_issuer()?.ok_or(BrokerError::Configuration(
+            "controller issuer is not pinned",
+        ))?;
+        let public_key = base64_url_decode(&pin.public_key, 32).ok_or(
+            BrokerError::Configuration("controller issuer pin is invalid"),
+        )?;
+        let document = std::str::from_utf8(document)
+            .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+        let envelope = SignedEnvelope::from_json(document)
+            .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+        if !envelope
+            .verify(&public_key, &pin.key_id, pin.epoch)
+            .map_err(|_| BrokerError::Configuration("controller document verification failed"))?
+        {
+            return Err(BrokerError::Configuration(
+                "controller document signature is invalid",
+            ));
+        }
+        if envelope.epoch() > pin.epoch {
+            let mut advanced_pin = pin;
+            advanced_pin.epoch = envelope.epoch();
+            self.pin_issuer(advanced_pin)?;
+        }
+        Ok(envelope.kind().as_str().to_owned())
     }
 }
 
@@ -238,12 +311,18 @@ fn read_pin(directory: &Path) -> Result<Option<PinnedIssuer>, BrokerError> {
     let text = std::str::from_utf8(&bytes)
         .map_err(|_| BrokerError::Configuration("issuer pin file is malformed"))?;
     let mut parts = text.split('|');
+    let tenant_id = parts.next().unwrap_or_default().to_owned();
+    let node_id = parts.next().unwrap_or_default().to_owned();
+    let epoch_text = parts.next().unwrap_or_default();
+    let epoch = epoch_text
+        .parse::<u64>()
+        .ok()
+        .filter(|value| *value > 0 && value.to_string() == epoch_text)
+        .ok_or(BrokerError::Configuration("issuer pin file is malformed"))?;
     let pin = PinnedIssuer {
-        node_id: parts.next().unwrap_or_default().to_owned(),
-        epoch: parts
-            .next()
-            .and_then(|value| value.parse().ok())
-            .ok_or(BrokerError::Configuration("issuer pin file is malformed"))?,
+        tenant_id,
+        node_id,
+        epoch,
         key_id: parts.next().unwrap_or_default().to_owned(),
         public_key: parts.next().unwrap_or_default().to_owned(),
     };
@@ -277,8 +356,8 @@ fn read_metadata_file(path: &Path) -> std::io::Result<Vec<u8>> {
 
 fn write_pin(directory: &Path, pin: &PinnedIssuer) -> Result<(), BrokerError> {
     let content = format!(
-        "{}|{}|{}|{}",
-        pin.node_id, pin.epoch, pin.key_id, pin.public_key
+        "{}|{}|{}|{}|{}",
+        pin.tenant_id, pin.node_id, pin.epoch, pin.key_id, pin.public_key
     );
     let mut content = content.into_bytes();
     let path = directory.join("issuer.pin");
@@ -303,7 +382,8 @@ fn write_pin(directory: &Path, pin: &PinnedIssuer) -> Result<(), BrokerError> {
 }
 
 fn validate_pin(pin: &PinnedIssuer) -> Result<(), BrokerError> {
-    if !valid_identifier(&pin.node_id, 128)
+    if !valid_identifier(&pin.tenant_id, 128)
+        || !valid_identifier(&pin.node_id, 128)
         || pin.epoch == 0
         || !valid_identifier(&pin.key_id, 128)
         || pin.public_key.len() != 43
@@ -336,7 +416,7 @@ fn effective_uid() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{NodeIdentity, PinnedIssuer};
+    use super::{Ed25519KeyPair, NodeIdentity, PinnedIssuer};
     use std::os::unix::fs::PermissionsExt;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -384,6 +464,7 @@ mod tests {
         let directory = temporary_directory();
         let identity = NodeIdentity::load_or_create(&directory).unwrap();
         let pin = PinnedIssuer {
+            tenant_id: "tenant-a".to_owned(),
             node_id: "nd_a".to_owned(),
             epoch: 1,
             public_key: blindpass_core::signing::base64_url_encode(&[9; 32]),
@@ -409,6 +490,135 @@ mod tests {
         drop(identity);
         let loaded = NodeIdentity::load_or_create(&directory).unwrap();
         assert_eq!(loaded.pinned_issuer().unwrap(), Some(pin));
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn node_channel_signature_is_limited_to_pinned_node_and_epoch() {
+        let directory = temporary_directory();
+        let identity = NodeIdentity::load_or_create(&directory).unwrap();
+        let public = identity.public_identity().unwrap();
+        identity
+            .pin_issuer(PinnedIssuer {
+                tenant_id: "tenant-a".to_owned(),
+                node_id: "nd_a".to_owned(),
+                epoch: 1,
+                key_id: format!(
+                    "ed25519-{}",
+                    blindpass_core::signing::base64_url_encode(&[9; 32])
+                ),
+                public_key: blindpass_core::signing::base64_url_encode(&[9; 32]),
+            })
+            .unwrap();
+        let nonce = blindpass_core::signing::base64_url_encode(&[3; 32]);
+        let signature = identity
+            .node_challenge_signature(
+                "tenant-a",
+                "nd_a",
+                "blindpass-node/1",
+                &nonce,
+                &"a".repeat(64),
+                1,
+                1,
+                1_800_000_000_000,
+                1_800_000_060_000,
+            )
+            .unwrap();
+        let message = blindpass_core::fleet::node_session_challenge_message(
+            "tenant-a",
+            "nd_a",
+            "blindpass-node/1",
+            &nonce,
+            &"a".repeat(64),
+            1,
+            1,
+            1_800_000_000_000,
+            1_800_000_060_000,
+        )
+        .unwrap();
+        let signature = blindpass_core::signing::base64_url_decode(&signature, 64).unwrap();
+        let public =
+            blindpass_core::signing::base64_url_decode(&public.signing_public, 32).unwrap();
+        assert!(blindpass_core::signing::ed25519::verify(&public, &message, &signature).unwrap());
+        assert!(
+            identity
+                .node_challenge_signature(
+                    "tenant-b",
+                    "nd_a",
+                    "blindpass-node/1",
+                    &nonce,
+                    &"a".repeat(64),
+                    1,
+                    1,
+                    1_800_000_000_000,
+                    1_800_000_060_000,
+                )
+                .is_err()
+        );
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn verified_controller_documents_advance_the_persisted_epoch() {
+        let directory = temporary_directory();
+        let identity = NodeIdentity::load_or_create(&directory).unwrap();
+        let issuer = Ed25519KeyPair::from_seed(&[9; 32]).unwrap();
+        let issuer_public = blindpass_core::signing::base64_url_encode(issuer.public_key());
+        let issuer_key_id = format!("ed25519-{issuer_public}");
+        identity
+            .pin_issuer(PinnedIssuer {
+                tenant_id: "tenant-a".to_owned(),
+                node_id: "nd_a".to_owned(),
+                epoch: 1,
+                key_id: issuer_key_id.clone(),
+                public_key: issuer_public,
+            })
+            .unwrap();
+        let document = blindpass_core::fleet::SignedEnvelope::sign(
+            blindpass_core::fleet::DocumentKind::TimeReply,
+            blindpass_core::fleet::TimeReply {
+                node_id: "nd_a".to_owned(),
+                challenge: "challenge-1".to_owned(),
+                controller_time_ms: 1_800_000_000_000,
+                issuer_epoch: 2,
+            }
+            .to_value()
+            .unwrap(),
+            &issuer_key_id,
+            2,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            identity.verify_controller_document(&document).unwrap(),
+            "time_reply"
+        );
+        assert_eq!(identity.pinned_issuer().unwrap().unwrap().epoch, 2);
+
+        let stale_document = blindpass_core::fleet::SignedEnvelope::sign(
+            blindpass_core::fleet::DocumentKind::TimeReply,
+            blindpass_core::fleet::TimeReply {
+                node_id: "nd_a".to_owned(),
+                challenge: "challenge-2".to_owned(),
+                controller_time_ms: 1_800_000_000_000,
+                issuer_epoch: 1,
+            }
+            .to_value()
+            .unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert!(
+            identity
+                .verify_controller_document(&stale_document)
+                .is_err()
+        );
         std::fs::remove_dir_all(directory).unwrap();
     }
 

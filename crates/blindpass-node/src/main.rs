@@ -2,14 +2,14 @@
 
 use blindpass_core::canon::{Value, canonicalize_value, parse_json};
 use blindpass_core::custody::sha256;
-use blindpass_core::fleet::enrollment_proof_message;
+use blindpass_core::fleet::{enrollment_proof_message, node_session_challenge_message};
 use blindpass_core::secret::wipe;
-use blindpass_core::signing::{base64_url_encode, ed25519::verify};
-use blindpass_node::transport::HttpsTransport;
+use blindpass_core::signing::{base64_url_decode, ed25519::verify};
+use blindpass_node::transport::{HttpsTransport, TransportError};
 use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const DEFAULT_CONTROL_SOCKET: &str = "/run/blindpass/control.sock";
 const MAX_CONTROL_RESPONSE: usize = 2_048;
@@ -45,9 +45,12 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
         .unwrap_or_else(|| PathBuf::from(DEFAULT_CONTROL_SOCKET));
     match command {
         "status" => status(&socket),
-        "run" => Err(
-            "node channel polling is not available until channel authentication is configured"
-                .to_owned(),
+        "run" => run_channel(
+            &socket,
+            options
+                .controller
+                .as_deref()
+                .ok_or("run requires --controller")?,
         ),
         "enroll" => enroll(
             &socket,
@@ -78,7 +81,7 @@ fn parse_options(command: &str, arguments: &[String]) -> Result<Options, String>
                 }
                 options.socket = Some(socket);
             }
-            "--controller" if command == "enroll" => {
+            "--controller" if matches!(command, "enroll" | "run") => {
                 index += 1;
                 options.controller = Some(
                     arguments
@@ -105,6 +108,9 @@ fn parse_options(command: &str, arguments: &[String]) -> Result<Options, String>
     }
     if command == "enroll" && !options.token_stdin {
         return Err("enroll requires --token-stdin".to_owned());
+    }
+    if command == "run" && options.controller.is_none() {
+        return Err("run requires --controller".to_owned());
     }
     Ok(options)
 }
@@ -256,9 +262,14 @@ fn enroll(socket: &Path, controller: &str, expected_fingerprint: &str) -> Result
         return Err("controller enrollment response did not match the broker identity".to_owned());
     }
 
-    let mut pin_command =
-        format!("PIN_ISSUER {node_id} {issuer_epoch} {issuer_key_id} {issuer_public}\n")
-            .into_bytes();
+    let tenant_id = string_field(&response, "tenant_id")?;
+    if !valid_identifier(tenant_id) {
+        return Err("controller enrollment response contained an invalid tenant id".to_owned());
+    }
+    let mut pin_command = format!(
+        "PIN_ISSUER {tenant_id} {node_id} {issuer_epoch} {issuer_key_id} {issuer_public}\n"
+    )
+    .into_bytes();
     let pin_result = broker_request(socket, &pin_command);
     wipe(&mut pin_command);
     match pin_result.as_deref() {
@@ -269,6 +280,338 @@ fn enroll(socket: &Path, controller: &str, expected_fingerprint: &str) -> Result
         "enrollment_id={enrollment_id} node_id={node_id} fingerprint={accepted_fingerprint} status=submitted"
     );
     Ok(())
+}
+
+#[derive(Debug)]
+struct PinnedController {
+    tenant_id: String,
+    node_id: String,
+    epoch: u64,
+    key_id: String,
+    public_key: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ChannelError {
+    ProtocolMismatch,
+    Retryable,
+    Fatal(&'static str),
+}
+
+fn run_channel(socket: &Path, controller: &str) -> Result<(), String> {
+    let transport = HttpsTransport::new(controller)
+        .map_err(|_| "controller must be a valid HTTPS origin".to_owned())?;
+    let mut ack_seq = None;
+    let mut backoff_seconds = 1_u64;
+    loop {
+        match run_channel_session(socket, &transport, &mut ack_seq, &mut backoff_seconds) {
+            Ok(()) => backoff_seconds = 1,
+            Err(ChannelError::ProtocolMismatch) => {
+                return Err("controller requires an unsupported node protocol".to_owned());
+            }
+            Err(ChannelError::Fatal(reason)) => return Err(reason.to_owned()),
+            Err(ChannelError::Retryable) => {
+                eprintln!("node channel unavailable; retrying with bounded backoff");
+                sleep_with_jitter(backoff_seconds);
+                backoff_seconds = (backoff_seconds.saturating_mul(2)).min(60);
+            }
+        }
+    }
+}
+
+fn run_channel_session(
+    socket: &Path,
+    transport: &HttpsTransport,
+    ack_seq: &mut Option<u64>,
+    backoff_seconds: &mut u64,
+) -> Result<(), ChannelError> {
+    let pin_response =
+        broker_request(socket, b"PIN_STATUS\n").map_err(|_| ChannelError::Retryable)?;
+    let pin = parse_pinned_controller(&pin_response).map_err(ChannelError::Fatal)?;
+    let identity_response =
+        broker_request(socket, b"IDENTITY\n").map_err(|_| ChannelError::Retryable)?;
+    let identity = parse_identity(&identity_response).map_err(|_| ChannelError::Retryable)?;
+    let signing_public =
+        decode_base64url(&identity.signing_public, 32).ok_or(ChannelError::Retryable)?;
+    let capabilities = Value::Object(vec![(
+        "protocol_version".to_owned(),
+        Value::String(NODE_PROTOCOL_VERSION.to_owned()),
+    )]);
+    let (_capabilities_json, capabilities_hash) =
+        canonical_capabilities(&capabilities).ok_or(ChannelError::Retryable)?;
+
+    let mut challenge_request = session_request(&pin.node_id, &capabilities, None, None)
+        .map_err(|_| ChannelError::Retryable)?;
+    let challenge_bytes = match transport.post_public_json(
+        "/api/v3/node/session",
+        &challenge_request,
+        Duration::from_secs(10),
+    ) {
+        Ok(bytes) => bytes,
+        Err(TransportError::ProtocolMismatch) => return Err(ChannelError::ProtocolMismatch),
+        Err(_) => {
+            wipe(&mut challenge_request);
+            return Err(ChannelError::Retryable);
+        }
+    };
+    wipe(&mut challenge_request);
+    let challenge_text =
+        std::str::from_utf8(&challenge_bytes).map_err(|_| ChannelError::Retryable)?;
+    let challenge = parse_json(challenge_text).map_err(|_| ChannelError::Retryable)?;
+    let nonce = string_field(&challenge, "nonce").map_err(|_| ChannelError::Retryable)?;
+    let tenant_id = string_field(&challenge, "tenant_id").map_err(|_| ChannelError::Retryable)?;
+    let node_id = string_field(&challenge, "node_id").map_err(|_| ChannelError::Retryable)?;
+    let issuer_public =
+        string_field(&challenge, "issuer_pub").map_err(|_| ChannelError::Retryable)?;
+    let issuer_key_id =
+        string_field(&challenge, "issuer_kid").map_err(|_| ChannelError::Retryable)?;
+    let audience = string_field(&challenge, "audience").map_err(|_| ChannelError::Retryable)?;
+    let minimum_protocol =
+        string_field(&challenge, "min_protocol_version").map_err(|_| ChannelError::Retryable)?;
+    let response_capabilities_hash =
+        string_field(&challenge, "capabilities_hash").map_err(|_| ChannelError::Retryable)?;
+    let issuer_epoch = number_field(&challenge, "issuer_epoch").ok_or(ChannelError::Retryable)?;
+    let key_version = number_field(&challenge, "key_version").ok_or(ChannelError::Retryable)?;
+    let controller_time_ms = number_field(&challenge, "controller_time_ms")
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(ChannelError::Retryable)?;
+    let expires_at_ms = number_field(&challenge, "expires_at_ms")
+        .and_then(|value| i64::try_from(value).ok())
+        .ok_or(ChannelError::Retryable)?;
+    if tenant_id != pin.tenant_id
+        || node_id != pin.node_id
+        || issuer_epoch != pin.epoch
+        || key_version != 1
+        || issuer_public != pin.public_key
+        || issuer_key_id != pin.key_id
+        || issuer_key_id != format!("ed25519-{issuer_public}")
+        || audience != "blindpass-node"
+        || minimum_protocol != NODE_PROTOCOL_VERSION
+        || response_capabilities_hash != capabilities_hash
+    {
+        return Err(ChannelError::Fatal(
+            "controller challenge did not match the pinned node identity",
+        ));
+    }
+    let _nonce_bytes = decode_base64url(nonce, 32).ok_or(ChannelError::Retryable)?;
+    let _issuer_public_bytes =
+        decode_base64url(issuer_public, 32).ok_or(ChannelError::Retryable)?;
+    let mut message = node_session_challenge_message(
+        tenant_id,
+        node_id,
+        NODE_PROTOCOL_VERSION,
+        nonce,
+        &capabilities_hash,
+        key_version,
+        issuer_epoch,
+        controller_time_ms,
+        expires_at_ms,
+    )
+    .map_err(|_| ChannelError::Retryable)?;
+    let mut sign_command = format!(
+        "SIGN_NODE_CHALLENGE {tenant_id} {node_id} {NODE_PROTOCOL_VERSION} {nonce} {capabilities_hash} {key_version} {issuer_epoch} {controller_time_ms} {expires_at_ms}\n"
+    )
+    .into_bytes();
+    let signature_response = broker_request(socket, &sign_command);
+    wipe(&mut sign_command);
+    let signature_response = signature_response.map_err(|_| ChannelError::Retryable)?;
+    let signature_text = std::str::from_utf8(&signature_response)
+        .ok()
+        .and_then(|value| value.strip_prefix("CHALLENGE "))
+        .and_then(|value| value.strip_suffix('\n'))
+        .ok_or(ChannelError::Retryable)?;
+    let signature = decode_base64url(signature_text, 64).ok_or(ChannelError::Retryable)?;
+    let signature_valid = verify(&signing_public, &message, &signature);
+    wipe(&mut message);
+    match signature_valid {
+        Ok(true) => {}
+        _ => return Err(ChannelError::Retryable),
+    }
+
+    let mut authenticate_request = session_request(
+        &pin.node_id,
+        &capabilities,
+        Some(nonce),
+        Some(signature_text),
+    )
+    .map_err(|_| ChannelError::Retryable)?;
+    let token_response = match transport.post_public_json(
+        "/api/v3/node/session",
+        &authenticate_request,
+        Duration::from_secs(10),
+    ) {
+        Ok(bytes) => bytes,
+        Err(TransportError::ProtocolMismatch) => {
+            wipe(&mut authenticate_request);
+            return Err(ChannelError::ProtocolMismatch);
+        }
+        Err(_) => {
+            wipe(&mut authenticate_request);
+            return Err(ChannelError::Retryable);
+        }
+    };
+    wipe(&mut authenticate_request);
+    let mut token_response = token_response;
+    let token = std::str::from_utf8(&token_response)
+        .ok()
+        .and_then(|text| parse_json(text).ok())
+        .and_then(|document| take_string_field(document, "token"));
+    wipe(&mut token_response);
+    let token = Sensitive(token.ok_or(ChannelError::Retryable)?.into_bytes());
+    if token.0.len() > 4_096
+        || !token
+            .0
+            .iter()
+            .copied()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-' | b'~'))
+    {
+        return Err(ChannelError::Retryable);
+    }
+    let token = std::str::from_utf8(&token.0).map_err(|_| ChannelError::Retryable)?;
+
+    loop {
+        let ack_value = ack_seq.map_or(Value::Null, |seq| Value::Unsigned(seq));
+        let poll_body = Value::Object(vec![
+            ("ack_seq".to_owned(), ack_value),
+            ("health".to_owned(), Value::Object(Vec::new())),
+        ]);
+        let mut poll_request =
+            canonicalize_value(&poll_body).map_err(|_| ChannelError::Retryable)?;
+        let response = transport.post_json(
+            "/api/v3/node/poll",
+            token,
+            &poll_request,
+            Duration::from_secs(35),
+        );
+        wipe(&mut poll_request);
+        let response = response.map_err(|error| {
+            if error == TransportError::ProtocolMismatch {
+                ChannelError::ProtocolMismatch
+            } else {
+                ChannelError::Retryable
+            }
+        })?;
+        let response_text = std::str::from_utf8(&response).map_err(|_| ChannelError::Retryable)?;
+        let response_value = parse_json(response_text).map_err(|_| ChannelError::Retryable)?;
+        let documents = response_value
+            .get("documents")
+            .and_then(Value::as_array)
+            .ok_or(ChannelError::Retryable)?;
+        let mut previous_seq = *ack_seq;
+        for item in documents {
+            let seq = item
+                .get("seq")
+                .and_then(Value::as_u64)
+                .ok_or(ChannelError::Retryable)?;
+            if previous_seq.is_some_and(|previous| seq <= previous) {
+                return Err(ChannelError::Retryable);
+            }
+            let envelope = item.get("envelope").ok_or(ChannelError::Retryable)?;
+            let mut document = canonicalize_value(envelope).map_err(|_| ChannelError::Retryable)?;
+            if document.is_empty() || document.len() > 64 * 1024 {
+                wipe(&mut document);
+                return Err(ChannelError::Retryable);
+            }
+            let mut relay_request = format!("RELAY {}\n", document.len()).into_bytes();
+            relay_request.extend_from_slice(&document);
+            wipe(&mut document);
+            let relay_response = broker_request(socket, &relay_request);
+            wipe(&mut relay_request);
+            let relay_response = relay_response.map_err(|_| ChannelError::Retryable)?;
+            if !relay_response.starts_with(b"OK document_verified ") {
+                return Err(ChannelError::Retryable);
+            }
+            previous_seq = Some(seq);
+            *ack_seq = Some(seq);
+        }
+        let _ = broker_request(socket, b"PULL_EVENTS\n").map_err(|_| ChannelError::Retryable)?;
+        *backoff_seconds = 1;
+    }
+}
+
+fn parse_pinned_controller(response: &[u8]) -> Result<PinnedController, &'static str> {
+    let response = std::str::from_utf8(response).map_err(|_| "broker issuer pin is malformed")?;
+    if response == "PIN none\n" {
+        return Err("broker has no pinned controller; run enrollment first");
+    }
+    let mut fields = response.split_whitespace();
+    if fields.next() != Some("PIN") {
+        return Err("broker has no pinned controller; run enrollment first");
+    }
+    let tenant_id = fields.next().ok_or("broker issuer pin is malformed")?;
+    let node_id = fields.next().ok_or("broker issuer pin is malformed")?;
+    let epoch_text = fields.next().ok_or("broker issuer pin is malformed")?;
+    let key_id = fields.next().ok_or("broker issuer pin is malformed")?;
+    let public_key = fields.next().ok_or("broker issuer pin is malformed")?;
+    let epoch = epoch_text
+        .parse::<u64>()
+        .ok()
+        .filter(|value| *value > 0 && value.to_string() == epoch_text)
+        .ok_or("broker issuer pin is malformed")?;
+    if fields.next().is_some()
+        || !valid_identifier(tenant_id)
+        || !valid_identifier(node_id)
+        || key_id != format!("ed25519-{public_key}")
+        || decode_base64url(public_key, 32).is_none()
+    {
+        return Err("broker issuer pin is malformed");
+    }
+    Ok(PinnedController {
+        tenant_id: tenant_id.to_owned(),
+        node_id: node_id.to_owned(),
+        epoch,
+        key_id: key_id.to_owned(),
+        public_key: public_key.to_owned(),
+    })
+}
+
+fn canonical_capabilities(capabilities: &Value) -> Option<(String, String)> {
+    let bytes = canonicalize_value(capabilities).ok()?;
+    let text = String::from_utf8(bytes.clone()).ok()?;
+    let digest = sha256(&bytes).ok()?;
+    let hash = digest.iter().map(|byte| format!("{byte:02x}")).collect();
+    Some((text, hash))
+}
+
+fn session_request(
+    node_id: &str,
+    capabilities: &Value,
+    nonce: Option<&str>,
+    signature: Option<&str>,
+) -> Result<Vec<u8>, &'static str> {
+    let mut fields = vec![
+        ("node_id".to_owned(), Value::String(node_id.to_owned())),
+        (
+            "protocol_version".to_owned(),
+            Value::String(NODE_PROTOCOL_VERSION.to_owned()),
+        ),
+        ("capabilities".to_owned(), capabilities.clone()),
+    ];
+    if let Some(nonce) = nonce {
+        fields.push(("nonce".to_owned(), Value::String(nonce.to_owned())));
+    }
+    if let Some(signature) = signature {
+        fields.push(("signature".to_owned(), Value::String(signature.to_owned())));
+    }
+    canonicalize_value(&Value::Object(fields))
+        .map_err(|_| "node session request could not be encoded")
+}
+
+fn number_field(value: &Value, key: &str) -> Option<u64> {
+    value.get(key).and_then(Value::as_u64)
+}
+
+fn sleep_with_jitter(base_seconds: u64) {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    let jitter_permille = 800 + (nanos % 401);
+    let milliseconds = base_seconds
+        .saturating_mul(1_000)
+        .saturating_mul(u64::from(jitter_permille))
+        / 1_000;
+    std::thread::sleep(Duration::from_millis(milliseconds));
 }
 
 #[derive(Debug)]
@@ -319,6 +662,23 @@ fn string_field<'a>(value: &'a Value, key: &str) -> Result<&'a str, String> {
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| format!("controller response is missing {key}"))
+}
+
+fn take_string_field(value: Value, key: &str) -> Option<String> {
+    let Value::Object(fields) = value else {
+        return None;
+    };
+    fields.into_iter().find_map(|(name, value)| {
+        if name == key {
+            if let Value::String(value) = value {
+                Some(value)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    })
 }
 
 fn broker_request(socket: &Path, request: &[u8]) -> Result<Vec<u8>, String> {
@@ -425,35 +785,7 @@ fn hex_digit(byte: u8) -> Result<u8, String> {
 }
 
 fn decode_base64url(value: &str, expected_len: usize) -> Option<Vec<u8>> {
-    if !value
-        .bytes()
-        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-    {
-        return None;
-    }
-    let mut output = Vec::with_capacity(value.len() * 3 / 4);
-    let mut accumulator = 0_u32;
-    let mut bits = 0_u8;
-    for byte in value.bytes() {
-        let digit = match byte {
-            b'A'..=b'Z' => byte - b'A',
-            b'a'..=b'z' => byte - b'a' + 26,
-            b'0'..=b'9' => byte - b'0' + 52,
-            b'-' => 62,
-            b'_' => 63,
-            _ => return None,
-        };
-        accumulator = (accumulator << 6) | u32::from(digit);
-        bits += 6;
-        if bits >= 8 {
-            bits -= 8;
-            output.push((accumulator >> bits) as u8);
-        }
-    }
-    if bits > 0 && accumulator & ((1_u32 << bits) - 1) != 0 {
-        return None;
-    }
-    (output.len() == expected_len && base64_url_encode(&output) == value).then_some(output)
+    base64_url_decode(value, expected_len)
 }
 
 fn print_help() {
@@ -461,7 +793,8 @@ fn print_help() {
         "blindpass-node <run|enroll|status> [options]\n\n\
          status [--socket PATH] queries the local broker control socket.\n\
          enroll --controller HTTPS_ORIGIN --issuer-fingerprint SHA256 --token-stdin [--socket PATH]\n\
-         reads the one-use token from stdin, proves broker key possession, and pins the verified issuer."
+         reads the one-use token from stdin, proves broker key possession, and pins the verified issuer.\n\
+         run --controller HTTPS_ORIGIN [--socket PATH] opens the outbound authenticated node channel."
     );
 }
 
@@ -486,6 +819,12 @@ mod tests {
         .unwrap();
         assert!(options.token_stdin);
         assert!(parse_options("status", &["--token-stdin".to_owned()]).is_err());
+        assert!(parse_options("run", &[]).is_err());
+        assert!(parse_options(
+            "run",
+            &["--controller".to_owned(), "https://controller.example".to_owned()]
+        )
+        .is_ok());
     }
 
     #[test]

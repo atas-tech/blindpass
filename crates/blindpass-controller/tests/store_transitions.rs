@@ -154,6 +154,7 @@ async fn fixture_table_count(fixture: &StoreFixture, table: &str) -> i64 {
 async fn remove_fleet_schema(fixture: &mut StoreFixture, schema_version: i64) {
     fixture.store.take();
     let tables = [
+        "node_challenges",
         "node_events",
         "node_inbox",
         "grant_tombstones",
@@ -204,6 +205,7 @@ async fn remove_fleet_schema(fixture: &mut StoreFixture, schema_version: i64) {
 
 async fn assert_fleet_schema_present(fixture: &StoreFixture) {
     let tables = [
+        "node_challenges",
         "enrollment_requests",
         "nodes",
         "node_key_history",
@@ -2963,8 +2965,8 @@ async fn older_schema_version_migrates_forward_and_records_current_version() {
         pool.close().await;
         (version, clock != 0, idempotency != 0)
     };
-    // Version 4 adds boot-anchored clock checks; version 5-6 add fleet state.
-    assert_eq!(version, 6);
+    // Version 4 adds boot-anchored clock checks; versions 5-7 add fleet state.
+    assert_eq!(version, 7);
     assert!(clock_present && idempotency_present);
     assert_fleet_schema_present(&fixture).await;
     fixture.close().await;
@@ -2988,7 +2990,7 @@ async fn p03_fleet_migration_upgrades_a_v4_database_and_is_repeatable() {
 
     let upgraded = Store::connect(&fixture.url)
         .await
-        .expect("upgrade schema version 4 to fleet schema version 6");
+        .expect("upgrade schema version 4 to fleet schema version 7");
     assert_eq!(
         upgraded
             .secret_request_metadata(&request_id)

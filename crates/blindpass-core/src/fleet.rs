@@ -14,6 +14,8 @@ const DOCUMENT_DOMAIN: &[u8] = b"blindpass:fleet-document:v1\0";
 const SIGNATURE_BYTES: usize = 64;
 const ENROLLMENT_DOMAIN: &[u8] = b"blindpass:fleet-enrollment-proof:v1\0";
 const FINGERPRINT_DOMAIN: &[u8] = b"blindpass:fleet-node-fingerprint:v1\0";
+const NODE_CHALLENGE_DOMAIN: &[u8] = b"blindpass:fleet-node-challenge:v1\0";
+const NODE_EVENT_DOMAIN: &[u8] = b"blindpass:fleet-node-event:v1\0";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentKind {
@@ -68,6 +70,128 @@ pub fn node_key_fingerprint(
     input.extend_from_slice(recipient_public_key);
     let digest = sha256(&input)?;
     Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+/// Canonical, domain-separated message the broker signs for a node channel
+/// challenge. The capability hash binds the negotiation to its enrollment
+/// snapshot without asking the relay to authorize capability changes.
+pub fn node_session_challenge_message(
+    tenant_id: &str,
+    node_id: &str,
+    protocol_version: &str,
+    nonce: &str,
+    capabilities_hash: &str,
+    key_version: u64,
+    issuer_epoch: u64,
+    controller_time_ms: i64,
+    expires_at_ms: i64,
+) -> Result<Vec<u8>, DocumentError> {
+    if !valid_identifier(tenant_id)
+        || !valid_identifier(node_id)
+        || protocol_version != "blindpass-node/1"
+        || nonce.len() != 43
+        || !valid_base64url_text(nonce)
+        || !valid_sha256_hex(capabilities_hash)
+        || key_version == 0
+        || issuer_epoch == 0
+        || controller_time_ms <= 0
+        || expires_at_ms <= controller_time_ms
+        || expires_at_ms.saturating_sub(controller_time_ms) > 60_000
+    {
+        return Err(DocumentError::Invalid("node challenge binding"));
+    }
+    canonical_domain_message(
+        NODE_CHALLENGE_DOMAIN,
+        &Value::Object(vec![
+            (
+                "audience".to_owned(),
+                Value::String("blindpass-node".to_owned()),
+            ),
+            (
+                "capabilities_hash".to_owned(),
+                Value::String(capabilities_hash.to_owned()),
+            ),
+            (
+                "controller_time_ms".to_owned(),
+                Value::Integer(controller_time_ms),
+            ),
+            ("expires_at_ms".to_owned(), Value::Integer(expires_at_ms)),
+            ("issuer_epoch".to_owned(), Value::Unsigned(issuer_epoch)),
+            ("key_version".to_owned(), Value::Unsigned(key_version)),
+            ("node_id".to_owned(), Value::String(node_id.to_owned())),
+            ("nonce".to_owned(), Value::String(nonce.to_owned())),
+            (
+                "protocol_version".to_owned(),
+                Value::String(protocol_version.to_owned()),
+            ),
+            ("tenant_id".to_owned(), Value::String(tenant_id.to_owned())),
+        ]),
+    )
+}
+
+/// Canonical event bytes signed by the broker. This is metadata protocol
+/// input; event bodies are bounded and can never contain a plaintext secret.
+pub fn node_event_message(
+    node_id: &str,
+    idempotency_key: &str,
+    kind: &str,
+    body: &Value,
+) -> Result<Vec<u8>, DocumentError> {
+    if !valid_identifier(node_id)
+        || idempotency_key.len() < 16
+        || idempotency_key.len() > 128
+        || !idempotency_key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        || !matches!(
+            kind,
+            "operation_request" | "operation_result" | "audit" | "application_ack"
+        )
+        || !matches!(body, Value::Object(_))
+    {
+        return Err(DocumentError::Invalid("node event binding"));
+    }
+    canonical_domain_message(
+        NODE_EVENT_DOMAIN,
+        &Value::Object(vec![
+            ("body".to_owned(), body.clone()),
+            (
+                "idempotency_key".to_owned(),
+                Value::String(idempotency_key.to_owned()),
+            ),
+            ("kind".to_owned(), Value::String(kind.to_owned())),
+            ("node_id".to_owned(), Value::String(node_id.to_owned())),
+        ]),
+    )
+}
+
+fn canonical_domain_message(domain: &[u8], value: &Value) -> Result<Vec<u8>, DocumentError> {
+    let canonical = canonicalize_value(value)?;
+    let mut message = Vec::with_capacity(domain.len() + canonical.len());
+    message.extend_from_slice(domain);
+    message.extend_from_slice(&canonical);
+    Ok(message)
+}
+
+fn valid_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn valid_base64url_text(value: &str) -> bool {
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+}
+
+fn valid_sha256_hex(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
 }
 
 impl DocumentKind {
@@ -974,7 +1098,8 @@ fn decode_base64_url(value: &str) -> Result<Vec<u8>, DocumentError> {
 mod tests {
     use super::{
         ConsumptionMode, DocumentKind, Grant, Registration, SignedEnvelope,
-        enrollment_proof_message, node_key_fingerprint,
+        enrollment_proof_message, node_event_message, node_key_fingerprint,
+        node_session_challenge_message,
     };
     use crate::canon::{Value, canonicalize_json};
     use crate::signing::ed25519::Ed25519KeyPair;
@@ -1007,6 +1132,149 @@ mod tests {
         assert_ne!(
             node_key_fingerprint(signing.public_key(), &recipient).unwrap(),
             node_key_fingerprint(signing.public_key(), &[9; 32]).unwrap()
+        );
+    }
+
+    #[test]
+    fn node_challenge_binds_identity_epoch_and_protocol_fields() {
+        let nonce = "A".repeat(43);
+        let message = node_session_challenge_message(
+            "tenant-a",
+            "nd_node-a",
+            "blindpass-node/1",
+            &nonce,
+            &"a".repeat(64),
+            1,
+            3,
+            1_800_000_000_000,
+            1_800_000_060_000,
+        )
+        .unwrap();
+        let key = Ed25519KeyPair::from_seed(&[7; 32]).unwrap();
+        let signature = key.sign(&message).unwrap();
+        assert!(super::verify(key.public_key(), &message, &signature).unwrap());
+
+        for changed in [
+            node_session_challenge_message(
+                "tenant-b",
+                "nd_node-a",
+                "blindpass-node/1",
+                &nonce,
+                &"a".repeat(64),
+                1,
+                3,
+                1_800_000_000_000,
+                1_800_000_060_000,
+            ),
+            node_session_challenge_message(
+                "tenant-a",
+                "nd_node-b",
+                "blindpass-node/1",
+                &nonce,
+                &"a".repeat(64),
+                1,
+                3,
+                1_800_000_000_000,
+                1_800_000_060_000,
+            ),
+            node_session_challenge_message(
+                "tenant-a",
+                "nd_node-a",
+                "blindpass-node/1",
+                &nonce,
+                &"a".repeat(64),
+                1,
+                4,
+                1_800_000_000_000,
+                1_800_000_060_000,
+            ),
+            node_session_challenge_message(
+                "tenant-a",
+                "nd_node-a",
+                "blindpass-node/1",
+                &nonce,
+                &"a".repeat(64),
+                2,
+                3,
+                1_800_000_000_000,
+                1_800_000_060_000,
+            ),
+            node_session_challenge_message(
+                "tenant-a",
+                "nd_node-a",
+                "blindpass-node/2",
+                &nonce,
+                &"a".repeat(64),
+                1,
+                3,
+                1_800_000_000_000,
+                1_800_000_060_000,
+            ),
+        ] {
+            assert!(changed.is_err() || changed.unwrap() != message);
+        }
+        assert!(
+            node_session_challenge_message(
+                "tenant-a",
+                "nd_node-a",
+                "blindpass-node/1",
+                &nonce,
+                &"A".repeat(64),
+                1,
+                3,
+                1_800_000_000_000,
+                1_800_000_060_000,
+            )
+            .is_err()
+        );
+        assert!(
+            node_session_challenge_message(
+                "tenant-a",
+                "nd_node-a",
+                "blindpass-node/1",
+                &nonce,
+                &"a".repeat(64),
+                1,
+                3,
+                1_800_000_000_000,
+                1_800_000_061_000,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn node_event_signature_message_binds_node_key_kind_and_body() {
+        let body = Value::Object(vec![("result".to_owned(), Value::String("ok".to_owned()))]);
+        let message =
+            node_event_message("nd_node-a", "event_1234567890", "operation_result", &body).unwrap();
+        let key = Ed25519KeyPair::from_seed(&[8; 32]).unwrap();
+        let signature = key.sign(&message).unwrap();
+        assert!(super::verify(key.public_key(), &message, &signature).unwrap());
+        assert_ne!(
+            message,
+            node_event_message("nd_node-b", "event_1234567890", "operation_result", &body).unwrap()
+        );
+        assert_ne!(
+            message,
+            node_event_message("nd_node-a", "event_1234567890", "audit", &body).unwrap()
+        );
+        assert_ne!(
+            message,
+            node_event_message(
+                "nd_node-a",
+                "event_1234567890",
+                "operation_result",
+                &Value::Object(vec![(
+                    "result".to_owned(),
+                    Value::String("failed".to_owned())
+                )]),
+            )
+            .unwrap()
+        );
+        assert!(node_event_message("nd_node-a", "short", "audit", &body).is_err());
+        assert!(
+            node_event_message("nd_node-a", "event_1234567890", "untrusted_kind", &body,).is_err()
         );
     }
 

@@ -12,6 +12,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use blindpass_core::canon::canonicalize_json;
 use blindpass_core::custody::{RecipientKeyPair, sha256};
 use blindpass_core::fleet::{enrollment_proof_message, node_key_fingerprint};
 use blindpass_core::signing::ed25519::verify;
@@ -260,8 +261,12 @@ async fn submit_node_enrollment(
     {
         return invalid_enrollment();
     }
-    let capabilities_json = match serde_json::to_string(&body.capabilities) {
-        Ok(value) if value.len() <= MAX_ENROLLMENT_METADATA_BYTES => value,
+    let capabilities_json = match serde_json::to_string(&body.capabilities)
+        .ok()
+        .and_then(|value| canonicalize_json(&value).ok())
+        .and_then(|value| String::from_utf8(value).ok())
+    {
+        Some(value) if value.len() <= MAX_ENROLLMENT_METADATA_BYTES => value,
         _ => return invalid_enrollment(),
     };
     let host_facts_json = match serde_json::to_string(&body.host_facts) {
@@ -294,6 +299,7 @@ async fn submit_node_enrollment(
             Json(json!({
                 "enrollment_id": enrollment.id,
                 "node_id": enrollment.node_id,
+                "tenant_id": store.tenant_id(),
                 "fingerprint": fingerprint,
                 "status":"submitted"
             })),

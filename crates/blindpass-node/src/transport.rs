@@ -29,6 +29,7 @@ pub enum TransportError {
     RequestFailed,
     ResponseTooLarge,
     InvalidResponse,
+    ProtocolMismatch,
     HttpStatus,
 }
 
@@ -44,6 +45,7 @@ impl fmt::Display for TransportError {
             Self::RequestFailed => "HTTPS request failed",
             Self::ResponseTooLarge => "HTTPS response exceeded the configured size limit",
             Self::InvalidResponse => "HTTPS response was malformed",
+            Self::ProtocolMismatch => "controller requires an unsupported node protocol",
             Self::HttpStatus => "controller returned a non-success status",
         })
     }
@@ -320,6 +322,9 @@ fn parse_response(response: &[u8]) -> Result<Vec<u8>, TransportError> {
         + u16::from(status[1] - b'0') * 10
         + u16::from(status[2] - b'0');
     if !(200..300).contains(&status) {
+        if status == 426 {
+            return Err(TransportError::ProtocolMismatch);
+        }
         return Err(TransportError::HttpStatus);
     }
     let body = &response[..status_start];
@@ -394,6 +399,10 @@ mod tests {
         assert_eq!(
             parse_response(b"private-body\n403"),
             Err(TransportError::HttpStatus)
+        );
+        assert_eq!(
+            parse_response(b"protocol mismatch details\n426"),
+            Err(TransportError::ProtocolMismatch)
         );
         assert_eq!(
             parse_response(b"response"),

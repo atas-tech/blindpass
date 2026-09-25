@@ -47,8 +47,8 @@ fn handle_command(
         b"PIN_STATUS\n" => match identity.pinned_issuer()? {
             Some(pin) => writeln!(
                 stream,
-                "PIN {} {} {} {}",
-                pin.node_id, pin.epoch, pin.key_id, pin.public_key
+                "PIN {} {} {} {} {}",
+                pin.tenant_id, pin.node_id, pin.epoch, pin.key_id, pin.public_key
             )?,
             None => stream.write_all(b"PIN none\n")?,
         },
@@ -58,6 +58,21 @@ fn handle_command(
                 .map_err(|_| BrokerError::Configuration("invalid_enrollment_proof_request"))?;
             let signature = identity.enrollment_proof(token)?;
             writeln!(stream, "PROOF {signature}")?;
+        }
+        _ if command.starts_with(b"SIGN_NODE_CHALLENGE ") => {
+            let fields = parse_node_challenge(&command)?;
+            let signature = identity.node_challenge_signature(
+                &fields.tenant_id,
+                &fields.node_id,
+                &fields.protocol_version,
+                &fields.nonce,
+                &fields.capabilities_hash,
+                fields.key_version,
+                fields.issuer_epoch,
+                fields.controller_time_ms,
+                fields.expires_at_ms,
+            )?;
+            writeln!(stream, "CHALLENGE {signature}")?;
         }
         _ if command.starts_with(b"PIN_ISSUER ") => {
             require_root_peer(stream)?;
@@ -69,9 +84,13 @@ fn handle_command(
             let length = parse_relay_length(&command)?;
             let mut document = vec![0_u8; length];
             let read_result = read_exact_until(stream, &mut document, deadline);
-            wipe(&mut document);
             read_result?;
-            stream.write_all(b"ERR issuer_not_configured\n")?;
+            let verification = identity.verify_controller_document(&document);
+            wipe(&mut document);
+            match verification {
+                Ok(kind) => writeln!(stream, "OK document_verified {kind}")?,
+                Err(_) => stream.write_all(b"ERR invalid_controller_document\n")?,
+            }
         }
         _ => stream.write_all(b"ERR invalid_control_command\n")?,
     }
@@ -86,6 +105,7 @@ fn parse_pin(command: &[u8]) -> Result<PinnedIssuer, BrokerError> {
         .and_then(|line| line.strip_suffix('\n'))
         .ok_or(BrokerError::Configuration("invalid_issuer_pin_request"))?
         .split(' ');
+    let tenant_id = fields.next().unwrap_or_default();
     let node_id = fields.next().unwrap_or_default();
     let epoch_text = fields
         .next()
@@ -98,6 +118,7 @@ fn parse_pin(command: &[u8]) -> Result<PinnedIssuer, BrokerError> {
     let key_id = fields.next().unwrap_or_default();
     let public_key = fields.next().unwrap_or_default();
     let pin = PinnedIssuer {
+        tenant_id: tenant_id.to_owned(),
         node_id: node_id.to_owned(),
         epoch,
         key_id: key_id.to_owned(),
@@ -106,7 +127,8 @@ fn parse_pin(command: &[u8]) -> Result<PinnedIssuer, BrokerError> {
     if fields.next().is_some() {
         return Err(BrokerError::Configuration("invalid_issuer_pin_request"));
     }
-    if !valid_control_identifier(node_id)
+    if !valid_control_identifier(tenant_id)
+        || !valid_control_identifier(node_id)
         || !valid_control_identifier(key_id)
         || public_key.len() != 43
         || !public_key
@@ -116,6 +138,85 @@ fn parse_pin(command: &[u8]) -> Result<PinnedIssuer, BrokerError> {
         return Err(BrokerError::Configuration("invalid_issuer_pin_request"));
     }
     Ok(pin)
+}
+
+struct NodeChallengeFields {
+    tenant_id: String,
+    node_id: String,
+    protocol_version: String,
+    nonce: String,
+    capabilities_hash: String,
+    key_version: u64,
+    issuer_epoch: u64,
+    controller_time_ms: i64,
+    expires_at_ms: i64,
+}
+
+fn parse_node_challenge(command: &[u8]) -> Result<NodeChallengeFields, BrokerError> {
+    let line = std::str::from_utf8(command)
+        .map_err(|_| BrokerError::Configuration("invalid_node_challenge_request"))?;
+    let mut fields = line
+        .strip_prefix("SIGN_NODE_CHALLENGE ")
+        .and_then(|line| line.strip_suffix('\n'))
+        .ok_or(BrokerError::Configuration("invalid_node_challenge_request"))?
+        .split(' ');
+    let tenant_id = fields.next().unwrap_or_default();
+    let node_id = fields.next().unwrap_or_default();
+    let protocol_version = fields.next().unwrap_or_default();
+    let nonce = fields.next().unwrap_or_default();
+    let capabilities_hash = fields.next().unwrap_or_default();
+    let key_version_text = fields.next().unwrap_or_default();
+    let issuer_epoch_text = fields.next().unwrap_or_default();
+    let controller_time_text = fields.next().unwrap_or_default();
+    let expires_at_text = fields.next().unwrap_or_default();
+    let parse_unsigned = |value: &str| {
+        value
+            .parse::<u64>()
+            .ok()
+            .filter(|number| *number > 0 && number.to_string() == value)
+    };
+    let parse_signed = |value: &str| {
+        value
+            .parse::<i64>()
+            .ok()
+            .filter(|number| *number > 0 && number.to_string() == value)
+    };
+    if fields.next().is_some() {
+        return Err(BrokerError::Configuration("invalid_node_challenge_request"));
+    }
+    let request = NodeChallengeFields {
+        tenant_id: tenant_id.to_owned(),
+        node_id: node_id.to_owned(),
+        protocol_version: protocol_version.to_owned(),
+        nonce: nonce.to_owned(),
+        capabilities_hash: capabilities_hash.to_owned(),
+        key_version: parse_unsigned(key_version_text)
+            .ok_or(BrokerError::Configuration("invalid_node_challenge_request"))?,
+        issuer_epoch: parse_unsigned(issuer_epoch_text)
+            .ok_or(BrokerError::Configuration("invalid_node_challenge_request"))?,
+        controller_time_ms: parse_signed(controller_time_text)
+            .ok_or(BrokerError::Configuration("invalid_node_challenge_request"))?,
+        expires_at_ms: parse_signed(expires_at_text)
+            .ok_or(BrokerError::Configuration("invalid_node_challenge_request"))?,
+    };
+    if !valid_control_identifier(&request.tenant_id)
+        || !valid_control_identifier(&request.node_id)
+        || blindpass_core::fleet::node_session_challenge_message(
+            &request.tenant_id,
+            &request.node_id,
+            &request.protocol_version,
+            &request.nonce,
+            &request.capabilities_hash,
+            request.key_version,
+            request.issuer_epoch,
+            request.controller_time_ms,
+            request.expires_at_ms,
+        )
+        .is_err()
+    {
+        return Err(BrokerError::Configuration("invalid_node_challenge_request"));
+    }
+    Ok(request)
 }
 
 fn valid_control_identifier(value: &str) -> bool {
@@ -225,7 +326,7 @@ mod tests {
         drop(broker);
         let mut response = Vec::new();
         client.read_to_end(&mut response).unwrap();
-        assert_eq!(response, b"ERR issuer_not_configured\n");
+        assert_eq!(response, b"ERR invalid_controller_document\n");
     }
 
     fn current_gid() -> u32 {
@@ -252,14 +353,14 @@ mod tests {
     #[test]
     fn issuer_pin_command_requires_canonical_fields() {
         let line = format!(
-            "PIN_ISSUER nd_node 3 ed25519-{} {}\n",
+            "PIN_ISSUER tenant_a nd_node 3 ed25519-{} {}\n",
             blindpass_core::signing::base64_url_encode(&[9; 32]),
             blindpass_core::signing::base64_url_encode(&[9; 32])
         );
         assert!(parse_pin(line.as_bytes()).is_ok());
         assert!(
             parse_pin(
-                b"PIN_ISSUER nd_node 03 ed25519-A AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
+                b"PIN_ISSUER tenant_a nd_node 03 ed25519-A AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=\n"
             )
             .is_err()
         );

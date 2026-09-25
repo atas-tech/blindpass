@@ -11,6 +11,8 @@ type BrowserStatusOperation = NonNullable<paths["/api/v2/secret/browser-status/{
 type BrowserStatusResponse = BrowserStatusOperation["responses"]["200"]["content"]["application/json"];
 type TestSeedOperation = NonNullable<paths["/api/v3/admin/test/seed"]["post"]>;
 type TestSeedResponse = TestSeedOperation["responses"]["200"]["content"]["application/json"];
+type NodeChallenge = components["schemas"]["NodeSessionChallenge"];
+type NodePollResponse = components["schemas"]["NodePollResponse"];
 
 const encryptedPayload: SubmitPayload = {
   enc: "dummy-enc",
@@ -20,7 +22,7 @@ const encryptedPayload: SubmitPayload = {
 const capabilities: CapabilitiesResponse = {
   api: ["compat.v2", "admin.v3"],
   version: "0.1.0",
-  schema_version: 6,
+  schema_version: 7,
   setup_required: true,
   features: { browser_status: true, fleet_authorization: true }
 };
@@ -48,6 +50,28 @@ it("generated operation and component types describe the controller wire shapes"
   expect(browserStatus.status).toBe("submitted");
   expect(testSeed.agents["dummy-agent"]).toBe("dummy-key");
   expect(testSeed.local_admin?.username).toBe("admin");
+
+  const challenge: NodeChallenge = {
+    nonce: "A".repeat(43),
+    controller_time_ms: 1_800_000_000_000,
+    expires_at_ms: 1_800_000_060_000,
+    issuer_pub: "A".repeat(43),
+    issuer_kid: `ed25519-${"A".repeat(43)}`,
+    issuer_epoch: 1,
+    min_protocol_version: "blindpass-node/1",
+    audience: "blindpass-node",
+    tenant_id: "tenant-a",
+    node_id: "nd_node-a",
+    key_version: 1,
+    capabilities_hash: "a".repeat(64)
+  };
+  const poll: NodePollResponse = {
+    documents: [{ seq: 1, envelope: { kind: "time_reply", v: 1, body: {}, sig: "A".repeat(86), kid: "issuer", epoch: 1 } }],
+    highest_seq: 1,
+    server_time_ms: 1_800_000_000_000
+  };
+  expect(challenge.audience).toBe("blindpass-node");
+  expect(poll.documents[0].seq).toBe(1);
 
   if (false) {
     // @ts-expect-error ciphertext is required by the generated schema type.

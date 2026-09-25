@@ -23,7 +23,7 @@ The Cargo workspace in [crates](../../crates) holds the P01 host broker and the 
 | `blindpass-core` | Shared primitives with no crate dependencies: signed browser links and derived secrets, Ed25519 fleet documents with canonical JSON, policy evaluation and decision hashes, HPKE through OpenSSL `libcrypto`, the broker protocol, workload identity and credential custody |
 | `blindpass-broker` | P01 host broker, peer-credential-checked fleet control socket and test binaries |
 | `blindpass-node` | Unprivileged controller relay using HTTPS through `/usr/bin/curl`; it has no access to broker key storage |
-| `blindpass-controller` | axum HTTP API, sqlx store (SQLite WAL or PostgreSQL, schema version 6) and a local administration Unix socket. Production startup requires the 32-byte issuer seed in `BLINDPASS_ISSUER_KEY_FILE`. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
+| `blindpass-controller` | axum HTTP API, sqlx store (SQLite WAL or PostgreSQL, schema version 7) and a local administration Unix socket. Production startup requires the 32-byte issuer seed in `BLINDPASS_ISSUER_KEY_FILE`. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
 | `blindpass-cli` | `blindpass` administration CLI: `migrate`, `admin bootstrap`, `admin bootstrap-token`, `admin reset-password`, `admin reconcile-clock` and test-mode `admin seed --fixture`. It runs the controller executable installed beside it or calls its admin socket |
 
 ### Controller configuration

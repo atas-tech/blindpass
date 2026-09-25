@@ -130,6 +130,40 @@ pub fn base64_url_encode(input: &[u8]) -> String {
     output
 }
 
+/// Decode canonical, unpadded base64url text and require the expected length.
+pub fn base64_url_decode(input: &str, expected_len: usize) -> Option<Vec<u8>> {
+    if input.is_empty()
+        || !input
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        return None;
+    }
+    let mut output = Vec::with_capacity(input.len() * 3 / 4);
+    let mut accumulator = 0_u32;
+    let mut bits = 0_u8;
+    for byte in input.bytes() {
+        let digit = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'-' => 62,
+            b'_' => 63,
+            _ => return None,
+        };
+        accumulator = (accumulator << 6) | u32::from(digit);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push((accumulator >> bits) as u8);
+        }
+    }
+    if bits > 0 && accumulator & ((1_u32 << bits) - 1) != 0 {
+        return None;
+    }
+    (output.len() == expected_len && base64_url_encode(&output) == input).then_some(output)
+}
+
 fn valid_request_id(request_id: &str) -> bool {
     request_id.len() == 64
         && request_id

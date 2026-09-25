@@ -21,7 +21,6 @@ use std::time::Duration;
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
-use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 
 const BROWSER_STATUS_ADOPTED: bool = true;
@@ -140,6 +139,7 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .merge(routes::admin_routes())
         .merge(exchanges::routes())
         .merge(secrets::routes())
+        .merge(routes::node_routes())
         .merge(routes::test_seed_routes(state.test_mode))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -148,10 +148,7 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .with_state(state)
         .layer(middleware::from_fn(security_headers))
         .layer(RequestBodyLimitLayer::new(body_limit_bytes))
-        .layer(TimeoutLayer::with_status_code(
-            StatusCode::REQUEST_TIMEOUT,
-            Duration::from_secs(10),
-        ))
+        .layer(middleware::from_fn(request_timeout))
         .layer(
             CorsLayer::new()
                 .allow_origin(AllowOrigin::list(allowed_origins))
@@ -192,6 +189,18 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))
         .layer(middleware::from_fn(normalize_compat_errors))
+}
+
+async fn request_timeout(request: Request, next: Next) -> Response {
+    let timeout = if request.uri().path() == "/api/v3/node/poll" {
+        Duration::from_secs(35)
+    } else {
+        Duration::from_secs(10)
+    };
+    match tokio::time::timeout(timeout, next.run(request)).await {
+        Ok(response) => response,
+        Err(_) => StatusCode::REQUEST_TIMEOUT.into_response(),
+    }
 }
 
 async fn normalize_compat_errors(request: Request, next: Next) -> Response {

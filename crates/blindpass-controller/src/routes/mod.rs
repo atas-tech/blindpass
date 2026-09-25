@@ -11,6 +11,7 @@ pub(crate) mod agents;
 pub(crate) mod auth;
 pub(crate) mod exchanges;
 pub(crate) mod fleet;
+mod node;
 pub(crate) mod secrets;
 
 pub(crate) use admin_session::forced_password_change_gate;
@@ -34,4 +35,8 @@ pub(crate) fn admin_routes() -> Router<AppState> {
         .merge(admin_agents::routes())
         .merge(admin_policy::routes())
         .merge(fleet::routes())
+}
+
+pub(crate) fn node_routes() -> Router<AppState> {
+    node::routes()
 }

@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use blindpass_controller::{app::build_app, config::Config, store::Store};
+use blindpass_core::canon::parse_json;
 use blindpass_core::custody::{RecipientKeyPair, sha256};
-use blindpass_core::fleet::{enrollment_proof_message, node_key_fingerprint};
+use blindpass_core::fleet::{
+    DocumentKind, SignedEnvelope, TimeReply, enrollment_proof_message, node_event_message,
+    node_key_fingerprint, node_session_challenge_message,
+};
 use blindpass_core::signing::{base64_url_encode, ed25519::Ed25519KeyPair};
 use serde_json::{Value, json};
 use sqlx::{PgPool, SqlitePool, postgres::PgPoolOptions, sqlite::SqlitePoolOptions};
@@ -252,6 +256,17 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     let store = Store::connect(&database_url)
         .await
         .expect("connect enrollment controller database");
+    let pg_test_pool = if pg_schema.is_some() {
+        Some(
+            PgPoolOptions::new()
+                .max_connections(2)
+                .connect(&database_url)
+                .await
+                .expect("connect PostgreSQL enrollment test schema"),
+        )
+    } else {
+        None
+    };
     let bootstrap_token = "fleet-enrollment-bootstrap-token-with-more-than-32-bytes";
     assert!(
         store
@@ -263,8 +278,9 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         .await
         .expect("bind local enrollment HTTP listener");
     let address = listener.local_addr().expect("resolve HTTP listener");
+    let app_store = store.clone();
     let server = tokio::spawn(async move {
-        axum::serve(listener, build_app(config, Some(store.clone())))
+        axum::serve(listener, build_app(config, Some(app_store)))
             .await
             .unwrap();
     });
@@ -420,6 +436,276 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>()
     );
+
+    let unsupported = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id": first_node_id.clone(),
+            "protocol_version": "blindpass-node/2",
+            "capabilities": {"protocol_version": "blindpass-node/2"}
+        })),
+    )
+    .await;
+    assert_eq!(unsupported.status, 426);
+
+    let issuer = Ed25519KeyPair::from_seed(&[b'I'; 32]).unwrap();
+    let issuer_key_id = format!("ed25519-{}", base64_url_encode(issuer.public_key()));
+    let now_ms = store.database_now_ms().await.unwrap();
+    let inbox_envelopes = (1..=2_u64)
+        .map(|seq| {
+            let body = TimeReply {
+                node_id: first_node_id.clone(),
+                challenge: format!("poll-sequence-{seq}"),
+                controller_time_ms: u64::try_from(now_ms).unwrap(),
+                issuer_epoch: 1,
+            }
+            .to_value()
+            .unwrap();
+            SignedEnvelope::sign(DocumentKind::TimeReply, body, &issuer_key_id, 1, &issuer)
+                .unwrap()
+                .to_json()
+                .unwrap()
+        })
+        .collect::<Vec<_>>();
+    match (&backend_pool, &pg_test_pool) {
+        (Some(pool), _) => {
+            for (index, envelope) in inbox_envelopes.iter().enumerate() {
+                sqlx::query(
+                    "INSERT INTO node_inbox (node_id, seq, envelope_json, created_at) VALUES (?, ?, ?, ?)",
+                )
+                .bind(&first_node_id)
+                .bind(i64::try_from(index + 1).unwrap())
+                .bind(std::str::from_utf8(envelope).unwrap())
+                .bind(now_ms)
+                .execute(pool)
+                .await
+                .unwrap();
+            }
+        }
+        (_, Some(pool)) => {
+            for (index, envelope) in inbox_envelopes.iter().enumerate() {
+                sqlx::query(
+                    "INSERT INTO node_inbox (node_id, seq, envelope_json, created_at) VALUES ($1, $2, $3, $4)",
+                )
+                .bind(&first_node_id)
+                .bind(i64::try_from(index + 1).unwrap())
+                .bind(std::str::from_utf8(envelope).unwrap())
+                .bind(now_ms)
+                .execute(pool)
+                .await
+                .unwrap();
+            }
+        }
+        _ => unreachable!(),
+    }
+
+    let channel_capabilities = json!({"protocol_version":"blindpass-node/1"});
+    let challenge_response = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id": first_node_id.clone(),
+            "protocol_version": "blindpass-node/1",
+            "capabilities": channel_capabilities.clone()
+        })),
+    )
+    .await;
+    assert_eq!(
+        challenge_response.status, 200,
+        "{}",
+        challenge_response.body
+    );
+    let nonce = challenge_response.body["nonce"].as_str().unwrap();
+    let tenant_id = challenge_response.body["tenant_id"].as_str().unwrap();
+    let capabilities_hash = challenge_response.body["capabilities_hash"]
+        .as_str()
+        .unwrap();
+    let controller_time_ms = challenge_response.body["controller_time_ms"]
+        .as_i64()
+        .unwrap();
+    let expires_at_ms = challenge_response.body["expires_at_ms"].as_i64().unwrap();
+    let message = node_session_challenge_message(
+        tenant_id,
+        &first_node_id,
+        "blindpass-node/1",
+        nonce,
+        capabilities_hash,
+        1,
+        1,
+        controller_time_ms,
+        expires_at_ms,
+    )
+    .unwrap();
+    let signature = base64_url_encode(&first_keys.signing.sign(&message).unwrap());
+    let authenticate_body = json!({
+        "node_id": first_node_id.clone(),
+        "protocol_version": "blindpass-node/1",
+        "capabilities": channel_capabilities.clone(),
+        "nonce": nonce,
+        "signature": signature
+    });
+    let authenticated = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&authenticate_body),
+    )
+    .await;
+    assert_eq!(authenticated.status, 200, "{}", authenticated.body);
+    let node_token = authenticated.body["token"].as_str().unwrap().to_owned();
+    let replay_challenge = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&authenticate_body),
+    )
+    .await;
+    assert_eq!(replay_challenge.status, 401);
+
+    let node_bearer = format!("Bearer {node_token}");
+    let first_poll = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":1,"health":{}})),
+    )
+    .await;
+    assert_eq!(first_poll.status, 200, "{}", first_poll.body);
+    assert_eq!(first_poll.body["documents"][0]["seq"], 1);
+    assert_eq!(first_poll.body["documents"][1]["seq"], 2);
+    let acknowledged_poll = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":1,"health":{}})),
+    )
+    .await;
+    assert_eq!(acknowledged_poll.status, 200, "{}", acknowledged_poll.body);
+    assert_eq!(
+        acknowledged_poll.body["documents"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(acknowledged_poll.body["documents"][0]["seq"], 2);
+
+    let event_body = json!({"operation_id":"op_dummy","status":"completed"});
+    let event_value = parse_json(&event_body.to_string()).unwrap();
+    let event_message = node_event_message(
+        &first_node_id,
+        "event-channel-idempotency-01",
+        "operation_result",
+        &event_value,
+    )
+    .unwrap();
+    let event_signature = base64_url_encode(&first_keys.signing.sign(&event_message).unwrap());
+    let event_input = json!({"events":[{
+        "idempotency_key":"event-channel-idempotency-01",
+        "kind":"operation_result",
+        "body":event_body,
+        "broker_signature":event_signature
+    }]});
+    let accepted_event = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&event_input),
+    )
+    .await;
+    assert_eq!(accepted_event.status, 200, "{}", accepted_event.body);
+    assert_eq!(accepted_event.body["accepted"], 1);
+    let duplicate_event = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&event_input),
+    )
+    .await;
+    assert_eq!(duplicate_event.status, 200);
+    assert_eq!(duplicate_event.body["duplicates"], 1);
+
+    let changed_event_body = json!({"operation_id":"op_dummy","status":"failed"});
+    let changed_event_value = parse_json(&changed_event_body.to_string()).unwrap();
+    let changed_event_message = node_event_message(
+        &first_node_id,
+        "event-channel-idempotency-01",
+        "operation_result",
+        &changed_event_value,
+    )
+    .unwrap();
+    let changed_event = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"events":[{
+            "idempotency_key":"event-channel-idempotency-01",
+            "kind":"operation_result",
+            "body":changed_event_body,
+            "broker_signature":base64_url_encode(&first_keys.signing.sign(&changed_event_message).unwrap())
+        }]})),
+    )
+    .await;
+    assert_eq!(changed_event.status, 409);
+
+    match (&backend_pool, &pg_test_pool) {
+        (Some(pool), _) => {
+            sqlx::query("UPDATE node_sessions SET revoked_at = ? WHERE node_id = ?")
+                .bind(now_ms)
+                .bind(&first_node_id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        (_, Some(pool)) => {
+            sqlx::query("UPDATE node_sessions SET revoked_at = $1 WHERE node_id = $2")
+                .bind(now_ms)
+                .bind(&first_node_id)
+                .execute(pool)
+                .await
+                .unwrap();
+        }
+        _ => unreachable!(),
+    }
+    let revoked_session = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":null,"health":{}})),
+    )
+    .await;
+    assert_eq!(revoked_session.status, 401);
 
     let second = request(
         address,
