@@ -348,6 +348,25 @@ impl Store {
         &self.tenant_id
     }
 
+    /// Current signing recovery epoch published to enrolled nodes.
+    pub async fn issuer_epoch(&self) -> Result<u64, StoreError> {
+        let epoch = match &self.database {
+            Database::Sqlite(pool) => sqlx::query_scalar::<_, i64>(
+                "SELECT issuer_epoch FROM controller_meta WHERE id = 1",
+            )
+            .fetch_one(pool)
+            .await
+            .map_err(StoreError::Database)?,
+            Database::Postgres(pool) => sqlx::query_scalar::<_, i64>(
+                "SELECT issuer_epoch FROM controller_meta WHERE id = 1",
+            )
+            .fetch_one(pool)
+            .await
+            .map_err(StoreError::Database)?,
+        };
+        u64::try_from(epoch).map_err(|_| StoreError::MissingState("issuer epoch"))
+    }
+
     /// Close the shared connection pool during shutdown. Existing `Store`
     /// clones observe the closure, so readiness fails immediately afterward.
     pub async fn close(&self) {

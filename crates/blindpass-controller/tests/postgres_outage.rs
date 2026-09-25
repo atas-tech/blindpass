@@ -121,6 +121,7 @@ async fn readiness_fails_during_postgres_outage_and_recovers_with_state_intact()
         ("database.url", database_url.clone()),
         ("root.secret", "R".repeat(32)),
         ("agent.secret", "A".repeat(32)),
+        ("issuer.seed", "I".repeat(32)),
     ] {
         let path = directory.0.join(name);
         std::fs::write(&path, value).expect("write test credential");
@@ -138,6 +139,7 @@ async fn readiness_fails_during_postgres_outage_and_recovers_with_state_intact()
             "BLINDPASS_AGENT_JWT_SECRET_FILE",
             file("agent.secret").as_str(),
         ),
+        ("BLINDPASS_ISSUER_KEY_FILE", file("issuer.seed").as_str()),
     ])
     .expect("valid local test config");
     let store = Store::connect(&database_url)

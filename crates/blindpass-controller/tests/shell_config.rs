@@ -70,6 +70,7 @@ impl ClockSource for ManualClock {
 fn valid_test_config(files: &TestFiles) -> Config {
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let values = BTreeMap::from([
         ("BLINDPASS_TEST_MODE".to_owned(), "1".to_owned()),
         ("BLINDPASS_LISTEN".to_owned(), "127.0.0.1:0".to_owned()),
@@ -92,6 +93,10 @@ fn valid_test_config(files: &TestFiles) -> Config {
         (
             "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
             agent_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+            issuer_seed.display().to_string(),
         ),
     ]);
     Config::from_variables(values).expect("valid test configuration")
@@ -159,6 +164,7 @@ fn production_configuration_requires_file_backed_database_and_key_material() {
     let database = files.credential("database.url", b"sqlite::memory:");
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let base = BTreeMap::from([
         (
             "BLINDPASS_DATABASE_URL_FILE".to_owned(),
@@ -171,6 +177,10 @@ fn production_configuration_requires_file_backed_database_and_key_material() {
         (
             "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
             agent_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+            issuer_seed.display().to_string(),
         ),
         (
             "BLINDPASS_PUBLIC_URL".to_owned(),
@@ -199,11 +209,74 @@ fn production_configuration_requires_file_backed_database_and_key_material() {
 }
 
 #[test]
+fn production_configuration_requires_a_private_issuer_seed() {
+    let files = TestFiles::new();
+    let database = files.credential("database.url", b"sqlite::memory:");
+    let root_secret = files.credential("root.secret", &[b'R'; 32]);
+    let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
+    let mut values = BTreeMap::from([
+        (
+            "BLINDPASS_DATABASE_URL_FILE".to_owned(),
+            database.display().to_string(),
+        ),
+        (
+            "BLINDPASS_ROOT_SECRET_FILE".to_owned(),
+            root_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
+            agent_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_PUBLIC_URL".to_owned(),
+            "https://blindpass.example".to_owned(),
+        ),
+        (
+            "BLINDPASS_UI_BASE_URL".to_owned(),
+            "https://input.blindpass.example".to_owned(),
+        ),
+    ]);
+    assert_eq!(
+        Config::from_variables(values.clone()).err(),
+        Some(ConfigError::Missing("BLINDPASS_ISSUER_KEY_FILE"))
+    );
+
+    values.insert(
+        "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+        issuer_seed.display().to_string(),
+    );
+    assert!(Config::from_variables(values.clone()).is_ok());
+
+    let short_seed = files.credential("short-issuer.seed", b"short");
+    values.insert(
+        "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+        short_seed.display().to_string(),
+    );
+    assert_eq!(
+        Config::from_variables(values.clone()).err(),
+        Some(ConfigError::CredentialFile("BLINDPASS_ISSUER_KEY_FILE"))
+    );
+
+    std::fs::set_permissions(&issuer_seed, std::fs::Permissions::from_mode(0o644))
+        .expect("make issuer seed unsafe");
+    values.insert(
+        "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+        issuer_seed.display().to_string(),
+    );
+    assert_eq!(
+        Config::from_variables(values).err(),
+        Some(ConfigError::CredentialFile("BLINDPASS_ISSUER_KEY_FILE"))
+    );
+}
+
+#[test]
 fn production_defaults_match_sps_and_test_overrides_are_bounded() {
     let files = TestFiles::new();
     let database = files.credential("database.url", b"sqlite::memory:");
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let base = BTreeMap::from([
         (
             "BLINDPASS_DATABASE_URL_FILE".to_owned(),
@@ -216,6 +289,10 @@ fn production_defaults_match_sps_and_test_overrides_are_bounded() {
         (
             "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
             agent_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+            issuer_seed.display().to_string(),
         ),
         (
             "BLINDPASS_PUBLIC_URL".to_owned(),
@@ -300,6 +377,7 @@ fn external_providers_must_name_a_jwks_file() {
     let database = files.credential("database.url", b"sqlite::memory:");
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let with_providers = |providers: &str| {
         Config::from_variables(BTreeMap::from([
             (
@@ -313,6 +391,10 @@ fn external_providers_must_name_a_jwks_file() {
             (
                 "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
                 agent_secret.display().to_string(),
+            ),
+            (
+                "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+                issuer_seed.display().to_string(),
             ),
             (
                 "BLINDPASS_PUBLIC_URL".to_owned(),
@@ -355,6 +437,7 @@ fn environment_policy_is_validated_like_an_administrator_write() {
     let database = files.credential("database.url", b"sqlite::memory:");
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let with_policy = |registry: &str, rules: &str| {
         Config::from_variables(BTreeMap::from([
             (
@@ -368,6 +451,10 @@ fn environment_policy_is_validated_like_an_administrator_write() {
             (
                 "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
                 agent_secret.display().to_string(),
+            ),
+            (
+                "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+                issuer_seed.display().to_string(),
             ),
             (
                 "BLINDPASS_PUBLIC_URL".to_owned(),
@@ -509,6 +596,7 @@ fn inaccessible_production_database_prevents_startup_with_sanitized_error() {
     let database = files.credential("database.url", database_url.as_bytes());
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let output = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
         .arg("serve")
         .env_clear()
@@ -516,6 +604,7 @@ fn inaccessible_production_database_prevents_startup_with_sanitized_error() {
         .env("BLINDPASS_DATABASE_URL_FILE", &database)
         .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
         .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+        .env("BLINDPASS_ISSUER_KEY_FILE", &issuer_seed)
         .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
         .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example")
         .output()
@@ -550,6 +639,7 @@ async fn damaged_existing_schema_prevents_startup_without_recreation() {
     let database = files.credential("database.url", database_url.as_bytes());
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let output = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
         .arg("serve")
         .env_clear()
@@ -557,6 +647,7 @@ async fn damaged_existing_schema_prevents_startup_without_recreation() {
         .env("BLINDPASS_DATABASE_URL_FILE", &database)
         .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
         .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+        .env("BLINDPASS_ISSUER_KEY_FILE", &issuer_seed)
         .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
         .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example")
         .output()
@@ -588,12 +679,14 @@ fn migrate_command_initializes_database_without_starting_listener() {
     let database = files.credential("database.url", database_url.as_bytes());
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let output = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
         .arg("migrate")
         .env_clear()
         .env("BLINDPASS_DATABASE_URL_FILE", &database)
         .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
         .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+        .env("BLINDPASS_ISSUER_KEY_FILE", &issuer_seed)
         .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
         .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example")
         .output()
@@ -806,6 +899,7 @@ async fn reconcile_clock_command_repairs_a_regressed_database_without_test_mode(
     let database = files.credential("database.url", database_url.as_bytes());
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let run = || {
         Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
             .arg("reconcile-clock")
@@ -813,6 +907,7 @@ async fn reconcile_clock_command_repairs_a_regressed_database_without_test_mode(
             .env("BLINDPASS_DATABASE_URL_FILE", &database)
             .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
             .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
+            .env("BLINDPASS_ISSUER_KEY_FILE", &issuer_seed)
             .env("BLINDPASS_PUBLIC_URL", "https://blindpass.example")
             .env("BLINDPASS_UI_BASE_URL", "https://input.blindpass.example")
             .output()
@@ -863,6 +958,7 @@ async fn production_shell_has_no_seed_route_or_test_override() {
     let database = files.credential("database.url", b"sqlite::memory:");
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
     let agent_secret = files.credential("agent.secret", &[b'A'; 32]);
+    let issuer_seed = files.credential("issuer.seed", &[b'I'; 32]);
     let values = BTreeMap::from([
         (
             "BLINDPASS_DATABASE_URL_FILE".to_owned(),
@@ -875,6 +971,10 @@ async fn production_shell_has_no_seed_route_or_test_override() {
         (
             "BLINDPASS_AGENT_JWT_SECRET_FILE".to_owned(),
             agent_secret.display().to_string(),
+        ),
+        (
+            "BLINDPASS_ISSUER_KEY_FILE".to_owned(),
+            issuer_seed.display().to_string(),
         ),
         (
             "BLINDPASS_PUBLIC_URL".to_owned(),
@@ -978,6 +1078,15 @@ async fn shell_exposes_liveness_readiness_and_ct19_capability_without_sensitive_
     let capabilities = request(&address, "GET", "/api/v3/capabilities").await;
     assert_eq!(capabilities.0, 200);
     assert_eq!(capabilities.1["features"]["browser_status"], true);
+    assert_eq!(capabilities.1["features"]["fleet_authorization"], true);
+    assert_eq!(capabilities.1["issuer_epoch"], 1);
+    assert_eq!(capabilities.1["issuer_pub"].as_str().unwrap().len(), 43);
+    assert!(
+        capabilities.1["issuer_kid"]
+            .as_str()
+            .unwrap()
+            .starts_with("ed25519-")
+    );
     assert_eq!(
         capabilities.1["api"],
         serde_json::json!(["compat.v2", "admin.v3"])

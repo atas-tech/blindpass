@@ -6,6 +6,8 @@ use crate::custody::{CryptoError, hmac_sha256};
 use crate::secret::wipe;
 use std::fmt;
 
+pub mod ed25519;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserScope {
     Metadata,

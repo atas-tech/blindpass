@@ -9,9 +9,11 @@
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
+pub mod canon;
 pub mod clock;
 pub mod custody;
 pub mod delivery;
+pub mod fleet;
 pub mod identity;
 pub mod policy;
 pub mod protocol;

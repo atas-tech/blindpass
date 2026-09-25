@@ -224,6 +224,7 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
         ("database.url", database_url.clone()),
         ("root.secret", "R".repeat(32)),
         ("agent.secret", "A".repeat(32)),
+        ("issuer.seed", "I".repeat(32)),
     ];
     for (name, value) in credentials {
         let path = directory.file(name);
@@ -246,6 +247,10 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
         (
             "BLINDPASS_AGENT_JWT_SECRET_FILE",
             directory.file("agent.secret").to_str().unwrap(),
+        ),
+        (
+            "BLINDPASS_ISSUER_KEY_FILE",
+            directory.file("issuer.seed").to_str().unwrap(),
         ),
     ])
     .expect("valid local test config");
@@ -1221,6 +1226,7 @@ async fn forced_password_change_blocks_administration_until_completed() {
         ("database.url", database_url.clone()),
         ("root.secret", "R".repeat(32)),
         ("agent.secret", "A".repeat(32)),
+        ("issuer.seed", "I".repeat(32)),
     ] {
         let path = directory.file(name);
         std::fs::write(&path, value).expect("write test credential");
@@ -1242,6 +1248,10 @@ async fn forced_password_change_blocks_administration_until_completed() {
         (
             "BLINDPASS_AGENT_JWT_SECRET_FILE",
             directory.file("agent.secret").to_str().unwrap(),
+        ),
+        (
+            "BLINDPASS_ISSUER_KEY_FILE",
+            directory.file("issuer.seed").to_str().unwrap(),
         ),
     ])
     .expect("valid local test config");
@@ -1452,6 +1462,7 @@ impl AdminServer {
             ("database.url", database_url.clone()),
             ("root.secret", "R".repeat(32)),
             ("agent.secret", "A".repeat(32)),
+            ("issuer.seed", "I".repeat(32)),
         ] {
             let path = directory.file(name);
             std::fs::write(&path, value).expect("write test credential");
@@ -1473,6 +1484,10 @@ impl AdminServer {
             (
                 "BLINDPASS_AGENT_JWT_SECRET_FILE",
                 directory.file("agent.secret").to_str().unwrap(),
+            ),
+            (
+                "BLINDPASS_ISSUER_KEY_FILE",
+                directory.file("issuer.seed").to_str().unwrap(),
             ),
         ])
         .expect("valid local test config");

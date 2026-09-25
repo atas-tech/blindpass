@@ -20,9 +20,10 @@ The Cargo workspace in [crates](../../crates) holds the P01 host broker and the 
 
 | Crate | Implementation |
 |---|---|
-| `blindpass-core` | Shared primitives with no crate dependencies: signed browser links and derived secrets, policy evaluation and decision hashes, HPKE through OpenSSL `libcrypto`, the broker protocol, workload identity and credential custody |
-| `blindpass-broker` | P01 host broker and its test binaries |
-| `blindpass-controller` | axum HTTP API, sqlx store (SQLite WAL or PostgreSQL, schema version 4) and a local administration Unix socket. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
+| `blindpass-core` | Shared primitives with no crate dependencies: signed browser links and derived secrets, Ed25519 fleet documents with canonical JSON, policy evaluation and decision hashes, HPKE through OpenSSL `libcrypto`, the broker protocol, workload identity and credential custody |
+| `blindpass-broker` | P01 host broker, peer-credential-checked fleet control socket and test binaries |
+| `blindpass-node` | Unprivileged controller relay using HTTPS through `/usr/bin/curl`; it has no access to broker key storage |
+| `blindpass-controller` | axum HTTP API, sqlx store (SQLite WAL or PostgreSQL, schema version 4) and a local administration Unix socket. Production startup requires the 32-byte issuer seed in `BLINDPASS_ISSUER_KEY_FILE`. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
 | `blindpass-cli` | `blindpass` administration CLI: `migrate`, `admin bootstrap`, `admin bootstrap-token`, `admin reset-password`, `admin reconcile-clock` and test-mode `admin seed --fixture`. It runs the controller executable installed beside it or calls its admin socket |
 
 ### Controller configuration
@@ -35,6 +36,7 @@ The controller validates its environment at startup and refuses to start on any 
 | `BLINDPASS_PUBLIC_URL`, `BLINDPASS_UI_BASE_URL` | Required origins for signed links and the input page |
 | `BLINDPASS_DATABASE_URL_FILE` | Required file holding a `sqlite:` or `postgres://` URL; inline `BLINDPASS_DATABASE_URL` is accepted only in test mode |
 | `BLINDPASS_ROOT_SECRET_FILE`, `BLINDPASS_AGENT_JWT_SECRET_FILE` | Required key files of at least 32 bytes, unreadable by group and others |
+| `BLINDPASS_ISSUER_KEY_FILE` | Required in production; raw 32-byte Ed25519 seed, mode 0600. Its public key, key ID and persisted recovery epoch appear in `/api/v3/capabilities`. |
 | `BLINDPASS_AGENT_AUTH_PROVIDERS_JSON` | Optional external issuers. Each provider needs a `jwks_file`; `jwks_url` providers are refused. Issuers and audiences default to `gateway` and `sps`, tokens must carry `exp`, `iss` and `aud`, and expiry has no leeway |
 | `BLINDPASS_SECRET_REGISTRY_JSON`, `BLINDPASS_EXCHANGE_POLICY_JSON` | Optional startup policy, validated like an administrator policy write; an unrecognized rule mode denies |
 | `BLINDPASS_CORS_ALLOWED_ORIGINS` | Comma-separated exact origins |

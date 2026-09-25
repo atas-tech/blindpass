@@ -11,6 +11,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use blindpass_core::secret::SecretBytes;
+use blindpass_core::signing::base64_url_encode;
+use blindpass_core::signing::ed25519::Ed25519KeyPair;
 use serde::Serialize;
 use serde_json::json;
 use std::net::IpAddr;
@@ -29,6 +31,8 @@ pub(crate) struct AppState {
     pub(crate) store: Option<Store>,
     pub(crate) root_secret: Arc<SecretBytes>,
     pub(crate) agent_jwt_secret: Arc<SecretBytes>,
+    pub(crate) issuer_keypair: Option<Arc<Ed25519KeyPair>>,
+    pub(crate) issuer_key_id: Option<String>,
     pub(crate) agent_auth_providers_json: Option<String>,
     pub(crate) secret_registry_json: Option<String>,
     pub(crate) exchange_policy_json: Option<String>,
@@ -72,12 +76,19 @@ struct CapabilitiesResponse {
     version: &'static str,
     schema_version: u32,
     setup_required: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    issuer_pub: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    issuer_kid: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    issuer_epoch: Option<u64>,
     features: CapabilitiesFeatures,
 }
 
 #[derive(Serialize)]
 struct CapabilitiesFeatures {
     browser_status: bool,
+    fleet_authorization: bool,
 }
 
 pub fn build_app(config: Config, store: Option<Store>) -> Router {
@@ -88,10 +99,16 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .filter_map(|origin| HeaderValue::from_str(origin).ok())
         .collect::<Vec<_>>();
     let request_id = HeaderName::from_static("x-request-id");
+    let issuer_keypair = config.issuer_keypair().cloned();
+    let issuer_key_id = issuer_keypair
+        .as_ref()
+        .map(|keypair| format!("ed25519-{}", base64_url_encode(keypair.public_key())));
     let state = AppState {
         store,
         root_secret: Arc::new(SecretBytes::from_slice(config.root_secret())),
         agent_jwt_secret: Arc::new(SecretBytes::from_slice(config.agent_jwt_secret())),
+        issuer_keypair,
+        issuer_key_id,
         agent_auth_providers_json: config.agent_auth_providers_json().map(str::to_owned),
         secret_registry_json: config.secret_registry_json().map(str::to_owned),
         exchange_policy_json: config.exchange_policy_json().map(str::to_owned),
@@ -285,13 +302,34 @@ async fn capabilities(State(state): State<AppState>) -> Response {
         },
         None => true,
     };
+    let issuer_epoch = match (state.issuer_keypair.as_ref(), state.store.as_ref()) {
+        (Some(_), Some(store)) => match store.issuer_epoch().await {
+            Ok(epoch) => Some(epoch),
+            Err(_) => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(serde_json::json!({"error":"not_ready"})),
+                )
+                    .into_response();
+            }
+        },
+        (Some(_), None) => Some(1),
+        (None, _) => None,
+    };
     Json(CapabilitiesResponse {
         api: ["compat.v2", "admin.v3"],
         version: env!("CARGO_PKG_VERSION"),
         schema_version: u32::try_from(SCHEMA_VERSION).expect("schema version fits u32"),
         setup_required,
+        issuer_pub: state
+            .issuer_keypair
+            .as_ref()
+            .map(|keypair| base64_url_encode(keypair.public_key())),
+        issuer_kid: state.issuer_key_id,
+        issuer_epoch,
         features: CapabilitiesFeatures {
             browser_status: BROWSER_STATUS_ADOPTED,
+            fleet_authorization: state.issuer_keypair.is_some(),
         },
     })
     .into_response()

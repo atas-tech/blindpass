@@ -676,6 +676,7 @@ class RustServerAdapter implements RustCrashTestAdapter {
     await writeFile(jwksPath, JSON.stringify({ keys: [this.externalIdentity.publicJwk] }), { mode: 0o600 });
     const rootSecretPath = path.join(this.tempDir, "root.secret");
     const agentSecretPath = path.join(this.tempDir, "agent-jwt.secret");
+    const issuerSeedPath = path.join(this.tempDir, "issuer.seed");
     const rootSecret = randomBytes(32).toString("base64url");
     const agentSecret = randomBytes(32).toString("base64url");
     const seedToken = `contract-rust-seed-${randomBytes(32).toString("hex")}`;
@@ -687,6 +688,7 @@ class RustServerAdapter implements RustCrashTestAdapter {
     };
     await writeFile(rootSecretPath, rootSecret, { mode: 0o600 });
     await writeFile(agentSecretPath, agentSecret, { mode: 0o600 });
+    await writeFile(issuerSeedPath, randomBytes(32), { mode: 0o600 });
 
     const configuredPort = process.env.CONTRACT_RUST_PORT?.trim();
     const port = configuredPort ? Number(configuredPort) : await freeTcpPort();
@@ -713,6 +715,7 @@ class RustServerAdapter implements RustCrashTestAdapter {
       BLINDPASS_DATABASE_URL: databaseUrl,
       BLINDPASS_ROOT_SECRET_FILE: rootSecretPath,
       BLINDPASS_AGENT_JWT_SECRET_FILE: agentSecretPath,
+      BLINDPASS_ISSUER_KEY_FILE: issuerSeedPath,
       BLINDPASS_AGENT_AUTH_PROVIDERS_JSON: JSON.stringify([{
         name: "contract-jwks",
         jwks_file: jwksPath,

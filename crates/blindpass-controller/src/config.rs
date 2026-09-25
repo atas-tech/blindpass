@@ -5,10 +5,12 @@
 
 use axum::http::Uri;
 use blindpass_core::secret::SecretBytes;
+use blindpass_core::signing::ed25519::Ed25519KeyPair;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const DEFAULT_BODY_LIMIT_BYTES: usize = 1024 * 1024;
 const MIN_KEY_BYTES: usize = 32;
@@ -41,6 +43,7 @@ pub struct Config {
     database_url: String,
     root_secret: SecretBytes,
     agent_jwt_secret: SecretBytes,
+    issuer_keypair: Option<Arc<Ed25519KeyPair>>,
     agent_auth_providers_json: Option<String>,
     secret_registry_json: Option<String>,
     exchange_policy_json: Option<String>,
@@ -164,6 +167,20 @@ impl Config {
             "BLINDPASS_AGENT_JWT_SECRET_FILE",
             MIN_KEY_BYTES,
         )?;
+        let issuer_keypair = match value(values, "BLINDPASS_ISSUER_KEY_FILE") {
+            Some(path) => {
+                let seed = read_secret_file(path, "BLINDPASS_ISSUER_KEY_FILE", 32)?;
+                if seed.as_bytes().len() != 32 {
+                    return Err(ConfigError::CredentialFile("BLINDPASS_ISSUER_KEY_FILE"));
+                }
+                Some(Arc::new(
+                    Ed25519KeyPair::from_seed(seed.as_bytes())
+                        .map_err(|_| ConfigError::CredentialFile("BLINDPASS_ISSUER_KEY_FILE"))?,
+                ))
+            }
+            None if test_mode => None,
+            None => return Err(ConfigError::Missing("BLINDPASS_ISSUER_KEY_FILE")),
+        };
 
         let agent_auth_providers_json = value(values, "BLINDPASS_AGENT_AUTH_PROVIDERS_JSON")
             .map(validate_auth_providers)
@@ -320,6 +337,7 @@ impl Config {
             database_url,
             root_secret,
             agent_jwt_secret,
+            issuer_keypair,
             agent_auth_providers_json,
             secret_registry_json,
             exchange_policy_json,
@@ -393,6 +411,11 @@ impl Config {
     #[must_use]
     pub fn agent_jwt_secret(&self) -> &[u8] {
         self.agent_jwt_secret.as_bytes()
+    }
+
+    #[must_use]
+    pub fn issuer_keypair(&self) -> Option<&Arc<Ed25519KeyPair>> {
+        self.issuer_keypair.as_ref()
     }
 
     #[must_use]
