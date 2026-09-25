@@ -17,7 +17,7 @@
 
 The table below records the preceding P02 review tree before the accepted 2026-09-25 follow-up. The follow-up verification is recorded immediately after it.
 
-The gates ran sequentially from the repository root, mirroring `.github/workflows/ci.yml`.
+The gates ran sequentially from the repository root, mirroring the full suite in `.github/workflows/ci-full.yml`.
 
 | Gate | Result |
 |---|---|
