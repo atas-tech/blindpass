@@ -59,12 +59,18 @@ formatting, and `git diff --check` passed. The initial sandboxed workspace run
 was interrupted after socket-dependent tests failed and stalled; the successful
 workspace run used host socket permissions.
 
+Focused timing tests also passed. A grant received 20 seconds after the signed
+time sample gets only its remaining 40-second lifetime; advancing the supplied
+BOOTTIME value to its deadline denies use. Expired and over-age grants, plus a
+time reply beyond the 35-second challenge bound, are rejected. The BOOTTIME
+advance is deterministic simulation, not evidence from suspending a guest VM.
+
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves the
-remaining P03-I01 and broader P03-I05 cases open; clock rollback,
-suspend/resume, delayed-grant, version-mismatch and reconnect-storm cases in
-P03-I06; full P03-I07 coverage; and the broader pilot catalog, including
+remaining P03-I01 and broader P03-I05 cases open; real VM clock changes,
+suspend/resume, delayed-grant relay, version-mismatch and reconnect-storm cases
+in P03-I06; full P03-I07 coverage; and the broader pilot catalog, including
 E05–E07 and E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated
 controller API directly; it does not exercise the administrator CLI or an

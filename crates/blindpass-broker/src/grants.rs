@@ -1031,6 +1031,135 @@ mod tests {
     }
 
     #[test]
+    fn delayed_grant_receipt_uses_remaining_lifetime_and_boottime_deadline() {
+        let path = temporary_path();
+        let mut verifier = verifier(&path, 1_000);
+        let base_controller_time = 1_800_000_000_000;
+        let time_reply = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-a".to_owned(),
+            controller_time_ms: base_controller_time,
+            issuer_epoch: 1,
+        };
+        verifier
+            .accept_time_reply(&time_reply, "nd_node-a", 1, 2_000)
+            .unwrap();
+        let policy = PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        let grant = grant();
+
+        // Receive the signed grant 20 seconds after the time sample. The
+        // broker must retain only the remaining 40 seconds. Advancing the
+        // supplied BOOTTIME value below also models time spent suspended.
+        assert!(
+            verifier
+                .accept_grant(
+                    grant.clone(),
+                    b"signed-delayed-grant",
+                    "nd_node-a",
+                    "nd_node-a-1",
+                    &policy,
+                    &registration(),
+                    22_000,
+                )
+                .unwrap()
+        );
+        assert_eq!(verifier.accepted[&grant.id].deadline_boottime_ms, 62_000);
+        let authorization = WorkloadAuthorization {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            unit: "worker.service".to_owned(),
+            invocation_id: "invocation-a".to_owned(),
+            operation: format!("consume:{}", grant.id),
+        };
+        assert!(
+            verifier
+                .preview_consumption(&grant.id, &authorization, 4, 61_999)
+                .is_ok()
+        );
+        assert!(
+            verifier
+                .preview_consumption(&grant.id, &authorization, 4, 62_000)
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn receipt_rejects_grants_delayed_past_expiry_or_document_age() {
+        let path = temporary_path();
+        let mut verifier = verifier(&path, 1_000);
+        let issued_at_ms = 1_800_000_000_000;
+        let time_reply = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-a".to_owned(),
+            controller_time_ms: issued_at_ms + 60_001,
+            issuer_epoch: 1,
+        };
+        verifier
+            .accept_time_reply(&time_reply, "nd_node-a", 1, 2_000)
+            .unwrap();
+        let policy = PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        let mut expired = grant();
+        expired.expires_at_ms = issued_at_ms + 60_000;
+        assert_eq!(
+            verifier.accept_grant(
+                expired,
+                b"signed-expired-grant",
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy,
+                &registration(),
+                2_100,
+            ),
+            Err("grant expired before broker receipt")
+        );
+
+        let mut stale = grant();
+        stale.expires_at_ms = issued_at_ms + 600_000;
+        assert_eq!(
+            verifier.accept_grant(
+                stale,
+                b"signed-stale-grant",
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy,
+                &registration(),
+                2_100,
+            ),
+            Err("grant is stale or exceeds the broker lifetime maximum")
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn time_reply_after_the_challenge_delay_bound_is_rejected() {
+        let path = temporary_path();
+        let mut verifier = verifier(&path, 1_000);
+        let delayed = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-a".to_owned(),
+            controller_time_ms: 1_800_000_000_000,
+            issuer_epoch: 1,
+        };
+        assert_eq!(
+            verifier.accept_time_reply(&delayed, "nd_node-a", 1, 36_001),
+            Err("time reply delay is outside the supported bound")
+        );
+        assert!(verifier.trusted_time.is_none());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
     fn grant_acceptance_rejects_registration_and_audience_binding_changes() {
         let path = temporary_path();
         let mut verifier = verifier(&path, 1_000);
