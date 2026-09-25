@@ -239,6 +239,13 @@ start_delayed_grant_proxy() {
         --grant-delay-seconds "$delay_seconds"
 }
 
+start_reconnect_storm_proxy() {
+    local marker=$1
+    local failures=${2:-3}
+    start_proxy_process "$(dirname "$marker")/tls-proxy-reconnect-storm.log" \
+        --fail-first-node-polls "$failures" --poll-failure-marker "$marker"
+}
+
 start_clear_proxy() {
     local log_file=$1
     start_proxy_process "$log_file"
@@ -493,6 +500,64 @@ run_backend() {
     guest_call a assert-node-channel-active
     printf 'P03-SCENARIO backend=%s scenario=P03-I06-protocol-mismatch incompatible_exit=78 restart_loop=false recovery=passed status=passed\n' \
         "$current_backend"
+
+    local reconnect_failure_marker=$backend_dir/transient-poll-failures
+    guest_call a stop-node
+    start_reconnect_storm_proxy "$reconnect_failure_marker" 3
+    guest_call a start-node
+    local reconnect_failure_count=0
+    for _attempt in {1..300}; do
+        if [[ -f "$reconnect_failure_marker" ]]; then
+            reconnect_failure_count=$(wc -l <"$reconnect_failure_marker")
+            ((reconnect_failure_count >= 3)) && break
+        fi
+        kill -0 "$proxy_pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    [[ "$reconnect_failure_count" == 3 ]] || {
+        printf 'P03-FAIL TLS proxy did not inject three transient node-poll failures\n' >&2
+        return 1
+    }
+    local reconnect_backoff_ms
+    reconnect_backoff_ms=$(python3 - "$reconnect_failure_marker" <<'PY'
+import sys
+from pathlib import Path
+
+rows = [line.split() for line in Path(sys.argv[1]).read_text().splitlines()]
+if [row[0] for row in rows] != ["1", "2", "3"]:
+    raise SystemExit("transient poll failure sequence is malformed")
+times = [int(row[1]) for row in rows]
+delays = [right - left for left, right in zip(times, times[1:])]
+if not (700 <= delays[0] <= 2_000 and 1_400 <= delays[1] <= 3_500):
+    raise SystemExit(f"node retry backoff fell outside bounded windows: {delays}")
+print(f"{delays[0]},{delays[1]}")
+PY
+    ) || {
+        printf 'P03-FAIL transient node retry intervals were not exponential and bounded\n' >&2
+        return 1
+    }
+    local channel_recovered=false reconnect_node_status reconnect_last_poll
+    for _attempt in {1..100}; do
+        reconnect_node_status=$(admin node-status "$node_a")
+        reconnect_last_poll=$(json_field "$reconnect_node_status" last_poll_at)
+        if [[ "$reconnect_last_poll" =~ ^[0-9]+$ ]] \
+            && (( $(node -e 'process.stdout.write(String(Date.now()))') - reconnect_last_poll < 5000 )); then
+            channel_recovered=true
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$channel_recovered" == true ]] || {
+        printf 'P03-FAIL node did not poll successfully after transient reconnect failures\n' >&2
+        return 1
+    }
+    guest_call a assert-node-channel-stable
+    [[ $(wc -l <"$reconnect_failure_marker") == 3 ]] || {
+        printf 'P03-FAIL transient poll fault count changed after recovery\n' >&2
+        return 1
+    }
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-reconnect-storm failures=3 backoff_ms=%s service_restarts=0 recovery=passed status=passed\n' \
+        "$current_backend" "$reconnect_backoff_ms"
 
     local rotation_metadata rotation_result rotation_pending rotation_version
     rotation_metadata=$(guest_call a rotate-prepare)

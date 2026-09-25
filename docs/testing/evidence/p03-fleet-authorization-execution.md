@@ -2,7 +2,7 @@
 
 **Run date:** 2026-09-26
 **Status:** Partial runtime evidence; P03 acceptance remains open.
-**Runner owner:** `local-kvm-p03-i06-final-20260926`
+**Runner owner:** `local-kvm-p03-i06-reconnect-clean-20260926`
 
 ## Environment
 
@@ -17,7 +17,7 @@ Command:
 
 ```bash
 BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
-BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-i06-final-20260926 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-i06-reconnect-clean-20260926 \
   ./tests/fleet/p03-vm.sh --backend both
 ```
 
@@ -37,8 +37,9 @@ keys were retained in the repository.
 | P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
 | P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration node/workload/unit/account/mode/invocation, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected; the controller rejects a forged broker-event signature. Two concurrent consumers produce exactly one successful consume and marker. |
 | P03-I06 partition/restart/replay and protocol-mismatch subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. A two-guest VM run injects HTTP 426 into the relay, confirms systemd records exit 78 with zero restarts, then restores the proxy and verifies node reconnection. |
+| P03-I06 reconnect storm | Pass | Pass | The proxy returned 503 for three consecutive node polls. The relay recovered using bounded exponential backoff; measured intervals were 1,186/2,026 ms on SQLite and 1,209/2,493 ms on PostgreSQL. The node service remained active with zero systemd restarts on both backends. |
 | P03-I06 delayed expired grant | Pass | Pass | The node's signed grant poll response was held for 10 seconds against an 8-second grant TTL. The broker discarded the expired grant, the controller stored exactly one typed `expired_before_receipt` audit event, and the durable event queues drained. The same grant was then denied by the revoked broker. |
-| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 11,828 ms | Pass; revocation applied in 12,370 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
+| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 12,041 ms | Pass; revocation applied in 11,707 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
 Portable Rust boundary tests cover the broker's 10,000-event audit buffer and
@@ -132,6 +133,21 @@ completed a fresh approved operation on both backends. The run ended with
 `P03-VM-COMPLETE ... backends=both guests=2 revocation=reconciled
 recovery=passed` and exit status 0; disposable artifacts were removed.
 
+## Supplemental P03-I06 reconnect-storm VM verification — 2026-09-26
+
+The clean two-backend QEMU/KVM run used a controlled proxy that returned HTTP
+503 to three consecutive `POST /api/v3/node/poll` requests. The node was stopped
+before proxy replacement so the measured intervals exclude proxy teardown. The
+relay recovered on both backends using its bounded exponential retry schedule:
+1,186 ms and 2,026 ms between failures on SQLite, and 1,209 ms and 2,493 ms on
+PostgreSQL. In each guest, the node channel became active, `last_poll_at`
+advanced, and systemd reported zero service restarts. The same run passed
+partition/restart/replay, protocol-mismatch fail-stop/recovery, key rotation,
+delayed expired-grant audit, E01 connected revocation and E02 identity recovery.
+It ended with `P03-VM-COMPLETE ... backends=both guests=2
+revocation=reconciled recovery=passed` and exit status 0; disposable artifacts
+were removed.
+
 ## Final verification for the delayed-grant slice — 2026-09-26
 
 `cargo test --workspace --locked -- --test-threads=1`, workspace Clippy with
@@ -153,8 +169,8 @@ Cargo manifest or lockfile changed.
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves broader
-P03-I05 cases open; real VM clock changes, suspend/resume, reconnect-storm,
-delayed/replayed policy and revocation cases in P03-I06; full P03-I07 coverage;
+P03-I05 cases open; real VM clock changes, suspend/resume, reboot/time-challenge
+replay, delayed/replayed policy and revocation cases in P03-I06; full P03-I07 coverage;
 and the broader pilot catalog, including E05–E07 and
 E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated

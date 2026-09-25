@@ -199,6 +199,7 @@ async function nodeStatus(id) {
     pending_key_version: node.pending_key_version,
     key_version: node.key_version,
     last_seen_at: node.last_seen_at,
+    last_poll_at: node.last_poll_at,
   });
 }
 

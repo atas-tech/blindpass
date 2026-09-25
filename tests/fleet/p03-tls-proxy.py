@@ -32,6 +32,38 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.send_error(413)
                 return
             body = self.rfile.read(length) if length else None
+            if self.command == "POST" and self.path == "/api/v3/node/poll":
+                with self.server.poll_failure_lock:
+                    if self.server.poll_failures_remaining > 0:
+                        self.server.poll_failures_remaining -= 1
+                        failure_number = (
+                            self.server.poll_failures_total
+                            - self.server.poll_failures_remaining
+                        )
+                    else:
+                        failure_number = 0
+                if failure_number > 0:
+                    if self.server.poll_failure_marker:
+                        marker_fd = os.open(
+                            self.server.poll_failure_marker,
+                            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+                            0o600,
+                        )
+                        with os.fdopen(marker_fd, "ab") as marker:
+                            marker.write(
+                                f"{failure_number} {int(time.time() * 1000)}\n".encode()
+                            )
+                            marker.flush()
+                            os.fsync(marker.fileno())
+                    payload = b'{"error":"temporary_unavailable"}'
+                    self.send_response(503)
+                    self.send_header("Content-Type", "application/json")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.send_header("Connection", "close")
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    self.close_connection = True
+                    return
             if self.command == "POST" and self.path == "/api/v3/node/session":
                 with self.server.mismatch_lock:
                     force_protocol_mismatch = self.server.force_protocol_mismatch
@@ -141,7 +173,13 @@ def main():
     parser.add_argument("--delay-first-grant-response", action="store_true")
     parser.add_argument("--grant-marker")
     parser.add_argument("--grant-delay-seconds", type=float, default=0.0)
+    parser.add_argument("--fail-first-node-polls", type=int, default=0)
+    parser.add_argument("--poll-failure-marker")
     args = parser.parse_args()
+    if args.fail_first_node_polls < 0 or args.fail_first_node_polls > 10:
+        parser.error("--fail-first-node-polls must be between 0 and 10")
+    if args.fail_first_node_polls and not args.poll_failure_marker:
+        parser.error("--poll-failure-marker is required with --fail-first-node-polls")
     server = ThreadingHTTPServer(("0.0.0.0", 8443), ProxyHandler)
     server.daemon_threads = True
     server.drop_first_events_response = args.drop_first_events_response
@@ -157,6 +195,10 @@ def main():
     server.grant_delay_lock = threading.Lock()
     server.grant_marker = args.grant_marker
     server.grant_delay_seconds = max(0.0, min(args.grant_delay_seconds, 10.0))
+    server.poll_failures_remaining = args.fail_first_node_polls
+    server.poll_failures_total = args.fail_first_node_polls
+    server.poll_failure_lock = threading.Lock()
+    server.poll_failure_marker = args.poll_failure_marker
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(args.certificate, args.private_key)

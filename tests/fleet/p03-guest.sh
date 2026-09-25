@@ -99,6 +99,12 @@ case "$command" in
         systemctl is-active --quiet blindpass-node.service || fail 'node channel service is not active'
         printf 'P03-GUEST-NODE-CHANNEL-ACTIVE\n'
         ;;
+    assert-node-channel-stable)
+        systemctl is-active --quiet blindpass-node.service || fail 'node channel service is not active'
+        restarts=$(systemctl show --property=NRestarts --value blindpass-node.service 2>/dev/null || true)
+        [[ "$restarts" == 0 ]] || fail 'transient channel failures restarted the node service'
+        printf 'P03-GUEST-NODE-CHANNEL-STABLE restarts=%s\n' "$restarts"
+        ;;
     rotate-prepare)
         /usr/libexec/blindpass-node rotate-prepare
         ;;
