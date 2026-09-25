@@ -75,8 +75,9 @@ The root build invokes the plugin bundler as well as TypeScript/Vite. Its [build
 | `cargo test -p blindpass-controller --test shell_config --locked` | Production config, migration, clock reconciliation and test fixture shell checks | Some cases bind localhost and require socket permission; set `P02_TEST_BACKEND=postgres` and `P02_TEST_POSTGRES_URL` for the PostgreSQL variants of the seed, clock-reconciliation and pool-loss cases; the other cases always use SQLite or no database |
 | `P02_TEST_BACKEND=<sqlite\|postgres> cargo test -p blindpass-controller --test admin_session --locked` | P02-I04–I06 HTTP bootstrap race, sessions, CSRF, forced password change and the admin/operator/viewer role matrix | Binds localhost; set `P02_TEST_POSTGRES_URL` for PostgreSQL |
 | `P02_TEST_POSTGRES_URL=... cargo test -p blindpass-controller --test postgres_outage --locked -- --ignored` | P02-I07 PostgreSQL outage and reconnection without a controller restart | Ignored by default; the database role must be able to create roles, as the CI and local Compose superuser can |
-| `cargo test -p blindpass-cli --locked` | CLI dispatch for migration, clock reconciliation, test fixture seeding and socket password reset | The controller executable must be installed beside the CLI in deployed environments |
+| `cargo test -p blindpass-cli --locked` | CLI dispatch for migration, clock reconciliation, test fixture seeding and socket password reset, plus authenticated fleet enrollment, node rotation, token-file permissions and revoke confirmation | The controller executable must be installed beside the CLI in deployed environments; fleet CLI tests use loopback HTTP and curl |
 | `./tests/fleet/p01-vm.sh` | P01 real systemd guest harness | Named QEMU/KVM runner with writable `/dev/kvm`, pinned image hash, SSH key, cloud-localds and an ISO writer; exit 78 means unsupported/blocking infrastructure |
+| `./tests/fleet/p03-vm.sh --backend both` | P03 two-guest fleet authorization, broker-applied node key rotation, durable event replay, connected revocation and recovery on SQLite and PostgreSQL | Named QEMU/KVM runner, pinned Ubuntu 24.04 image, writable `/dev/kvm`, and a PostgreSQL endpoint for the PostgreSQL pass; see [fleet runner setup](../../tests/fleet/README.md#p03-fleet-authorization-runner) |
 
 For the packaged P02 browser check, build `packages/browser-ui/Dockerfile`, run the image on a disposable loopback port and set `P02_PACKAGED_BROWSER_UI_URL` to that origin when invoking `test:p02-browser`. The suite then serves the page from nginx and adds a response-header check; it still starts the Rust controller at port 3100 and runs CC02/CC03. Stop the container after the run.
 
@@ -103,5 +104,7 @@ The [Playwright config](../../packages/dashboard/playwright.config.ts) starts SP
 - A suite that skips: record it as unexecuted and run its required flag/service configuration before claiming coverage.
 
 For code changes, run build/tests and the affected integration suites. For docs-only changes, validate links, commands and diff formatting. For release/packaging changes, run the relevant packaging regression. Record missing dependencies or unavailable services rather than inventing results.
+
+The latest P03 VM evidence is recorded in [the P03 execution record](evidence/p03-fleet-authorization-execution.md). It covers broker-applied key rotation, phase-local E01/E02, and a partition/restart/replay subset of I06; the remaining acceptance scenarios are still open.
 
 Use [manual demos](Manual%20Demos.md) only with dummy data. Stop the infrastructure with `make down`; PostgreSQL volumes remain until explicitly removed.

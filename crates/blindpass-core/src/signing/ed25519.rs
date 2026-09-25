@@ -284,7 +284,9 @@ mod tests {
     fn hex<const N: usize>(value: &str) -> [u8; N] {
         let mut output = [0; N];
         assert_eq!(value.len(), N * 2);
-        for (index, pair) in value.as_bytes().chunks_exact(2).enumerate() {
+        let (pairs, remainder) = value.as_bytes().as_chunks::<2>();
+        assert!(remainder.is_empty());
+        for (index, pair) in pairs.iter().enumerate() {
             let digit = |byte: u8| match byte {
                 b'0'..=b'9' => byte - b'0',
                 b'a'..=b'f' => byte - b'a' + 10,

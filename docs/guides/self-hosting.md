@@ -1,10 +1,10 @@
 # Self-hosting the current SPS stack
 
-This guide covers the repository's existing source and application-container configuration. It does not establish production readiness, image availability, or native/container fleet parity. P03 fleet code is under implementation and is not an accepted deployment profile. Those release requirements are in [W2/W3](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#sequence-and-gates).
+This guide covers the repository's existing source and application-container configuration. It does not establish production readiness, image availability, or native/container fleet parity. P03 fleet code is implemented locally but is not an accepted or packaged deployment profile. Those release requirements are in [W2/W3](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#sequence-and-gates).
 
 ## Deployment choices in the repository
 
-Run SPS from source or its Dockerfile, serve the dashboard and browser-input builds, and supply PostgreSQL plus Redis. The Rust controller in `crates/` implements the P02 API for local testing but is not yet accepted or packaged; its settings are listed under [controller configuration](../architecture/README.md#controller-configuration). P03 adds a development enrollment/channel path while workload authorization and the two-host release gates remain unfinished. Existing application images are not evidence of their host identity, service delivery, non-root packaging, recovery or migration guarantees.
+Run SPS from source or its Dockerfile, serve the dashboard and browser-input builds, and supply PostgreSQL plus Redis. The Rust controller in `crates/` implements the P02 API and P03 fleet authorization locally but is not yet accepted or packaged; its settings are listed under [controller configuration](../architecture/README.md#controller-configuration). The fleet enrollment, authorization, node channel, key rotation and recovery paths have local implementation and test evidence, while the broader pilot and release gates remain open. Existing application images are not evidence of their host identity, service delivery, non-root packaging, recovery or migration guarantees.
 
 For source development, follow the [quick start](quickstart.md). PostgreSQL and Redis can be provided natively or externally; Docker is needed only for the supplied development harness or a chosen container deployment. [Unraid](../deployment/Unraid.md) documents the template files and image build assumptions.
 

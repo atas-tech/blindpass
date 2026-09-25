@@ -20,6 +20,7 @@ use blindpass_core::canon::canonicalize_json;
 use blindpass_core::custody::sha256;
 use blindpass_core::fleet::{
     ConsumptionMode, DocumentKind, Grant, Registration, Revocation, SignedEnvelope,
+    is_valid_account_identifier,
 };
 use serde::Deserialize;
 use serde_json::{Value as JsonValue, json};
@@ -2035,12 +2036,7 @@ fn validate_workload_fields(
     {
         return Err("system unit is invalid");
     }
-    if account.is_empty()
-        || account.len() > 128
-        || account
-            .chars()
-            .any(|ch| ch.is_control() || ch.is_whitespace())
-    {
+    if !is_valid_account_identifier(account) {
         return Err("account mapping is invalid");
     }
     if !matches!(mode, "file" | "socket") {
@@ -2052,6 +2048,7 @@ fn validate_workload_fields(
     Ok(())
 }
 
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
 async fn require_fleet_operator(
     state: &AppState,
     headers: &HeaderMap,
@@ -2113,6 +2110,7 @@ fn valid_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
 fn require_if_match(headers: &HeaderMap, expected_version: i64) -> Result<(), Response> {
     let Some(header) = headers
         .get("if-match")

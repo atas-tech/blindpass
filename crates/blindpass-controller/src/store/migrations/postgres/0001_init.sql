@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS controller_meta (
     id SMALLINT PRIMARY KEY CHECK (id = 1),
     schema_version INTEGER NOT NULL,
     tenant_id TEXT NOT NULL,
-    issuer_epoch INTEGER NOT NULL,
+    issuer_epoch BIGINT NOT NULL,
     created_at BIGINT NOT NULL
 );
 

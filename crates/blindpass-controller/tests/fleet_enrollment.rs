@@ -4,8 +4,9 @@ use blindpass_controller::{app::build_app, config::Config, store::Store};
 use blindpass_core::canon::parse_json;
 use blindpass_core::custody::{RecipientKeyPair, sha256};
 use blindpass_core::fleet::{
-    DocumentKind, Grant, SignedEnvelope, TimeReply, enrollment_proof_message, node_event_message,
-    node_key_fingerprint, node_session_challenge_message,
+    ApplicationAck, DocumentKind, Grant, NodeKeyRotation, SignedEnvelope, TimeReply,
+    enrollment_proof_message, node_event_message, node_key_fingerprint,
+    node_session_challenge_message,
 };
 use blindpass_core::signing::{base64_url_encode, ed25519::Ed25519KeyPair};
 use serde_json::{Value, json};
@@ -169,6 +170,59 @@ impl NodeKeys {
     }
 }
 
+async fn open_node_session(
+    address: std::net::SocketAddr,
+    node_id: &str,
+    key_version: u64,
+    keys: &NodeKeys,
+) -> String {
+    let capabilities = json!({"protocol_version":"blindpass-node/1"});
+    let challenge = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id":node_id,
+            "key_version":key_version,
+            "protocol_version":"blindpass-node/1",
+            "capabilities":capabilities
+        })),
+    )
+    .await;
+    assert_eq!(challenge.status, 200, "{}", challenge.body);
+    assert_eq!(challenge.body["key_version"], key_version);
+    let message = node_session_challenge_message(
+        challenge.body["tenant_id"].as_str().unwrap(),
+        node_id,
+        "blindpass-node/1",
+        challenge.body["nonce"].as_str().unwrap(),
+        challenge.body["capabilities_hash"].as_str().unwrap(),
+        key_version,
+        challenge.body["issuer_epoch"].as_i64().unwrap() as u64,
+        challenge.body["controller_time_ms"].as_i64().unwrap(),
+        challenge.body["expires_at_ms"].as_i64().unwrap(),
+    )
+    .unwrap();
+    let authenticated = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id":node_id,
+            "key_version":key_version,
+            "protocol_version":"blindpass-node/1",
+            "capabilities":capabilities,
+            "nonce":challenge.body["nonce"],
+            "signature":base64_url_encode(&keys.signing.sign(&message).unwrap())
+        })),
+    )
+    .await;
+    assert_eq!(authenticated.status, 200, "{}", authenticated.body);
+    format!("Bearer {}", authenticated.body["token"].as_str().unwrap())
+}
+
 fn signed_node_event(
     node_id: &str,
     idempotency_key: &str,
@@ -284,6 +338,36 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     } else {
         None
     };
+    if let Some(pool) = pg_test_pool.as_ref() {
+        // Recreate the version-9 PostgreSQL column width so this acceptance
+        // run proves the upgrade path as well as the fresh-schema path.
+        sqlx::query("ALTER TABLE controller_meta ALTER COLUMN issuer_epoch TYPE INTEGER")
+            .execute(pool)
+            .await
+            .expect("restore version-9 issuer epoch type");
+        sqlx::query("UPDATE controller_meta SET schema_version = 9 WHERE id = 1")
+            .execute(pool)
+            .await
+            .expect("restore version-9 schema marker");
+        drop(store);
+        let store = Store::connect(&database_url)
+            .await
+            .expect("migrate version-9 PostgreSQL fleet schema");
+        let epoch_type: String = sqlx::query_scalar(
+            "SELECT data_type FROM information_schema.columns
+             WHERE table_schema = current_schema() AND table_name = 'controller_meta'
+               AND column_name = 'issuer_epoch'",
+        )
+        .fetch_one(pool)
+        .await
+        .expect("read migrated issuer epoch type");
+        assert_eq!(epoch_type, "bigint");
+        assert_eq!(store.issuer_epoch().await.unwrap(), 1);
+        store.close().await;
+    }
+    let store = Store::connect(&database_url)
+        .await
+        .expect("connect migrated enrollment controller database");
     let bootstrap_token = "fleet-enrollment-bootstrap-token-with-more-than-32-bytes";
     assert!(
         store
@@ -413,7 +497,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         None => {
             sqlx::query("UPDATE enrollment_requests SET expires_at = 1 WHERE id = $1")
                 .bind(&first_id)
-                .execute(pg_admin.as_ref().unwrap())
+                .execute(pg_test_pool.as_ref().unwrap())
                 .await
                 .expect("expire the already submitted PostgreSQL token");
         }
@@ -461,6 +545,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         &[("content-type", "application/json")],
         Some(&json!({
             "node_id": first_node_id.clone(),
+            "key_version": 1,
             "protocol_version": "blindpass-node/2",
             "capabilities": {"protocol_version": "blindpass-node/2"}
         })),
@@ -527,6 +612,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         &[("content-type", "application/json")],
         Some(&json!({
             "node_id": first_node_id.clone(),
+            "key_version": 1,
             "protocol_version": "blindpass-node/1",
             "capabilities": channel_capabilities.clone()
         })),
@@ -561,6 +647,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     let signature = base64_url_encode(&first_keys.signing.sign(&message).unwrap());
     let authenticate_body = json!({
         "node_id": first_node_id.clone(),
+        "key_version": 1,
         "protocol_version": "blindpass-node/1",
         "capabilities": channel_capabilities.clone(),
         "nonce": nonce,
@@ -641,19 +728,25 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     );
     assert_eq!(acknowledged_poll.body["documents"][0]["seq"], 2);
 
-    let event_body = json!({"operation_id":"op_dummy","status":"completed"});
+    let event_body = json!({
+        "action":"operation_result",
+        "grant_id":"gr_dummy",
+        "operation_id":"op_dummy",
+        "observed_at_ms":1_800_000_000_000_i64,
+        "status":"completed"
+    });
     let event_value = parse_json(&event_body.to_string()).unwrap();
     let event_message = node_event_message(
         &first_node_id,
         "event-channel-idempotency-01",
-        "operation_result",
+        "audit",
         &event_value,
     )
     .unwrap();
     let event_signature = base64_url_encode(&first_keys.signing.sign(&event_message).unwrap());
     let event_input = json!({"events":[{
         "idempotency_key":"event-channel-idempotency-01",
-        "kind":"operation_result",
+        "kind":"audit",
         "body":event_body,
         "broker_signature":event_signature
     }]});
@@ -670,6 +763,20 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(accepted_event.status, 200, "{}", accepted_event.body);
     assert_eq!(accepted_event.body["accepted"], 1);
+    let application_ack =
+        SignedEnvelope::from_json(&accepted_event.body["ack"].to_string()).unwrap();
+    assert_eq!(application_ack.kind(), DocumentKind::ApplicationAck);
+    assert!(
+        application_ack
+            .verify(issuer.public_key(), &issuer_key_id, 1)
+            .unwrap()
+    );
+    let application_ack_body = ApplicationAck::from_value(application_ack.body()).unwrap();
+    assert_eq!(application_ack_body.node_id, first_node_id);
+    assert_eq!(
+        application_ack_body.event_keys,
+        ["event-channel-idempotency-01"]
+    );
     let duplicate_event = request(
         address,
         "POST",
@@ -1042,6 +1149,176 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(third_operation.status, 201);
     let third_approval_id = third_operation.body["approval_id"].as_str().unwrap();
+
+    let paging_event_key = "operation-event-key-page-01";
+    let mut paging_event_body = operation_event_body.clone();
+    paging_event_body["purpose"] = json!("queue pagination");
+    paging_event_body["resource_id"] = json!("marker-page");
+    let paging_event = signed_node_event(
+        &first_node_id,
+        paging_event_key,
+        "operation_request",
+        paging_event_body,
+        &first_keys.signing,
+    );
+    let paging_event_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&paging_event),
+    )
+    .await;
+    assert_eq!(paging_event_response.status, 200);
+    let mut paging_operation_input = first_operation_input.clone();
+    paging_operation_input["purpose"] = json!("queue pagination");
+    paging_operation_input["resource_id"] = json!("marker-page");
+    paging_operation_input["broker_event_key"] = json!(paging_event_key);
+    let paging_operation_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-request-idem-page-01"),
+    ];
+    let paging_operation = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &paging_operation_headers,
+        Some(&paging_operation_input),
+    )
+    .await;
+    assert_eq!(paging_operation.status, 201, "{}", paging_operation.body);
+    assert_eq!(paging_operation.body["status"], "awaiting_approval");
+    let paging_approval_id = paging_operation.body["approval_id"].as_str().unwrap();
+    assert_ne!(paging_approval_id, third_approval_id);
+
+    let count_before_page = request(
+        address,
+        "GET",
+        "/api/v3/approvals/count",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(count_before_page.body["count"], 2);
+    let first_approval_page = request(
+        address,
+        "GET",
+        "/api/v3/approvals?limit=1",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(first_approval_page.status, 200);
+    assert_eq!(
+        first_approval_page.body["items"].as_array().unwrap().len(),
+        1
+    );
+    let next_cursor = first_approval_page.body["next_cursor"]
+        .as_str()
+        .expect("one pending approval page has a continuation cursor");
+    let second_approval_page = request(
+        address,
+        "GET",
+        &format!("/api/v3/approvals?limit=1&cursor={next_cursor}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(second_approval_page.status, 200);
+    assert_eq!(
+        second_approval_page.body["items"].as_array().unwrap().len(),
+        1
+    );
+    assert_ne!(
+        first_approval_page.body["items"][0]["id"],
+        second_approval_page.body["items"][0]["id"]
+    );
+
+    let paging_approval_detail = request(
+        address,
+        "GET",
+        &format!("/api/v3/approvals/{paging_approval_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    let paging_approval_version = paging_approval_detail.body["version"].as_i64().unwrap();
+    let overlap_decision_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-reject-overlap-01"),
+        (
+            "if-match",
+            if paging_approval_version == 1 {
+                "\"1\""
+            } else {
+                "\"2\""
+            },
+        ),
+    ];
+    let overlapping_decision = request(
+        address,
+        "POST",
+        &format!("/api/v3/approvals/{paging_approval_id}/reject"),
+        &overlap_decision_headers,
+        Some(&json!({
+            "expected_status":"pending",
+            "expected_version":paging_approval_version,
+            "operation_ids":[third_operation.body["id"]]
+        })),
+    )
+    .await;
+    assert_eq!(overlapping_decision.status, 409);
+    let rejected_paging_approval = request(
+        address,
+        "POST",
+        &format!("/api/v3/approvals/{paging_approval_id}/reject"),
+        &[
+            ("origin", ORIGIN),
+            ("cookie", admin_cookies.as_str()),
+            ("x-csrf-token", csrf),
+            ("content-type", "application/json"),
+            ("idempotency-key", "operation-reject-page-01"),
+            (
+                "if-match",
+                if paging_approval_version == 1 {
+                    "\"1\""
+                } else {
+                    "\"2\""
+                },
+            ),
+        ],
+        Some(&json!({
+            "expected_status":"pending",
+            "expected_version":paging_approval_version,
+            "operation_ids":[paging_operation.body["id"]]
+        })),
+    )
+    .await;
+    assert_eq!(
+        rejected_paging_approval.status, 200,
+        "{}",
+        rejected_paging_approval.body
+    );
+    assert_eq!(rejected_paging_approval.body["status"], "rejected");
+    let count_after_decision = request(
+        address,
+        "GET",
+        "/api/v3/approvals/count",
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(count_after_decision.body["count"], 1);
+
     let next_policy_headers = [
         ("origin", ORIGIN),
         ("cookie", admin_cookies.as_str()),
@@ -1172,6 +1449,95 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(cancelled_grant.status, 200);
     assert_eq!(cancelled_grant.body["status"], "revoked");
+
+    let completed_request_key = "operation-event-key-0005";
+    let completed_request_event = signed_node_event(
+        &first_node_id,
+        completed_request_key,
+        "operation_request",
+        operation_event_body.clone(),
+        &first_keys.signing,
+    );
+    let completed_request_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&completed_request_event),
+    )
+    .await;
+    assert_eq!(completed_request_response.status, 200);
+    let mut completed_operation_input = first_operation_input.clone();
+    completed_operation_input["broker_event_key"] = json!(completed_request_key);
+    let completed_operation_headers = [
+        ("origin", ORIGIN),
+        ("cookie", admin_cookies.as_str()),
+        ("x-csrf-token", csrf),
+        ("content-type", "application/json"),
+        ("idempotency-key", "operation-request-idem-0005"),
+    ];
+    let completed_operation = request(
+        address,
+        "POST",
+        "/api/v3/operations",
+        &completed_operation_headers,
+        Some(&completed_operation_input),
+    )
+    .await;
+    assert_eq!(
+        completed_operation.status, 201,
+        "{}",
+        completed_operation.body
+    );
+    let completed_operation_id = completed_operation.body["id"].as_str().unwrap();
+    let completed_grant_id = completed_operation.body["grant_id"].as_str().unwrap();
+    let result_body = json!({
+        "grant_id":completed_grant_id,
+        "observed_at_ms":now_ms,
+        "operation_id":completed_operation_id,
+        "result_code":"marker_created",
+        "status":"completed"
+    });
+    let result_event = signed_node_event(
+        &first_node_id,
+        "operation-result-event-0005",
+        "operation_result",
+        result_body,
+        &first_keys.signing,
+    );
+    let result_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&result_event),
+    )
+    .await;
+    assert_eq!(result_response.status, 200, "{}", result_response.body);
+    let reconciled_operation = request(
+        address,
+        "GET",
+        &format!("/api/v3/operations/{completed_operation_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(reconciled_operation.body["status"], "completed");
+    let reconciled_grant = request(
+        address,
+        "GET",
+        &format!("/api/v3/grants/{completed_grant_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(reconciled_grant.body["status"], "consumed");
 
     let workload_update_headers = [
         ("origin", ORIGIN),
@@ -1327,6 +1693,54 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     assert_eq!(second_approved.status, 200, "{}", second_approved.body);
     assert_eq!(second_approved.body["id"], second_node_id);
 
+    let second_capabilities = json!({"protocol_version":"blindpass-node/1"});
+    let second_challenge = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id":second_node_id,
+            "key_version": 1,
+            "protocol_version":"blindpass-node/1",
+            "capabilities":second_capabilities
+        })),
+    )
+    .await;
+    assert_eq!(second_challenge.status, 200, "{}", second_challenge.body);
+    let second_nonce = second_challenge.body["nonce"].as_str().unwrap();
+    let second_message = node_session_challenge_message(
+        second_challenge.body["tenant_id"].as_str().unwrap(),
+        &second_node_id,
+        "blindpass-node/1",
+        second_nonce,
+        second_challenge.body["capabilities_hash"].as_str().unwrap(),
+        second_challenge.body["key_version"].as_i64().unwrap() as u64,
+        second_challenge.body["issuer_epoch"].as_i64().unwrap() as u64,
+        second_challenge.body["controller_time_ms"]
+            .as_i64()
+            .unwrap(),
+        second_challenge.body["expires_at_ms"].as_i64().unwrap(),
+    )
+    .unwrap();
+    let second_session = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id":second_node_id,
+            "key_version": 1,
+            "protocol_version":"blindpass-node/1",
+            "capabilities":second_capabilities,
+            "nonce":second_nonce,
+            "signature":base64_url_encode(&second_keys.signing.sign(&second_message).unwrap())
+        })),
+    )
+    .await;
+    assert_eq!(second_session.status, 200, "{}", second_session.body);
+    let second_node_bearer = format!("Bearer {}", second_session.body["token"].as_str().unwrap());
+
     let duplicate_name = request(
         address,
         "POST",
@@ -1432,7 +1846,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         None => {
             sqlx::query("UPDATE enrollment_requests SET expires_at = 1 WHERE id = $1")
                 .bind(expired_id)
-                .execute(pg_admin.as_ref().unwrap())
+                .execute(pg_test_pool.as_ref().unwrap())
                 .await
                 .expect("expire PostgreSQL enrollment fixture");
         }
@@ -1471,6 +1885,349 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     .await;
     assert_eq!(nodes.status, 200);
     assert_eq!(nodes.body["items"].as_array().unwrap().len(), 2);
+
+    let old_node_bearer = open_node_session(address, &first_node_id, 1, &first_keys).await;
+    let replacement_keys = NodeKeys::from_seed(91);
+    let rotation_response = request(
+        address,
+        "POST",
+        &format!("/api/v3/nodes/{first_node_id}/rotate-key"),
+        &write_headers,
+        Some(&json!({
+            "expected_key_version": 1,
+            "expected_fingerprint": replacement_keys.fingerprint(),
+            "signing_pub": base64_url_encode(replacement_keys.signing.public_key()),
+            "recipient_pub": base64_url_encode(replacement_keys.recipient.public_key())
+        })),
+    )
+    .await;
+    assert_eq!(rotation_response.status, 202, "{}", rotation_response.body);
+    assert_eq!(rotation_response.body["key_version"], 1);
+    assert_eq!(rotation_response.body["rotation_pending"], true);
+    assert_eq!(rotation_response.body["pending_key_version"], 2);
+    let rotation_id = rotation_response.body["pending_rotation_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let pending_operation = signed_node_event(
+        &first_node_id,
+        "rotation-pending-operation-event-01",
+        "operation_request",
+        json!({"node_id":first_node_id,"action":"noop.marker"}),
+        &replacement_keys.signing,
+    );
+    let pending_operation_response = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &old_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&pending_operation),
+    )
+    .await;
+    assert_eq!(pending_operation_response.status, 400);
+
+    let rotation_delivery = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &old_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":null,"health":{}})),
+    )
+    .await;
+    assert_eq!(rotation_delivery.status, 200, "{}", rotation_delivery.body);
+    let delivered_rotation = rotation_delivery.body["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|document| document["envelope"]["kind"] == "node_key_rotation")
+        .expect("rotation must be delivered through the authenticated node channel");
+    let rotation_envelope =
+        SignedEnvelope::from_json(&delivered_rotation["envelope"].to_string()).unwrap();
+    assert!(
+        rotation_envelope
+            .verify(issuer.public_key(), &issuer_key_id, 1)
+            .unwrap()
+    );
+    let rotation_document = NodeKeyRotation::from_value(rotation_envelope.body()).unwrap();
+    assert_eq!(rotation_document.rotation_id, rotation_id);
+    assert_eq!(rotation_document.from_key_version, 1);
+    assert_eq!(rotation_document.to_key_version, 2);
+    assert_eq!(
+        rotation_document.fingerprint,
+        replacement_keys.fingerprint()
+    );
+
+    let replacement_bearer = open_node_session(address, &first_node_id, 2, &replacement_keys).await;
+    let rotation_event_key = format!("rotation_{rotation_id}");
+    let rotation_ack_event = signed_node_event(
+        &first_node_id,
+        &rotation_event_key,
+        "audit",
+        json!({
+            "action":"node_key_rotation_applied",
+            "fingerprint":replacement_keys.fingerprint(),
+            "key_version":2,
+            "node_id":first_node_id,
+            "rotation_id":rotation_id
+        }),
+        &replacement_keys.signing,
+    );
+    let rotation_ack = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &replacement_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&rotation_ack_event),
+    )
+    .await;
+    assert_eq!(rotation_ack.status, 200, "{}", rotation_ack.body);
+    assert_eq!(rotation_ack.body["accepted"], 1);
+    let rotation_application_ack =
+        SignedEnvelope::from_json(&rotation_ack.body["ack"].to_string()).unwrap();
+    assert_eq!(
+        rotation_application_ack.kind(),
+        DocumentKind::ApplicationAck
+    );
+    assert!(
+        rotation_application_ack
+            .verify(issuer.public_key(), &issuer_key_id, 1)
+            .unwrap()
+    );
+    assert_eq!(
+        ApplicationAck::from_value(rotation_application_ack.body())
+            .unwrap()
+            .event_keys,
+        [rotation_event_key]
+    );
+
+    let finalized_node = request(
+        address,
+        "GET",
+        &format!("/api/v3/nodes/{first_node_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(finalized_node.status, 200, "{}", finalized_node.body);
+    assert_eq!(finalized_node.body["key_version"], 2);
+    assert_eq!(finalized_node.body["rotation_pending"], false);
+    assert_eq!(finalized_node.body["pending_key_version"], Value::Null);
+    assert_eq!(
+        finalized_node.body["signing_fingerprint"],
+        sha256(replacement_keys.signing.public_key())
+            .unwrap()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    let old_key_reconnect = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id": first_node_id,
+            "key_version": 1,
+            "protocol_version":"blindpass-node/1",
+            "capabilities":{"protocol_version":"blindpass-node/1"}
+        })),
+    )
+    .await;
+    assert_eq!(old_key_reconnect.status, 401);
+    let recovered_node_bearer =
+        open_node_session(address, &first_node_id, 2, &replacement_keys).await;
+    let old_session_poll = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &old_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":null,"health":{}})),
+    )
+    .await;
+    assert_eq!(old_session_poll.status, 401);
+    let recovered_poll = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &recovered_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":null,"health":{}})),
+    )
+    .await;
+    assert_eq!(recovered_poll.status, 200, "{}", recovered_poll.body);
+
+    let revoked_first_node = request(
+        address,
+        "DELETE",
+        &format!("/api/v3/nodes/{first_node_id}"),
+        &write_headers,
+        None,
+    )
+    .await;
+    assert_eq!(
+        revoked_first_node.status, 200,
+        "{}",
+        revoked_first_node.body
+    );
+    assert_eq!(revoked_first_node.body["status"], "revoked");
+    let revoked_first_grant = request(
+        address,
+        "GET",
+        &format!("/api/v3/grants/{first_grant_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(
+        revoked_first_grant.status, 200,
+        "{}",
+        revoked_first_grant.body
+    );
+    assert_eq!(revoked_first_grant.body["status"], "revoked");
+    let node_tombstones: i64 = match &backend_pool {
+        Some(pool) => sqlx::query_scalar("SELECT COUNT(*) FROM grant_tombstones WHERE node_id = ?")
+            .bind(&first_node_id)
+            .fetch_one(pool)
+            .await
+            .unwrap(),
+        None => sqlx::query_scalar("SELECT COUNT(*) FROM grant_tombstones WHERE node_id = $1")
+            .bind(&first_node_id)
+            .fetch_one(pg_test_pool.as_ref().unwrap())
+            .await
+            .unwrap(),
+    };
+    assert!(
+        node_tombstones >= 2,
+        "node revocation must persist grant tombstones"
+    );
+
+    let revoked_node = request(
+        address,
+        "DELETE",
+        &format!("/api/v3/nodes/{second_node_id}"),
+        &write_headers,
+        None,
+    )
+    .await;
+    assert_eq!(revoked_node.status, 200, "{}", revoked_node.body);
+    assert_eq!(revoked_node.body["status"], "revoked");
+    assert_eq!(revoked_node.body["revocation_pending"], true);
+    let revoked_node_again = request(
+        address,
+        "DELETE",
+        &format!("/api/v3/nodes/{second_node_id}"),
+        &write_headers,
+        None,
+    )
+    .await;
+    assert_eq!(
+        revoked_node_again.status, 200,
+        "{}",
+        revoked_node_again.body
+    );
+    assert_eq!(revoked_node_again.body["status"], "revoked");
+    let revoked_node_poll = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &second_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":null,"health":{}})),
+    )
+    .await;
+    assert_eq!(revoked_node_poll.status, 200, "{}", revoked_node_poll.body);
+    let revocation_document = revoked_node_poll.body["documents"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|document| document["envelope"]["kind"] == "node_revocation")
+        .expect("revocation queue must include the signed node tombstone");
+    assert_eq!(
+        revocation_document["envelope"]["body"]["node_id"],
+        second_node_id
+    );
+    let revocation_event_key = "node-revocation-applied-event-01";
+    let revocation_applied_event = signed_node_event(
+        &second_node_id,
+        revocation_event_key,
+        "audit",
+        json!({
+            "action":"node_revocation_applied",
+            "node_id":second_node_id,
+            "observed_at_ms":1_800_000_000_000_u64
+        }),
+        &second_keys.signing,
+    );
+    let revocation_ack = request(
+        address,
+        "POST",
+        "/api/v3/node/events",
+        &[
+            ("authorization", &second_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&revocation_applied_event),
+    )
+    .await;
+    assert_eq!(revocation_ack.status, 200, "{}", revocation_ack.body);
+    assert_eq!(revocation_ack.body["accepted"], 1);
+    let revocation_ack_document =
+        SignedEnvelope::from_json(&revocation_ack.body["ack"].to_string()).unwrap();
+    let revocation_ack_body = ApplicationAck::from_value(revocation_ack_document.body()).unwrap();
+    assert_eq!(revocation_ack_body.event_keys, [revocation_event_key]);
+    let finalized_node = request(
+        address,
+        "GET",
+        &format!("/api/v3/nodes/{second_node_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(finalized_node.status, 200, "{}", finalized_node.body);
+    assert_eq!(finalized_node.body["revocation_pending"], false);
+    let revoked_node_poll_after_ack = request(
+        address,
+        "POST",
+        "/api/v3/node/poll",
+        &[
+            ("authorization", &second_node_bearer),
+            ("content-type", "application/json"),
+        ],
+        Some(&json!({"ack_seq":revocation_document["seq"],"health":{}})),
+    )
+    .await;
+    assert_eq!(revoked_node_poll_after_ack.status, 401);
+    let revoked_node_session = request(
+        address,
+        "POST",
+        "/api/v3/node/session",
+        &[("content-type", "application/json")],
+        Some(&json!({
+            "node_id": second_node_id,
+            "key_version": 1,
+            "protocol_version": "blindpass-node/1",
+            "capabilities": {"protocol_version":"blindpass-node/1"}
+        })),
+    )
+    .await;
+    assert_eq!(revoked_node_session.status, 401);
 
     server.abort();
     if let Some(schema) = pg_schema {

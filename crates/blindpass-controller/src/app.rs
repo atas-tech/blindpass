@@ -71,7 +71,7 @@ struct ReadinessResponse {
 
 #[derive(Serialize)]
 struct CapabilitiesResponse {
-    api: [&'static str; 2],
+    api: Vec<&'static str>,
     version: &'static str,
     schema_version: u32,
     setup_required: bool,
@@ -326,7 +326,11 @@ async fn capabilities(State(state): State<AppState>) -> Response {
         (None, _) => None,
     };
     Json(CapabilitiesResponse {
-        api: ["compat.v2", "admin.v3"],
+        api: if state.issuer_keypair.is_some() {
+            vec!["compat.v2", "admin.v3", "fleet.v3"]
+        } else {
+            vec!["compat.v2", "admin.v3"]
+        },
         version: env!("CARGO_PKG_VERSION"),
         schema_version: u32::try_from(SCHEMA_VERSION).expect("schema version fits u32"),
         setup_required,

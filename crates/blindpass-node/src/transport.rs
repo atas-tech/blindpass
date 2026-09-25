@@ -117,15 +117,14 @@ impl HttpsTransport {
         if let Some(token) = token {
             validate_token(token)?;
         }
-        if let Some(body) = body {
-            if body.len() > MAX_CANONICAL_JSON_BYTES
+        if let Some(body) = body
+            && (body.len() > MAX_CANONICAL_JSON_BYTES
                 || canonicalize_json(
                     std::str::from_utf8(body).map_err(|_| TransportError::InvalidJson)?,
                 )
-                .is_err()
-            {
-                return Err(TransportError::InvalidJson);
-            }
+                .is_err())
+        {
+            return Err(TransportError::InvalidJson);
         }
         if method != "GET" && method != "POST" {
             return Err(TransportError::InvalidPath);

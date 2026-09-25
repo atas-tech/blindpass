@@ -134,9 +134,9 @@ export interface components {
       "status_sig": string;
     };
     "CapabilitiesResponse": {
-      "api": Array<"compat.v2" | "admin.v3">;
+      "api": Array<"compat.v2" | "admin.v3" | "fleet.v3">;
       "version": string;
-      "schema_version": 9;
+      "schema_version": 12;
       "setup_required": boolean;
       "issuer_pub"?: string;
       "issuer_kid"?: string;
@@ -151,6 +151,10 @@ export interface components {
       "id": string;
       "name": string;
       "status": components["schemas"]["NodeStatus"];
+      "revocation_pending": boolean;
+      "rotation_pending": boolean;
+      "pending_key_version": number | null;
+      "pending_rotation_id": string | null;
       "protocol_version": string;
       "capabilities": {
         [key: string]: unknown;
@@ -162,6 +166,22 @@ export interface components {
       "last_poll_at": number | null;
       "created_at": number;
       "version": number;
+    };
+    "NodeKeyRotationInput": {
+      "expected_key_version": number;
+      "expected_fingerprint": string;
+      "signing_pub": string;
+      "recipient_pub": string;
+    };
+    "NodeKeyRotationBody": {
+      "node_id": string;
+      "rotation_id": string;
+      "from_key_version": number;
+      "to_key_version": number;
+      "signing_public": string;
+      "recipient_public": string;
+      "fingerprint": string;
+      "issuer_epoch": number;
     };
     "NodeList": {
       "items": Array<components["schemas"]["Node"]>;
@@ -362,7 +382,7 @@ export interface components {
       "consumer_lifetime_seconds": number | null;
     };
     "SignedDocument": {
-      "kind": "registration" | "policy_snapshot" | "grant" | "revocation" | "time_reply" | "operation_result" | "audit_event";
+      "kind": "registration" | "policy_snapshot" | "grant" | "revocation" | "node_revocation" | "node_key_rotation" | "time_reply" | "application_ack" | "operation_result" | "audit_event";
       "v": 1;
       "body": {
         [key: string]: unknown;
@@ -371,8 +391,28 @@ export interface components {
       "kid": string;
       "epoch": number;
     };
+    "NodeRevocationBody": {
+      "node_id": string;
+      "revoked_at_ms": number;
+      "issuer_epoch": number;
+    };
+    "ApplicationAckBody": {
+      "node_id": string;
+      "issuer_epoch": number;
+      "acknowledged_at_ms": number;
+      "event_keys": Array<string>;
+    };
+    "ApplicationAck": {
+      "kind": "application_ack";
+      "v": 1;
+      "body": components["schemas"]["ApplicationAckBody"];
+      "sig": string;
+      "kid": string;
+      "epoch": number;
+    };
     "NodeSessionInput": {
       "node_id": string;
+      "key_version": number;
       "protocol_version": string;
       "capabilities": {
         [key: string]: unknown;
@@ -418,7 +458,7 @@ export interface components {
     };
     "NodeEvent": {
       "idempotency_key": string;
-      "kind": "operation_request" | "operation_result" | "audit" | "application_ack";
+      "kind": "operation_request" | "operation_result" | "audit";
       "body": {
         [key: string]: unknown;
       };
@@ -430,6 +470,7 @@ export interface components {
     "NodeEventsResponse": {
       "accepted": number;
       "duplicates": number;
+      "ack": components["schemas"]["ApplicationAck"] | null;
     };
     "BootstrapInput": {
       "username": string;
@@ -2303,6 +2344,63 @@ export interface operations {
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
+  "rotateFleetNodeKey": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["NodeKeyRotationInput"];
+    };
+  };
+  responses: {
+    "202": {
+      content: {
+        "application/json": components["schemas"]["Node"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
   "listFleetWorkloads": {
   parameters: {
     path: never;
@@ -3347,6 +3445,9 @@ export interface paths {
   "/api/v3/nodes/{id}": {
     get?: operations["getFleetNode"];
     delete?: operations["revokeFleetNode"];
+  };
+  "/api/v3/nodes/{id}/rotate-key": {
+    post?: operations["rotateFleetNodeKey"];
   };
   "/api/v3/workloads": {
     get?: operations["listFleetWorkloads"];

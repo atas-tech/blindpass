@@ -22,9 +22,9 @@ const encryptedPayload: SubmitPayload = {
 };
 
 const capabilities: CapabilitiesResponse = {
-  api: ["compat.v2", "admin.v3"],
+  api: ["compat.v2", "admin.v3", "fleet.v3"],
   version: "0.1.0",
-  schema_version: 9,
+  schema_version: 12,
   setup_required: true,
   features: { browser_status: true, fleet_authorization: true }
 };
@@ -67,6 +67,18 @@ it("generated operation and component types describe the controller wire shapes"
     key_version: 1,
     capabilities_hash: "a".repeat(64)
   };
+  const nodeSessionInput: components["schemas"]["NodeSessionInput"] = {
+    node_id: "nd_node-a",
+    key_version: 2,
+    protocol_version: "blindpass-node/1",
+    capabilities: { protocol_version: "blindpass-node/1" }
+  };
+  const nodeKeyRotation: components["schemas"]["NodeKeyRotationInput"] = {
+    expected_key_version: 1,
+    expected_fingerprint: "a".repeat(64),
+    signing_pub: "A".repeat(43),
+    recipient_pub: "B".repeat(43)
+  };
   const poll: NodePollResponse = {
     documents: [],
     highest_seq: null,
@@ -82,6 +94,8 @@ it("generated operation and component types describe the controller wire shapes"
   };
   const pollInput: NodePollInput = { time_challenge: "A".repeat(43) };
   expect(challenge.audience).toBe("blindpass-node");
+  expect(nodeSessionInput.key_version).toBe(2);
+  expect(nodeKeyRotation.expected_key_version).toBe(1);
   expect(pollInput.time_challenge).toHaveLength(43);
   expect(poll.time_reply?.kind).toBe("time_reply");
 

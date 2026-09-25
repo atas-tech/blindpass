@@ -23,7 +23,10 @@ pub enum DocumentKind {
     PolicySnapshot,
     Grant,
     Revocation,
+    NodeRevocation,
+    NodeKeyRotation,
     TimeReply,
+    ApplicationAck,
     OperationResult,
     AuditEvent,
 }
@@ -75,6 +78,7 @@ pub fn node_key_fingerprint(
 /// Canonical, domain-separated message the broker signs for a node channel
 /// challenge. The capability hash binds the negotiation to its enrollment
 /// snapshot without asking the relay to authorize capability changes.
+#[allow(clippy::too_many_arguments)] // Keep every signed challenge binding explicit at call sites.
 pub fn node_session_challenge_message(
     tenant_id: &str,
     node_id: &str,
@@ -143,10 +147,7 @@ pub fn node_event_message(
         || !idempotency_key
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-        || !matches!(
-            kind,
-            "operation_request" | "operation_result" | "audit" | "application_ack"
-        )
+        || !matches!(kind, "operation_request" | "operation_result" | "audit")
         || !matches!(body, Value::Object(_))
     {
         return Err(DocumentError::Invalid("node event binding"));
@@ -202,7 +203,10 @@ impl DocumentKind {
             Self::PolicySnapshot => "policy_snapshot",
             Self::Grant => "grant",
             Self::Revocation => "revocation",
+            Self::NodeRevocation => "node_revocation",
+            Self::NodeKeyRotation => "node_key_rotation",
             Self::TimeReply => "time_reply",
+            Self::ApplicationAck => "application_ack",
             Self::OperationResult => "operation_result",
             Self::AuditEvent => "audit_event",
         }
@@ -214,7 +218,10 @@ impl DocumentKind {
             "policy_snapshot" => Self::PolicySnapshot,
             "grant" => Self::Grant,
             "revocation" => Self::Revocation,
+            "node_revocation" => Self::NodeRevocation,
+            "node_key_rotation" => Self::NodeKeyRotation,
             "time_reply" => Self::TimeReply,
+            "application_ack" => Self::ApplicationAck,
             "operation_result" => Self::OperationResult,
             "audit_event" => Self::AuditEvent,
             _ => return None,
@@ -865,7 +872,7 @@ impl Revocation {
         validate_token(&self.node_id, "node id")?;
         if !matches!(
             self.reason.as_str(),
-            "operator" | "policy" | "expired" | "cancelled"
+            "operator" | "policy" | "expired" | "cancelled" | "key_rotation"
         ) || self.revoked_at_ms == 0
             || self.retain_until_ms <= self.revoked_at_ms
             || self.issuer_epoch == 0
@@ -884,6 +891,140 @@ impl Revocation {
                 "retain_until_ms".to_owned(),
                 Value::Unsigned(self.retain_until_ms),
             ),
+            (
+                "revoked_at_ms".to_owned(),
+                Value::Unsigned(self.revoked_at_ms),
+            ),
+        ]))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeRevocation {
+    pub node_id: String,
+    pub revoked_at_ms: u64,
+    pub issuer_epoch: u64,
+}
+
+/// A broker generated replacement key pair, approved by an operator and
+/// delivered as a controller signed document. The broker verifies that the
+/// public keys match its locally staged private pair before activating it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeKeyRotation {
+    pub node_id: String,
+    pub rotation_id: String,
+    pub from_key_version: u64,
+    pub to_key_version: u64,
+    pub signing_public: String,
+    pub recipient_public: String,
+    pub fingerprint: String,
+    pub issuer_epoch: u64,
+}
+
+impl NodeKeyRotation {
+    pub fn from_value(value: &Value) -> Result<Self, DocumentError> {
+        expect_fields(
+            value,
+            &[
+                "node_id",
+                "rotation_id",
+                "from_key_version",
+                "to_key_version",
+                "signing_public",
+                "recipient_public",
+                "fingerprint",
+                "issuer_epoch",
+            ],
+            &[],
+        )?;
+        let rotation = Self {
+            node_id: required_string(value, "node_id")?.to_owned(),
+            rotation_id: required_string(value, "rotation_id")?.to_owned(),
+            from_key_version: required_number(value, "from_key_version")?,
+            to_key_version: required_number(value, "to_key_version")?,
+            signing_public: required_string(value, "signing_public")?.to_owned(),
+            recipient_public: required_string(value, "recipient_public")?.to_owned(),
+            fingerprint: required_string(value, "fingerprint")?.to_owned(),
+            issuer_epoch: required_number(value, "issuer_epoch")?,
+        };
+        rotation.to_value()?;
+        Ok(rotation)
+    }
+
+    pub fn to_value(&self) -> Result<Value, DocumentError> {
+        validate_token(&self.node_id, "node id")?;
+        validate_token(&self.rotation_id, "rotation id")?;
+        if self.from_key_version == 0
+            || self.from_key_version.checked_add(1) != Some(self.to_key_version)
+            || self.issuer_epoch == 0
+        {
+            return Err(DocumentError::Invalid("node key rotation version"));
+        }
+        let signing_public = decode_base64_url(&self.signing_public)?;
+        let recipient_public = decode_base64_url(&self.recipient_public)?;
+        if signing_public.len() != 32 || recipient_public.len() != 32 {
+            return Err(DocumentError::Invalid("node key rotation public key"));
+        }
+        if node_key_fingerprint(&signing_public, &recipient_public)? != self.fingerprint {
+            return Err(DocumentError::Invalid("node key rotation fingerprint"));
+        }
+        Ok(Value::Object(vec![
+            (
+                "fingerprint".to_owned(),
+                Value::String(self.fingerprint.clone()),
+            ),
+            (
+                "from_key_version".to_owned(),
+                Value::Unsigned(self.from_key_version),
+            ),
+            (
+                "issuer_epoch".to_owned(),
+                Value::Unsigned(self.issuer_epoch),
+            ),
+            ("node_id".to_owned(), Value::String(self.node_id.clone())),
+            (
+                "recipient_public".to_owned(),
+                Value::String(self.recipient_public.clone()),
+            ),
+            (
+                "rotation_id".to_owned(),
+                Value::String(self.rotation_id.clone()),
+            ),
+            (
+                "signing_public".to_owned(),
+                Value::String(self.signing_public.clone()),
+            ),
+            (
+                "to_key_version".to_owned(),
+                Value::Unsigned(self.to_key_version),
+            ),
+        ]))
+    }
+}
+
+impl NodeRevocation {
+    pub fn from_value(value: &Value) -> Result<Self, DocumentError> {
+        expect_fields(value, &["node_id", "revoked_at_ms", "issuer_epoch"], &[])?;
+        let revocation = Self {
+            node_id: required_string(value, "node_id")?.to_owned(),
+            revoked_at_ms: required_number(value, "revoked_at_ms")?,
+            issuer_epoch: required_number(value, "issuer_epoch")?,
+        };
+        revocation.to_value()?;
+        Ok(revocation)
+    }
+
+    pub fn to_value(&self) -> Result<Value, DocumentError> {
+        validate_token(&self.node_id, "node id")?;
+        if self.revoked_at_ms == 0 || self.issuer_epoch == 0 {
+            return Err(DocumentError::Invalid("node revocation binding"));
+        }
+        Ok(Value::Object(vec![
+            (
+                "issuer_epoch".to_owned(),
+                Value::Unsigned(self.issuer_epoch),
+            ),
+            ("node_id".to_owned(), Value::String(self.node_id.clone())),
             (
                 "revoked_at_ms".to_owned(),
                 Value::Unsigned(self.revoked_at_ms),
@@ -941,6 +1082,86 @@ impl TimeReply {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApplicationAck {
+    pub node_id: String,
+    pub issuer_epoch: u64,
+    pub acknowledged_at_ms: u64,
+    pub event_keys: Vec<String>,
+}
+
+impl ApplicationAck {
+    pub fn from_value(value: &Value) -> Result<Self, DocumentError> {
+        expect_fields(
+            value,
+            &[
+                "node_id",
+                "issuer_epoch",
+                "acknowledged_at_ms",
+                "event_keys",
+            ],
+            &[],
+        )?;
+        let event_keys = value
+            .get("event_keys")
+            .and_then(Value::as_array)
+            .ok_or(DocumentError::Invalid("application acknowledgement keys"))?
+            .iter()
+            .map(|key| {
+                key.as_str()
+                    .map(str::to_owned)
+                    .ok_or(DocumentError::Invalid("application acknowledgement key"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let ack = Self {
+            node_id: required_string(value, "node_id")?.to_owned(),
+            issuer_epoch: required_number(value, "issuer_epoch")?,
+            acknowledged_at_ms: required_number(value, "acknowledged_at_ms")?,
+            event_keys,
+        };
+        ack.to_value()?;
+        Ok(ack)
+    }
+
+    pub fn to_value(&self) -> Result<Value, DocumentError> {
+        validate_token(&self.node_id, "node id")?;
+        if self.issuer_epoch == 0
+            || self.acknowledged_at_ms == 0
+            || self.event_keys.is_empty()
+            || self.event_keys.len() > 100
+        {
+            return Err(DocumentError::Invalid("application acknowledgement bounds"));
+        }
+        let mut unique = HashSet::new();
+        for key in &self.event_keys {
+            if key.len() < 16
+                || key.len() > 128
+                || !key
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+                || !unique.insert(key.as_str())
+            {
+                return Err(DocumentError::Invalid("application acknowledgement key"));
+            }
+        }
+        Ok(Value::Object(vec![
+            (
+                "acknowledged_at_ms".to_owned(),
+                Value::Unsigned(self.acknowledged_at_ms),
+            ),
+            (
+                "event_keys".to_owned(),
+                Value::Array(self.event_keys.iter().cloned().map(Value::String).collect()),
+            ),
+            (
+                "issuer_epoch".to_owned(),
+                Value::Unsigned(self.issuer_epoch),
+            ),
+            ("node_id".to_owned(), Value::String(self.node_id.clone())),
+        ]))
+    }
+}
+
 fn field<'a>(value: &'a Value, name: &str) -> Option<&'a Value> {
     value.get(name)
 }
@@ -967,9 +1188,24 @@ fn validate_document_body(
                 return Err(DocumentError::Invalid("revocation issuer epoch"));
             }
         }
+        DocumentKind::NodeRevocation => {
+            if NodeRevocation::from_value(body)?.issuer_epoch != envelope_epoch {
+                return Err(DocumentError::Invalid("node revocation issuer epoch"));
+            }
+        }
+        DocumentKind::NodeKeyRotation => {
+            if NodeKeyRotation::from_value(body)?.issuer_epoch != envelope_epoch {
+                return Err(DocumentError::Invalid("node key rotation issuer epoch"));
+            }
+        }
         DocumentKind::TimeReply => {
             if TimeReply::from_value(body)?.issuer_epoch != envelope_epoch {
                 return Err(DocumentError::Invalid("time reply issuer epoch"));
+            }
+        }
+        DocumentKind::ApplicationAck => {
+            if ApplicationAck::from_value(body)?.issuer_epoch != envelope_epoch {
+                return Err(DocumentError::Invalid("application acknowledgement epoch"));
             }
         }
         DocumentKind::OperationResult | DocumentKind::AuditEvent => {
@@ -1051,15 +1287,28 @@ fn validate_unit(value: &str) -> Result<(), DocumentError> {
 }
 
 fn validate_account(value: &str) -> Result<(), DocumentError> {
-    if value.is_empty()
-        || value.len() > 32
-        || !value.bytes().all(|byte| {
-            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"_.-".contains(&byte)
-        })
-    {
+    if !is_valid_account_identifier(value) {
         return Err(DocumentError::Invalid("account"));
     }
     Ok(())
+}
+
+/// Accept a constrained Linux account name or a canonical non-root UID
+/// selector used when the broker binds a peer directly to its kernel UID.
+pub fn is_valid_account_identifier(value: &str) -> bool {
+    let account_name = value.len() <= 32
+        && !value.is_empty()
+        && value.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"_.-".contains(&byte)
+        });
+    let uid_selector = value.strip_prefix("uid:").is_some_and(|digits| {
+        !digits.is_empty()
+            && digits.bytes().all(|byte| byte.is_ascii_digit())
+            && digits
+                .parse::<u32>()
+                .is_ok_and(|uid| uid > 0 && uid.to_string() == digits)
+    });
+    account_name || uid_selector
 }
 
 fn validate_ceiling(value: u64) -> Result<(), DocumentError> {
@@ -1114,9 +1363,9 @@ fn decode_base64_url(value: &str) -> Result<Vec<u8>, DocumentError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ConsumptionMode, DocumentKind, Grant, PolicySnapshot, Registration, SignedEnvelope,
-        enrollment_proof_message, node_event_message, node_key_fingerprint,
-        node_session_challenge_message,
+        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeKeyRotation, PolicySnapshot,
+        Registration, SignedEnvelope, enrollment_proof_message, node_event_message,
+        node_key_fingerprint, node_session_challenge_message,
     };
     use crate::canon::{Value, canonicalize_json};
     use crate::signing::ed25519::Ed25519KeyPair;
@@ -1319,6 +1568,73 @@ mod tests {
     }
 
     #[test]
+    fn application_ack_is_controller_signed_node_bound_and_unique() {
+        let issuer = issuer();
+        let ack = ApplicationAck {
+            node_id: "node-a".to_owned(),
+            issuer_epoch: 3,
+            acknowledged_at_ms: 1_800_000_000_000,
+            event_keys: vec!["event_1234567890123456".to_owned()],
+        };
+        let envelope = SignedEnvelope::sign(
+            DocumentKind::ApplicationAck,
+            ack.to_value().unwrap(),
+            KEY_ID,
+            3,
+            &issuer,
+        )
+        .unwrap();
+        let parsed =
+            SignedEnvelope::from_json(std::str::from_utf8(&envelope.to_json().unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(parsed.kind(), DocumentKind::ApplicationAck);
+        assert!(parsed.verify(issuer.public_key(), KEY_ID, 3).unwrap());
+        assert_eq!(ApplicationAck::from_value(parsed.body()).unwrap(), ack);
+        let mut duplicate = ack;
+        duplicate
+            .event_keys
+            .push("event_1234567890123456".to_owned());
+        assert!(duplicate.to_value().is_err());
+    }
+
+    #[test]
+    fn node_key_rotation_is_signed_and_requires_a_consecutive_key_version() {
+        let issuer = issuer();
+        let signing_key = Ed25519KeyPair::from_seed(&[7; 32]).unwrap();
+        let signing_public = crate::signing::base64_url_encode(signing_key.public_key());
+        let recipient_public = crate::signing::base64_url_encode(&[8; 32]);
+        let fingerprint = node_key_fingerprint(signing_key.public_key(), &[8; 32]).unwrap();
+        let rotation = NodeKeyRotation {
+            node_id: "nd_node-a".to_owned(),
+            rotation_id: "rot_12345678901234567890123456789012".to_owned(),
+            from_key_version: 1,
+            to_key_version: 2,
+            signing_public,
+            recipient_public,
+            fingerprint,
+            issuer_epoch: 3,
+        };
+        let value = rotation.to_value().unwrap();
+        let restored = NodeKeyRotation::from_value(&value).unwrap();
+        assert_eq!(restored, rotation);
+
+        let envelope =
+            SignedEnvelope::sign(DocumentKind::NodeKeyRotation, value, KEY_ID, 3, &issuer).unwrap();
+        let parsed =
+            SignedEnvelope::from_json(std::str::from_utf8(&envelope.to_json().unwrap()).unwrap())
+                .unwrap();
+        assert_eq!(parsed.kind(), DocumentKind::NodeKeyRotation);
+        assert!(parsed.verify(issuer.public_key(), KEY_ID, 3).unwrap());
+
+        let mut skipped_version = rotation.clone();
+        skipped_version.to_key_version = 3;
+        assert!(skipped_version.to_value().is_err());
+        let mut bad_fingerprint = rotation;
+        bad_fingerprint.fingerprint = "A".repeat(64);
+        assert!(bad_fingerprint.to_value().is_err());
+    }
+
+    #[test]
     fn signed_envelopes_reject_duplicate_fields_unknown_fields_and_bad_signatures() {
         let issuer = issuer();
         let body = Value::Object(vec![(
@@ -1354,6 +1670,13 @@ mod tests {
             local_ceiling_seconds: 120,
         };
         assert!(registration.to_value().is_ok());
+        let mut uid_registration = registration.clone();
+        uid_registration.account = "uid:986".to_owned();
+        assert!(uid_registration.to_value().is_ok());
+        for invalid_account in ["uid:0", "uid:0986", "uid:4294967296", "uid:+986"] {
+            uid_registration.account = invalid_account.to_owned();
+            assert!(uid_registration.to_value().is_err(), "{invalid_account}");
+        }
         let mut invalid_registration = registration;
         invalid_registration.unit = "../backup.service".to_owned();
         assert!(invalid_registration.to_value().is_err());
@@ -1379,6 +1702,9 @@ mod tests {
             local_ceiling_seconds: 60,
         };
         assert!(grant.to_value().is_ok());
+        let mut uid_grant = grant.clone();
+        uid_grant.account = "uid:986".to_owned();
+        assert!(uid_grant.to_value().is_ok());
         let mut invalid_grant = grant;
         invalid_grant.audience = "agent".to_owned();
         assert!(invalid_grant.to_value().is_err());

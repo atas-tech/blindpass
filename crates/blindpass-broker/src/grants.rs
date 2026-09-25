@@ -94,6 +94,15 @@ impl GrantVerifier {
         Ok(value)
     }
 
+    pub(crate) fn trusted_controller_time_ms(&self, now_boottime_ms: u64) -> Option<u64> {
+        let trusted = self.trusted_time.as_ref().filter(|time| {
+            now_boottime_ms.saturating_sub(time.received_at_boottime_ms) <= MAX_TIME_REPLY_DELAY_MS
+        })?;
+        trusted
+            .estimated_controller_ms
+            .checked_add(now_boottime_ms.saturating_sub(trusted.received_at_boottime_ms))
+    }
+
     pub(crate) fn accept_time_reply(
         &mut self,
         reply: &TimeReply,
@@ -111,14 +120,14 @@ impl GrantVerifier {
         {
             return Err("time reply does not match the pending broker challenge");
         }
-        let round_trip_ms = now_boottime_ms
+        let _round_trip_ms = now_boottime_ms
             .checked_sub(challenge.sent_at_boottime_ms)
-            .filter(|value| *value > 0 && *value <= MAX_TIME_REPLY_DELAY_MS)
+            .filter(|value| *value <= MAX_TIME_REPLY_DELAY_MS)
             .ok_or("time reply delay is outside the supported bound")?;
-        let controller_now_ms = reply
-            .controller_time_ms
-            .checked_add(round_trip_ms)
-            .ok_or("trusted controller time overflow")?;
+        // The controller stamps the signed reply after its long-poll wait.
+        // Adding the full challenge round trip would count that wait again
+        // and persist a time high-water mark in the future.
+        let controller_now_ms = reply.controller_time_ms;
         if let Some(previous) = self.trusted_time.as_ref() {
             let elapsed = now_boottime_ms.saturating_sub(previous.received_at_boottime_ms);
             let minimum_now = previous
@@ -155,6 +164,7 @@ impl GrantVerifier {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)] // The acceptance check keeps every signed binding explicit.
     pub(crate) fn accept_grant(
         &mut self,
         grant: Grant,
@@ -165,14 +175,9 @@ impl GrantVerifier {
         registration: &Registration,
         now_boottime_ms: u64,
     ) -> Result<bool, &'static str> {
-        let trusted = self
-            .trusted_time
-            .as_ref()
-            .filter(|time| {
-                now_boottime_ms.saturating_sub(time.received_at_boottime_ms)
-                    <= MAX_TIME_REPLY_DELAY_MS
-            })
-            .ok_or("grant has no fresh signed controller time proof")?;
+        if self.trusted_controller_time_ms(now_boottime_ms).is_none() {
+            return Err("grant has no fresh signed controller time proof");
+        }
         if grant.node_id != node_id
             || grant.recipient_key_id != recipient_key_id
             || grant.policy_version != policy.policy_version
@@ -193,10 +198,9 @@ impl GrantVerifier {
         {
             return Err("grant does not match current broker policy and workload registration");
         }
-        let now_controller_ms = trusted
-            .estimated_controller_ms
-            .checked_add(now_boottime_ms.saturating_sub(trusted.received_at_boottime_ms))
-            .ok_or("trusted controller time overflow")?;
+        let now_controller_ms = self
+            .trusted_controller_time_ms(now_boottime_ms)
+            .ok_or("trusted controller time is stale or unavailable")?;
         let remaining_ms = grant
             .expires_at_ms
             .checked_sub(now_controller_ms)
@@ -251,6 +255,56 @@ impl GrantVerifier {
         current_policy_version: u64,
         now_boottime_ms: u64,
     ) -> Result<Grant, &'static str> {
+        self.validate_consumption(
+            grant_id,
+            authorization,
+            current_policy_version,
+            now_boottime_ms,
+        )?;
+        let accepted_grant = self
+            .accepted
+            .get(grant_id)
+            .ok_or("grant is unknown or requires fresh reconciliation")?;
+        let grant_id = accepted_grant.grant.id.clone();
+        let expires_at_ms = accepted_grant.grant.expires_at_ms;
+        let journal = self
+            .journal
+            .as_mut()
+            .ok_or("durable grant journal is unavailable")?;
+        journal.record_consumption(&grant_id, expires_at_ms)?;
+        let accepted = self
+            .accepted
+            .remove(&grant_id)
+            .ok_or("grant was consumed concurrently")?;
+        Ok(accepted.grant)
+    }
+
+    pub(crate) fn preview_consumption(
+        &self,
+        grant_id: &str,
+        authorization: &WorkloadAuthorization,
+        current_policy_version: u64,
+        now_boottime_ms: u64,
+    ) -> Result<Grant, &'static str> {
+        self.validate_consumption(
+            grant_id,
+            authorization,
+            current_policy_version,
+            now_boottime_ms,
+        )?;
+        self.accepted
+            .get(grant_id)
+            .map(|accepted| accepted.grant.clone())
+            .ok_or("grant is unknown or requires fresh reconciliation")
+    }
+
+    fn validate_consumption(
+        &self,
+        grant_id: &str,
+        authorization: &WorkloadAuthorization,
+        current_policy_version: u64,
+        now_boottime_ms: u64,
+    ) -> Result<(), &'static str> {
         let accepted = self
             .accepted
             .get(grant_id)
@@ -267,16 +321,7 @@ impl GrantVerifier {
         {
             return Err("live workload identity does not match the grant");
         }
-        let journal = self
-            .journal
-            .as_mut()
-            .ok_or("durable grant journal is unavailable")?;
-        journal.record_consumption(&grant.id, grant.expires_at_ms)?;
-        let accepted = self
-            .accepted
-            .remove(grant_id)
-            .ok_or("grant was consumed concurrently")?;
-        Ok(accepted.grant)
+        Ok(())
     }
 
     pub(crate) fn revoke_workload(&mut self, workload_id: &str) {
@@ -416,7 +461,7 @@ impl GrantJournal {
             .map_err(|_| "grant journal compaction file could not be created")?;
         for (id, expires_at) in &pruned {
             let line = format!("{{\"grant_id\":\"{id}\",\"expires_at_ms\":{expires_at}}}\n");
-            if let Err(_) = file.write_all(line.as_bytes()) {
+            if file.write_all(line.as_bytes()).is_err() {
                 let _ = fs::remove_file(&temp);
                 return Err("grant journal compaction could not be written");
             }
@@ -813,7 +858,7 @@ mod tests {
     }
 
     #[test]
-    fn signed_time_reply_consumes_one_challenge_and_subtracts_full_delay() {
+    fn signed_time_reply_does_not_project_long_poll_delay_into_the_future() {
         let path = temporary_path();
         let mut verifier = verifier(&path, 1_000);
         let reply = TimeReply {
@@ -825,6 +870,14 @@ mod tests {
         verifier
             .accept_time_reply(&reply, "nd_node-a", 1, 4_000)
             .unwrap();
+        assert_eq!(
+            verifier.trusted_controller_time_ms(4_000),
+            Some(reply.controller_time_ms)
+        );
+        assert_eq!(
+            verifier.trusted_controller_time_ms(5_000),
+            Some(reply.controller_time_ms + 1_000)
+        );
         assert!(verifier.pending_time.is_none());
         assert!(
             verifier

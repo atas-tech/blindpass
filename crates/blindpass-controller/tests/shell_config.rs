@@ -1089,7 +1089,7 @@ async fn shell_exposes_liveness_readiness_and_ct19_capability_without_sensitive_
     );
     assert_eq!(
         capabilities.1["api"],
-        serde_json::json!(["compat.v2", "admin.v3"])
+        serde_json::json!(["compat.v2", "admin.v3", "fleet.v3"])
     );
     server.abort();
 }

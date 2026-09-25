@@ -1,6 +1,6 @@
 -- SPDX-License-Identifier: AGPL-3.0-only
 
-ALTER TABLE operation_approvals ADD COLUMN decision_key_hash TEXT;
+ALTER TABLE operation_approvals ADD COLUMN IF NOT EXISTS decision_key_hash TEXT;
 
 CREATE INDEX IF NOT EXISTS operations_tenant_created_idx
     ON operations (tenant_id, created_at, id);

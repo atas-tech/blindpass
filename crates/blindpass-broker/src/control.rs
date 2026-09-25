@@ -7,8 +7,10 @@ use crate::BrokerState;
 use crate::keys::{NodeIdentity, PinnedIssuer};
 use crate::os_identity::require_control_peer;
 use crate::os_identity::require_root_peer;
+use blindpass_core::canon::{Value, canonicalize_value};
 use blindpass_core::fleet::{
-    DocumentKind, Grant, PolicySnapshot, Registration, Revocation, SignedEnvelope, TimeReply,
+    ApplicationAck, DocumentKind, Grant, NodeKeyRotation, NodeRevocation, PolicySnapshot,
+    Registration, Revocation, SignedEnvelope, TimeReply,
 };
 use blindpass_core::secret::wipe;
 use std::io::{self, Read, Write};
@@ -41,7 +43,60 @@ fn handle_command(
 ) -> Result<(), BrokerError> {
     match command {
         b"STATUS\n" => stream.write_all(b"OK blindpass-control/1\n")?,
-        b"PULL_EVENTS\n" => stream.write_all(b"EVENTS 0\n")?,
+        b"PULL_EVENTS\n" => {
+            let mut state = state
+                .lock()
+                .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?;
+            let pin = identity.pinned_issuer()?.ok_or(BrokerError::Configuration(
+                "controller issuer is not pinned",
+            ))?;
+            state.queue_overflow_event_if_possible(&pin.node_id)?;
+            state.queue_node_revocation_ack_if_possible(&pin.node_id)?;
+            if let Some((rotation_id, key_version, fingerprint)) =
+                identity.applied_rotation_ack()?
+            {
+                state.queue_node_key_rotation_ack(
+                    &pin.node_id,
+                    &rotation_id,
+                    key_version,
+                    &fingerprint,
+                )?;
+            }
+            let mut events = state.pending_node_events(100);
+            let encoded = loop {
+                let mut values = Vec::with_capacity(events.len());
+                for event in &events {
+                    let signature = identity.sign_node_event(
+                        &pin.node_id,
+                        &event.idempotency_key,
+                        &event.kind,
+                        &event.body,
+                    )?;
+                    values.push(Value::Object(vec![
+                        ("body".to_owned(), event.body.clone()),
+                        ("broker_signature".to_owned(), Value::String(signature)),
+                        (
+                            "idempotency_key".to_owned(),
+                            Value::String(event.idempotency_key.clone()),
+                        ),
+                        ("kind".to_owned(), Value::String(event.kind.clone())),
+                    ]));
+                }
+                let encoded = canonicalize_value(&Value::Array(values))
+                    .map_err(|_| BrokerError::Configuration("broker event batch is invalid"))?;
+                if encoded.len() <= MAX_CONTROL_DOCUMENT_BYTES {
+                    break encoded;
+                }
+                if events.pop().is_none() {
+                    return Err(BrokerError::Configuration(
+                        "broker event exceeds its size bound",
+                    ));
+                }
+            };
+            writeln!(stream, "EVENTS {}", encoded.len())?;
+            stream.write_all(&encoded)?;
+            stream.write_all(b"\n")?;
+        }
         b"TIME_CHALLENGE\n" => {
             let challenge = state
                 .lock()
@@ -55,7 +110,19 @@ fn handle_command(
             let public = identity.public_identity()?;
             writeln!(
                 stream,
-                "OK identity/1 signing_pub={} recipient_pub={} fingerprint={}",
+                "OK identity/1 key_version={} signing_pub={} recipient_pub={} fingerprint={}",
+                identity.key_version()?,
+                public.signing_public,
+                public.recipient_public,
+                public.fingerprint
+            )?;
+        }
+        b"PREPARE_ROTATION\n" => {
+            require_root_peer(stream)?;
+            let (key_version, public) = identity.prepare_rotation()?;
+            writeln!(
+                stream,
+                "ROTATION key_version={key_version} signing_pub={} recipient_pub={} fingerprint={}",
                 public.signing_public, public.recipient_public, public.fingerprint
             )?;
         }
@@ -75,7 +142,7 @@ fn handle_command(
             writeln!(stream, "PROOF {signature}")?;
         }
         _ if command.starts_with(b"SIGN_NODE_CHALLENGE ") => {
-            let fields = parse_node_challenge(&command)?;
+            let fields = parse_node_challenge(command)?;
             let signature = identity.node_challenge_signature(
                 &fields.tenant_id,
                 &fields.node_id,
@@ -91,12 +158,12 @@ fn handle_command(
         }
         _ if command.starts_with(b"PIN_ISSUER ") => {
             require_root_peer(stream)?;
-            let pin = parse_pin(&command)?;
+            let pin = parse_pin(command)?;
             identity.pin_issuer(pin)?;
             stream.write_all(b"OK issuer_pinned\n")?;
         }
         _ if command.starts_with(b"RELAY ") => {
-            let length = parse_relay_length(&command)?;
+            let length = parse_relay_length(command)?;
             let mut document = vec![0_u8; length];
             let read_result = read_exact_until(stream, &mut document, deadline);
             read_result?;
@@ -104,6 +171,10 @@ fn handle_command(
             wipe(&mut document);
             match application {
                 Ok(kind) => writeln!(stream, "OK document_applied {kind}")?,
+                Err(BrokerError::Configuration(reason)) => {
+                    eprintln!("controller document rejected: {reason}");
+                    stream.write_all(b"ERR invalid_controller_document\n")?;
+                }
                 Err(_) => stream.write_all(b"ERR invalid_controller_document\n")?,
             }
         }
@@ -142,6 +213,28 @@ fn apply_controller_document_to_state(
 ) -> Result<&'static str, BrokerError> {
     let kind = identity.verify_controller_document(document)?;
     if kind == "stale_epoch" {
+        let source = std::str::from_utf8(document)
+            .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+        let envelope = SignedEnvelope::from_json(source)
+            .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
+        if envelope.kind() == DocumentKind::NodeRevocation {
+            let revocation = NodeRevocation::from_value(envelope.body()).map_err(|_| {
+                BrokerError::Configuration("controller node revocation is malformed")
+            })?;
+            let pin = identity.pinned_issuer()?.ok_or(BrokerError::Configuration(
+                "controller issuer is not pinned",
+            ))?;
+            if revocation.node_id != pin.node_id {
+                return Err(BrokerError::Configuration(
+                    "controller node revocation is bound to another node",
+                ));
+            }
+            if persist {
+                identity.persist_controller_document(document)?;
+            }
+            state.apply_node_revocation(&revocation.node_id, revocation.revoked_at_ms)?;
+            return Ok("node_revocation");
+        }
         return Ok("stale_epoch");
     }
     let source = std::str::from_utf8(document)
@@ -197,6 +290,18 @@ fn apply_controller_document_to_state(
                 )
                 .map_err(BrokerError::Configuration)?;
         }
+        DocumentKind::ApplicationAck => {
+            let ack = ApplicationAck::from_value(envelope.body()).map_err(|_| {
+                BrokerError::Configuration("controller acknowledgement is malformed")
+            })?;
+            if ack.node_id != pin.node_id || ack.issuer_epoch != envelope.epoch() {
+                return Err(BrokerError::Configuration(
+                    "controller acknowledgement is bound to another node or epoch",
+                ));
+            }
+            state.acknowledge_node_events(&ack.node_id, &ack.event_keys)?;
+            identity.acknowledge_rotation_event(&ack.event_keys)?;
+        }
         DocumentKind::Grant => {
             let grant = Grant::from_value(envelope.body())
                 .map_err(|_| BrokerError::Configuration("controller grant is malformed"))?;
@@ -212,7 +317,7 @@ fn apply_controller_document_to_state(
                 .fleet_policy
                 .as_ref()
                 .ok_or(BrokerError::Configuration("fleet policy is unavailable"))?;
-            let expected_recipient_key_id = format!("{}-1", pin.node_id);
+            let expected_recipient_key_id = format!("{}-{}", pin.node_id, identity.key_version()?);
             state
                 .grant_verifier
                 .accept_grant(
@@ -239,6 +344,31 @@ fn apply_controller_document_to_state(
                 .revoke(&revocation)
                 .map_err(BrokerError::Configuration)?;
         }
+        DocumentKind::NodeRevocation => {
+            let revocation = NodeRevocation::from_value(envelope.body()).map_err(|_| {
+                BrokerError::Configuration("controller node revocation is malformed")
+            })?;
+            if revocation.node_id != pin.node_id {
+                return Err(BrokerError::Configuration(
+                    "controller node revocation is bound to another node",
+                ));
+            }
+            if persist {
+                identity.persist_controller_document(document)?;
+            }
+            state.apply_node_revocation(&revocation.node_id, revocation.revoked_at_ms)?;
+        }
+        DocumentKind::NodeKeyRotation => {
+            let rotation = NodeKeyRotation::from_value(envelope.body()).map_err(|_| {
+                BrokerError::Configuration("controller node key rotation is malformed")
+            })?;
+            if rotation.node_id != pin.node_id || rotation.issuer_epoch != envelope.epoch() {
+                return Err(BrokerError::Configuration(
+                    "controller node key rotation is bound to another node or epoch",
+                ));
+            }
+            identity.apply_key_rotation(&rotation)?;
+        }
         _ => {
             return Err(BrokerError::Configuration(
                 "controller document kind is not supported by this broker",
@@ -250,7 +380,10 @@ fn apply_controller_document_to_state(
         "policy_snapshot" => Ok("policy_snapshot"),
         "grant" => Ok("grant"),
         "revocation" => Ok("revocation"),
+        "node_revocation" => Ok("node_revocation"),
+        "node_key_rotation" => Ok("node_key_rotation"),
         "time_reply" => Ok("time_reply"),
+        "application_ack" => Ok("application_ack"),
         _ => Err(BrokerError::Configuration(
             "controller document kind is unsupported",
         )),
@@ -451,17 +584,21 @@ fn read_exact_until(
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_relay_length};
+    use super::{
+        MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_relay_length,
+        restore_controller_documents,
+    };
     use crate::BrokerState;
     use crate::keys::NodeIdentity;
+    use blindpass_core::canon::{Value, canonicalize_value, parse_json};
     use blindpass_core::delivery::DeliveryPolicy;
     use blindpass_core::fleet::{
-        ConsumptionMode, DocumentKind, Grant, PolicySnapshot, Registration, SignedEnvelope,
-        TimeReply,
+        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeRevocation, PolicySnapshot,
+        Registration, SignedEnvelope, TimeReply, node_event_message,
     };
     use blindpass_core::identity::{PeerIdentity, WorkloadRequest};
     use blindpass_core::signing::base64_url_encode;
-    use blindpass_core::signing::ed25519::Ed25519KeyPair;
+    use blindpass_core::signing::ed25519::{Ed25519KeyPair, verify};
     use std::io::{Read, Write};
     use std::os::unix::net::UnixStream;
     use std::time::{Duration, Instant};
@@ -506,6 +643,114 @@ mod tests {
         let mut response = Vec::new();
         client.read_to_end(&mut response).unwrap();
         assert_eq!(response, b"ERR invalid_controller_document\n");
+    }
+
+    #[test]
+    fn signed_node_revocation_disables_workloads_and_survives_acknowledged_restart() {
+        let directory = temporary_directory();
+        let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
+        let issuer = Ed25519KeyPair::from_seed(&[19; 32]).unwrap();
+        let issuer_public = base64_url_encode(issuer.public_key());
+        let issuer_key_id = format!("ed25519-{issuer_public}");
+        identity
+            .pin_issuer(crate::keys::PinnedIssuer {
+                tenant_id: "tenant-a".to_owned(),
+                node_id: "nd_node-a".to_owned(),
+                epoch: 1,
+                key_id: issuer_key_id.clone(),
+                public_key: issuer_public,
+            })
+            .unwrap();
+        let mut broker_state = BrokerState::new(DeliveryPolicy::default());
+        broker_state.configure_grant_storage(&identity).unwrap();
+        let state = std::sync::Arc::new(std::sync::Mutex::new(broker_state));
+
+        let observed_at_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        let revocation = NodeRevocation {
+            node_id: "nd_node-a".to_owned(),
+            revoked_at_ms: observed_at_ms,
+            issuer_epoch: 1,
+        };
+        let document = SignedEnvelope::sign(
+            DocumentKind::NodeRevocation,
+            revocation.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &document),
+            b"OK document_applied node_revocation\n"
+        );
+        assert!(state.lock().unwrap().node_revoked);
+        let rejected = state.lock().unwrap().process_workload(
+            &PeerIdentity::fixture(1000, current_gid(), "worker.service", "inv-a", "worker"),
+            &WorkloadRequest {
+                node_id: "nd_node-a".to_owned(),
+                workload_id: "wl_worker-a".to_owned(),
+                claimed_unit: "worker.service".to_owned(),
+                claimed_invocation_id: "inv-a".to_owned(),
+                operation: "health".to_owned(),
+            },
+        );
+        assert!(rejected.is_err());
+
+        let events = control_exchange(&identity, &state, b"PULL_EVENTS\n");
+        let header_end = events.iter().position(|byte| *byte == b'\n').unwrap();
+        let payload = std::str::from_utf8(&events[header_end + 1..events.len() - 1]).unwrap();
+        let event = parse_json(payload).unwrap();
+        let event = &event.as_array().unwrap()[0];
+        assert_eq!(
+            event
+                .get("body")
+                .and_then(|body| body.get("action"))
+                .and_then(Value::as_str),
+            Some("node_revocation_applied")
+        );
+        let event_key = event
+            .get("idempotency_key")
+            .and_then(Value::as_str)
+            .unwrap()
+            .to_owned();
+        let ack = ApplicationAck {
+            node_id: "nd_node-a".to_owned(),
+            issuer_epoch: 1,
+            acknowledged_at_ms: observed_at_ms,
+            event_keys: vec![event_key],
+        };
+        let ack_document = SignedEnvelope::sign(
+            DocumentKind::ApplicationAck,
+            ack.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &ack_document),
+            b"OK document_applied application_ack\n"
+        );
+        assert_eq!(
+            control_exchange(&identity, &state, b"PULL_EVENTS\n"),
+            b"EVENTS 2\n[]\n"
+        );
+        drop(state);
+
+        let mut restored = BrokerState::new(DeliveryPolicy::default());
+        restored.configure_grant_storage(&identity).unwrap();
+        restore_controller_documents(&mut restored, &identity).unwrap();
+        assert!(restored.node_revoked);
+        assert!(restored.node_revocation_acknowledged);
+        assert!(restored.pending_node_events.is_empty());
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
@@ -595,6 +840,100 @@ mod tests {
             b"OK document_applied time_reply\n"
         );
 
+        let peer = PeerIdentity::fixture(
+            1000,
+            current_gid(),
+            "worker.service",
+            "invocation-a",
+            "worker",
+        );
+        let request_body = Value::Object(vec![
+            ("action".to_owned(), Value::String("noop.marker".to_owned())),
+            ("mode".to_owned(), Value::String("file".to_owned())),
+            (
+                "purpose".to_owned(),
+                Value::String("nightly marker".to_owned()),
+            ),
+            (
+                "resource_id".to_owned(),
+                Value::String("marker-request".to_owned()),
+            ),
+            ("ttl_seconds".to_owned(), Value::Unsigned(30)),
+        ]);
+        let request_bytes = canonicalize_value(&request_body).unwrap();
+        let operation_request = WorkloadRequest {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            claimed_unit: "worker.service".to_owned(),
+            claimed_invocation_id: "invocation-a".to_owned(),
+            operation: format!("request:{}", base64_url_encode(&request_bytes)),
+        };
+        let requested = state
+            .lock()
+            .unwrap()
+            .process_workload(&peer, &operation_request)
+            .unwrap();
+        let event_key = std::str::from_utf8(&requested)
+            .unwrap()
+            .strip_prefix("OK operation_request ")
+            .unwrap()
+            .strip_suffix('\n')
+            .unwrap()
+            .to_owned();
+        let pulled = control_exchange(&identity, &state, b"PULL_EVENTS\n");
+        let header_end = pulled.iter().position(|byte| *byte == b'\n').unwrap();
+        let payload = std::str::from_utf8(&pulled[header_end + 1..pulled.len() - 1]).unwrap();
+        let event_batch = parse_json(payload).unwrap();
+        let event = &event_batch.as_array().unwrap()[0];
+        assert_eq!(
+            event.get("kind").and_then(Value::as_str),
+            Some("operation_request")
+        );
+        assert_eq!(
+            event.get("idempotency_key").and_then(Value::as_str),
+            Some(event_key.as_str())
+        );
+        let body = event.get("body").unwrap();
+        let message =
+            node_event_message("nd_node-a", &event_key, "operation_request", body).unwrap();
+        let public_identity = identity.public_identity().unwrap();
+        let public_key =
+            blindpass_core::signing::base64_url_decode(&public_identity.signing_public, 32)
+                .unwrap();
+        let signature = blindpass_core::signing::base64_url_decode(
+            event
+                .get("broker_signature")
+                .and_then(Value::as_str)
+                .unwrap(),
+            64,
+        )
+        .unwrap();
+        assert!(verify(&public_key, &message, &signature).unwrap());
+        let ack = ApplicationAck {
+            node_id: "nd_node-a".to_owned(),
+            issuer_epoch: 1,
+            acknowledged_at_ms: now_ms,
+            event_keys: vec![event_key],
+        };
+        let ack_envelope = SignedEnvelope::sign(
+            DocumentKind::ApplicationAck,
+            ack.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &state, &ack_envelope),
+            b"OK document_applied application_ack\n"
+        );
+        assert_eq!(
+            control_exchange(&identity, &state, b"PULL_EVENTS\n"),
+            b"EVENTS 2\n[]\n"
+        );
+
         let grant = Grant {
             id: "gr_0123456789abcdef0123456789abcdef".to_owned(),
             operation_id: "op_0123456789abcdef0123456789abcdef".to_owned(),
@@ -630,13 +969,6 @@ mod tests {
             b"OK document_applied grant\n"
         );
 
-        let peer = PeerIdentity::fixture(
-            1000,
-            current_gid(),
-            "worker.service",
-            "invocation-a",
-            "worker",
-        );
         let request = WorkloadRequest {
             node_id: "nd_node-a".to_owned(),
             workload_id: "wl_worker-a".to_owned(),
@@ -708,6 +1040,66 @@ mod tests {
         );
 
         drop(state);
+        let mut recovered_state = BrokerState::new(DeliveryPolicy::default());
+        recovered_state.configure_grant_storage(&identity).unwrap();
+        let recovered_state = std::sync::Arc::new(std::sync::Mutex::new(recovered_state));
+        let recovered_events = control_exchange(&identity, &recovered_state, b"PULL_EVENTS\n");
+        let header_end = recovered_events
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .unwrap();
+        let payload =
+            std::str::from_utf8(&recovered_events[header_end + 1..recovered_events.len() - 1])
+                .unwrap();
+        let recovered_events = parse_json(payload).unwrap();
+        let recovered_events = recovered_events.as_array().unwrap();
+        assert_eq!(recovered_events.len(), 4);
+        let result_statuses = recovered_events
+            .iter()
+            .filter(|event| event.get("kind").and_then(Value::as_str) == Some("operation_result"))
+            .filter_map(|event| {
+                event
+                    .get("body")
+                    .and_then(|body| body.get("status"))
+                    .and_then(Value::as_str)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(result_statuses, ["completed", "uncertain"]);
+        let recovered_keys = recovered_events
+            .iter()
+            .map(|event| {
+                event
+                    .get("idempotency_key")
+                    .and_then(Value::as_str)
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        let recovered_ack = ApplicationAck {
+            node_id: "nd_node-a".to_owned(),
+            issuer_epoch: 1,
+            acknowledged_at_ms: now_ms,
+            event_keys: recovered_keys,
+        };
+        let recovered_ack_envelope = SignedEnvelope::sign(
+            DocumentKind::ApplicationAck,
+            recovered_ack.to_value().unwrap(),
+            &issuer_key_id,
+            1,
+            &issuer,
+        )
+        .unwrap()
+        .to_json()
+        .unwrap();
+        assert_eq!(
+            relay_signed_document(&identity, &recovered_state, &recovered_ack_envelope),
+            b"OK document_applied application_ack\n"
+        );
+        assert_eq!(
+            control_exchange(&identity, &recovered_state, b"PULL_EVENTS\n"),
+            b"EVENTS 2\n[]\n"
+        );
+        drop(recovered_state);
         drop(identity);
         std::fs::remove_dir_all(directory).unwrap();
     }

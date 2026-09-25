@@ -30,7 +30,7 @@ pub use exchanges::{
     ApprovalDecisionOutcome, ApprovalRecord, AuditRecord, ExchangePolicyRecord, ExchangeRecord,
     LifecycleRecord,
 };
-pub use fleet::{EnrollmentRecord, NodeRecord};
+pub use fleet::{EnrollmentRecord, NodeGrantRevocationDraft, NodeKeyRotationDraft, NodeRecord};
 pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord, GrantRevocationOutcome};
 pub use node_channel::{InboxDocument, NodeChallenge, NodeEventInsert, NodeEventRecord};
 pub use operators::{LocalOperator, LocalSession};
@@ -39,9 +39,9 @@ const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000
 const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
 const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
-/// Current schema version. Versions 5-8 add fleet authorization and channel
-/// state incrementally.
-pub const SCHEMA_VERSION: i64 = 9;
+/// Current schema version. Versions 5-12 add fleet authorization, node
+/// revocation reconciliation, channel state and staged key rotation.
+pub const SCHEMA_VERSION: i64 = 12;
 /// Tables that must exist for a database that reports the given version.
 /// A supported older version is migrated forward; a version whose tables
 /// are missing is damaged and fails closed instead of being recreated.
@@ -88,6 +88,9 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     (7, &["node_challenges"]),
     (8, &["operation_approvals"]),
     (9, &["operations"]),
+    (10, &["controller_meta"]),
+    (11, &["node_revocation_queue"]),
+    (12, &["node_key_rotations"]),
 ];
 /// The persisted clock high-water mark advances at most this often, so
 /// ordinary reads never take a write lock. The independent one-second clock
@@ -2268,7 +2271,38 @@ impl Database {
         if version >= 9 && !self.operation_binding_columns_present().await? {
             return Err(StoreError::UnsupportedSchemaVersion);
         }
+        if version >= 10 && !self.issuer_epoch_column_is_wide_enough().await? {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
         Ok(())
+    }
+
+    async fn issuer_epoch_column_is_wide_enough(&self) -> Result<bool, StoreError> {
+        match self {
+            Self::Sqlite(pool) => {
+                let rows = sqlx::query("PRAGMA table_info(controller_meta)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                Ok(rows.iter().any(|row| {
+                    row.try_get::<String, _>("name").ok().as_deref() == Some("issuer_epoch")
+                        && row
+                            .try_get::<String, _>("type")
+                            .is_ok_and(|kind| kind.eq_ignore_ascii_case("INTEGER"))
+                }))
+            }
+            Self::Postgres(pool) => {
+                let count: i64 = sqlx::query_scalar(
+                    "SELECT COUNT(*) FROM information_schema.columns
+                     WHERE table_schema = current_schema() AND table_name = 'controller_meta'
+                       AND column_name = 'issuer_epoch' AND data_type = 'bigint'",
+                )
+                .fetch_one(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                Ok(count == 1)
+            }
+        }
     }
 
     async fn node_challenge_columns_present(&self) -> Result<bool, StoreError> {
@@ -2510,18 +2544,66 @@ impl Database {
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
+                let rows = sqlx::query("PRAGMA table_info(operation_approvals)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let columns = rows
+                    .iter()
+                    .filter_map(|row| row.try_get::<String, _>("name").ok())
+                    .collect::<std::collections::BTreeSet<_>>();
+                if !columns.contains("decision_key_hash") {
+                    sqlx::query(
+                        "ALTER TABLE operation_approvals ADD COLUMN decision_key_hash TEXT",
+                    )
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                }
                 sqlx::raw_sql(include_str!(
                     "migrations/sqlite/0008_fleet_authorization.sql"
                 ))
                 .execute(pool)
                 .await
                 .map_err(StoreError::Database)?;
+                let rows = sqlx::query("PRAGMA table_info(operations)")
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let columns = rows
+                    .iter()
+                    .filter_map(|row| row.try_get::<String, _>("name").ok())
+                    .collect::<std::collections::BTreeSet<_>>();
+                for (column, definition) in [
+                    ("resource_id", "TEXT NOT NULL DEFAULT ''"),
+                    ("requested_ttl_seconds", "BIGINT NOT NULL DEFAULT 1"),
+                    ("broker_event_key", "TEXT"),
+                ] {
+                    if !columns.contains(column) {
+                        sqlx::query(&format!(
+                            "ALTER TABLE operations ADD COLUMN {column} {definition}"
+                        ))
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    }
+                }
                 sqlx::raw_sql(include_str!(
                     "migrations/sqlite/0009_operation_bindings.sql"
                 ))
                 .execute(pool)
                 .await
                 .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/sqlite/0011_node_revocation_queue.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!("migrations/sqlite/0012_node_key_rotation.sql"))
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
                 Ok(())
             }
             Self::Postgres(pool) => {
@@ -2567,6 +2649,25 @@ impl Database {
                 .map_err(StoreError::Database)?;
                 sqlx::raw_sql(include_str!(
                     "migrations/postgres/0009_operation_bindings.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0010_issuer_epoch_bigint.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0011_node_revocation_queue.sql"
+                ))
+                .execute(pool)
+                .await
+                .map(|_| ())
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0012_node_key_rotation.sql"
                 ))
                 .execute(pool)
                 .await

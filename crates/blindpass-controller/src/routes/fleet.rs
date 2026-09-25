@@ -4,7 +4,9 @@
 
 use crate::app::AppState;
 use crate::routes::admin_session::{authenticated_session, valid_origin, valid_session_csrf};
-use crate::store::{EnrollmentRecord, LocalSession, NodeRecord};
+use crate::store::{
+    EnrollmentRecord, LocalSession, NodeGrantRevocationDraft, NodeKeyRotationDraft, NodeRecord,
+};
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -14,7 +16,10 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blindpass_core::canon::canonicalize_json;
 use blindpass_core::custody::{RecipientKeyPair, sha256};
-use blindpass_core::fleet::{enrollment_proof_message, node_key_fingerprint};
+use blindpass_core::fleet::{
+    DocumentKind, NodeKeyRotation, NodeRevocation, Revocation, SignedEnvelope,
+    enrollment_proof_message, node_key_fingerprint,
+};
 use blindpass_core::signing::ed25519::verify;
 use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
@@ -34,7 +39,8 @@ pub(crate) fn routes() -> Router<AppState> {
         .route("/api/v3/enrollments/{id}/approve", post(approve_enrollment))
         .route("/api/v3/enrollments/{id}/reject", post(reject_enrollment))
         .route("/api/v3/nodes", get(list_nodes))
-        .route("/api/v3/nodes/{id}", get(get_node))
+        .route("/api/v3/nodes/{id}", get(get_node).delete(revoke_node))
+        .route("/api/v3/nodes/{id}/rotate-key", post(rotate_node_key))
         .route("/api/v3/node/enroll", post(submit_node_enrollment))
 }
 
@@ -49,6 +55,15 @@ struct EnrollmentCreateInput {
 struct EnrollmentDecisionInput {
     expected_fingerprint: String,
     expected_version: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NodeKeyRotationInput {
+    expected_key_version: i64,
+    expected_fingerprint: String,
+    signing_pub: String,
+    recipient_pub: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -472,6 +487,388 @@ async fn get_node(
     }
 }
 
+async fn revoke_node(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(response) = require_operator(&state, &headers, true, true).await {
+        return response;
+    }
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    let node = match store.node_by_id(&id).await {
+        Ok(Some(node)) => node,
+        Ok(None) => {
+            return api_error(
+                StatusCode::NOT_FOUND,
+                "node_not_found",
+                "node was not found",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    let now_ms = match store.database_now_ms().await {
+        Ok(now_ms) => now_ms,
+        Err(_) => return unavailable(),
+    };
+    if node.status == "revoked" {
+        return match node_body(&node, now_ms) {
+            Some(body) => Json(body).into_response(),
+            None => unavailable(),
+        };
+    }
+    let (Some(issuer), Some(key_id)) = (
+        state.issuer_keypair.as_ref(),
+        state.issuer_key_id.as_deref(),
+    ) else {
+        return api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "fleet_disabled",
+            "fleet authorization is not configured",
+        );
+    };
+    let issuer_epoch = match store.issuer_epoch().await {
+        Ok(epoch) => epoch,
+        Err(_) => return unavailable(),
+    };
+    let revocation_time = match u64::try_from(now_ms) {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    };
+    let mut grants = Vec::new();
+    for status in ["issued", "delivered"] {
+        let mut cursor = None;
+        loop {
+            let page = match store
+                .list_grants(Some(&id), Some(status), cursor, 100)
+                .await
+            {
+                Ok(page) => page,
+                Err(_) => return unavailable(),
+            };
+            let page_len = page.len();
+            let Some(last) = page.last() else {
+                break;
+            };
+            cursor = Some((last.created_at_ms, last.id.clone()));
+            grants.extend(
+                page.into_iter()
+                    .filter(|grant| grant.expires_at_ms > now_ms),
+            );
+            if page_len < 100 {
+                break;
+            }
+        }
+    }
+    let mut revocations = Vec::with_capacity(grants.len());
+    for grant in grants {
+        let retain_until_ms = now_ms
+            .max(grant.expires_at_ms)
+            .checked_add(7 * 24 * 60 * 60 * 1_000)
+            .and_then(|value| u64::try_from(value).ok());
+        let Some(retain_until_ms) = retain_until_ms else {
+            return unavailable();
+        };
+        let revocation = Revocation {
+            grant_id: grant.id.clone(),
+            node_id: id.clone(),
+            reason: "operator".to_owned(),
+            revoked_at_ms: revocation_time,
+            retain_until_ms,
+            issuer_epoch,
+        };
+        let body = match revocation.to_value() {
+            Ok(body) => body,
+            Err(_) => return unavailable(),
+        };
+        let envelope = match SignedEnvelope::sign(
+            DocumentKind::Revocation,
+            body,
+            key_id,
+            issuer_epoch,
+            issuer,
+        ) {
+            Ok(envelope) => envelope,
+            Err(_) => return unavailable(),
+        };
+        let envelope_json = match envelope
+            .to_json()
+            .ok()
+            .and_then(|bytes| String::from_utf8(bytes).ok())
+        {
+            Some(value) => value,
+            None => return unavailable(),
+        };
+        revocations.push(NodeGrantRevocationDraft {
+            grant_id: grant.id,
+            reason: "operator".to_owned(),
+            envelope_json,
+        });
+    }
+    let node_revocation = NodeRevocation {
+        node_id: id.clone(),
+        revoked_at_ms: revocation_time,
+        issuer_epoch,
+    };
+    let node_revocation_body = match node_revocation.to_value() {
+        Ok(body) => body,
+        Err(_) => return unavailable(),
+    };
+    let node_revocation_envelope = match SignedEnvelope::sign(
+        DocumentKind::NodeRevocation,
+        node_revocation_body,
+        key_id,
+        issuer_epoch,
+        issuer,
+    ) {
+        Ok(envelope) => envelope,
+        Err(_) => return unavailable(),
+    };
+    let node_revocation_json = match node_revocation_envelope
+        .to_json()
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+    {
+        Some(value) => value,
+        None => return unavailable(),
+    };
+    match store
+        .revoke_node(&id, &revocations, &node_revocation_json)
+        .await
+    {
+        Ok(true) => {
+            let node = match store.node_by_id(&id).await {
+                Ok(Some(node)) => node,
+                Ok(None) | Err(_) => return unavailable(),
+            };
+            let now_ms = match store.database_now_ms().await {
+                Ok(now_ms) => now_ms,
+                Err(_) => return unavailable(),
+            };
+            match node_body(&node, now_ms) {
+                Some(body) => Json(body).into_response(),
+                None => unavailable(),
+            }
+        }
+        Ok(false) => api_error(
+            StatusCode::NOT_FOUND,
+            "node_not_found",
+            "node was not found",
+        ),
+        Err(crate::store::StoreError::InvalidInput("node grant set changed")) => api_error(
+            StatusCode::CONFLICT,
+            "node_changed",
+            "active node grants changed; retry the revocation",
+        ),
+        Err(_) => unavailable(),
+    }
+}
+
+async fn rotate_node_key(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    Json(body): Json<NodeKeyRotationInput>,
+) -> Response {
+    if let Err(response) = require_operator(&state, &headers, true, true).await {
+        return response;
+    }
+    let (Some(signing_public), Some(recipient_public)) = (
+        decode_base64url(&body.signing_pub, 32),
+        decode_base64url(&body.recipient_pub, 32),
+    ) else {
+        return invalid_key_rotation();
+    };
+    let Some(fingerprint) = node_key_fingerprint(&signing_public, &recipient_public).ok() else {
+        return unavailable();
+    };
+    if body.expected_key_version <= 0
+        || !valid_fingerprint(&body.expected_fingerprint)
+        || body.expected_fingerprint != fingerprint
+    {
+        return invalid_key_rotation();
+    }
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    let node = match store.node_by_id(&id).await {
+        Ok(Some(node)) => node,
+        Ok(None) => {
+            return api_error(
+                StatusCode::NOT_FOUND,
+                "node_not_found",
+                "node was not found",
+            );
+        }
+        Err(_) => return unavailable(),
+    };
+    if node.status != "active"
+        || node.rotation_pending
+        || node.key_version != body.expected_key_version
+    {
+        return api_error(
+            StatusCode::CONFLICT,
+            "node_key_changed",
+            "node key changed or another rotation is pending",
+        );
+    }
+    let (Some(issuer), Some(key_id)) = (
+        state.issuer_keypair.as_ref(),
+        state.issuer_key_id.as_deref(),
+    ) else {
+        return api_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "fleet_disabled",
+            "fleet authorization is not configured",
+        );
+    };
+    let now_ms = match store.database_now_ms().await {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    };
+    let issuer_epoch = match store.issuer_epoch().await {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    };
+    let Some(revoked_at_ms) = u64::try_from(now_ms).ok() else {
+        return unavailable();
+    };
+    let mut grant_revocations = Vec::new();
+    for status in ["issued", "delivered"] {
+        let mut cursor = None;
+        loop {
+            let page = match store
+                .list_grants(Some(&id), Some(status), cursor, 100)
+                .await
+            {
+                Ok(page) => page,
+                Err(_) => return unavailable(),
+            };
+            let page_len = page.len();
+            let Some(last) = page.last() else {
+                break;
+            };
+            cursor = Some((last.created_at_ms, last.id.clone()));
+            for grant in page
+                .into_iter()
+                .filter(|grant| grant.expires_at_ms > now_ms)
+            {
+                let Some(retain_until_ms) = now_ms
+                    .max(grant.expires_at_ms)
+                    .checked_add(7 * 24 * 60 * 60 * 1_000)
+                    .and_then(|value| u64::try_from(value).ok())
+                else {
+                    return unavailable();
+                };
+                let revocation = Revocation {
+                    grant_id: grant.id.clone(),
+                    node_id: id.clone(),
+                    reason: "key_rotation".to_owned(),
+                    revoked_at_ms,
+                    retain_until_ms,
+                    issuer_epoch,
+                };
+                let Ok(envelope) = SignedEnvelope::sign(
+                    DocumentKind::Revocation,
+                    match revocation.to_value() {
+                        Ok(value) => value,
+                        Err(_) => return unavailable(),
+                    },
+                    key_id,
+                    issuer_epoch,
+                    issuer,
+                ) else {
+                    return unavailable();
+                };
+                let Some(envelope_json) = envelope
+                    .to_json()
+                    .ok()
+                    .and_then(|bytes| String::from_utf8(bytes).ok())
+                else {
+                    return unavailable();
+                };
+                grant_revocations.push(NodeGrantRevocationDraft {
+                    grant_id: grant.id,
+                    reason: "key_rotation".to_owned(),
+                    envelope_json,
+                });
+            }
+            if page_len < 100 {
+                break;
+            }
+        }
+    }
+    let Some(to_key_version) = u64::try_from(node.key_version)
+        .ok()
+        .and_then(|version| version.checked_add(1))
+    else {
+        return unavailable();
+    };
+    let rotation = NodeKeyRotation {
+        node_id: id.clone(),
+        rotation_id: random_id("rot_"),
+        from_key_version: u64::try_from(node.key_version).unwrap_or_default(),
+        to_key_version,
+        signing_public: body.signing_pub,
+        recipient_public: body.recipient_pub,
+        fingerprint,
+        issuer_epoch,
+    };
+    let Ok(envelope) = SignedEnvelope::sign(
+        DocumentKind::NodeKeyRotation,
+        match rotation.to_value() {
+            Ok(value) => value,
+            Err(_) => return invalid_key_rotation(),
+        },
+        key_id,
+        issuer_epoch,
+        issuer,
+    ) else {
+        return unavailable();
+    };
+    let Some(rotation_document_json) = envelope
+        .to_json()
+        .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+    else {
+        return unavailable();
+    };
+    let draft = NodeKeyRotationDraft {
+        rotation: rotation.clone(),
+        grant_revocations,
+        rotation_document_json,
+    };
+    match store
+        .stage_node_key_rotation(&id, body.expected_key_version, &draft)
+        .await
+    {
+        Ok(true) => match store.node_by_id(&id).await {
+            Ok(Some(node)) => match store.database_now_ms().await {
+                Ok(now) => match node_body(&node, now) {
+                    Some(body) => (StatusCode::ACCEPTED, Json(body)).into_response(),
+                    None => unavailable(),
+                },
+                Err(_) => unavailable(),
+            },
+            Ok(None) | Err(_) => unavailable(),
+        },
+        Ok(false) => api_error(
+            StatusCode::CONFLICT,
+            "node_key_changed",
+            "node key changed or another rotation is pending",
+        ),
+        Err(crate::store::StoreError::InvalidInput("node grant set changed")) => api_error(
+            StatusCode::CONFLICT,
+            "node_grants_changed",
+            "active node grants changed; retry the rotation",
+        ),
+        Err(_) => unavailable(),
+    }
+}
+
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
 pub(crate) async fn require_operator(
     state: &AppState,
     headers: &HeaderMap,
@@ -547,6 +944,10 @@ fn node_body(record: &NodeRecord, now_ms: i64) -> Option<Value> {
         "id": record.id,
         "name": record.name,
         "status": status,
+        "revocation_pending": record.revocation_pending,
+        "rotation_pending": record.rotation_pending,
+        "pending_key_version": record.pending_key_version,
+        "pending_rotation_id": record.pending_rotation_id,
         "protocol_version": record.protocol_version,
         "capabilities": capabilities,
         "key_version": record.key_version,
@@ -635,6 +1036,14 @@ fn invalid_enrollment() -> Response {
         StatusCode::BAD_REQUEST,
         "invalid_enrollment",
         "enrollment fields or key proof are invalid",
+    )
+}
+
+fn invalid_key_rotation() -> Response {
+    api_error(
+        StatusCode::BAD_REQUEST,
+        "invalid_key_rotation",
+        "replacement node key pair or fingerprint is invalid",
     )
 }
 

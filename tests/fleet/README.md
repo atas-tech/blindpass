@@ -135,3 +135,68 @@ PID, the systemd 252 host matrix, and physical TPM/measured boot remain open.
 The earlier opt-in `local-kvm-p01-tpm-pass` run tested the emulated TPM
 comparison only; it did not close those exclusions. See
 `docs/testing/p01-host-broker-evidence.md` for the dated evidence record.
+
+## P03 fleet authorization runner
+
+The `blindpass` CLI can manage enrollment and node keys against the same
+operator API used by the console. Fleet commands require an administrator
+login, the exact controller-approved origin, and the password on stdin:
+
+```bash
+printf '%s\n' "$OPERATOR_PASSWORD" | blindpass admin \
+  --controller-url https://controller.example \
+  --username admin --password-stdin enrollment list
+```
+
+Use `enrollment create NAME --token-file PATH` to write the one-use enrollment
+token to a new mode-0600 file. `enrollment approve ID --expected-fingerprint
+SHA256` and `enrollment reject ID --expected-fingerprint SHA256` require the
+operator to compare the displayed fingerprint. `node revoke ID --confirm ID`
+requires the exact node ID. For rotation, prepare a candidate on the node with
+`blindpass-node rotate-prepare`, save its public JSON metadata, then run
+`node rotate ID --metadata-file PATH --expected-fingerprint SHA256`. The CLI
+checks the key pair fingerprint and consecutive key version before requesting
+the staged rotation.
+
+The CLI process reads the operator password into memory and sends it to curl
+over stdin for the controller login. It attempts logout at command completion,
+then deletes its mode-0600 runtime cookie file. The enrollment token is
+plaintext in the requested mode-0600 file until the node consumes it or it
+expires; remove that file after enrollment.
+
+`p03-vm.sh` boots two disposable guests and runs the controller on the host.
+Each backend pass enrolls separate nodes, registers fixed system-unit
+workloads, authorizes dummy `noop.marker` operations, checks broker result and
+audit linkage, propagates a signed node revocation, retries the revoked
+workload, and recovers through a new node identity. It also drops one TLS
+application response and restarts the broker and relay to verify durable event
+replay and application acknowledgement.
+
+The runner defaults to both backends; choose an individual pass with
+`--backend sqlite` or `--backend postgres`:
+
+```bash
+export BLINDPASS_FLEET_GUEST_IMAGE="${XDG_DATA_HOME:-$HOME/.local/share}/blindpass/vm-images/noble-server-cloudimg-amd64.img"
+export BLINDPASS_FLEET_GUEST_IMAGE_SHA256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+export BLINDPASS_FLEET_RUNNER_OWNER=platform-team
+./tests/fleet/p03-vm.sh --backend both
+```
+
+The image defaults to the path above and its reviewed SHA-256 is pinned by the
+runner. `p03-vm.sh` creates a disposable SSH key itself. PostgreSQL defaults
+to the disposable local development endpoint
+`postgres://blindpass:localdev@127.0.0.1:5433/blindpass`; override it with
+`P03_TEST_POSTGRES_URL`. The runner requires QEMU/KVM, readable and writable
+`/dev/kvm`, the listed host tools, and a named runner owner. It removes guest
+overlays, generated keys, fixture state, and temporary database schemas after
+success or failure. With `BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1`, a failed run
+retains the protected temporary directory for diagnosis and prints its path.
+
+This runner's passing key-rotation, E01/E02 output is phase-local evidence; it
+is not the complete P03 acceptance matrix. It also covers only the partition,
+restart, replay, and acknowledgement subset of P03-I06. Portable Rust tests
+cover the configured queue capacity boundaries, but full backpressure and
+purpose-sanitization evidence remains open. The remaining P03-I01–I06 and pilot
+scenarios still require implementation or execution evidence. See
+`docs/testing/evidence/p03-fleet-authorization-execution.md` for the last
+two-backend result and its exact limits.

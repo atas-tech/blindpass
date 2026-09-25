@@ -405,6 +405,7 @@ impl Store {
         }
     }
 
+    #[allow(clippy::too_many_arguments)] // Update inputs and their signed snapshots are explicit.
     pub async fn update_workload(
         &self,
         id: &str,
@@ -424,14 +425,12 @@ impl Store {
                 sqlx::query("UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'")
                     .bind(node_id).bind(&self.tenant_id).execute(&mut *tx).await
                     .map_err(StoreError::Database)?;
-                let sql = format!(
-                    "UPDATE workloads SET unit = ?, account = ?, consumption_mode = ?,
+                let sql = "UPDATE workloads SET unit = ?, account = ?, consumption_mode = ?,
                      local_ceiling_seconds = ?, registration_version = registration_version + 1,
                      version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'active'
                      AND version = ? AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = node_id
-                     AND n.tenant_id = ? AND n.status = 'active')"
-                );
-                let result = sqlx::query(&sql)
+                     AND n.tenant_id = ? AND n.status = 'active')";
+                let result = sqlx::query(sql)
                     .bind(unit)
                     .bind(account)
                     .bind(consumption_mode)
@@ -456,14 +455,12 @@ impl Store {
                 sqlx::query("SELECT id FROM nodes WHERE id = $1 AND tenant_id = $2 AND status = 'active' FOR UPDATE")
                     .bind(node_id).bind(&self.tenant_id).fetch_optional(&mut *tx).await
                     .map_err(StoreError::Database)?;
-                let sql = format!(
-                    "UPDATE workloads SET unit = $1, account = $2, consumption_mode = $3,
+                let sql = "UPDATE workloads SET unit = $1, account = $2, consumption_mode = $3,
                      local_ceiling_seconds = $4, registration_version = registration_version + 1,
                      version = version + 1 WHERE id = $5 AND tenant_id = $6 AND status = 'active'
                      AND version = $7 AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = node_id
-                     AND n.tenant_id = $6 AND n.status = 'active')"
-                );
-                let result = sqlx::query(&sql)
+                     AND n.tenant_id = $6 AND n.status = 'active')";
+                let result = sqlx::query(sql)
                     .bind(unit)
                     .bind(account)
                     .bind(consumption_mode)
@@ -1056,6 +1053,7 @@ async fn create_or_extend_approval_postgres(
     Ok(draft.id.clone())
 }
 
+#[allow(clippy::too_many_arguments)] // Decision persistence names every CAS and audit binding.
 async fn decide_operation_approval_sqlite(
     pool: &sqlx::SqlitePool,
     tenant_id: &str,
@@ -1190,6 +1188,7 @@ async fn decide_operation_approval_sqlite(
     Ok(OperationDecisionOutcome::Applied(updated))
 }
 
+#[allow(clippy::too_many_arguments)] // Decision persistence names every CAS and audit binding.
 async fn decide_operation_approval_postgres(
     pool: &sqlx::PgPool,
     tenant_id: &str,

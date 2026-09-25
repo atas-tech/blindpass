@@ -43,6 +43,7 @@ pub struct NodeEventRecord {
     pub idempotency_key: String,
     pub kind: String,
     pub body_json: String,
+    pub body_hash: String,
     pub received_at_ms: i64,
 }
 
@@ -52,6 +53,7 @@ impl Store {
     pub async fn create_node_challenge(
         &self,
         node_id: &str,
+        key_version: i64,
         nonce_hash: &str,
         protocol_version: &str,
         capabilities_json: &str,
@@ -74,22 +76,31 @@ impl Store {
                     "INSERT INTO node_challenges
                      (id, tenant_id, node_id, nonce_hash, key_version, issuer_epoch,
                       protocol_version, capabilities_json, capabilities_hash, created_at, expires_at, consumed_at)
-                     SELECT ?, n.tenant_id, n.id, ?, n.key_version, m.issuer_epoch,
+                     SELECT ?, n.tenant_id, n.id, ?, ?, m.issuer_epoch,
                             n.protocol_version, n.capabilities_json, ?, {SQLITE_NOW_MS},
                             {SQLITE_NOW_MS} + ?, NULL
                      FROM nodes n CROSS JOIN controller_meta m
-                     WHERE n.id = ? AND n.tenant_id = ? AND n.status = 'active'
-                       AND n.protocol_version = ? AND n.capabilities_json = ? AND m.id = 1"
+                     WHERE n.id = ? AND n.tenant_id = ?
+                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
+                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
+                       )))
+                       AND n.protocol_version = ? AND n.capabilities_json = ? AND m.id = 1
+                       AND (n.key_version = ? OR EXISTS (
+                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = ?
+                       ))"
                 );
                 let inserted = sqlx::query(&sql)
                     .bind(&id)
                     .bind(nonce_hash)
+                    .bind(key_version)
                     .bind(capabilities_hash)
                     .bind(NODE_CHALLENGE_TTL_MS)
                     .bind(node_id)
                     .bind(&self.tenant_id)
                     .bind(protocol_version)
                     .bind(capabilities_json)
+                    .bind(key_version)
+                    .bind(key_version)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?
@@ -125,22 +136,31 @@ impl Store {
                     "INSERT INTO node_challenges
                      (id, tenant_id, node_id, nonce_hash, key_version, issuer_epoch,
                       protocol_version, capabilities_json, capabilities_hash, created_at, expires_at, consumed_at)
-                     SELECT $1, n.tenant_id, n.id, $2, n.key_version, m.issuer_epoch,
-                            n.protocol_version, n.capabilities_json, $3, {POSTGRES_NOW_MS},
-                            {POSTGRES_NOW_MS} + $4::BIGINT, NULL
+                     SELECT $1, n.tenant_id, n.id, $2, $3, m.issuer_epoch,
+                            n.protocol_version, n.capabilities_json, $4, {POSTGRES_NOW_MS},
+                            {POSTGRES_NOW_MS} + $5::BIGINT, NULL
                      FROM nodes n CROSS JOIN controller_meta m
-                     WHERE n.id = $5 AND n.tenant_id = $6 AND n.status = 'active'
-                       AND n.protocol_version = $7 AND n.capabilities_json = $8 AND m.id = 1"
+                     WHERE n.id = $6 AND n.tenant_id = $7
+                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
+                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
+                       )))
+                       AND n.protocol_version = $8 AND n.capabilities_json = $9 AND m.id = 1
+                       AND (n.key_version = $10 OR EXISTS (
+                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = $11
+                       ))"
                 );
                 let inserted = sqlx::query(&sql)
                     .bind(&id)
                     .bind(nonce_hash)
+                    .bind(key_version)
                     .bind(capabilities_hash)
                     .bind(NODE_CHALLENGE_TTL_MS)
                     .bind(node_id)
                     .bind(&self.tenant_id)
                     .bind(protocol_version)
                     .bind(capabilities_json)
+                    .bind(key_version)
+                    .bind(key_version)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?
@@ -211,6 +231,42 @@ impl Store {
         }
     }
 
+    pub async fn node_signing_public_key(
+        &self,
+        node_id: &str,
+        key_version: i64,
+    ) -> Result<Option<String>, StoreError> {
+        self.checkpoint_clock().await?;
+        match &self.database {
+            Database::Sqlite(pool) => sqlx::query_scalar(
+                "SELECT h.signing_pub FROM node_key_history h JOIN nodes n ON n.id = h.node_id
+                 WHERE h.node_id = ? AND h.key_version = ? AND h.retired_at IS NULL
+                   AND n.tenant_id = ? AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
+                     SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
+                   )))",
+            )
+            .bind(node_id)
+            .bind(key_version)
+            .bind(&self.tenant_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(StoreError::Database),
+            Database::Postgres(pool) => sqlx::query_scalar(
+                "SELECT h.signing_pub FROM node_key_history h JOIN nodes n ON n.id = h.node_id
+                 WHERE h.node_id = $1 AND h.key_version = $2 AND h.retired_at IS NULL
+                   AND n.tenant_id = $3 AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
+                     SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
+                   )))",
+            )
+            .bind(node_id)
+            .bind(key_version)
+            .bind(&self.tenant_id)
+            .fetch_optional(pool)
+            .await
+            .map_err(StoreError::Database),
+        }
+    }
+
     /// Atomically consume the signed challenge and insert its short-lived
     /// session. A losing concurrent replay observes `false`.
     pub async fn consume_node_challenge(
@@ -238,7 +294,11 @@ impl Store {
                        AND capabilities_json = ? AND capabilities_hash = ? AND consumed_at IS NULL
                        AND expires_at > {SQLITE_NOW_MS}
                        AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = ? AND n.tenant_id = ?
-                         AND n.status = 'active' AND n.key_version = ?
+                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
+                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
+                       ))) AND (n.key_version = ? OR EXISTS (
+                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = ?
+                       ))
                          AND n.protocol_version = ? AND n.capabilities_json = ?)
                        AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND m.issuer_epoch = ?)"
                 );
@@ -254,6 +314,7 @@ impl Store {
                     .bind(&challenge.capabilities_hash)
                     .bind(&challenge.node_id)
                     .bind(&self.tenant_id)
+                    .bind(challenge.key_version)
                     .bind(challenge.key_version)
                     .bind(&challenge.protocol_version)
                     .bind(&challenge.capabilities_json)
@@ -291,7 +352,11 @@ impl Store {
                        AND capabilities_json = $9 AND capabilities_hash = $8 AND consumed_at IS NULL
                        AND expires_at > {POSTGRES_NOW_MS}
                        AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = $3 AND n.tenant_id = $2
-                         AND n.status = 'active' AND n.key_version = $5
+                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
+                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
+                       ))) AND (n.key_version = $5 OR EXISTS (
+                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = $5
+                       ))
                          AND n.protocol_version = $7 AND n.capabilities_json = $9)
                        AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND m.issuer_epoch = $6)"
                 );
@@ -334,6 +399,7 @@ impl Store {
 
     /// Validate a node bearer session against both its JWT hash and durable
     /// session row, while updating the authenticated liveness timestamp.
+    #[allow(clippy::too_many_arguments)] // The session predicate binds each token and challenge claim.
     pub async fn authenticate_node_session(
         &self,
         session_id: &str,
@@ -350,9 +416,15 @@ impl Store {
                 let sql = format!(
                     "UPDATE nodes SET last_seen_at = {SQLITE_NOW_MS},
                        last_poll_at = CASE WHEN ? THEN {SQLITE_NOW_MS} ELSE last_poll_at END
-                     WHERE id = ? AND tenant_id = ? AND status = 'active' AND key_version = ?
+                     WHERE id = ? AND tenant_id = ?
+                       AND (status = 'active' OR (status = 'revoked' AND EXISTS (
+                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = nodes.id
+                       ))) AND (key_version = ? OR EXISTS (
+                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = nodes.id AND r.to_key_version = ?
+                       ))
                        AND protocol_version = ?
-                       AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND m.issuer_epoch = ?)
+                       AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND
+                         (m.issuer_epoch = ? OR (nodes.status = 'revoked' AND ? <= m.issuer_epoch)))
                        AND EXISTS (SELECT 1 FROM node_sessions s WHERE s.id = ? AND s.node_id = nodes.id
                          AND s.token_hash = ? AND s.revoked_at IS NULL AND s.expires_at > {SQLITE_NOW_MS})"
                 );
@@ -361,7 +433,9 @@ impl Store {
                     .bind(node_id)
                     .bind(&self.tenant_id)
                     .bind(key_version)
+                    .bind(key_version)
                     .bind(protocol_version)
+                    .bind(issuer_epoch)
                     .bind(issuer_epoch)
                     .bind(session_id)
                     .bind(token_hash)
@@ -374,18 +448,26 @@ impl Store {
                 let sql = format!(
                     "UPDATE nodes SET last_seen_at = {POSTGRES_NOW_MS},
                        last_poll_at = CASE WHEN $1 THEN {POSTGRES_NOW_MS} ELSE last_poll_at END
-                     WHERE id = $2 AND tenant_id = $3 AND status = 'active' AND key_version = $4
-                       AND protocol_version = $5
-                       AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND m.issuer_epoch = $6)
-                       AND EXISTS (SELECT 1 FROM node_sessions s WHERE s.id = $7 AND s.node_id = nodes.id
-                         AND s.token_hash = $8 AND s.revoked_at IS NULL AND s.expires_at > {POSTGRES_NOW_MS})"
+                     WHERE id = $2 AND tenant_id = $3
+                       AND (status = 'active' OR (status = 'revoked' AND EXISTS (
+                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = nodes.id
+                       ))) AND (key_version = $4 OR EXISTS (
+                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = nodes.id AND r.to_key_version = $5
+                       ))
+                       AND protocol_version = $6
+                       AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND
+                         (m.issuer_epoch = $7 OR (nodes.status = 'revoked' AND $8 <= m.issuer_epoch)))
+                       AND EXISTS (SELECT 1 FROM node_sessions s WHERE s.id = $9 AND s.node_id = nodes.id
+                         AND s.token_hash = $10 AND s.revoked_at IS NULL AND s.expires_at > {POSTGRES_NOW_MS})"
                 );
                 let result = sqlx::query(&sql)
                     .bind(poll)
                     .bind(node_id)
                     .bind(&self.tenant_id)
                     .bind(key_version)
+                    .bind(key_version)
                     .bind(protocol_version)
+                    .bind(issuer_epoch)
                     .bind(issuer_epoch)
                     .bind(session_id)
                     .bind(token_hash)
@@ -589,7 +671,7 @@ impl Store {
         idempotency_key: &str,
     ) -> Result<Option<NodeEventRecord>, StoreError> {
         self.checkpoint_clock().await?;
-        let sql = "SELECT e.id, e.node_id, e.idempotency_key, e.kind, e.body_json, e.received_at
+        let sql = "SELECT e.id, e.node_id, e.idempotency_key, e.kind, e.body_json, e.body_hash, e.received_at
             FROM node_events e JOIN nodes n ON n.id = e.node_id
             WHERE e.node_id = ? AND e.idempotency_key = ? AND n.tenant_id = ? AND n.status = 'active'";
         match &self.database {
@@ -604,7 +686,7 @@ impl Store {
                 .map(node_event_from_sqlite)
                 .transpose(),
             Database::Postgres(pool) => {
-                let sql = "SELECT e.id, e.node_id, e.idempotency_key, e.kind, e.body_json, e.received_at
+                let sql = "SELECT e.id, e.node_id, e.idempotency_key, e.kind, e.body_json, e.body_hash, e.received_at
                     FROM node_events e JOIN nodes n ON n.id = e.node_id
                     WHERE e.node_id = $1 AND e.idempotency_key = $2 AND n.tenant_id = $3 AND n.status = 'active'";
                 sqlx::query(sql)
@@ -631,6 +713,7 @@ fn node_event_from_sqlite(row: &sqlx::sqlite::SqliteRow) -> Result<NodeEventReco
             .map_err(StoreError::Database)?,
         kind: row.try_get("kind").map_err(StoreError::Database)?,
         body_json: row.try_get("body_json").map_err(StoreError::Database)?,
+        body_hash: row.try_get("body_hash").map_err(StoreError::Database)?,
         received_at_ms: row.try_get("received_at").map_err(StoreError::Database)?,
     })
 }
@@ -644,6 +727,7 @@ fn node_event_from_postgres(row: &sqlx::postgres::PgRow) -> Result<NodeEventReco
             .map_err(StoreError::Database)?,
         kind: row.try_get("kind").map_err(StoreError::Database)?,
         body_json: row.try_get("body_json").map_err(StoreError::Database)?,
+        body_hash: row.try_get("body_hash").map_err(StoreError::Database)?,
         received_at_ms: row.try_get("received_at").map_err(StoreError::Database)?,
     })
 }

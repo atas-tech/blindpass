@@ -179,7 +179,17 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
   assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
-  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 9);
+  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 12);
+  assert.ok(schema.components.schemas.CapabilitiesResponse.properties.api.items.enum.includes("fleet.v3"));
+  assert.ok(schema.components.schemas.NodeSessionInput.required.includes("key_version"));
+  assert.ok(schema.components.schemas.SignedDocument.properties.kind.enum.includes("node_key_rotation"));
+  assert.deepEqual(schema.components.schemas.Node.required.slice(0, 9), [
+    "id", "name", "status", "revocation_pending", "rotation_pending",
+    "pending_key_version", "pending_rotation_id", "protocol_version", "capabilities"
+  ]);
+  const nodeRotation = schema.paths["/api/v3/nodes/{id}/rotate-key"].post;
+  assert.ok(nodeRotation.security.some((requirement) => requirement.adminSession && requirement.csrfCookie));
+  assert.equal(nodeRotation.responses["202"].content["application/json"].schema.$ref, "#/components/schemas/Node");
 
   const serialized = JSON.stringify(schema.paths["/readyz"]);
   assert.doesNotMatch(serialized, /secret|token|credential|password/i);
@@ -270,6 +280,7 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
       "POST /api/v3/enrollments/{id}/reject",
       "GET /api/v3/nodes",
       "GET /api/v3/nodes/{id}",
+      "DELETE /api/v3/nodes/{id}",
       "POST /api/v3/node/enroll",
       "POST /api/v3/node/session",
       "POST /api/v3/node/poll",
@@ -309,6 +320,16 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
     "grant_revoked",
     "grant_revoked_after_consumption",
     "not_revocable_offline"
+  ]);
+  assert.equal(
+    schema.components.schemas.NodeEventsResponse.properties.ack.oneOf[0].$ref,
+    "#/components/schemas/ApplicationAck"
+  );
+  assert.ok(schema.components.schemas.SignedDocument.properties.kind.enum.includes("application_ack"));
+  assert.deepEqual(schema.components.schemas.NodeEvent.properties.kind.enum, [
+    "operation_request",
+    "operation_result",
+    "audit"
   ]);
   for (const [route, pathItem] of Object.entries(schema.paths)) {
     if (!route.startsWith("/api/v3/") || route.startsWith("/api/v3/node/") || route.startsWith("/api/v3/admin/")) continue;

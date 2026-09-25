@@ -15,7 +15,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blindpass_core::canon::{canonicalize_json, parse_json};
 use blindpass_core::custody::sha256;
 use blindpass_core::fleet::{
-    DocumentKind, SignedEnvelope, TimeReply, node_event_message, node_session_challenge_message,
+    ApplicationAck, DocumentKind, SignedEnvelope, TimeReply, node_event_message,
+    node_session_challenge_message,
 };
 use blindpass_core::signing::ed25519::verify;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, decode, encode};
@@ -35,6 +36,7 @@ const MAX_NODE_EVENTS_PER_REQUEST: usize = 100;
 #[serde(deny_unknown_fields)]
 struct SessionInput {
     node_id: String,
+    key_version: i64,
     protocol_version: String,
     capabilities: JsonValue,
     nonce: Option<String>,
@@ -93,6 +95,9 @@ async fn node_session(State(state): State<AppState>, Json(body): Json<SessionInp
     if body.protocol_version != NODE_PROTOCOL_VERSION {
         return protocol_mismatch();
     }
+    if body.key_version <= 0 {
+        return invalid_session();
+    }
     let (capabilities_json, capabilities_hash) = match canonical_capabilities(&body.capabilities) {
         Ok(value) => value,
         Err(()) => return invalid_session(),
@@ -111,6 +116,7 @@ async fn node_session(State(state): State<AppState>, Json(body): Json<SessionInp
             let challenge = match store
                 .create_node_challenge(
                     &body.node_id,
+                    body.key_version,
                     &nonce_hash,
                     &body.protocol_version,
                     &capabilities_json,
@@ -171,23 +177,36 @@ async fn node_session(State(state): State<AppState>, Json(body): Json<SessionInp
                 Err(_) => return unavailable(),
             };
             if challenge.protocol_version != body.protocol_version
+                || challenge.key_version != body.key_version
                 || challenge.capabilities_json != capabilities_json
                 || challenge.capabilities_hash != capabilities_hash
             {
                 return invalid_challenge();
             }
             let node = match store.node_by_id(&body.node_id).await {
-                Ok(Some(node)) if node.status == "active" => node,
+                Ok(Some(node))
+                    if node.status == "active"
+                        || (node.status == "revoked" && node.revocation_pending) =>
+                {
+                    node
+                }
                 Ok(_) => return invalid_challenge(),
                 Err(_) => return unavailable(),
             };
-            if node.key_version != challenge.key_version
-                || node.protocol_version != challenge.protocol_version
+            if node.protocol_version != challenge.protocol_version
                 || node.capabilities_json != challenge.capabilities_json
             {
                 return invalid_challenge();
             }
-            let Some(public_key) = decode_base64url(&node.signing_pub, 32) else {
+            let signing_public = match store
+                .node_signing_public_key(&node.id, challenge.key_version)
+                .await
+            {
+                Ok(Some(public_key)) => public_key,
+                Ok(None) => return invalid_challenge(),
+                Err(_) => return unavailable(),
+            };
+            let Some(public_key) = decode_base64url(&signing_public, 32) else {
                 return unavailable();
             };
             let mut message = match node_session_challenge_message(
@@ -408,15 +427,28 @@ async fn node_events(
         return unavailable();
     };
     let node = match store.node_by_id(&claims.node_id).await {
-        Ok(Some(node)) if node.status == "active" => node,
+        Ok(Some(node))
+            if node.status == "active" || (node.status == "revoked" && node.revocation_pending) =>
+        {
+            node
+        }
         Ok(_) => return invalid_bearer(),
         Err(_) => return unavailable(),
     };
-    let Some(public_key) = decode_base64url(&node.signing_pub, 32) else {
+    let signing_public = match store
+        .node_signing_public_key(&claims.node_id, claims.key_version)
+        .await
+    {
+        Ok(Some(public_key)) => public_key,
+        Ok(None) => return invalid_bearer(),
+        Err(_) => return unavailable(),
+    };
+    let Some(public_key) = decode_base64url(&signing_public, 32) else {
         return unavailable();
     };
     let mut accepted = 0_u32;
     let mut duplicates = 0_u32;
+    let mut accepted_keys = Vec::with_capacity(body.events.len());
     for event in body.events {
         let body_source = match serde_json::to_string(&event.body) {
             Ok(source) => source,
@@ -454,13 +486,65 @@ async fn node_events(
             blindpass_core::secret::wipe(&mut message);
             return unavailable();
         };
+        let prior = match store
+            .node_event_by_key(&claims.node_id, &event.idempotency_key)
+            .await
+        {
+            Ok(prior) => prior,
+            Err(_) => {
+                blindpass_core::secret::wipe(&mut message);
+                return unavailable();
+            }
+        };
+        let exact_duplicate = prior
+            .as_ref()
+            .is_some_and(|record| record.body_hash == body_hash);
+        let verified = match verified {
+            Ok(true) => true,
+            Ok(false) if exact_duplicate && node.rotation_pending => {
+                let old_key = match store
+                    .node_signing_public_key(&claims.node_id, node.key_version)
+                    .await
+                {
+                    Ok(Some(public_key)) => decode_base64url(&public_key, 32),
+                    Ok(None) => None,
+                    Err(_) => {
+                        blindpass_core::secret::wipe(&mut message);
+                        return unavailable();
+                    }
+                };
+                let Some(old_key) = old_key else {
+                    blindpass_core::secret::wipe(&mut message);
+                    return invalid_event();
+                };
+                match verify(&old_key, &message, &signature) {
+                    Ok(valid) => valid,
+                    Err(_) => {
+                        blindpass_core::secret::wipe(&mut message);
+                        return unavailable();
+                    }
+                }
+            }
+            Ok(false) => false,
+            Err(_) => {
+                blindpass_core::secret::wipe(&mut message);
+                return unavailable();
+            }
+        };
         blindpass_core::secret::wipe(&mut message);
-        match verified {
-            Ok(true) => {}
-            Ok(false) => return invalid_event(),
-            Err(_) => return unavailable(),
+        if !verified
+            || (node.rotation_pending && claims.key_version == node.key_version && !exact_duplicate)
+            || (node.status == "revoked" && event.kind == "operation_request")
+        {
+            return invalid_event();
         }
-        match store
+        if node.rotation_pending
+            && event.kind == "operation_request"
+            && claims.key_version == node.pending_key_version.unwrap_or_default()
+        {
+            return invalid_event();
+        }
+        let insertion = match store
             .record_node_event(
                 &format!("ne_{}", random_urlsafe(24)),
                 &claims.node_id,
@@ -471,8 +555,8 @@ async fn node_events(
             )
             .await
         {
-            Ok(NodeEventInsert::Inserted) => accepted += 1,
-            Ok(NodeEventInsert::Duplicate) => duplicates += 1,
+            Ok(NodeEventInsert::Inserted) => true,
+            Ok(NodeEventInsert::Duplicate) => false,
             Ok(NodeEventInsert::Conflict) => {
                 return api_error(
                     StatusCode::CONFLICT,
@@ -481,11 +565,81 @@ async fn node_events(
                 );
             }
             Err(_) => return unavailable(),
+        };
+        let applied = match event.kind.as_str() {
+            "operation_result" => {
+                store
+                    .reconcile_node_operation_result(&claims.node_id, body_json)
+                    .await
+            }
+            "audit" => {
+                store
+                    .record_node_audit_event(&claims.node_id, &event.idempotency_key, body_json)
+                    .await
+            }
+            "operation_request" => Ok(()),
+            _ => return invalid_event(),
+        };
+        if applied.is_err() {
+            return invalid_event();
         }
+        if insertion {
+            accepted += 1;
+        } else {
+            duplicates += 1;
+        }
+        accepted_keys.push(event.idempotency_key);
     }
-    Json(json!({"accepted": accepted, "duplicates": duplicates})).into_response()
+    if accepted_keys.is_empty() {
+        return Json(json!({"accepted": accepted, "duplicates": duplicates, "ack": null}))
+            .into_response();
+    }
+    let (Some(issuer), Some(key_id)) = (
+        state.issuer_keypair.as_ref(),
+        state.issuer_key_id.as_deref(),
+    ) else {
+        return unavailable();
+    };
+    let issuer_epoch = match store.issuer_epoch().await {
+        Ok(epoch) => epoch,
+        Err(_) => return unavailable(),
+    };
+    let acknowledged_at_ms = match store.database_now_ms().await {
+        Ok(value) => match u64::try_from(value) {
+            Ok(value) => value,
+            Err(_) => return unavailable(),
+        },
+        Err(_) => return unavailable(),
+    };
+    let ack = ApplicationAck {
+        node_id: claims.node_id,
+        issuer_epoch,
+        acknowledged_at_ms,
+        event_keys: accepted_keys,
+    };
+    let Ok(ack_body) = ack.to_value() else {
+        return unavailable();
+    };
+    let Ok(envelope) = SignedEnvelope::sign(
+        DocumentKind::ApplicationAck,
+        ack_body,
+        key_id,
+        issuer_epoch,
+        issuer,
+    ) else {
+        return unavailable();
+    };
+    let Ok(envelope_bytes) = envelope.to_json() else {
+        return unavailable();
+    };
+    let Ok(envelope_json) = serde_json::from_slice::<JsonValue>(&envelope_bytes) else {
+        return unavailable();
+    };
+    Json(json!({"accepted": accepted, "duplicates": duplicates, "ack": envelope_json}))
+        .into_response()
 }
 
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
 async fn authenticate_node(
     state: &AppState,
     headers: &HeaderMap,

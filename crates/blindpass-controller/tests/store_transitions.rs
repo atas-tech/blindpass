@@ -2965,8 +2965,8 @@ async fn older_schema_version_migrates_forward_and_records_current_version() {
         pool.close().await;
         (version, clock != 0, idempotency != 0)
     };
-    // Version 4 adds boot-anchored clock checks; versions 5-7 add fleet state.
-    assert_eq!(version, 7);
+    // Version 4 adds boot-anchored clock checks; versions 5-12 add fleet state.
+    assert_eq!(version, 12);
     assert!(clock_present && idempotency_present);
     assert_fleet_schema_present(&fixture).await;
     fixture.close().await;
@@ -2990,14 +2990,13 @@ async fn p03_fleet_migration_upgrades_a_v4_database_and_is_repeatable() {
 
     let upgraded = Store::connect(&fixture.url)
         .await
-        .expect("upgrade schema version 4 to fleet schema version 7");
-    assert_eq!(
+        .expect("upgrade schema version 4 to the current fleet schema version");
+    assert!(
         upgraded
             .secret_request_metadata(&request_id)
             .await
             .expect("read durable P02 state after fleet migration")
-            .is_some(),
-        true
+            .is_some()
     );
     drop(upgraded);
     assert_fleet_schema_present(&fixture).await;

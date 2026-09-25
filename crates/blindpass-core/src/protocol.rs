@@ -51,9 +51,10 @@ pub fn parse_workload_request(frame: &[u8]) -> Result<WorkloadRequest, ProtocolE
     if fields.len() != 6 || fields[0] != "WORK" {
         return Err(ProtocolError::InvalidFrame);
     }
-    for field in &fields[1..] {
+    for field in &fields[1..5] {
         validate_field(field)?;
     }
+    validate_operation(fields[5])?;
     Ok(WorkloadRequest {
         node_id: fields[1].to_owned(),
         workload_id: fields[2].to_owned(),
@@ -96,6 +97,18 @@ fn validate_field(field: &str) -> Result<(), ProtocolError> {
     Ok(())
 }
 
+fn validate_operation(field: &str) -> Result<(), ProtocolError> {
+    if field.is_empty()
+        || field.len() > 2_048
+        || field
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+    {
+        return Err(ProtocolError::InvalidField);
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{ProtocolError, parse_loader_request, parse_workload_request};
@@ -121,6 +134,19 @@ mod tests {
         assert_eq!(
             parse_loader_request(b"LOAD backup.service api-key\n\n"),
             Err(ProtocolError::InvalidFrame)
+        );
+        let request_payload = format!(
+            "WORK node-a workload-a agent.service inv-a request:{}\n",
+            "A".repeat(1_800)
+        );
+        assert!(parse_workload_request(request_payload.as_bytes()).is_ok());
+        let oversized_payload = format!(
+            "WORK node-a workload-a agent.service inv-a request:{}\n",
+            "A".repeat(2_049)
+        );
+        assert_eq!(
+            parse_workload_request(oversized_payload.as_bytes()),
+            Err(ProtocolError::InvalidField)
         );
     }
 }

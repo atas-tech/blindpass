@@ -183,7 +183,7 @@ pub fn authorize_workload(
     validate_name(&request.workload_id, "workload")?;
     validate_name(&request.claimed_unit, "unit")?;
     validate_name(&request.claimed_invocation_id, "invocation")?;
-    validate_name(&request.operation, "operation")?;
+    validate_operation(&request.operation)?;
 
     let unit = peer
         .unit
@@ -234,6 +234,18 @@ fn validate_name(value: &str, field: &'static str) -> Result<(), IdentityError> 
             .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
     {
         return Err(IdentityError::InvalidRequest(field));
+    }
+    Ok(())
+}
+
+fn validate_operation(value: &str) -> Result<(), IdentityError> {
+    if value.is_empty()
+        || value.len() > 2_048
+        || value
+            .bytes()
+            .any(|byte| byte.is_ascii_control() || byte.is_ascii_whitespace())
+    {
+        return Err(IdentityError::InvalidRequest("operation"));
     }
     Ok(())
 }

@@ -18,6 +18,7 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `crates/blindpass-broker` | `AGPL-3.0-only` | Root host broker and native consumer probes |
 | `crates/blindpass-controller` | `AGPL-3.0-only` | Rust controller (P02; implemented, not yet accepted) |
 | `crates/blindpass-cli` | `AGPL-3.0-only` | Local controller administration CLI |
+| `crates/blindpass-node` | `AGPL-3.0-only` | Unprivileged fleet channel relay; no broker key storage |
 
 ## Repository Notes
 
