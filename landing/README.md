@@ -29,6 +29,12 @@ These checks use DOM doubles to cover success, rejection, flow switching and the
 
 [dist/llms.txt](dist/llms.txt) publishes with the page and is the summary automated readers will quote. Keep it to claims the repository supports, and keep its implemented/proposed split identical to the page's. It separately records the boundaries that marketing copy tends to drop: the plaintext endpoints, that delivery limits are not revocation, and that approval does not constrain later use. Do not reintroduce archive-era terminology such as "zero-knowledge", named defensive-layer counts, TEE or egress filtering; [Specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#repository-findings) and the [threat model](../docs/security/blindpass-threat-model.md) correct those.
 
+## Reel
+
+The "In motion" section embeds [dist/assets/blindpass-reel.mp4](dist/assets/blindpass-reel.mp4) (15 s, 1920×1080, 60 fps, H.264 High with AAC 128 kbps, 8.0 MB) with [dist/assets/reel-poster.jpg](dist/assets/reel-poster.jpg) as its poster. [dist/reel.js](dist/reel.js) keeps it `preload="none"` until it scrolls into view, then autoplays muted and loops; it pauses off-screen. A viewer's pause holds across scrolling. "Sound" unmutes and restarts from the top so the score lands on its cues. With `prefers-reduced-motion: reduce` it never autoplays or preloads.
+
+The reel shows only the implemented agent-to-agent exchange and this page's own content. Keep it that way: it must not depict the proposed host broker, browser handoff or fleet work as available. The video and score are rendered from [reel/](reel/README.md): an HTML/JS timeline and a numpy synthesis script, with no samples or licensed audio. `landing/reel/render.sh` regenerates both assets. Changing the reel's content means re-rendering it.
+
 ## Analytics
 
 The page loads Google Analytics 4 (`G-QDP5XZPTDV`) from `googletagmanager.com`. This is the only third-party request the page makes; everything else is local. It sets cookies and sends visitor IP addresses to Google on load, with no consent gate and no `anonymize_ip`, so it needs a privacy-notice and consent decision before serving EU/UK visitors.
@@ -50,5 +56,7 @@ Run `npm run test:landing` from the repository root. [deploy-landing-pages.yml](
 Verification on 2026-09-22: all seven demo scenarios passed, along with JavaScript syntax, local asset/link/HTML-reference checks and `git diff --check`. Workspace build/tests were attempted but did not pass: build/test tooling is not installed, and the unchanged browser-UI auth-storage suite also reported a session-storage assertion failure. Browser visual checks and backend integration/E2E were not run for this landing-content update.
 
 Updated on 2026-09-22 for the analytics, metadata and content revision: seven demo scenarios and `node --check` passed after adding a terminal-step assertion. Social/canonical metadata, the `role="img"` diagram label and the GA4 snippet are unverified in a browser; no rendering, tag-firing, crawler or Lighthouse check was run.
+
+Updated on 2026-09-26 for the reel: `npm run test:landing` passed 13 tests, including six reel-player DOM-double tests. The section was also checked in a real browser (Arch `chromium` via Playwright, 1440×900 and 390×844, default autoplay policy). Nothing downloaded before scroll. Muted autoplay started in view. Sound unmuted and restarted from 0. A pause held after scrolling away and back. Reduced motion neither played nor loaded. There was no horizontal overflow. The only failed request was the deliberately blocked GA4 script. Safari/iOS and Firefox playback were not tested.
 
 The P07.5/P07.6 landing-promotion gate is maintained in the Obsidian vault. It owns the GA4 removal or consent-gated disposition and the six GitHub-bound CTA destinations. Browser network and click evidence are required before broad promotion; removal of hosted dashboard analytics does not resolve this landing tag.

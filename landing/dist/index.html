@@ -20,6 +20,7 @@
     <link rel="preload" href="assets/inter.woff2" as="font" type="font/woff2" crossorigin>
     <link rel="stylesheet" href="styles.css">
     <script src="script.js" defer></script>
+    <script src="reel.js" defer></script>
     <!-- Google Analytics (GA4) -->
     <script async src="https://www.googletagmanager.com/gtag/js?id=G-QDP5XZPTDV"></script>
     <script>
@@ -89,6 +90,19 @@
 
       <section class="principles container" aria-label="Product principles">
         <div><svg class="icon"><use href="#i-key"/></svg><span>Human-to-agent provisioning</span></div><div><svg class="icon"><use href="#i-agent"/></svg><span>Agent-to-agent exchange</span></div><div><svg class="icon"><use href="#i-shield"/></svg><span>Policy, approvals, and audit</span></div>
+      </section>
+
+      <section id="reel" class="reel section container" aria-labelledby="reel-title">
+        <div class="section-heading"><div><p class="eyebrow section-kicker">IN MOTION</p><h2 id="reel-title">Fifteen seconds.<br><span class="muted">One encrypted handoff.</span></h2></div><p>A request, a policy check, and a handoff the requester runtime decrypts.<span class="demo-disclaimer">Motion illustration · sample metadata only</span></p></div>
+        <figure class="reel-frame is-paused">
+          <div class="reel-screen">
+            <video id="reel-video" class="reel-video" poster="assets/reel-poster.jpg" preload="none" muted loop playsinline aria-describedby="reel-caption">
+              <source src="assets/blindpass-reel.mp4" type="video/mp4">
+            </video>
+            <button id="reel-play" class="reel-play" type="button" aria-label="Play the BlindPass reel"><svg class="icon" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5L8 5.5Z"/></svg></button>
+          </div>
+          <figcaption class="reel-bar"><p id="reel-caption" class="reel-caption">Agent A requests <code>reports.api_key</code>. Exchange policy allows it. Agent B encrypts the key for Agent A's runtime, which decrypts it.</p><div class="reel-controls"><button id="reel-toggle" class="reel-button" type="button">Play</button><button id="reel-sound" class="reel-button reel-sound" type="button" aria-pressed="false"><span class="reel-bars" aria-hidden="true"><i></i><i></i><i></i></span>Sound</button></div></figcaption>
+        </figure>
       </section>
 
       <section id="approach" class="approach section container" aria-labelledby="approach-title">

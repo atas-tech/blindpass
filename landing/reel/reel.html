@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>BlindPass Landing Reel</title>
+<style>
+@font-face{font-family:Inter;src:url("../dist/assets/inter.woff2") format("woff2");font-weight:100 900}
+:root{--bg:#0b0e0d;--panel:#101512;--ink:#f0f3ed;--muted:#9ca59d;--dim:#778279;--lime:#c5f277;--line:#27302a;--mono:"JetBrainsMono Nerd Font","JetBrains Mono","Liberation Mono",monospace}
+html,body{margin:0;background:#000;overflow:hidden}
+#stage{position:absolute;left:0;top:0;width:1920px;height:1080px;overflow:hidden;background:var(--bg);font-family:Inter,sans-serif;color:var(--ink);transform-origin:0 0;-webkit-font-smoothing:antialiased}
+.layer{position:absolute;left:0;top:0;width:1920px;height:1080px}
+.abs{position:absolute}
+.mono{font-family:var(--mono)}
+.c{display:inline-block;white-space:pre}
+.m{display:inline-block;overflow:hidden;vertical-align:top;padding:0 .08em .14em;margin:0 -.08em -.14em}
+.icon{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;display:block}
+svg{overflow:visible}
+
+#grid{background-image:radial-gradient(#1d251f 1.3px,transparent 1.6px);background-size:36px 36px}
+#glow{background:radial-gradient(ellipse 50% 45% at 50% 46%,#c5f27710,transparent 70%)}
+
+/* S1 mark */
+.tile{position:absolute;left:0;top:0;width:85.5px;height:93.5px;background:var(--lime)}
+#dot{left:0;top:0;width:22px;height:22px;background:var(--lime);border-radius:4px}
+#lockup{left:960px;top:540px;display:flex;align-items:center;white-space:nowrap}
+#markslot{width:156px;height:168px;margin-right:60px;flex-shrink:0}
+#word{font-size:150px;font-weight:630;letter-spacing:-.046em;line-height:1.3}
+#word .per{color:var(--lime);display:inline-block;transform-origin:50% 80%}
+.hair{background:var(--lime)}
+#spec{left:960px;top:540px}
+#specbox{position:absolute;left:-118px;top:-140px;width:236px;height:280px;border:1px dashed #c5f27788}
+.handle{position:absolute;width:10px;height:10px;border:1.5px solid var(--lime);background:var(--bg)}
+.speclabel{position:absolute;font:500 15px var(--mono);color:var(--lime);letter-spacing:.08em;white-space:nowrap}
+.ring{border-radius:50%;border:2px solid var(--lime)}
+.coord{font:14px var(--mono);color:#c5f277aa;letter-spacing:.1em}
+
+/* S2 type */
+.line{left:0;width:1920px;text-align:center;font-size:210px;font-weight:510;letter-spacing:-.06em;line-height:1;white-space:nowrap}
+#l2{color:var(--lime)}
+#eyebrow2{left:0;width:1920px;text-align:center;font-size:22px;color:var(--lime);letter-spacing:.085em;white-space:pre}
+#bar2{background:var(--lime)}
+#sub2{left:0;width:1920px;text-align:center;font-size:46px;font-weight:450;letter-spacing:-.025em;white-space:nowrap}
+#sub2 .w{display:inline-block;white-space:pre}
+#iris{left:0;top:0;border-radius:50%}
+
+/* S3 diagram */
+.node{position:absolute;width:201px;height:207px;margin:-103.5px 0 0 -100.5px;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#131915;border:2px solid #3a4337;border-radius:14px;box-shadow:0 20px 48px #0006;box-sizing:border-box}
+.node .icon{width:52px;height:52px;color:#c2ccb7;margin-bottom:18px}
+.node b{font-size:27px;font-weight:550}
+.node small{font:23px var(--mono);color:var(--dim);margin-top:10px}
+#broker{position:absolute;left:960px;top:470px;width:188px;height:188px;margin:-94px 0 0 -94px;background:linear-gradient(135deg,#25351b,#1c2715);border:2px solid #b9e27075;border-radius:23px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--lime);box-sizing:border-box}
+#broker .icon{width:73px;height:73px;stroke-width:1.4}
+#broker b{font-size:23px;font-weight:550;letter-spacing:-.4px}
+.corner{position:absolute;width:29px;height:29px;border-color:#b9e270;border-style:solid}
+#ctl{top:-10px;left:-10px;border-width:2px 0 0 2px;border-radius:8px 0 0 0}
+#cbr{bottom:-10px;right:-10px;border-width:0 2px 2px 0;border-radius:0 0 8px 0}
+#toplabel{left:960px;top:205.8px;transform:translate(-50%,-50%);font:23px var(--mono);letter-spacing:.1em;color:#97a582;background:#101411;padding:6px 15px;white-space:pre}
+#hbox{position:absolute;top:0;height:100%;box-sizing:border-box;border:2px solid var(--lime);border-radius:6px;color:var(--bg);font:23px var(--mono);letter-spacing:.1em;display:flex;align-items:center;justify-content:center;overflow:hidden}
+#chip{left:960px;top:696.3px;display:flex;align-items:center;gap:14px;white-space:nowrap;border:2px solid #34422a;border-radius:40px;background:#152013;color:#b9d394;padding:12px 22px;font-size:23px}
+#chip .icon{width:25px;height:25px}
+#caption{left:0;width:1920px;top:778px;text-align:center;color:#77856c;font:23px var(--mono);letter-spacing:.08em;white-space:pre}
+#caption .ar{color:#a3b58b;margin:0 29px}
+.pill{position:absolute;left:0;top:0;display:flex;align-items:center;gap:12px;white-space:pre;font:500 22px var(--mono);color:var(--lime);background:#0b0e0d;border:2px solid var(--lime);border-radius:40px;padding:10px 20px;box-shadow:0 0 30px #c5f27755,0 0 2px #c5f277}
+.pill .icon{width:22px;height:22px}
+#dtag{background:var(--lime);color:var(--bg);box-shadow:0 0 40px #c5f27766}
+#log{left:0;top:890px;width:1920px;display:flex;justify-content:center;gap:90px;font:22px var(--mono);white-space:pre}
+#log .ln{color:#5d6860}#log .lb{color:var(--dim);margin:0 22px 0 14px}#log .lv{color:var(--ink)}
+#log .lime{color:var(--lime)}
+#btm{left:0;top:955px;width:1920px;display:flex;justify-content:center;align-items:center;gap:14px;font-size:24px;color:var(--muted);white-space:pre}
+#btm .icon{width:24px;height:24px}
+
+/* S4 page */
+#s4{perspective:1900px;perspective-origin:960px 540px}
+#page{position:absolute;left:0;top:0;width:1440px;height:4017px;transform-origin:0 0;transform-style:preserve-3d}
+.pc{position:absolute;background-image:url("build/page2x.jpg");background-size:1440px 4017px;background-repeat:no-repeat}
+.slot{position:absolute;border:1.5px dashed #c5f27799;border-radius:8px;background:#0d110e}
+.shadow{position:absolute;background:#000;border-radius:10px}
+.tag{position:absolute;left:0;top:0;transform-origin:0 0;white-space:nowrap}
+.tag span{display:inline-block;font:700 20px var(--mono);letter-spacing:.12em;color:var(--bg);background:var(--lime);padding:8px 14px;border-radius:4px;box-shadow:0 10px 30px #0008}
+.pin{position:absolute;width:2px;margin-left:-1px;background:linear-gradient(var(--lime),#c5f27700);transform-origin:50% 0}
+#beam{position:absolute;left:-120px;width:1680px;height:160px;background:linear-gradient(#c5f27700,#c5f27718 70%,#c5f277aa 99%,#c5f27700);pointer-events:none}
+#pframe{position:absolute;left:0;top:0;width:1440px;height:4017px;box-shadow:0 0 0 2px #2c3830,0 80px 200px #000c}
+
+/* S5 */
+#s5t{left:0;top:0;transform-origin:0 0;font-size:88.45px;font-weight:490;letter-spacing:-.065em;line-height:92.87px;white-space:nowrap}
+#s5t div{height:92.87px}
+#s5b{color:var(--lime)}
+#zline{left:0;top:0;background:var(--lime)}
+#tagline{left:0;width:1920px;top:640px;text-align:center;font:500 26px var(--mono);letter-spacing:.24em;color:var(--lime);white-space:pre}
+#url{left:0;width:1920px;top:700px;text-align:center;font:20px var(--mono);letter-spacing:.08em;color:var(--dim);white-space:pre}
+
+/* HUD */
+#hud{font:15px var(--mono);letter-spacing:.12em;color:#8b968d;pointer-events:none}
+#hud .abs{white-space:pre}
+.cross{font:22px var(--mono);color:#c5f277aa;width:20px;height:20px;line-height:20px;text-align:center}
+#prog{left:64px;top:1046px;width:1792px;height:1px;background:#2a332c}
+#progf{left:0;top:0;height:1px;background:var(--lime);width:0}
+#grain{pointer-events:none;opacity:.06}
+#vig{pointer-events:none;background:radial-gradient(ellipse 75% 70% at 50% 50%,transparent 55%,#000000a0 100%)}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 4-5 8-8 9-3-1-8-5-8-9V6l8-3Z"/><path d="m8 12 3 3 5-6"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+  <symbol id="i-agent" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="13" rx="4"/><path d="M12 3v4M8 12v2m8-2v2m-6 3h4M1 11v5m22-5v5"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="8" r="5"/><path d="m12 12 9 9m-6-6 3-3m0 6 3-3"/></symbol>
+</svg>
+
+<div id="stage">
+  <div id="grid" class="layer"></div>
+  <div id="glow" class="layer"></div>
+
+  <!-- S3: exchange diagram -->
+  <div id="s3" class="layer" style="transform-origin:960px 470px">
+    <svg class="layer" viewBox="0 0 1920 1080" fill="none">
+      <defs><filter id="gl" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <circle id="oOrb" cx="960" cy="470" r="300" stroke="#56644a" stroke-width="2" stroke-dasharray="6 12"/>
+      <circle id="iOrb" cx="960" cy="470" r="215.7" stroke="#3b4830" stroke-width="2" transform="rotate(-90 960 470)"/>
+      <circle id="sweep" cx="960" cy="470" r="215.7" stroke="#c5f277" stroke-width="3" stroke-linecap="round" stroke-dasharray="160 1200" filter="url(#gl)"/>
+      <path id="cL" d="M701.8 470H866.2" stroke="#4a5b39" stroke-width="2"/>
+      <path id="cR" d="M1218.2 470H1053.8" stroke="#4a5b39" stroke-width="2"/>
+      <path id="vT" d="M960 227.5V369.3" stroke="#4a5b39" stroke-width="2"/>
+      <path id="vB" d="M960 702V570.7" stroke="#4a5b39" stroke-width="2"/>
+      <circle id="j1" cx="660" cy="470" r="6" fill="#c5f277"/>
+      <circle id="j2" cx="1260" cy="470" r="6" fill="#c5f277"/>
+      <path id="trA" d="M701.8 470H866.2" stroke="#c5f277" stroke-width="3" filter="url(#gl)"/>
+      <path id="trB" d="M1218.2 470H701.8" stroke="#c5f277" stroke-width="3" filter="url(#gl)"/>
+    </svg>
+    <div id="toplabel" class="abs"><span id="tlt">ALLOW · APPROVAL · DENY</span><div id="hbox"></div></div>
+    <div id="nodeA" class="node" style="left:600.5px;top:470px"><svg class="icon"><use href="#i-agent"/></svg><b>Agent A</b><small>requester</small></div>
+    <div id="nodeB" class="node" style="left:1319.5px;top:470px"><svg class="icon"><use href="#i-agent"/></svg><b>Agent B</b><small>fulfiller</small></div>
+    <div id="broker"><span id="ctl" class="corner"></span><span id="cbr" class="corner"></span><svg class="icon"><use href="#i-shield"/></svg><b>blindpass</b></div>
+    <div id="chip" class="abs"><svg class="icon"><use href="#i-check"/></svg>Your exchange policy</div>
+    <div id="caption" class="abs"><span id="cp0">REQUEST</span><span class="ar" id="cp1">→</span><span id="cp2">CHECK</span><span class="ar" id="cp3">→</span><span id="cp4">HANDOFF</span></div>
+    <div id="pkt" class="pill"><svg class="icon"><use href="#i-key"/></svg><span>reports.api_key ?</span></div>
+    <div id="cph" class="pill"><svg class="icon"><use href="#i-lock"/></svg><span id="cphT"></span></div>
+    <div id="dtag" class="pill"><svg class="icon"><use href="#i-check"/></svg><span>reports.api_key</span></div>
+    <div id="log" class="abs">
+      <div id="lg0"><span class="ln">01</span><span class="lb">requester</span><span class="lv">report-agent</span></div>
+      <div id="lg1"><span class="ln">02</span><span class="lb">secret name</span><span class="lv">reports.api_key</span></div>
+      <div id="lg2"><span class="ln">03</span><span class="lb">fulfiller</span><span class="lv lime">ops-agent</span></div>
+    </div>
+    <div id="btm" class="abs"><svg class="icon"><use href="#i-lock"/></svg><span id="btmT">Fulfiller encrypts. Requester runtime decrypts.</span></div>
+  </div>
+
+  <!-- S4: the landing page in 3D -->
+  <div id="s4" class="layer"><div id="page"></div></div>
+
+  <!-- S1: mark -->
+  <div id="s1" class="layer" style="transform-origin:960px 540px">
+    <div id="crossH" class="abs hair" style="left:0;top:540px;width:1920px;height:1px"></div>
+    <div id="crossV" class="abs hair" style="left:960px;top:0;width:1px;height:1080px"></div>
+    <div id="cX" class="abs coord" style="left:1700px;top:512px">X 960</div>
+    <div id="cY" class="abs coord" style="left:975px;top:60px">Y 540</div>
+    <div id="ring1" class="abs ring"></div>
+    <div id="spec" class="abs">
+      <div id="specbox"><i class="handle" style="left:-6px;top:-6px"></i><i class="handle" style="right:-6px;top:-6px"></i><i class="handle" style="left:-6px;bottom:-6px"></i><i class="handle" style="right:-6px;bottom:-6px"></i></div>
+      <span class="speclabel" id="sl0" style="left:-118px;top:-172px">W 27</span>
+      <span class="speclabel" id="sl1" style="left:136px;top:-10px">H 29</span>
+      <span class="speclabel" id="sl2" style="left:-118px;top:154px">SKEW −9°</span>
+      <span class="speclabel" id="sl3" style="left:136px;top:120px">GAP 5</span>
+    </div>
+    <div id="lockup" class="abs"><span id="markslot"></span><span id="word">blindpass<span class="per" id="per">.</span></span></div>
+    <div id="mark" class="abs" style="left:0;top:0">
+      <div class="tile" style="border-radius:31px 0 0 0"></div>
+      <div class="tile" style="border-radius:0 47px 0 0;opacity:.7"></div>
+      <div class="tile" style="border-radius:0 0 0 31px;opacity:.7"></div>
+      <div class="tile" style="border-radius:0 0 47px 0"></div>
+    </div>
+    <div id="dot" class="abs"></div>
+  </div>
+
+  <!-- S2: type -->
+  <div id="s2" class="layer">
+    <div id="eyebrow2" class="abs mono" style="top:230px"></div>
+    <div id="l1" class="abs line">Autonomy.</div>
+    <div id="l2" class="abs line" style="top:500px"><span id="l2t">Under control</span><span id="l2dot" class="c">.</span></div>
+    <div id="bar2" class="abs"></div>
+    <div id="sub2" class="abs" style="top:770px"></div>
+  </div>
+  <div id="iris" class="abs"></div>
+
+  <!-- S5: close -->
+  <div id="s5" class="layer">
+    <div id="s5t" class="abs"><div id="s5a">Let them work.</div><div id="s5b">Keep control.</div></div>
+    <div id="zline" class="abs"></div>
+    <div id="tagline" class="abs"></div>
+    <div id="url" class="abs">blindpass.atas.tech   ·   github.com/atas-tech/blindpass</div>
+  </div>
+
+  <!-- HUD -->
+  <div id="hud" class="layer">
+    <div class="abs cross top" style="left:54px;top:44px">+</div><div class="abs cross top" style="left:1846px;top:44px">+</div>
+    <div class="abs cross" style="left:54px;top:1016px">+</div><div class="abs cross" style="left:1846px;top:1016px">+</div>
+    <div class="abs top" style="left:92px;top:46px">BLINDPASS  <span style="color:#c5f277">/</span>  LANDING MOTION REEL  2026</div>
+    <div class="abs top" id="tc" style="right:92px;top:46px;text-align:right"></div>
+    <div class="abs" id="scn" style="left:92px;top:1014px;color:#c5f277"></div>
+    <div class="abs" style="right:92px;top:1014px;text-align:right">1920×1080  ·  60 FPS  ·  15.00 S</div>
+    <div id="prog" class="abs"><div id="progf" class="abs"></div></div>
+  </div>
+  <div id="grain" class="layer"></div>
+  <div id="vig" class="layer"></div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const seg = (t, a, b) => clamp((t - a) / (b - a));
+const lerp = (a, b, p) => a + (b - a) * p;
+const oExpo = x => x >= 1 ? 1 : 1 - Math.pow(2, -10 * x);
+const iExpo = x => x <= 0 ? 0 : Math.pow(2, 10 * x - 10);
+const ioExpo = x => x <= 0 ? 0 : x >= 1 ? 1 : x < .5 ? Math.pow(2, 20 * x - 10) / 2 : (2 - Math.pow(2, -20 * x + 10)) / 2;
+const oCubic = x => 1 - Math.pow(1 - x, 3);
+const iCubic = x => x * x * x;
+const ioCubic = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const oBack = (x, s = 1.70158) => { const c = s + 1; return 1 + c * Math.pow(x - 1, 3) + s * Math.pow(x - 1, 2); };
+const bell = (t, c, w) => Math.exp(-Math.pow((t - c) / w, 2));
+const hash = (a, b) => { const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return x - Math.floor(x); };
+const GL = 'ABCDEF0123456789#%/*+<>=$@&';
+const HEX = '0123456789abcdef';
+let F = 0;
+function scr(target, p, seed = 0) {
+  const n = target.length, rev = p * (n + 5);
+  let o = '';
+  for (let i = 0; i < n; i++) {
+    const ch = target[i];
+    if (ch === ' ') { o += ' '; continue; }
+    if (i < rev - 5) o += ch;
+    else if (i < rev) o += GL[Math.floor(hash(i + seed * 13, F) * GL.length)];
+    else o += ' ';
+  }
+  return o;
+}
+const setT = (el, s) => { if (el._t !== s) { el.textContent = s; el._t = s; } };
+const show = (el, on) => { const d = on ? '' : 'none'; if (el._d !== d) { el.style.display = d; el._d = d; } };
+const op = (el, v) => { el.style.opacity = v; };
+function split(el, mask) {
+  const txt = el.textContent; el.textContent = '';
+  const out = [];
+  for (const ch of txt) {
+    const c = document.createElement('span'); c.className = 'c'; c.textContent = ch;
+    if (mask) { const w = document.createElement('span'); w.className = 'm'; w.appendChild(c); el.appendChild(w); } else el.appendChild(c);
+    out.push(c);
+  }
+  return out;
+}
+const center = r => [r.left + r.width / 2, r.top + r.height / 2];
+
+// ---------- landing geometry: build/geom.json from capture.cjs, 1440 viewport (see README) ----------
+const G = {"cards":[[100,3065.4,394.8,344.1],[510.8,3065.4,418.5,344.1],[945.2,3065.4,394.8,344.1]],
+  "rows":[[737.7,1056.2,602.3,175.4],[737.7,1258.6,602.3,175.4],[737.7,1461,602.3,147.4]],
+  principles:[100,868.2,1240,76], intro:[100,1056.2,537.7,552.2], picker:[100,2027,1240,44], shell:[100,2134.8,1240,571.6],
+  wfHead:[100,1833.4,1240,150.7], roadHead:[100,2931.4,1240,96.9]};
+
+let W, L1, L2, L2dot, SUB, MK = {}, DOT = {}, TL = {}, S4 = {};
+const tiles = [...document.querySelectorAll('.tile')];
+const TO = [[-62.25, -66.25], [62.25, -66.25], [-62.25, 66.25], [62.25, 66.25]];
+const TORDER = [0, 1, 3, 2];
+
+function build() {
+  // S1 wordmark
+  const per = $('per'); per.remove();
+  W = split($('word'), true); $('word').appendChild(per);
+  $('lockup').style.transform = 'translate(-50%,-50%)';
+  const ms = $('markslot').getBoundingClientRect();
+  MK.x = ms.left + ms.width / 2; MK.y = ms.top + ms.height / 2; MK.s = ms.width / 210;
+
+  // S2
+  L1 = split($('l1'), false);
+  L2 = split($('l2t'), false);
+  $('l1').style.top = '300px';
+  const sw = 'Agents need API keys. Give them a secure way to ask.'.split(' ');
+  SUB = sw.map((w, i) => { const s = document.createElement('span'); s.className = 'w'; s.textContent = w + (i < sw.length - 1 ? ' ' : ''); if (i >= 4) s.style.color = '#9ca59d'; $('sub2').appendChild(s); return s; });
+  const r2 = $('l2').getBoundingClientRect(), rt = $('l2t').getBoundingClientRect(), rd = $('l2dot').getBoundingClientRect();
+  DOT.x = rd.left + (rd.width + 12.6) / 2; DOT.y = r2.top + 181.3 - 15;
+  L2.forEach(c => { const r = c.getBoundingClientRect(); c._dx = DOT.x - (r.left + r.width / 2); });
+  $('l2dot').style.transformOrigin = `${DOT.x - rd.left}px ${DOT.y - rd.top}px`;
+  Object.assign($('bar2').style, { left: (rt.left - 20) + 'px', top: (r2.top + 18) + 'px', width: (rd.right - rt.left + 40) + 'px', height: '196px' });
+
+  // S3 top label char metrics
+  const tlr = $('tlt').getBoundingClientRect();
+  TL.cw = tlr.width / 'ALLOW · APPROVAL · DENY'.length; TL.pad = 15;
+  TL.words = [[0, 5, 'ALLOW'], [8, 8, 'APPROVAL'], [19, 4, 'DENY']];
+
+  // S4 page
+  const page = $('page');
+  const mk = (cls, r, bg = true) => { const d = document.createElement('div'); d.className = cls; Object.assign(d.style, { left: r[0] + 'px', top: r[1] + 'px', width: r[2] + 'px', height: r[3] + 'px' }); if (bg) d.style.backgroundPosition = `${-r[0]}px ${-r[1]}px`; page.appendChild(d); return d; };
+  S4.frame = document.createElement('div'); S4.frame.id = 'pframe'; S4.frame.style.transform = 'translateZ(-2px)'; page.appendChild(S4.frame);
+  S4.header = mk('pc', [0, 0, 1440, 94]);
+  S4.bands = []; for (let i = 0; i < 8; i++) S4.bands.push(mk('pc', [0, 94 + i * 100.75, 785, 100.75 + .5]));
+  S4.diag = mk('pc', [785, 94, 655, 806]);
+  S4.rest = mk('pc', [0, 900, 1440, 3117]);
+  const lifts = [[G.principles, 60, 0], [G.intro, 70, 0], ...G.rows.map((r, i) => [r, 120, i]), [G.wfHead, 50, 0], [G.picker, 70, 0], [G.shell, 140, 0], [G.roadHead, 50, 0], ...G.cards.map((r, i) => [r, 190, i])];
+  S4.lifts = lifts.map(([r, z, i]) => {
+    const pad = 6, rr = [r[0] - pad, r[1] - pad, r[2] + pad * 2, r[3] + pad * 2];
+    const slot = mk('slot', rr, false), sh = mk('shadow', rr, false), pc = mk('pc', rr);
+    return { r: rr, z, i, slot, sh, pc, cy: r[1] + r[3] / 2 };
+  });
+  S4.beam = document.createElement('div'); S4.beam.id = 'beam'; page.appendChild(S4.beam);
+  S4.tags = [[211, '00  HERO'], [1056, '01  USE CASES'], [1833, '02  HANDOFF'], [2931, '03  ROADMAP'], [3591, '04  CLOSE']].map(([y, txt]) => {
+    const pin = document.createElement('div'); pin.className = 'pin'; pin.style.left = '52px'; pin.style.top = y + 'px'; page.appendChild(pin);
+    const tag = document.createElement('div'); tag.className = 'tag'; tag.innerHTML = `<span>${txt}</span>`; tag.style.left = '52px'; tag.style.top = y + 'px'; page.appendChild(tag);
+    return { y, pin, tag };
+  });
+
+  // grain
+  const cv = document.createElement('canvas'); cv.width = cv.height = 256; const cx = cv.getContext('2d'); const id = cx.createImageData(256, 256);
+  for (let i = 0; i < 256 * 256; i++) { const v = Math.floor(hash(i, 7) * 255); id.data[i * 4] = id.data[i * 4 + 1] = id.data[i * 4 + 2] = v; id.data[i * 4 + 3] = 255; }
+  cx.putImageData(id, 0, 0); $('grain').style.backgroundImage = `url(${cv.toDataURL()})`;
+}
+
+// ---------- S1: brand mark (local time u) ----------
+function markScene(u, intro, lift = 0) {
+  const s1 = $('s1');
+  // dot
+  const dp = seg(u, .15, .45);
+  show($('dot'), u >= .15 && u < .55);
+  $('dot').style.transform = `translate(${960 - 11}px,${540 - 11 + lift}px) rotate(${45 * (1 - oExpo(dp))}deg) scale(${oBack(dp, 2.4) * (1 + .25 * seg(u, .45, .55))})`;
+  // crosshair + coordinates (intro only)
+  const ch = intro ? oExpo(seg(u, .05, .75)) * (1 - seg(u, 1.25, 1.6)) : 0;
+  $('crossH').style.transform = `scaleX(${oExpo(seg(u, .05, .75))})`; op($('crossH'), ch * .45);
+  $('crossV').style.transform = `scaleY(${oExpo(seg(u, .1, .8))})`; op($('crossV'), ch * .45);
+  op($('cX'), ch); op($('cY'), ch);
+  // tiles
+  const mp = oExpo(seg(u, .55, 1.25));
+  const lp = oExpo(seg(u, 1.45, 2.05));
+  const gx = lerp(960, MK.x, lp), gy = lerp(540, MK.y, lp) + lift, gs = lerp(1, MK.s, lp);
+  show($('mark'), u >= .55);
+  $('mark').style.transform = `translate(${gx}px,${gy}px) rotate(${-35 * (1 - mp)}deg) scale(${gs}) skewY(-9deg)`;
+  tiles.forEach((el, k) => {
+    const st = .55 + TORDER.indexOf(k) * .05;
+    const p = oExpo(seg(u, st, st + .6)), pb = oBack(seg(u, st, st + .45), 1.9);
+    const [ox, oy] = TO[k];
+    el.style.transform = `translate(${ox * p - 42.75}px,${oy * p - 46.75}px) scale(${lerp(.22, 1, pb)})`;
+    el.style.visibility = u >= st ? 'visible' : 'hidden';
+  });
+  // spec overlay
+  const sp = intro ? oExpo(seg(u, .9, 1.25)) * (1 - seg(u, 1.3, 1.5)) : 0;
+  show($('spec'), sp > 0.001);
+  $('spec').style.transform = `translateY(${lift}px) scale(${lerp(1.15, 1, sp)})`; op($('spec'), sp);
+  ['sl0', 'sl1', 'sl2', 'sl3'].forEach((k, i) => { const el = $(k); el._o = el._o || el.textContent; setT(el, scr(el._o, seg(u, .95 + i * .05, 1.2 + i * .05), i)); });
+  // shockwave
+  const rp = seg(u, .95, 1.55);
+  show($('ring1'), rp > 0 && rp < 1);
+  const R = lerp(60, 620, oExpo(rp));
+  Object.assign($('ring1').style, { left: (960 - R) + 'px', top: (540 - R + lift) + 'px', width: 2 * R + 'px', height: 2 * R + 'px', opacity: .7 * (1 - rp), borderWidth: lerp(6, 1, rp) + 'px' });
+  // wordmark
+  $('lockup').style.transform = `translate(-50%,calc(-50% + ${lift}px))`;
+  W.forEach((c, j) => { const p = oExpo(seg(u, 1.58 + j * .03, 2.08 + j * .03)); c.style.transform = `translateY(${(1 - p) * 110}%)`; });
+  const pp = seg(u, 1.95, 2.25);
+  $('per').style.transform = `scale(${oBack(pp, 3)})`;
+  // intro outro: zoom through
+  if (intro) {
+    const z = seg(u, 2.12, 2.42);
+    s1.style.transform = `scale(${1 + 3.2 * iExpo(z)})`;
+    s1.style.filter = z > 0 ? `blur(${z * 18}px)` : '';
+    op(s1, 1 - iCubic(z));
+  } else { s1.style.transform = ''; s1.style.filter = ''; op(s1, 1); }
+}
+
+// ---------- S2: type ----------
+function typeScene(t) {
+  const s2 = $('s2');
+  show(s2, t >= 2.25 && t < 5.1); if (t < 2.25 || t >= 5.1) return;
+  // l1 zoom-in + tracking
+  const ls = lerp(.05, -.06, oExpo(seg(t, 2.3, 3.1)));
+  $('l1').style.letterSpacing = ls + 'em';
+  L1.forEach((c, j) => {
+    const s = 2.28 + j * .03, p = oExpo(seg(t, s, s + .6));
+    c.style.transform = `scale(${lerp(.5, 1, p)})`; c.style.filter = p < 1 ? `blur(${(1 - p) * 16}px)` : ''; op(c, seg(t, s, s + .18));
+  });
+  const up = oExpo(seg(t, 3.02, 3.6));
+  const out1 = oCubic(seg(t, 4.48, 4.8));
+  $('l1').style.transform = `translateY(${lerp(135, 0, up) - 50 * out1}px)`; op($('l1'), 1 - out1);
+  // eyebrow
+  setT($('eyebrow2'), scr('+ SECURE SECRET HANDOFFS FOR AGENTS →', seg(t, 2.55, 3.2), 3));
+  const oe = oCubic(seg(t, 4.44, 4.74));
+  op($('eyebrow2'), (up > 0 ? 1 : seg(t, 2.55, 2.7)) * (1 - oe)); $('eyebrow2').style.transform = `translateY(${lerp(135, 0, up) - 40 * oe}px)`;
+  // l2 bar reveal
+  const bIn = ioExpo(seg(t, 3.08, 3.42)), bOut = ioExpo(seg(t, 3.44, 3.8));
+  const bar = $('bar2');
+  show(bar, t > 3.08 && t < 3.8);
+  bar.style.transformOrigin = bOut > 0 ? '100% 50%' : '0 50%';
+  bar.style.transform = `scaleX(${bOut > 0 ? 1 - bOut : bIn})`;
+  $('l2').style.visibility = t >= 3.43 ? 'visible' : 'hidden';
+  L2.forEach((c, j) => {
+    const s = 3.4 + j * .018, p = oExpo(seg(t, s, s + .55));
+    const k = L2.length - 1 - j, q = iExpo(seg(t, 4.5 + k * .018, 4.5 + k * .018 + .28));
+    c.style.transform = `translateX(${-40 * (1 - p) + c._dx * q}px) scale(${1 - q})`; op(c, 1 - seg(q, .6, 1));
+  });
+  const dp = seg(t, 4.55, 4.74);
+  const dEl = $('l2dot');
+  dEl.style.transform = `scale(${lerp(1, 2.6, iCubic(dp))})`;
+  dEl.style.visibility = t < 4.74 ? '' : 'hidden';
+  // sub
+  const os = oCubic(seg(t, 4.5, 4.8));
+  SUB.forEach((w, k) => {
+    const s = 3.76 + k * .045, p = oExpo(seg(t, s, s + .6));
+    w.style.transform = `translateY(${40 * (1 - p) - 40 * os}px)`; op(w, p * (1 - os)); w.style.filter = p < 1 ? `blur(${(1 - p) * 8}px)` : '';
+  });
+}
+
+// ---------- iris: period -> flood -> orbit ring ----------
+function irisScene(t) {
+  const el = $('iris');
+  const on = t >= 4.74 && t < 6.2; show(el, on); if (!on) return;
+  let R, cx, cy, inner = 0, rad = 50;
+  if (t < 5.08) {
+    const p = iExpo(seg(t, 4.74, 5.08));
+    R = lerp(18, 2400, p); cx = DOT.x; cy = DOT.y; rad = lerp(28, 50, seg(p, 0, .05));
+  } else {
+    const p = oExpo(seg(t, 5.08, 5.62));
+    R = lerp(2400, 300, p); cx = 960; cy = 470;
+    inner = lerp(0, 298.5, oExpo(seg(t, 5.1, 5.64)));
+  }
+  const fade = 1 - seg(t, 5.75, 6.15);
+  Object.assign(el.style, { left: (cx - R) + 'px', top: (cy - R) + 'px', width: 2 * R + 'px', height: 2 * R + 'px', borderRadius: rad + '%', opacity: fade,
+    background: inner > 0 ? `radial-gradient(circle closest-side, transparent ${inner}px, #c5f277 ${inner + .8}px)` : '#c5f277' });
+}
+
+// ---------- S3: encrypted exchange ----------
+const dash = (el, len, p) => { el.style.strokeDasharray = `${len} ${len + 2}`; el.style.strokeDashoffset = len * (1 - p); };
+function exchangeScene(t) {
+  const s3 = $('s3');
+  const on = t >= 5.05 && t < 9.82; show(s3, on); if (!on) return;
+  const drift = oCubic(seg(t, 5.1, 9.0)), pm = ioCubic(seg(t, 9.0, 9.66));
+  const sc = lerp(1.07 - .07 * drift, .6894, pm);
+  s3.style.transform = `translate(${457.1 * pm}px,${120.4 * pm}px) scale(${sc})`;
+  op(s3, 1 - seg(t, 9.66, 9.82));
+  const matchFade = 1 - seg(t, 8.98, 9.18);
+
+  // orbits
+  $('oOrb').style.strokeDashoffset = -(t * 30 + 260 * oCubic(seg(t, 7.3, 8.1)));
+  op($('oOrb'), seg(t, 5.5, 5.95));
+  const ip = ioCubic(seg(t, 5.42, 6.15)); dash($('iOrb'), 1355.3, ip);
+  const swp = seg(t, 7.28, 8.05); show($('sweep'), swp > 0 && swp < 1);
+  $('sweep').setAttribute('transform', `rotate(${-90 + 800 * oCubic(swp)} 960 470)`); op($('sweep'), Math.sin(swp * Math.PI));
+
+  // broker
+  const bp = seg(t, 5.5, 5.98), br = $('broker');
+  const glow = bell(t, 7.3, .12) + .8 * bell(t, 7.8, .18) + .5 * bell(t, 8.4, .2);
+  br.style.transform = `scale(${oBack(bp, 2.2) * (1 + .05 * glow)})`; op(br, seg(t, 5.5, 5.58));
+  br.style.boxShadow = `0 0 ${60 + 90 * glow}px #b9e270${Math.round(12 + 60 * glow).toString(16).padStart(2, '0')}, inset 0 0 44px #b9e27010`;
+  br.style.borderColor = glow > .2 ? '#c5f277' : '#b9e27075';
+  const cp = oExpo(seg(t, 5.78, 6.3)); op($('ctl'), seg(t, 5.78, 5.9)); op($('cbr'), seg(t, 5.78, 5.9));
+  $('ctl').style.transform = `translate(${-140 * (1 - cp)}px,${-140 * (1 - cp)}px)`; $('cbr').style.transform = `translate(${140 * (1 - cp)}px,${140 * (1 - cp)}px)`;
+
+  // agents
+  [['nodeA', 5.68, -1, bell(t, 8.8, .14)], ['nodeB', 5.74, 1, bell(t, 8.02, .14)]].forEach(([id, s, dir, fl]) => {
+    const p = oExpo(seg(t, s, s + .65)), el = $(id);
+    el.style.transform = `translateX(${dir * 760 * (1 - p)}px)`; el.style.filter = p < .98 ? `blur(${(1 - p) * 12}px)` : '';
+    op(el, seg(t, s, s + .1));
+    el.style.borderColor = fl > .08 ? `rgba(197,242,119,${.35 + .65 * fl})` : '#3a4337';
+    el.style.boxShadow = `0 20px 48px #0006, 0 0 ${80 * fl}px rgba(197,242,119,${.45 * fl})`;
+  });
+
+  // connections
+  dash($('cL'), 164.4, oCubic(seg(t, 6.08, 6.48))); dash($('cR'), 164.4, oCubic(seg(t, 6.13, 6.53)));
+  dash($('vT'), 141.8, oCubic(seg(t, 6.2, 6.6))); dash($('vB'), 131.3, oCubic(seg(t, 6.25, 6.65)));
+  ['j1', 'j2'].forEach((id, i) => { const p = oBack(seg(t, 6.25 + i * .05, 6.55 + i * .05), 3); $(id).setAttribute('r', 6 * p); });
+
+  // top label + policy highlight
+  op($('toplabel'), seg(t, 6.2, 6.32));
+  setT($('tlt'), scr('ALLOW · APPROVAL · DENY', seg(t, 6.25, 6.8), 5));
+  const hb = $('hbox'); const steps = [2, 1, 0];
+  let pos = 2; const a1 = oExpo(seg(t, 7.46, 7.6)), a2 = oExpo(seg(t, 7.64, 7.78)); pos = 2 - a1 - a2;
+  const wi = i => TL.words[i]; const i0 = Math.floor(pos), fr = pos - i0, wA = wi(i0), wB = wi(Math.min(2, i0 + 1));
+  const hx = TL.pad + lerp(wA[0], wB[0], fr) * TL.cw - 8, hw = lerp(wA[1], wB[1], fr) * TL.cw + 6;
+  const lock = oExpo(seg(t, 7.8, 7.95));
+  show(hb, t > 7.28 && t < 9.2);
+  Object.assign(hb.style, { left: hx + 'px', width: hw + 'px', opacity: seg(t, 7.28, 7.36) * (1 - seg(t, 8.98, 9.16)), background: `rgba(197,242,119,${lock})`, boxShadow: `0 0 ${30 * lock}px #c5f27788` });
+  setT(hb, lock > .5 ? 'ALLOW' : '');
+
+  // chip
+  const chp = seg(t, 7.78, 8.08);
+  $('chip').style.transform = `translate(-50%,-50%) scale(${lerp(.5, 1, oBack(chp, 2.4))})`; op($('chip'), seg(t, 7.78, 7.86));
+
+  // caption
+  const capT = ['REQUEST', '→', 'CHECK', '→', 'HANDOFF'];
+  const act = t >= 9.0 ? -1 : t >= 8.0 ? 4 : t >= 7.3 ? 2 : t >= 6.6 ? 0 : -1;
+  capT.forEach((s, i) => { const el = $('cp' + i); setT(el, s.length > 1 ? scr(s, seg(t, 6.35 + i * .06, 6.7 + i * .06), 9 + i) : (t > 6.4 + i * .06 ? s : ' '));
+    if (i % 2 === 0) { el.style.color = act === i ? '#c5f277' : ''; el.style.textShadow = act === i ? '0 0 18px #c5f27799' : ''; } });
+
+  // request packet A -> broker
+  const pk = $('pkt'), pp = ioCubic(seg(t, 6.6, 7.24));
+  const pkS = t < 7.05 ? oBack(seg(t, 6.6, 6.84), 2) : 1 - oCubic(seg(t, 7.05, 7.27));
+  show(pk, t > 6.6 && t < 7.28);
+  pk.style.transform = `translate(${lerp(600.5, 960, pp)}px,470px) translate(-50%,-50%) translateY(${-64 * Math.sin(pp * Math.PI) * 0}px) scale(${pkS})`;
+  const trA = $('trA'); const trL = clamp(lerp(600.5, 960, pp) - 701.8, 0, 164.4);
+  show(trA, t > 6.6 && t < 7.7); dash(trA, 164.4, trL / 164.4); op(trA, 1 - seg(t, 7.3, 7.7));
+
+  // cipher B -> A through broker
+  const cph = $('cph'), cq = ioCubic(seg(t, 8.0, 8.78));
+  const cS = t < 8.6 ? oBack(seg(t, 8.0, 8.22), 2) : 1 - oCubic(seg(t, 8.6, 8.8));
+  show(cph, t > 8.0 && t < 8.8);
+  const cx = lerp(1319.5, 600.5, cq);
+  cph.style.transform = `translate(${cx}px,470px) translate(-50%,-50%) scale(${cS})`;
+  let hx2 = ''; for (let i = 0; i < 14; i++) hx2 += (i % 5 === 4) ? '·' : HEX[Math.floor(hash(i, F) * 16)];
+  setT($('cphT'), hx2);
+  const trB = $('trB'); const trBL = clamp(1218.2 - cx, 0, 516.4);
+  show(trB, t > 8.0 && t < 9.2); dash(trB, 516.4, trBL / 516.4); op(trB, 1 - seg(t, 8.8, 9.15));
+
+  // decrypted tag
+  const dt = $('dtag'), dq = seg(t, 8.76, 9.0);
+  show(dt, t > 8.76 && t < 9.2);
+  dt.style.transform = `translate(600.5px,630px) translate(-50%,-50%) scale(${oBack(dq, 2.6)})`; op(dt, matchFade);
+
+  // log + bottom
+  [6.62, 7.22, 7.98].forEach((s, i) => { const el = $('lg' + i); const p = oExpo(seg(t, s, s + .45)); el.style.transform = `translateY(${24 * (1 - p)}px)`; op(el, p * matchFade);
+    el.querySelectorAll('span').forEach((sp, k) => { sp._o = sp._o || sp.textContent; setT(sp, scr(sp._o, seg(t, s + k * .06, s + .35 + k * .06), i * 3 + k)); }); });
+  const bt = $('btmT'); bt._o = bt._o || bt.textContent; setT(bt, scr(bt._o, seg(t, 8.12, 8.72), 21)); op($('btm'), seg(t, 8.1, 8.2) * matchFade);
+}
+
+// ---------- S4: the page, in 3D ----------
+const KT = [9.75, 10.55, 11.2, 11.8, 12.4];
+const KP = { fy: [405, 1250, 2400, 3150, 3738], s: [1.3333, .78, .74, .8, 1.45], ax: [0, 50, 46, 40, 0], az: [0, -24, -18, -12, 0], fx: [720, 720, 760, 720, 720] };
+function spline(key, t) {
+  const v = KP[key], n = KT.length;
+  if (t <= KT[0]) return v[0]; if (t >= KT[n - 1]) return v[n - 1];
+  let i = 0; while (t > KT[i + 1]) i++;
+  const m = j => (j === 0 || j === n - 1) ? 0 : (v[j + 1] - v[j - 1]) / (KT[j + 1] - KT[j - 1]);
+  const h = KT[i + 1] - KT[i], u = (t - KT[i]) / h, u2 = u * u, u3 = u2 * u;
+  return (2 * u3 - 3 * u2 + 1) * v[i] + (u3 - 2 * u2 + u) * h * m(i) + (-2 * u3 + 3 * u2) * v[i + 1] + (u3 - u2) * h * m(i + 1);
+}
+function pageScene(t) {
+  const s4 = $('s4');
+  const on = t >= 9.3 && t < 12.66; show(s4, on); if (!on) return;
+  const fy = spline('fy', t), fx = spline('fx', t), s = spline('s', t), ax = spline('ax', t), az = spline('az', t);
+  const tilt = clamp(ax / 50);
+  $('page').style.transform = `translate(960px,540px) rotateX(${ax}deg) rotateZ(${az}deg) scale(${s}) translate(${-fx}px,${-fy}px)`;
+  op(s4, 1 - seg(t, 12.4, 12.62));
+  // assembly
+  const hp = oExpo(seg(t, 9.4, 9.85));
+  S4.header.style.transform = `translateY(${-70 * (1 - hp)}px)`; op(S4.header, hp);
+  S4.bands.forEach((b, i) => { const st = 9.3 + i * .028, p = oExpo(seg(t, st, st + .42)); b.style.transform = `translateX(${-140 * (1 - p)}px)`; op(b, oCubic(seg(t, st, st + .3))); });
+  op(S4.diag, seg(t, 9.6, 9.72));
+  const restO = seg(t, 9.55, 9.9); op(S4.rest, restO);
+  op(S4.frame, restO);
+  // lifts
+  const fzone = fy + 170;
+  S4.lifts.forEach(L => {
+    const d = (L.cy + L.i * 140 - fzone) / 520;
+    const k = tilt * Math.exp(-d * d) * restO;
+    const z = L.z * k;
+    L.pc.style.transform = `translateZ(${z}px)`; op(L.pc, restO);
+    op(L.slot, clamp(k * 2.2) * restO); L.slot.style.transform = 'translateZ(.5px)';
+    L.sh.style.transform = `translateZ(1px) translate(${z * .25}px,${z * .35}px)`; L.sh.style.filter = `blur(${8 + z * .18}px)`; op(L.sh, .65 * k);
+  });
+  S4.beam.style.top = (fzone - 150) + 'px'; S4.beam.style.transform = 'translateZ(2px)'; op(S4.beam, tilt * .9);
+  S4.tags.forEach(g => {
+    const d = (g.y - fzone) / 900, k = tilt * Math.exp(-d * d * .6);
+    const h = 170 * k;
+    g.pin.style.height = h + 'px'; g.pin.style.transform = 'rotateX(90deg)'; op(g.pin, k);
+    g.tag.style.transform = `translateZ(${h}px) rotateZ(${-az}deg) rotateX(${-ax}deg) translate(0,-100%) scale(${lerp(.6, 1, k)})`; op(g.tag, clamp(k * 1.6));
+  });
+}
+
+// ---------- S5: close ----------
+function closeScene(t) {
+  const s5 = $('s5');
+  const on = t >= 12.36; show(s5, on); if (!on) return;
+  const tx = $('s5t');
+  const p = ioExpo(seg(t, 12.52, 13.1));
+  const x0 = 132.05, y0 = 477.9, x1 = 960 - 549 * 1.0, y1 = 540 - 185.7;
+  tx.style.transform = `translate(${lerp(x0, x1, p)}px,${lerp(y0, y1, p)}px) scale(${lerp(1, 2, p)})`;
+  op(tx, seg(t, 12.36, 12.5));
+  if (!tx._split) { tx._a = split($('s5a'), true); tx._b = split($('s5b'), true); tx._split = true; }
+  tx._a.forEach((c, j) => { const q = iExpo(seg(t, 13.1 + j * .018, 13.4 + j * .018)); c.style.transform = `translateY(${-115 * q}%)`; });
+  tx._b.forEach((c, j) => { const q = iExpo(seg(t, 13.14 + j * .018, 13.44 + j * .018)); c.style.transform = `translateY(${115 * q}%)`; });
+  // lime line -> dot
+  const zl = $('zline');
+  const la = oExpo(seg(t, 13.16, 13.48)), lb = iExpo(seg(t, 13.46, 13.68));
+  show(zl, t > 13.16 && t < 13.7);
+  const w = lb > 0 ? lerp(1920, 22, lb) : 1920 * la, h = lerp(2, 22, lb);
+  Object.assign(zl.style, { left: (960 - w / 2) + 'px', top: (540 - h / 2) + 'px', width: w + 'px', height: h + 'px', borderRadius: lb > .5 ? '4px' : '0', boxShadow: `0 0 ${30 * la}px #c5f27799` });
+  // tagline
+  setT($('tagline'), scr('AUTONOMY, UNDER CONTROL.', seg(t, 14.38, 14.82), 31));
+  const up = oExpo(seg(t, 14.5, 14.9)); op($('url'), up); $('url').style.transform = `translateY(${16 * (1 - up)}px)`;
+}
+
+// ---------- HUD ----------
+const SCENES = [[0, '01 — MARK'], [2.3, '02 — TYPE'], [5.1, '03 — EXCHANGE'], [9.4, '04 — PAGE'], [12.4, '05 — CONTROL']];
+function hud(t) {
+  const fr = Math.round(t * 60), ss = Math.floor(fr / 60), ff = fr % 60;
+  setT($('tc'), `TC 00:00:${String(ss).padStart(2, '0')}:${String(ff).padStart(2, '0')}   F ${String(fr).padStart(3, '0')}`);
+  let k = 0; SCENES.forEach((s, i) => { if (t >= s[0]) k = i; });
+  setT($('scn'), scr(SCENES[k][1], seg(t, SCENES[k][0], SCENES[k][0] + .35), 40 + k));
+  $('progf').style.width = (1792 * clamp(t / 15)) + 'px';
+  op($('hud'), seg(t, .1, .5) * .9);
+  const ht = 1 - seg(t, 9.25, 9.45) + seg(t, 9.95, 10.3); document.querySelectorAll('#hud .top').forEach(e => op(e, ht));
+  $('grain').style.backgroundPosition = `${Math.floor(hash(F, 1) * 256)}px ${Math.floor(hash(F, 2) * 256)}px`;
+  $('grid').style.transform = `translate(${-(t * 6) % 36}px,${-(t * 10) % 36}px)`;
+  op($('grid'), t < 9.4 || t > 12.5 ? .85 : .35);
+  op($('glow'), seg(t, 5.4, 6.2) * (1 - seg(t, 9.0, 9.5)) + seg(t, 13.6, 14.3));
+}
+
+function render(t) {
+  F = Math.floor(t * 30);
+  const s1on = t < 2.45 || t >= 13.66; show($('s1'), s1on);
+  if (t < 2.45) markScene(t, true);
+  else if (t >= 13.66) markScene(Math.min(2.3, .55 + (t - 13.66) * 1.6), false, -40);
+  typeScene(t); irisScene(t); exchangeScene(t); pageScene(t); closeScene(t); hud(t);
+}
+
+window.ready = (async () => {
+  await document.fonts.load('510 210px Inter'); await document.fonts.load('22px "JetBrainsMono Nerd Font"'); await document.fonts.ready;
+  const img = new Image(); img.src = 'build/page2x.jpg'; await img.decode();
+  build(); render(0);
+  if (!location.search.includes('render')) {
+    const fit = () => { const k = Math.min(innerWidth / 1920, innerHeight / 1080); $('stage').style.transform = `translate(${(innerWidth - 1920 * k) / 2}px,${(innerHeight - 1080 * k) / 2}px) scale(${k})`; };
+    fit(); addEventListener('resize', fit);
+    const q = new URLSearchParams(location.search); const fixed = q.get('t');
+    if (fixed) render(+fixed);
+    else { const t0 = performance.now(); const loop = () => { render(((performance.now() - t0) / 1000) % 15.5 > 15 ? 15 : ((performance.now() - t0) / 1000) % 15.5); requestAnimationFrame(loop); }; loop(); }
+  }
+  return true;
+})();
+</script>
+</body>
+</html>
