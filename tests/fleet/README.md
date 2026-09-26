@@ -196,8 +196,8 @@ success or failure. With `BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1`, a failed run
 retains the protected temporary directory for diagnosis and prints its path.
 
 This runner's key-rotation, protocol-mismatch, reconnect-storm, time-reply replay,
-E01/E02 output is phase-local evidence; it is not the complete P03 acceptance
-matrix. It holds a signed 8-second grant response for 10 seconds and verifies
+guest-reboot, E01/E02 output is phase-local evidence; it is not the complete P03
+acceptance matrix. It holds a signed 8-second grant response for 10 seconds and verifies
 one durable `expired_before_receipt` audit event on both SQLite and PostgreSQL.
 A controlled three-failure poll storm recovered with bounded backoff and zero
 systemd restarts on both backends. It also suspends each guest until after a
@@ -205,9 +205,12 @@ broker-acknowledged 20-second grant expires, rolls the guest wall clock back by
 two hours, and verifies no operation marker appears. After broker and node
 restart, the TLS test proxy replays one captured signed time reply against the
 new broker challenge; the broker rejects it and then recovers with fresh signed
-time on both backends. Controller time rollback, guest/node reboot cases beyond
-this broker-restart replay, and full transport-level delayed/replayed policy
-and revocation scenarios remain open. Portable Rust tests cover bounded queues,
+time on both backends. The runner also reboots each guest after broker
+acknowledgement of an unconsumed grant; the old still-live grant is denied after
+boot, the node channel recovers without service restarts, and a fresh operation
+succeeds. Controller time rollback, reboot cases beyond this tested guest
+scenario, and full transport-level delayed/replayed policy and revocation
+scenarios remain open. Portable Rust tests cover bounded queues,
 durable audit backpressure and purpose sanitization; actual disk-full and all
 delayed duplicate-event cases remain open. Broader I05 cases, pilot scenarios
 and inherited gates still require implementation or execution evidence. See

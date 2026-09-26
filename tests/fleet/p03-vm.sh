@@ -141,6 +141,31 @@ guest_call() {
     guest_ssh "$guest" sudo /usr/local/sbin/blindpass-p03-guest "$@"
 }
 
+reboot_guest() {
+    local guest=$1 old_boot_id new_boot_id rebooted=false
+    old_boot_id=$(guest_ssh "$guest" cat /proc/sys/kernel/random/boot_id)
+    [[ "$old_boot_id" =~ ^[a-f0-9-]{36}$ ]] || {
+        printf 'P03-FAIL guest %s returned a malformed pre-reboot boot ID\n' "$guest" >&2
+        return 1
+    }
+    guest_call "$guest" reboot-guest >/dev/null 2>&1 || true
+    for _attempt in {1..90}; do
+        if guest_ssh "$guest" true >/dev/null 2>&1; then
+            new_boot_id=$(guest_ssh "$guest" cat /proc/sys/kernel/random/boot_id 2>/dev/null || true)
+            if [[ "$new_boot_id" =~ ^[a-f0-9-]{36}$ && "$new_boot_id" != "$old_boot_id" ]]; then
+                rebooted=true
+                break
+            fi
+        fi
+        sleep 2
+    done
+    [[ "$rebooted" == true ]] || {
+        printf 'P03-FAIL guest %s did not return with a new boot ID\n' "$guest" >&2
+        return 1
+    }
+    printf 'P03-GUEST-BOOT-CHANGED guest=%s\n' "$guest"
+}
+
 guest_scp() {
     local guest=$1
     shift
@@ -689,6 +714,77 @@ PY
     }
     printf 'P03-SCENARIO backend=%s scenario=P03-I01-in-place-key-rotation key_version=%s status=passed\n' \
         "$current_backend" "$rotation_version"
+
+    local reboot_payload reboot_workload reboot_request reboot_grant reboot_started_ms
+    reboot_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 grant reboot fence",resource_id:"P03-CANARY-REBOOT",ttl_seconds:120})).toString("base64url"))')
+    reboot_workload=$(setup_workload a "$node_a" "$current_backend-a-reboot" "$reboot_payload")
+    guest_call a start-workload
+    reboot_request=$(guest_call a wait-request)
+    issue_operation "$reboot_workload" P03-CANARY-REBOOT "$reboot_request" \
+        'P03 grant reboot fence' 120
+    reboot_grant=$ISSUED_GRANT_ID
+    wait_for_grant_acknowledgement "$node_a" "$reboot_grant"
+    local reboot_grant_status reboot_grant_expiry reboot_grant_remaining
+    reboot_grant_status=$(admin grant-status "$reboot_grant")
+    reboot_grant_expiry=$(json_field "$reboot_grant_status" expires_at)
+    reboot_started_ms=$(node -e 'process.stdout.write(String(Date.now()))')
+    [[ "$reboot_grant_expiry" =~ ^[0-9]+$ ]] || {
+        printf 'P03-FAIL controller returned a malformed reboot-test grant expiry\n' >&2
+        return 1
+    }
+    reboot_grant_remaining=$((reboot_grant_expiry - reboot_started_ms))
+    ((reboot_grant_remaining > 30000)) || {
+        printf 'P03-FAIL reboot-test grant was not live with sufficient time at broker acknowledgement (%s ms remained)\n' \
+            "$reboot_grant_remaining" >&2
+        return 1
+    }
+    reboot_guest a
+    local reboot_status reboot_last_poll reboot_channel_recovered=false
+    for _attempt in {1..150}; do
+        reboot_status=$(admin node-status "$node_a")
+        reboot_last_poll=$(json_field "$reboot_status" last_poll_at)
+        if [[ "$reboot_last_poll" =~ ^[0-9]+$ ]] \
+            && (( reboot_last_poll > reboot_started_ms )) \
+            && (( $(node -e 'process.stdout.write(String(Date.now()))') - reboot_last_poll < 5000 )); then
+            reboot_channel_recovered=true
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$reboot_channel_recovered" == true ]] || {
+        printf 'P03-FAIL node channel did not reconnect after guest reboot\n' >&2
+        return 1
+    }
+    guest_call a assert-channel-after-boot
+    reboot_grant_status=$(admin grant-status "$reboot_grant")
+    reboot_grant_expiry=$(json_field "$reboot_grant_status" expires_at)
+    local reboot_grant_live_ms
+    reboot_grant_live_ms=$((reboot_grant_expiry - $(node -e 'process.stdout.write(String(Date.now()))')))
+    ((reboot_grant_live_ms > 5000)) || {
+        printf 'P03-FAIL reboot-test grant expired before the post-reboot denial check (%s ms remained)\n' \
+            "$reboot_grant_live_ms" >&2
+        return 1
+    }
+    printf '%s\n' "$reboot_grant" | guest_call a provide-grant
+    guest_call a start-workload
+    guest_call a assert-rebooted-grant-denied "$reboot_grant"
+    guest_call a wait-outbox-empty
+    guest_call a start-workload
+    local reboot_recovery_request reboot_recovery_operation reboot_recovery_grant reboot_recovery_invocation
+    reboot_recovery_request=$(guest_call a wait-request)
+    issue_operation "$reboot_workload" P03-CANARY-REBOOT "$reboot_recovery_request" \
+        'P03 grant reboot fence' 120
+    reboot_recovery_operation=$ISSUED_OPERATION_ID
+    reboot_recovery_grant=$ISSUED_GRANT_ID
+    reboot_recovery_invocation=$ISSUED_INVOCATION_ID
+    wait_for_grant_acknowledgement "$node_a" "$reboot_recovery_grant"
+    printf '%s\n' "$reboot_recovery_grant" | guest_call a provide-grant
+    guest_call a verify-workload "$reboot_recovery_grant" "$reboot_recovery_operation"
+    guest_call a wait-outbox-empty
+    admin audit-check "$node_a" "$reboot_recovery_operation" "$reboot_workload" \
+        "$reboot_recovery_invocation" "$reboot_recovery_grant"
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-guest-reboot-unconsumed-grant boot_changed=true channel_recovered=true grant_live_after_boot_ms=%s old_grant_denied=true fresh_operation_completed=true marker_created=false status=passed\n' \
+        "$current_backend" "$reboot_grant_live_ms"
 
     local suspend_payload suspend_workload suspend_request suspend_operation suspend_grant
     suspend_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 suspend-aware grant expiry",resource_id:"P03-CANARY-SUSPENDED",ttl_seconds:20})).toString("base64url"))')

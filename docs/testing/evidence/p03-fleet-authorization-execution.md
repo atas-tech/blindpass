@@ -2,7 +2,7 @@
 
 **Run date:** 2026-09-26
 **Status:** Partial runtime evidence; P03 acceptance remains open.
-**Runner owner:** `local-kvm-p03-i06-time-replay-20260926`
+**Runner owner:** `local-kvm-p03-i06-reboot-final-20260926`
 
 ## Environment
 
@@ -17,15 +17,17 @@ Command:
 
 ```bash
 BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
-BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-i06-time-replay-20260926 \
+BLINDPASS_P03_SSH_PORT_A=22322 \
+BLINDPASS_P03_SSH_PORT_B=22323 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-i06-reboot-final-20260926 \
   ./tests/fleet/p03-vm.sh --backend both
 ```
 
 The run used isolated SQLite state for the first pass and a disposable
 PostgreSQL schema for the second. The harness ended with
-`P03-VM-COMPLETE ... backends=both guests=2 revocation=reconciled
-recovery=passed` and exit status 0. No generated fixture values or private
-keys were retained in the repository.
+`P03-VM-COMPLETE runner_owner=local-kvm-p03-i06-reboot-final-20260926
+backends=both guests=2 revocation=reconciled recovery=passed` and exit status
+0. No generated fixture values or private keys were retained in the repository.
 
 ## Results
 
@@ -37,11 +39,12 @@ keys were retained in the repository.
 | P03-I04 unified approval queue subset | Pass | Pass | Seeds 101 pending approval groups, reads 100 and follows the cursor, makes a decision while paging, expires the last item, and verifies queue/count convergence from 101 to 100 to 99. SQLite and PostgreSQL runs pass. |
 | P03-I05 grant and signed-envelope binding subset | Pass | Pass | Consume rejects changed node, workload, unit, invocation, operation, and policy version; receipt rejects changed registration node/workload/unit/account/mode/invocation, revoked registration, and wrong audience. Envelope tampering of body, kind, key ID, or epoch is rejected; the controller rejects a forged broker-event signature. Two concurrent consumers produce exactly one successful consume and marker. |
 | P03-I06 partition/restart/replay and protocol-mismatch subset | Pass | Pass | Broker event survives broker restart; node outbox survives a dropped application response and relay restart; both event queues drain after signed application acknowledgement. A two-guest VM run injects HTTP 426 into the relay, confirms systemd records exit 78 with zero restarts, then restores the proxy and verifies node reconnection. |
-| P03-I06 reconnect storm | Pass | Pass | The proxy returned 503 for three consecutive node polls. The relay recovered using bounded exponential backoff; measured intervals were 1,051/2,010 ms on SQLite and 1,106/2,094 ms on PostgreSQL. The node service remained active with zero systemd restarts on both backends. |
+| P03-I06 reconnect storm | Pass | Pass | The proxy returned 503 for three consecutive node polls. The relay recovered using bounded exponential backoff; measured intervals were 1,037/2,380 ms on SQLite and 1,162/2,216 ms on PostgreSQL. The node service remained active with zero systemd restarts on both backends. |
 | P03-I06 signed time-reply replay after broker restart | Pass | Pass | The TLS proxy captured a genuine signed controller `TimeReply`, then replayed it once after broker and node restart against a fresh broker challenge. Each broker rejected exactly one stale reply; the node recovered with a fresh signed reply, advanced `last_poll_at`, and had zero systemd restarts. |
-| P03-I06 suspend and guest wall-clock rollback | Pass | Pass | The controller grant was acknowledged by the broker with 18,882 ms remaining on SQLite and 18,875 ms on PostgreSQL. The guest then suspended and woke from an RTC alarm after 25,320/25,360 ms of BOOTTIME. After the guest wall clock was moved back two hours, workload consumption was denied and no marker was created. The disposable guest clock was restored. |
+| P03-I06 suspend and guest wall-clock rollback | Pass | Pass | The controller grant was acknowledged by the broker with 18,643 ms remaining on SQLite and 18,850 ms on PostgreSQL. The guest then suspended and woke from an RTC alarm after 25,150/25,850 ms of BOOTTIME. After the guest wall clock was moved back two hours, workload consumption was denied and no marker was created. The disposable guest clock was restored. |
 | P03-I06 delayed expired grant | Pass | Pass | The node's signed grant poll response was held for 10 seconds against an 8-second grant TTL. The broker discarded the expired grant, the controller stored exactly one typed `expired_before_receipt` audit event, and the durable event queues drained. The same grant was then denied by the revoked broker. |
-| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 13,694 ms | Pass; revocation applied in 13,936 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
+| P03-I06 guest reboot with unconsumed grant | Pass | Pass | A full guest reboot changed the kernel boot ID. The broker/node channel recovered with zero node-service restarts; each pre-reboot grant still had more than 107 seconds remaining, was denied when presented after reboot, and created no marker. A new grant then completed with one audited result. |
+| P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 14,435 ms | Pass; revocation applied in 13,920 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
 Portable Rust boundary tests cover the broker's 10,000-event audit buffer and
@@ -201,6 +204,26 @@ all 7 matching tests:
 cargo test -p blindpass-broker --locked control::tests:: -- --test-threads=1
 ```
 
+## Supplemental P03-I06 guest-reboot VM verification — 2026-09-26
+
+The final two-backend QEMU/KVM run added a full systemd guest reboot after the
+broker had acknowledged a 120-second grant but before the workload received it.
+Both guests returned with a different kernel boot ID. The node channel resumed
+polling with zero service restarts, and the old grant still had 107,227 ms
+remaining on SQLite and 107,540 ms on PostgreSQL. Presenting either old grant
+after boot failed closed without a marker or completion event. A fresh
+post-reboot grant completed and produced exactly one audited result on each
+backend. The run also repeated the partition/restart/replay, protocol-mismatch,
+reconnect storm (1,037/2,380 ms on SQLite and 1,162/2,216 ms on PostgreSQL),
+signed time-reply replay, suspend and wall-clock rollback (25,150/25,850 ms
+BOOTTIME), delayed expired-grant audit, key rotation, two-host authorization,
+connected revocation (14,435/13,920 ms), and revoked-node recovery scenarios.
+It ended with `P03-VM-COMPLETE
+runner_owner=local-kvm-p03-i06-reboot-final-20260926 backends=both guests=2
+revocation=reconciled recovery=passed` and exit status 0. The pinned Ubuntu
+24.04 guests used QEMU 11.1.1 and the reviewed image hash recorded above;
+temporary overlays and keys were removed.
+
 ## Final verification for the delayed-grant slice — 2026-09-26
 
 `cargo test --workspace --locked -- --test-threads=1`, workspace Clippy with
@@ -222,8 +245,8 @@ Cargo manifest or lockfile changed.
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves broader
-P03-I05 cases open; controller clock rollback, guest/node reboot cases beyond
-the broker-restart time-reply replay, full transport-level delayed/replayed
+P03-I05 cases open; controller clock rollback, reboot cases beyond the tested
+guest reboot with an unconsumed grant, full transport-level delayed/replayed
 policy and revocation cases in P03-I06; full P03-I07 coverage;
 and the broader pilot catalog, including E05–E07 and
 E10–E13. The broader P01/P02 inherited gates and P02.6 controller

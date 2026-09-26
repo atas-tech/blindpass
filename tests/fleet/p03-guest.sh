@@ -151,6 +151,10 @@ case "$command" in
         date --set="@$epoch" >/dev/null || fail 'guest wall clock restore failed'
         printf 'P03-GUEST-CLOCK-RESTORED epoch=%s\n' "$epoch"
         ;;
+    reboot-guest)
+        systemctl --no-block reboot || fail 'guest reboot could not be queued'
+        printf 'P03-GUEST-REBOOT-QUEUED\n'
+        ;;
     rotate-prepare)
         /usr/libexec/blindpass-node rotate-prepare
         ;;
@@ -292,6 +296,27 @@ EOF
         done
         fail 'revoked grant did not fail closed in the workload'
         ;;
+    assert-rebooted-grant-denied)
+        grant_id=${1:-}
+        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
+        for _attempt in {1..600}; do
+            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
+            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
+            if [[ "$state" == failed && "$result" == exit-code ]]; then
+                marker=/run/blindpass/ops/"$grant_id".marker
+                [[ ! -e "$marker" && ! -L "$marker" ]] || fail 'pre-reboot grant created a marker after restart'
+                if journalctl -u "$unit" -o cat --no-pager 2>/dev/null |
+                    grep -Fq "OPERATION_COMPLETED $grant_id"; then
+                    fail 'pre-reboot grant reported completion after restart'
+                fi
+                rm -f -- "$grant_file"
+                printf 'P03-GUEST-REBOOTED-GRANT-DENIED\n'
+                exit 0
+            fi
+            sleep 0.2
+        done
+        fail 'pre-reboot grant remained usable after guest restart'
+        ;;
     assert-expired-workload)
         grant_id=${1:-}
         [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
@@ -407,6 +432,13 @@ EOF
     restart-node)
         systemctl restart blindpass-node.service
         printf 'P03-GUEST-NODE-RESTARTED\n'
+        ;;
+    assert-channel-after-boot)
+        systemctl is-active --quiet blindpass-broker.service || fail 'broker service is not active after boot'
+        systemctl is-active --quiet blindpass-node.service || fail 'node service is not active after boot'
+        restarts=$(systemctl show --property=NRestarts --value blindpass-node.service 2>/dev/null || true)
+        [[ "$restarts" == 0 ]] || fail 'node service entered a restart loop after boot'
+        printf 'P03-GUEST-CHANNEL-ACTIVE-AFTER-BOOT restarts=%s\n' "$restarts"
         ;;
     archive-revoked-identity)
         node_id=${1:-}
