@@ -60,7 +60,7 @@ test("reel markup references the selectors, assets and script the player needs",
   assert.match(html, /preload="none"/);
   assert.match(html, /src="assets\/blindpass-reel\.mp4"/);
   assert.match(html, /poster="assets\/reel-poster\.jpg"/);
-  assert.match(html, /<script src="reel\.js" defer><\/script>/);
+  assert.match(html, /<script src="reel\.js(\?v=[0-9a-f]{8})?" defer><\/script>/);
 });
 
 test("autoplays muted in view, pauses out of view, and resumes", () => {
