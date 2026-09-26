@@ -291,6 +291,18 @@ start_policy_replay_proxy() {
         --replay-policy-snapshot "$policy_snapshot" --policy-replay-marker "$marker"
 }
 
+start_grant_revocation_capture_proxy() {
+    local capture=$1
+    start_proxy_process "$(dirname "$capture")/tls-proxy-grant-revocation-capture.log" \
+        --capture-grant-revocation "$capture"
+}
+
+start_grant_revocation_replay_proxy() {
+    local capture=$1 marker=$2
+    start_proxy_process "$(dirname "$marker")/tls-proxy-grant-revocation-replay.log" \
+        --replay-grant-revocation "$capture" --grant-replay-marker "$marker"
+}
+
 start_clear_proxy() {
     local log_file=$1
     start_proxy_process "$log_file"
@@ -945,6 +957,81 @@ PY
     complete_operation a "$recovered_node" "$recovered_workload" P03-CANARY-RECOVERED \
         "$recovered_request" 'P03 recovered identity'
     printf 'P03-SCENARIO backend=%s scenario=P03-E02-revoked-node-recovery status=passed\n' "$current_backend"
+    guest_call b stop-node
+
+    local grant_replay_payload grant_replay_workload grant_replay_request grant_replay_grant
+    local grant_revocation_capture grant_replay_marker grant_revocation_result
+    local grant_replay_status grant_replay_expiry grant_replay_acknowledged=false
+    grant_replay_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 signed grant revocation replay",resource_id:"P03-CANARY-GRANT-REPLAY",ttl_seconds:120})).toString("base64url"))')
+    grant_replay_workload=$(setup_workload a "$recovered_node" "$current_backend-a-grant-replay" "$grant_replay_payload")
+    guest_call a start-workload
+    grant_replay_request=$(guest_call a wait-request)
+    issue_operation "$grant_replay_workload" P03-CANARY-GRANT-REPLAY "$grant_replay_request" \
+        'P03 signed grant revocation replay' 120
+    grant_replay_grant=$ISSUED_GRANT_ID
+    wait_for_grant_acknowledgement "$recovered_node" "$grant_replay_grant"
+    grant_replay_status=$(admin grant-status "$grant_replay_grant")
+    grant_replay_expiry=$(json_field "$grant_replay_status" expires_at)
+    [[ "$grant_replay_expiry" =~ ^[0-9]+$ ]] \
+        && (( grant_replay_expiry - $(node -e 'process.stdout.write(String(Date.now()))') > 30000 )) || {
+        printf 'P03-FAIL grant replay fixture expired before revocation\n' >&2
+        return 1
+    }
+    guest_call a stop-node
+    grant_revocation_capture=$backend_dir/signed-grant-revocation.json
+    start_grant_revocation_capture_proxy "$grant_revocation_capture"
+    guest_call a start-node
+    grant_revocation_result=$(admin revoke-grant "$grant_replay_grant")
+    [[ $(json_field "$grant_revocation_result" status) == grant_revoked ]] || {
+        printf 'P03-FAIL controller did not revoke the live connected grant\n' >&2
+        return 1
+    }
+    for _attempt in {1..300}; do
+        [[ -s "$grant_revocation_capture" ]] && break
+        kill -0 "$proxy_pid" 2>/dev/null || break
+        sleep 0.2
+    done
+    [[ -s "$grant_revocation_capture" ]] || {
+        printf 'P03-FAIL TLS proxy did not capture the signed grant revocation\n' >&2
+        return 1
+    }
+    node -e 'const fs=require("node:fs");const envelope=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));if(envelope.kind!=="revocation"||envelope.body?.grant_id!==process.argv[2])process.exit(1);' \
+        "$grant_revocation_capture" "$grant_replay_grant" || {
+        printf 'P03-FAIL captured grant revocation was not bound to the selected grant\n' >&2
+        return 1
+    }
+    guest_call a assert-grant-revocation-journal "$grant_replay_grant"
+    guest_call a verify-revoked-grant "$grant_replay_grant"
+    guest_call a stop-workload
+    guest_call a restart-channel
+    guest_call a assert-grant-revocation-journal "$grant_replay_grant"
+    grant_replay_marker=$backend_dir/grant-replay-events
+    start_grant_revocation_replay_proxy "$grant_revocation_capture" "$grant_replay_marker"
+    for _attempt in {1..300}; do
+        if grep -Fq 'acknowledged seq=' "$grant_replay_marker" 2>/dev/null; then
+            grant_replay_acknowledged=true
+            break
+        fi
+        kill -0 "$proxy_pid" 2>/dev/null || break
+        sleep 0.2
+    done
+    [[ "$grant_replay_acknowledged" == true ]] || {
+        printf 'P03-FAIL broker did not acknowledge the replayed signed grant revocation\n' >&2
+        return 1
+    }
+    grep -Fq 'injected seq=' "$grant_replay_marker" || {
+        printf 'P03-FAIL TLS proxy did not inject the saved signed grant revocation\n' >&2
+        return 1
+    }
+    guest_call a assert-grant-revocation-journal "$grant_replay_grant"
+    guest_call a assert-node-channel-stable
+    grant_replay_status=$(admin grant-status "$grant_replay_grant")
+    [[ $(json_field "$grant_replay_status" status) == revoked ]] || {
+        printf 'P03-FAIL replayed grant revocation changed controller grant status\n' >&2
+        return 1
+    }
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-grant-revocation-replay captured=true replay_acknowledged=true broker_restart=true tombstone_records=1 old_grant_denied=true status=passed\n' \
+        "$current_backend"
 
     local policy_replay_payload policy_replay_workload policy_replay_marker policy_update policy_workload_start
     local policy_followup_update policy_followup_version

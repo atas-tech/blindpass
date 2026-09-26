@@ -45,6 +45,7 @@ backends=both guests=2 revocation=reconciled recovery=passed` and exit status
 | P03-I06 delayed expired grant | Pass | Pass | The node's signed grant poll response was held for 10 seconds against an 8-second grant TTL. The broker discarded the expired grant, the controller stored exactly one typed `expired_before_receipt` audit event, and the durable event queues drained. The same grant was then denied by the revoked broker. |
 | P03-I06 guest reboot with unconsumed grant | Pass | Pass | A full guest reboot changed the kernel boot ID. The broker/node channel recovered with zero node-service restarts; each pre-reboot grant still had more than 107 seconds remaining, was denied when presented after reboot, and created no marker. A new grant then completed with one audited result. |
 | P03-I06 delayed signed policy replay and cursor recovery | Pass | Pass | The TLS proxy replayed signed policy version 2 after deny version 3 with a synthetic outer sequence. The broker retained version 3 and denied a fresh workload. The relay then reconciled the conflicting sequence and delivered signed deny version 4 without a node-service restart; fresh workloads were denied before and after a later channel restart, with no new marker. |
+| P03-I06 signed grant revocation replay | Pass | Pass | The TLS proxy captured a genuine signed grant revocation for the recovered node. The broker denied the held grant, persisted one private tombstone, retained it across broker restart, then applied and acknowledged the replayed signed revocation without a duplicate journal record or node-service restart. |
 | P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 14,435 ms | Pass; revocation applied in 13,920 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
@@ -321,8 +322,8 @@ BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-policy-cursor-recovery-20260926 \
 
 This checks delivery of one later signed policy after a forged sequence and
 denial across a channel restart. It does not cover repeated adversarial
-sequence injection, transport-level revocation replay, or the remaining P03
-acceptance matrix.
+sequence injection, node-revocation replay through transport, or the remaining
+P03 acceptance matrix.
 
 The final `cargo test --workspace --locked`, `cargo clippy --workspace
 --all-targets --locked -- -D warnings`, `cargo fmt --all -- --check`,
@@ -330,12 +331,60 @@ The final `cargo test --workspace --locked`, `cargo clippy --workspace
 The default Rust test command ignored the PostgreSQL-only outage test, and the
 default npm run skipped 101 service-gated SPS tests across 17 files.
 
+## Supplemental P03-I06 signed grant revocation replay VM verification — 2026-09-26
+
+The two-guest QEMU/KVM runner captured a genuine controller-signed grant
+revocation in the TLS proxy after the recovered node received a live,
+unconsumed grant. On each backend, the broker wrote one private mode-0600
+revocation journal record and denied the waiting workload when it presented
+that grant; no operation marker was created. After broker and node restart, the
+journal still held exactly one tombstone. The proxy then injected the same
+signed revocation with a synthetic outer poll sequence. The broker applied it,
+the relay acknowledged it, and the journal still held one record. The node
+service had zero automatic restarts, and the controller grant remained revoked.
+
+SQLite and PostgreSQL both passed this new case alongside the existing P03 VM
+scenarios. Connected node revocation took 13,667 ms and 14,538 ms,
+respectively. The run ended with status 0:
+
+```text
+P03-VM-COMPLETE runner_owner=local-kvm-p03-grant-replay-rerun-20260926 backends=both guests=2 revocation=reconciled recovery=passed
+```
+
+The host used QEMU 11.1.1, writable `/dev/kvm`, and the pinned Ubuntu 24.04
+image hash recorded above. The command was:
+
+```bash
+BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
+BLINDPASS_P03_SSH_PORT_A=22322 \
+BLINDPASS_P03_SSH_PORT_B=22323 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-grant-replay-rerun-20260926 \
+  ./tests/fleet/p03-vm.sh --backend both
+```
+
+An earlier diagnostic run stopped at the E01 workload start because journald
+left the fast failed process message without `_SYSTEMD_INVOCATION_ID`. The
+repaired helper correlates the systemd manager invocation with the following
+unit messages. It was checked directly on the retained disposable guest before
+the successful full rerun. The failed run is not acceptance evidence; its
+temporary VM and generated keys were removed after diagnosis.
+
+This covers one grant revocation replay through the node HTTPS transport.
+Node-revocation replay through that transport, repeated adversarial replays,
+and the broader P03-I06 matrix remain open.
+
+Final gates passed: `cargo test --workspace --locked`, workspace Clippy with
+warnings denied, Rust formatting, `npm run build`, `npm test`, shell syntax,
+proxy Python compilation and `git diff --check`. The default Rust workspace
+run ignored its PostgreSQL-only outage test; the default npm run skipped 101
+service-gated SPS tests across 17 files.
+
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves broader
 P03-I05 cases open; controller clock rollback, reboot cases beyond the tested
-guest reboot with an unconsumed grant, further transport-level policy and
-revocation replay cases in P03-I06; full P03-I07 coverage;
+guest reboot with an unconsumed grant, further transport-level policy replay
+and node-revocation replay cases in P03-I06; full P03-I07 coverage;
 and the broader pilot catalog, including E05–E07 and
 E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated

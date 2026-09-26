@@ -28,6 +28,8 @@ async function main() {
       return operationStatus(...args);
     case 'grant-status':
       return grantStatus(...args);
+    case 'revoke-grant':
+      return revokeGrant(...args);
     case 'node-status':
       return nodeStatus(...args);
     case 'rotate-node-key':
@@ -221,6 +223,18 @@ async function grantStatus(id) {
     issued_at: grant.issued_at,
     expires_at: grant.expires_at,
   });
+}
+
+async function revokeGrant(id) {
+  if (!id) throw new Error('revoke-grant requires GRANT_ID');
+  const result = await api(`/api/v3/grants/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: writeHeaders(),
+  });
+  if (result.grant_id !== id || !['grant_revoked', 'not_revocable_offline'].includes(result.status)) {
+    throw new Error('controller did not revoke the selected grant');
+  }
+  print({ grant_id: id, status: result.status });
 }
 
 async function nodeStatus(id) {

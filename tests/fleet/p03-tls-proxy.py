@@ -61,6 +61,17 @@ class ProxyHandler(BaseHTTPRequestHandler):
                                 f"new_version={self.server.policy_replay_new_version} "
                                 f"seq={self.server.policy_replay_injected_seq}"
                             )
+                with self.server.grant_replay_lock:
+                    if (
+                        self.server.grant_replay_sent
+                        and not self.server.grant_replay_acknowledged
+                        and poll_ack_seq is not None
+                        and poll_ack_seq >= self.server.grant_replay_injected_seq
+                    ):
+                        self.server.grant_replay_acknowledged = True
+                        self._append_grant_replay_marker(
+                            f"acknowledged seq={self.server.grant_replay_injected_seq}"
+                        )
             if self.command == "POST" and self.path == "/api/v3/node/poll":
                 with self.server.poll_failure_lock:
                     if self.server.poll_failures_remaining > 0:
@@ -242,6 +253,32 @@ class ProxyHandler(BaseHTTPRequestHandler):
                                 f"new_version={self.server.policy_replay_new_version} seq={injected_seq}"
                             )
                             response_body_modified = True
+                    with self.server.grant_replay_lock:
+                        if self.server.grant_capture_path and not self.server.grant_captured:
+                            for item in documents:
+                                envelope = item.get("envelope") if isinstance(item, dict) else None
+                                if self._is_grant_revocation(envelope):
+                                    self._write_signed_capture(self.server.grant_capture_path, envelope)
+                                    self.server.grant_captured = True
+                                    break
+                        if (
+                            self.server.replay_grant_revocation is not None
+                            and not self.server.grant_replay_sent
+                        ):
+                            highest_seq = poll_ack_seq if poll_ack_seq is not None else 0
+                            for item in documents:
+                                seq = item.get("seq") if isinstance(item, dict) else None
+                                if isinstance(seq, int) and not isinstance(seq, bool):
+                                    highest_seq = max(highest_seq, seq)
+                            injected_seq = highest_seq + 1
+                            documents.append({
+                                "seq": injected_seq,
+                                "envelope": self.server.replay_grant_revocation,
+                            })
+                            self.server.grant_replay_sent = True
+                            self.server.grant_replay_injected_seq = injected_seq
+                            self._append_grant_replay_marker(f"injected seq={injected_seq}")
+                            response_body_modified = True
                 try:
                     has_grant = any(
                         item.get("envelope", {}).get("kind") == "grant"
@@ -296,9 +333,20 @@ class ProxyHandler(BaseHTTPRequestHandler):
         version = policy_body.get("policy_version") if isinstance(policy_body, dict) else None
         return version if isinstance(version, int) and not isinstance(version, bool) else None
 
+    @staticmethod
+    def _is_grant_revocation(envelope):
+        if not isinstance(envelope, dict) or envelope.get("kind") != "revocation":
+            return False
+        body = envelope.get("body")
+        return isinstance(body, dict) and isinstance(body.get("grant_id"), str)
+
     def _write_policy_capture(self, envelope):
+        self._write_signed_capture(self.server.policy_capture_path, envelope)
+
+    @staticmethod
+    def _write_signed_capture(path, envelope):
         marker_fd = os.open(
-            self.server.policy_capture_path,
+            path,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL,
             0o600,
         )
@@ -313,6 +361,19 @@ class ProxyHandler(BaseHTTPRequestHandler):
             return
         marker_fd = os.open(
             self.server.policy_replay_marker,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o600,
+        )
+        with os.fdopen(marker_fd, "ab") as marker:
+            marker.write(f"{message} at={int(time.time() * 1000)}\n".encode())
+            marker.flush()
+            os.fsync(marker.fileno())
+
+    def _append_grant_replay_marker(self, message):
+        if not self.server.grant_replay_marker:
+            return
+        marker_fd = os.open(
+            self.server.grant_replay_marker,
             os.O_WRONLY | os.O_CREAT | os.O_APPEND,
             0o600,
         )
@@ -341,6 +402,9 @@ def main():
     parser.add_argument("--capture-policy-snapshot")
     parser.add_argument("--replay-policy-snapshot")
     parser.add_argument("--policy-replay-marker")
+    parser.add_argument("--capture-grant-revocation")
+    parser.add_argument("--replay-grant-revocation")
+    parser.add_argument("--grant-replay-marker")
     args = parser.parse_args()
     if args.fail_first_node_polls < 0 or args.fail_first_node_polls > 10:
         parser.error("--fail-first-node-polls must be between 0 and 10")
@@ -352,6 +416,10 @@ def main():
         parser.error("capture and replay policy snapshot modes are mutually exclusive")
     if args.replay_policy_snapshot and not args.policy_replay_marker:
         parser.error("--policy-replay-marker is required with --replay-policy-snapshot")
+    if args.capture_grant_revocation and args.replay_grant_revocation:
+        parser.error("capture and replay grant revocation modes are mutually exclusive")
+    if args.replay_grant_revocation and not args.grant_replay_marker:
+        parser.error("--grant-replay-marker is required with --replay-grant-revocation")
     server = ThreadingHTTPServer(("0.0.0.0", 8443), ProxyHandler)
     server.daemon_threads = True
     server.drop_first_events_response = args.drop_first_events_response
@@ -388,6 +456,14 @@ def main():
     server.policy_replay_acknowledged = False
     server.policy_replay_marker = args.policy_replay_marker
     server.policy_replay_lock = threading.Lock()
+    server.grant_capture_path = args.capture_grant_revocation
+    server.grant_captured = False
+    server.replay_grant_revocation = None
+    server.grant_replay_sent = False
+    server.grant_replay_injected_seq = None
+    server.grant_replay_acknowledged = False
+    server.grant_replay_marker = args.grant_replay_marker
+    server.grant_replay_lock = threading.Lock()
     if args.replay_policy_snapshot:
         try:
             with open(args.replay_policy_snapshot, encoding="utf-8") as source:
@@ -397,6 +473,14 @@ def main():
         server.stale_policy_version = ProxyHandler._policy_version(server.stale_policy_envelope)
         if server.stale_policy_version is None:
             parser.error("saved policy snapshot is malformed")
+    if args.replay_grant_revocation:
+        try:
+            with open(args.replay_grant_revocation, encoding="utf-8") as source:
+                server.replay_grant_revocation = json.load(source)
+        except (OSError, ValueError) as error:
+            parser.error(f"could not read signed grant revocation: {error}")
+        if not ProxyHandler._is_grant_revocation(server.replay_grant_revocation):
+            parser.error("saved grant revocation is malformed")
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(args.certificate, args.private_key)

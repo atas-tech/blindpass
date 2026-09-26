@@ -25,6 +25,34 @@ operation_marker_count() {
     find "$marker_directory" -maxdepth 1 -type f -name '*.marker' 2>/dev/null | wc -l
 }
 
+invocation_log() {
+    local expected_invocation=$1
+    journalctl -u "$unit" -o json --no-pager 2>/dev/null | python3 -c '
+import json
+import sys
+
+expected = sys.argv[1]
+rows = []
+for line in sys.stdin:
+    try:
+        rows.append(json.loads(line))
+    except ValueError:
+        continue
+start = next((index for index, row in enumerate(rows)
+              if row.get("INVOCATION_ID") == expected
+              or row.get("_SYSTEMD_INVOCATION_ID") == expected), None)
+if start is None:
+    sys.exit(1)
+for row in rows[start:]:
+    manager_id = row.get("INVOCATION_ID")
+    if manager_id not in (None, expected) and str(row.get("MESSAGE", "")).startswith("Starting "):
+        break
+    message = row.get("MESSAGE")
+    if isinstance(message, str):
+        print(message)
+' "$expected_invocation"
+}
+
 [[ $(id -u) == 0 ]] || fail 'guest helper requires root'
 command=${1:-}
 shift || true
@@ -230,7 +258,8 @@ import sys
 latest = ""
 for line in sys.stdin:
     try:
-        candidate = json.loads(line).get("_SYSTEMD_INVOCATION_ID")
+        row = json.loads(line)
+        candidate = row.get("_SYSTEMD_INVOCATION_ID") or row.get("INVOCATION_ID")
     except ValueError:
         continue
     if isinstance(candidate, str) and re.fullmatch(r"[a-f0-9]{32}", candidate):
@@ -239,8 +268,7 @@ print(latest)
 ')
             fi
             if [[ "$invocation" =~ ^[a-f0-9]{32}$ && "$invocation" != "$previous_invocation" ]]; then
-                current_log=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" \
-                    -o cat --no-pager 2>/dev/null || true)
+                current_log=$(invocation_log "$invocation" || true)
                 if [[ -n "$current_log" ]]; then
                     printf 'P03-GUEST-WORKLOAD-STARTED invocation=%s\n' "$invocation"
                     exit 0
@@ -258,7 +286,7 @@ print(latest)
         for _attempt in {1..300}; do
             invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
             if [[ "$invocation" =~ ^[a-f0-9]{32}$ ]]; then
-                event_key=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" -o cat --no-pager 2>/dev/null |
+                event_key=$({ invocation_log "$invocation" 2>/dev/null || true; } |
                     awk '/^OPERATION_REQUEST / {print $2; exit}')
                 if [[ "$event_key" =~ ^[A-Za-z0-9_-]{16,128}$ ]]; then
                     printf 'P03-REQUEST invocation=%s event_key=%s\n' "$invocation" "$event_key"
@@ -344,6 +372,23 @@ print(latest)
         done
         fail 'revoked grant did not fail closed in the workload'
         ;;
+    assert-grant-revocation-journal)
+        grant_id=${1:-}
+        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
+        journal=/var/lib/blindpass/broker/revoked-grants.jsonl
+        for _attempt in {1..300}; do
+            if [[ -f "$journal" && ! -L "$journal" ]]; then
+                matches=$(grep -F -c '"grant_id":"'"$grant_id"'"' "$journal" || true)
+                [[ "$matches" == 1 ]] && break
+            fi
+            sleep 0.2
+        done
+        [[ -f "$journal" && ! -L "$journal" ]] || fail 'grant revocation journal is missing or unsafe'
+        [[ $(stat -c '%a:%u' "$journal") == '600:0' ]] || fail 'grant revocation journal is not private'
+        matches=$(grep -F -c '"grant_id":"'"$grant_id"'"' "$journal" || true)
+        [[ "$matches" == 1 ]] || fail 'grant revocation was not persisted exactly once'
+        printf 'P03-GUEST-GRANT-REVOCATION-DURABLE records=%s\n' "$matches"
+        ;;
     assert-rebooted-grant-denied)
         grant_id=${1:-}
         [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
@@ -399,11 +444,12 @@ print(latest)
             invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
             if [[ "$state" == failed && "$result" == exit-code \
                 && "$invocation" =~ ^[a-f0-9]{32}$ ]]; then
-                current_log=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" \
-                    -o cat --no-pager 2>/dev/null || true)
+                current_log=$(invocation_log "$invocation" || true)
                 if grep -Eq '^OPERATION_(REQUEST|COMPLETED) ' <<<"$current_log"; then
                     fail 'revoked node accepted a fresh workload request'
                 fi
+                grep -Eq '^blindpass-workload-client: (node identity is revoked|workload socket unavailable: ERR node_revoked)$' \
+                    <<<"$current_log" || fail 'revoked workload did not report a node-revoked denial'
                 marker=/run/blindpass/ops/"$grant_id".marker
                 [[ ! -e "$marker" && ! -L "$marker" ]] || \
                     fail 'revoked workload created its grant marker'
@@ -445,8 +491,7 @@ print(latest)
             fi
             if [[ "$invocation" == "$expected_invocation" && "$state" == failed \
                 && "$result" == exit-code ]]; then
-                current_log=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" \
-                    -o cat --no-pager 2>/dev/null || true)
+                current_log=$(invocation_log "$invocation" || true)
                 if grep -Eq '^OPERATION_(REQUEST|COMPLETED) ' <<<"$current_log"; then
                     fail 'broker accepted an operation under the delayed stale policy'
                 fi
@@ -465,8 +510,7 @@ print(latest)
                 fi
             fi
             if [[ "$state" == active && "$invocation" == "$expected_invocation" ]]; then
-                current_log=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" \
-                    -o cat --no-pager 2>/dev/null || true)
+                current_log=$(invocation_log "$invocation" || true)
                 if grep -Eq '^OPERATION_(REQUEST|COMPLETED) ' <<<"$current_log"; then
                     fail 'broker accepted an operation under the delayed stale policy'
                 fi
