@@ -643,9 +643,7 @@ fn run_channel_session(
                 .get("seq")
                 .and_then(Value::as_u64)
                 .ok_or(ChannelError::Retryable)?;
-            if previous_seq.is_some_and(|previous| seq <= previous) {
-                return Err(ChannelError::Retryable);
-            }
+            check_inbox_sequence(ack_seq, previous_seq, seq)?;
             let envelope = item.get("envelope").ok_or(ChannelError::Retryable)?;
             relay_document(socket, envelope).map_err(|_| ChannelError::Retryable)?;
             previous_seq = Some(seq);
@@ -721,6 +719,20 @@ fn run_channel_session(
         }
         *backoff_seconds = 1;
     }
+}
+
+fn check_inbox_sequence(
+    ack_seq: &mut Option<u64>,
+    previous_seq: Option<u64>,
+    seq: u64,
+) -> Result<(), ChannelError> {
+    if previous_seq.is_some_and(|previous| seq <= previous) {
+        // The poll sequence is relay-controlled. Reconcile from controller
+        // state rather than retaining a forged cursor across sessions.
+        *ack_seq = None;
+        return Err(ChannelError::Retryable);
+    }
+    Ok(())
 }
 
 fn relay_document(socket: &Path, envelope: &Value) -> Result<(), String> {
@@ -1222,5 +1234,16 @@ mod tests {
         let parsed = parse_broker_events(response.as_bytes()).unwrap();
         assert_eq!(parsed.len(), 1);
         assert!(parse_broker_events(b"EVENTS 1\n[]\n").is_err());
+    }
+
+    #[test]
+    fn conflicting_transport_sequence_clears_cursor_for_reconciliation() {
+        let mut ack_seq = Some(7);
+        assert!(matches!(
+            super::check_inbox_sequence(&mut ack_seq, Some(7), 7),
+            Err(super::ChannelError::Retryable)
+        ));
+        assert_eq!(ack_seq, None);
+        assert!(super::check_inbox_sequence(&mut ack_seq, None, 7).is_ok());
     }
 }

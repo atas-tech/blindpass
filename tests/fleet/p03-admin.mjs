@@ -18,6 +18,8 @@ async function main() {
       return approveEnrollment(...args);
     case 'policy':
       return setPolicy();
+    case 'deny-policy':
+      return setDeniedPolicy();
     case 'create-workload':
       return createWorkload(...args);
     case 'operation':
@@ -100,6 +102,26 @@ async function setPolicy() {
     }),
   });
   print({ version: updated.version, decision: 'pending_approval' });
+}
+
+async function setDeniedPolicy() {
+  const policy = await api('/api/v3/policies', { method: 'GET' });
+  const updated = await api('/api/v3/policies', {
+    method: 'PUT',
+    headers: writeHeaders({ 'if-match': `"${policy.version}"` }),
+    body: JSON.stringify({
+      expected_version: policy.version,
+      rules: [{
+        id: 'p03-deny-noop-file-after-replay',
+        action: 'noop.marker',
+        mode: 'file',
+        decision: 'deny',
+        approval_required: false,
+        max_ttl_seconds: 120,
+      }],
+    }),
+  });
+  print({ version: updated.version, decision: 'deny' });
 }
 
 async function createWorkload(nodeId, name, account) {

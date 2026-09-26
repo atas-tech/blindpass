@@ -32,6 +32,35 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 self.send_error(413)
                 return
             body = self.rfile.read(length) if length else None
+            policy_inject_stale = False
+            poll_ack_seq = None
+            if self.command == "POST" and self.path == "/api/v3/node/poll":
+                try:
+                    poll_request = json.loads(body or b"{}")
+                    candidate_ack = poll_request.get("ack_seq") if isinstance(poll_request, dict) else None
+                    if isinstance(candidate_ack, int) and not isinstance(candidate_ack, bool):
+                        poll_ack_seq = candidate_ack
+                except (TypeError, ValueError):
+                    pass
+                with self.server.policy_replay_lock:
+                    if (
+                        self.server.policy_replay_new_seq is not None
+                        and poll_ack_seq is not None
+                        and poll_ack_seq >= self.server.policy_replay_new_seq
+                    ):
+                        if not self.server.policy_replay_sent:
+                            policy_inject_stale = True
+                        elif (
+                            not self.server.policy_replay_acknowledged
+                            and self.server.policy_replay_injected_seq is not None
+                            and poll_ack_seq >= self.server.policy_replay_injected_seq
+                        ):
+                            self.server.policy_replay_acknowledged = True
+                            self._append_policy_replay_marker(
+                                f"acknowledged stale_version={self.server.stale_policy_version} "
+                                f"new_version={self.server.policy_replay_new_version} "
+                                f"seq={self.server.policy_replay_injected_seq}"
+                            )
             if self.command == "POST" and self.path == "/api/v3/node/poll":
                 with self.server.poll_failure_lock:
                     if self.server.poll_failures_remaining > 0:
@@ -122,6 +151,7 @@ class ProxyHandler(BaseHTTPRequestHandler):
                         self.close_connection = True
                         return
             if self.command == "POST" and self.path == "/api/v3/node/poll":
+                response_body_modified = False
                 try:
                     response_body = json.loads(payload)
                 except (TypeError, ValueError):
@@ -157,11 +187,61 @@ class ProxyHandler(BaseHTTPRequestHandler):
                                 marker.flush()
                                 os.fsync(marker.fileno())
                     if marker_event == "replayed":
-                        payload = json.dumps(
-                            response_body,
-                            separators=(",", ":"),
-                            ensure_ascii=False,
-                        ).encode()
+                        response_body_modified = True
+                if isinstance(response_body, dict):
+                    documents = response_body.get("documents")
+                    if not isinstance(documents, list):
+                        documents = []
+                        response_body["documents"] = documents
+                    with self.server.policy_replay_lock:
+                        if self.server.policy_capture_path and not self.server.policy_captured:
+                            for item in documents:
+                                envelope = item.get("envelope") if isinstance(item, dict) else None
+                                version = self._policy_version(envelope)
+                                if version is not None:
+                                    self._write_policy_capture(envelope)
+                                    self.server.policy_captured = True
+                                    self.server.captured_policy_version = version
+                                    break
+                        if self.server.stale_policy_envelope is not None:
+                            for item in documents:
+                                envelope = item.get("envelope") if isinstance(item, dict) else None
+                                version = self._policy_version(envelope)
+                                if (
+                                    version is not None
+                                    and self.server.policy_replay_new_seq is None
+                                    and version > self.server.stale_policy_version
+                                ):
+                                    seq = item.get("seq")
+                                    if isinstance(seq, int) and not isinstance(seq, bool):
+                                        self.server.policy_replay_new_seq = seq
+                                        self.server.policy_replay_new_version = version
+                                        self._append_policy_replay_marker(
+                                            f"new_policy version={version} seq={seq}"
+                                        )
+                                    break
+                        if (
+                            policy_inject_stale
+                            and not self.server.policy_replay_sent
+                            and self.server.stale_policy_envelope is not None
+                        ):
+                            highest_seq = poll_ack_seq if poll_ack_seq is not None else 0
+                            for item in documents:
+                                seq = item.get("seq") if isinstance(item, dict) else None
+                                if isinstance(seq, int) and not isinstance(seq, bool):
+                                    highest_seq = max(highest_seq, seq)
+                            injected_seq = highest_seq + 1
+                            documents.append({
+                                "seq": injected_seq,
+                                "envelope": self.server.stale_policy_envelope,
+                            })
+                            self.server.policy_replay_sent = True
+                            self.server.policy_replay_injected_seq = injected_seq
+                            self._append_policy_replay_marker(
+                                f"injected stale_version={self.server.stale_policy_version} "
+                                f"new_version={self.server.policy_replay_new_version} seq={injected_seq}"
+                            )
+                            response_body_modified = True
                 try:
                     has_grant = any(
                         item.get("envelope", {}).get("kind") == "grant"
@@ -189,6 +269,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
                                 marker.flush()
                                 os.fsync(marker.fileno())
                         time.sleep(self.server.grant_delay_seconds)
+                if response_body_modified:
+                    payload = json.dumps(
+                        response_body,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode()
             self.send_response(response.status)
             for name, value in response.getheaders():
                 if name.lower() in {"content-type", "cache-control"}:
@@ -201,6 +287,39 @@ class ProxyHandler(BaseHTTPRequestHandler):
         except Exception:
             if not self.wfile.closed:
                 self.send_error(502)
+
+    @staticmethod
+    def _policy_version(envelope):
+        if not isinstance(envelope, dict) or envelope.get("kind") != "policy_snapshot":
+            return None
+        policy_body = envelope.get("body")
+        version = policy_body.get("policy_version") if isinstance(policy_body, dict) else None
+        return version if isinstance(version, int) and not isinstance(version, bool) else None
+
+    def _write_policy_capture(self, envelope):
+        marker_fd = os.open(
+            self.server.policy_capture_path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+            0o600,
+        )
+        with os.fdopen(marker_fd, "w", encoding="utf-8") as capture:
+            json.dump(envelope, capture, separators=(",", ":"), ensure_ascii=False)
+            capture.write("\n")
+            capture.flush()
+            os.fsync(capture.fileno())
+
+    def _append_policy_replay_marker(self, message):
+        if not self.server.policy_replay_marker:
+            return
+        marker_fd = os.open(
+            self.server.policy_replay_marker,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND,
+            0o600,
+        )
+        with os.fdopen(marker_fd, "ab") as marker:
+            marker.write(f"{message} at={int(time.time() * 1000)}\n".encode())
+            marker.flush()
+            os.fsync(marker.fileno())
 
 
 def main():
@@ -219,6 +338,9 @@ def main():
     parser.add_argument("--poll-failure-marker")
     parser.add_argument("--replay-time-reply-on-reconnect", action="store_true")
     parser.add_argument("--time-reply-marker")
+    parser.add_argument("--capture-policy-snapshot")
+    parser.add_argument("--replay-policy-snapshot")
+    parser.add_argument("--policy-replay-marker")
     args = parser.parse_args()
     if args.fail_first_node_polls < 0 or args.fail_first_node_polls > 10:
         parser.error("--fail-first-node-polls must be between 0 and 10")
@@ -226,6 +348,10 @@ def main():
         parser.error("--poll-failure-marker is required with --fail-first-node-polls")
     if args.replay_time_reply_on_reconnect and not args.time_reply_marker:
         parser.error("--time-reply-marker is required with --replay-time-reply-on-reconnect")
+    if args.capture_policy_snapshot and args.replay_policy_snapshot:
+        parser.error("capture and replay policy snapshot modes are mutually exclusive")
+    if args.replay_policy_snapshot and not args.policy_replay_marker:
+        parser.error("--policy-replay-marker is required with --replay-policy-snapshot")
     server = ThreadingHTTPServer(("0.0.0.0", 8443), ProxyHandler)
     server.daemon_threads = True
     server.drop_first_events_response = args.drop_first_events_response
@@ -250,6 +376,27 @@ def main():
     server.time_reply_replayed = False
     server.time_reply_lock = threading.Lock()
     server.time_reply_marker = args.time_reply_marker if args.replay_time_reply_on_reconnect else None
+    server.policy_capture_path = args.capture_policy_snapshot
+    server.policy_captured = False
+    server.captured_policy_version = None
+    server.stale_policy_envelope = None
+    server.stale_policy_version = None
+    server.policy_replay_new_seq = None
+    server.policy_replay_new_version = None
+    server.policy_replay_sent = False
+    server.policy_replay_injected_seq = None
+    server.policy_replay_acknowledged = False
+    server.policy_replay_marker = args.policy_replay_marker
+    server.policy_replay_lock = threading.Lock()
+    if args.replay_policy_snapshot:
+        try:
+            with open(args.replay_policy_snapshot, encoding="utf-8") as source:
+                server.stale_policy_envelope = json.load(source)
+        except (OSError, ValueError) as error:
+            parser.error(f"could not read signed policy snapshot: {error}")
+        server.stale_policy_version = ProxyHandler._policy_version(server.stale_policy_envelope)
+        if server.stale_policy_version is None:
+            parser.error("saved policy snapshot is malformed")
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(args.certificate, args.private_key)

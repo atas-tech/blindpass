@@ -129,6 +129,9 @@ fn run(args: Vec<String>) -> Result<(), String> {
                         return Ok(());
                     }
                     Ok(response) => {
+                        if let Some(reason) = permanent_workload_error(&response) {
+                            return Err(reason.to_owned());
+                        }
                         last_error = Some(String::from_utf8_lossy(&response).trim().to_owned());
                     }
                     Err(error) => last_error = Some(error),
@@ -168,6 +171,16 @@ fn operation_output(operation: &str, response: &[u8]) -> Result<String, String> 
         return Ok("WORKLOAD_READY".to_owned());
     }
     Err("broker rejected the workload request".to_owned())
+}
+
+fn permanent_workload_error(response: &[u8]) -> Option<&'static str> {
+    match response.strip_suffix(b"\n").unwrap_or(response) {
+        b"ERR operation_request_is_denied_by_local_policy" => {
+            Some("operation request was denied by local policy")
+        }
+        b"ERR node_revoked" => Some("node identity is revoked"),
+        _ => None,
+    }
 }
 
 fn wait_for_grant(path: &std::path::Path) -> Result<String, String> {
@@ -279,7 +292,27 @@ fn next(args: &[String], index: &mut usize) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::operation_output;
+    use super::{operation_output, permanent_workload_error};
+
+    #[test]
+    fn permanent_policy_and_revocation_errors_do_not_need_retrying() {
+        assert_eq!(
+            permanent_workload_error(b"ERR operation_request_is_denied_by_local_policy\n"),
+            Some("operation request was denied by local policy")
+        );
+        assert_eq!(
+            permanent_workload_error(b"ERR node_revoked\n"),
+            Some("node identity is revoked")
+        );
+        assert_eq!(
+            permanent_workload_error(b"ERR workload_registration_is_unavailable\n"),
+            None
+        );
+        assert_eq!(
+            permanent_workload_error(b"ERR trusted_time_unavailable\n"),
+            None
+        );
+    }
 
     #[test]
     fn operation_request_reports_only_the_broker_event_key() {

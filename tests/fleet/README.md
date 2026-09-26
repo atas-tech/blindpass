@@ -196,7 +196,7 @@ success or failure. With `BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1`, a failed run
 retains the protected temporary directory for diagnosis and prints its path.
 
 This runner's key-rotation, protocol-mismatch, reconnect-storm, time-reply replay,
-guest-reboot, E01/E02 output is phase-local evidence; it is not the complete P03
+guest-reboot, delayed policy replay, and E01/E02 output is phase-local evidence; it is not the complete P03
 acceptance matrix. It holds a signed 8-second grant response for 10 seconds and verifies
 one durable `expired_before_receipt` audit event on both SQLite and PostgreSQL.
 A controlled three-failure poll storm recovered with bounded backoff and zero
@@ -208,8 +208,12 @@ new broker challenge; the broker rejects it and then recovers with fresh signed
 time on both backends. The runner also reboots each guest after broker
 acknowledgement of an unconsumed grant; the old still-live grant is denied after
 boot, the node channel recovers without service restarts, and a fresh operation
-succeeds. Controller time rollback, reboot cases beyond this tested guest
-scenario, and full transport-level delayed/replayed policy and revocation
+succeeds. The proxy also replays an older signed policy after a newer deny
+policy. The broker denies fresh workload invocations; the relay reconciles the
+conflicting outer sequence and applies another signed deny policy without a
+node-service restart. Denial persists after channel restart, with no new marker.
+Controller time rollback, reboot
+cases beyond this tested guest scenario, and further transport-level policy and revocation
 scenarios remain open. Portable Rust tests cover bounded queues,
 durable audit backpressure and purpose sanitization; actual disk-full and all
 delayed duplicate-event cases remain open. Broader I05 cases, pilot scenarios
@@ -221,4 +225,5 @@ Focused broker control-socket tests also reject an older signed policy after a
 newer snapshot has been applied, keep that policy across broker restart, and
 preserve grant and node revocations when their signed documents are replayed.
 They verify the revoked grant remains denied after a fresh signed time reply.
-These tests do not exercise delays or replays through the node HTTPS transport.
+The VM scenario above exercises one policy replay through the node HTTPS
+transport; revocation replay through that transport remains open.

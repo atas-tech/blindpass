@@ -44,6 +44,7 @@ backends=both guests=2 revocation=reconciled recovery=passed` and exit status
 | P03-I06 suspend and guest wall-clock rollback | Pass | Pass | The controller grant was acknowledged by the broker with 18,643 ms remaining on SQLite and 18,850 ms on PostgreSQL. The guest then suspended and woke from an RTC alarm after 25,150/25,850 ms of BOOTTIME. After the guest wall clock was moved back two hours, workload consumption was denied and no marker was created. The disposable guest clock was restored. |
 | P03-I06 delayed expired grant | Pass | Pass | The node's signed grant poll response was held for 10 seconds against an 8-second grant TTL. The broker discarded the expired grant, the controller stored exactly one typed `expired_before_receipt` audit event, and the durable event queues drained. The same grant was then denied by the revoked broker. |
 | P03-I06 guest reboot with unconsumed grant | Pass | Pass | A full guest reboot changed the kernel boot ID. The broker/node channel recovered with zero node-service restarts; each pre-reboot grant still had more than 107 seconds remaining, was denied when presented after reboot, and created no marker. A new grant then completed with one audited result. |
+| P03-I06 delayed signed policy replay and cursor recovery | Pass | Pass | The TLS proxy replayed signed policy version 2 after deny version 3 with a synthetic outer sequence. The broker retained version 3 and denied a fresh workload. The relay then reconciled the conflicting sequence and delivered signed deny version 4 without a node-service restart; fresh workloads were denied before and after a later channel restart, with no new marker. |
 | P03-E01 two-host authorization and connected revocation | Pass; revocation applied in 14,435 ms | Pass; revocation applied in 13,920 ms | Two separately enrolled nodes completed approved dummy marker operations with node/workload/invocation/grant/audit linkage. An undelivered grant was revoked; the connected node applied and acknowledged its tombstone within the 30-second bound, and the old workload was denied after restart. |
 | P03-E02 revoked-node recovery | Pass | Pass | The revoked identity remained denied after broker restart. Recovery archived the old identity, enrolled a distinct node identity, registered its workload, and completed a fresh approved operation. |
 
@@ -242,12 +243,99 @@ transitive shell/unsafe capability. The dependency guard classifies this as
 blocked. The node continues using its existing system `curl` transport; no
 Cargo manifest or lockfile changed.
 
+## Supplemental P03-I06 delayed policy replay VM verification — 2026-09-26
+
+A two-backend QEMU/KVM run captured the controller's signed policy snapshot
+version 2 in the TLS test proxy. After the administrator installed signed deny
+policy version 3, the proxy delivered the newer policy, then injected the older
+signed snapshot with a synthetic outer poll sequence. On both SQLite and
+PostgreSQL, the relay acknowledged the injected document while the broker kept
+policy version 3 with no allowed actions. A new workload invocation was denied
+by the broker's local policy, with no operation request, completion, or new
+marker. After the node channel restarted and completed two fresh authenticated
+polls, another new invocation was denied the same way. This exercises an
+on-path relay replaying a genuine older signature; it does not establish
+revocation replay coverage or liveness after every forged transport sequence.
+
+The full runner repeated the other P03-I06, P03-E01 and P03-E02 cases on both
+backends and ended with exit status 0:
+
+```text
+P03-VM-COMPLETE runner_owner=local-kvm-p03-policy-replay-diagnostic-20260926 backends=both guests=2 revocation=reconciled recovery=passed
+```
+
+The host used QEMU 11.1.1, writable `/dev/kvm`, and the pinned Ubuntu 24.04
+image hash recorded above. Connected revocation took 13,898 ms on SQLite and
+14,056 ms on PostgreSQL, within the 30-second phase bound. The command was:
+
+```bash
+BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
+BLINDPASS_P03_SSH_PORT_A=22322 \
+BLINDPASS_P03_SSH_PORT_B=22323 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-policy-replay-diagnostic-20260926 \
+  ./tests/fleet/p03-vm.sh --backend both
+```
+
+The workload client now stops retrying explicit local-policy and revoked-node
+denials. The VM helper requires a newly recorded systemd invocation and compares
+the marker count before and after each denial. Earlier diagnostic runs exposed
+an invocation observation race and an absent marker directory after broker
+restart; these were harness failures, not acceptance passes. The final run
+passed after those assertions were corrected. `npm run build`, `npm test`,
+`cargo test --workspace --locked`, workspace Clippy with warnings denied,
+Rust formatting, shell syntax, proxy Python compilation and `git diff --check`
+passed. The default npm suite still skipped 101 service-gated SPS tests across
+17 files, and the Rust workspace gate ignored its PostgreSQL-only outage test.
+
+## Supplemental P03-I06 transport cursor recovery VM verification — 2026-09-26
+
+The relay now clears its in-memory poll acknowledgement cursor when the
+controller returns a sequence that is no greater than the cursor. It retries
+the authenticated session and applies only broker-verified signed documents.
+This addresses the liveness gap exposed by the synthetic outer sequence in the
+older policy replay. A focused Rust regression test first failed because the
+cursor reconciliation was absent, then passed with the fix.
+
+The full QEMU/KVM rerun passed on SQLite and PostgreSQL. After the proxy
+replayed signed policy version 2 behind version 3, the controller issued signed
+deny policy version 4. Each guest applied version 4 without a node-service
+restart, and a new workload invocation was denied by local policy with no new
+marker. Both guests stayed denied after a later channel restart. Connected
+revocation completed in 13,784 ms on SQLite and 14,017 ms on PostgreSQL. The
+run ended with exit status 0:
+
+```text
+P03-VM-COMPLETE runner_owner=local-kvm-p03-policy-cursor-recovery-20260926 backends=both guests=2 revocation=reconciled recovery=passed
+```
+
+The rerun used the pinned Ubuntu image, QEMU 11.1.1 and writable `/dev/kvm`.
+Its command was:
+
+```bash
+BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
+BLINDPASS_P03_SSH_PORT_A=22322 \
+BLINDPASS_P03_SSH_PORT_B=22323 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-policy-cursor-recovery-20260926 \
+  ./tests/fleet/p03-vm.sh --backend both
+```
+
+This checks delivery of one later signed policy after a forged sequence and
+denial across a channel restart. It does not cover repeated adversarial
+sequence injection, transport-level revocation replay, or the remaining P03
+acceptance matrix.
+
+The final `cargo test --workspace --locked`, `cargo clippy --workspace
+--all-targets --locked -- -D warnings`, `cargo fmt --all -- --check`,
+`npm run build`, `npm test`, shell syntax and `git diff --check` gates passed.
+The default Rust test command ignored the PostgreSQL-only outage test, and the
+default npm run skipped 101 service-gated SPS tests across 17 files.
+
 ## Remaining acceptance work
 
 This execution does not establish complete P03 acceptance. It leaves broader
 P03-I05 cases open; controller clock rollback, reboot cases beyond the tested
-guest reboot with an unconsumed grant, full transport-level delayed/replayed
-policy and revocation cases in P03-I06; full P03-I07 coverage;
+guest reboot with an unconsumed grant, further transport-level policy and
+revocation replay cases in P03-I06; full P03-I07 coverage;
 and the broader pilot catalog, including E05–E07 and
 E10–E13. The broader P01/P02 inherited gates and P02.6 controller
 cutover gate also remain prerequisites. The VM drives the authenticated

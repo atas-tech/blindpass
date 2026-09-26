@@ -15,6 +15,16 @@ valid_id() {
     [[ "$1" =~ ^[A-Za-z0-9_-]{1,128}$ ]]
 }
 
+operation_marker_count() {
+    local marker_directory=/run/blindpass/ops
+    if [[ ! -e "$marker_directory" && ! -L "$marker_directory" ]]; then
+        printf '0\n'
+        return 0
+    fi
+    [[ -d "$marker_directory" && ! -L "$marker_directory" ]] || return 1
+    find "$marker_directory" -maxdepth 1 -type f -name '*.marker' 2>/dev/null | wc -l
+}
+
 [[ $(id -u) == 0 ]] || fail 'guest helper requires root'
 command=${1:-}
 shift || true
@@ -202,9 +212,47 @@ EOF
         printf 'P03-GUEST-WORKLOAD-CONFIGURED\n'
         ;;
     start-workload)
+        previous_invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
+        journal_cursor=$(journalctl -u "$unit" -n 1 --show-cursor --no-pager 2>/dev/null |
+            sed -n 's/^-- cursor: //p' | tail -n 1 || true)
         systemctl reset-failed "$unit" >/dev/null 2>&1 || true
         systemctl start --no-block "$unit"
-        printf 'P03-GUEST-WORKLOAD-STARTED\n'
+        for _attempt in {1..300}; do
+            invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
+            if [[ ! "$invocation" =~ ^[a-f0-9]{32}$ || "$invocation" == "$previous_invocation" ]] \
+                && [[ -n "$journal_cursor" ]]; then
+                invocation=$({ journalctl -u "$unit" --after-cursor "$journal_cursor" \
+                    -o json --no-pager 2>/dev/null || true; } | python3 -c '
+import json
+import re
+import sys
+
+latest = ""
+for line in sys.stdin:
+    try:
+        candidate = json.loads(line).get("_SYSTEMD_INVOCATION_ID")
+    except ValueError:
+        continue
+    if isinstance(candidate, str) and re.fullmatch(r"[a-f0-9]{32}", candidate):
+        latest = candidate
+print(latest)
+')
+            fi
+            if [[ "$invocation" =~ ^[a-f0-9]{32}$ && "$invocation" != "$previous_invocation" ]]; then
+                current_log=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" \
+                    -o cat --no-pager 2>/dev/null || true)
+                if [[ -n "$current_log" ]]; then
+                    printf 'P03-GUEST-WORKLOAD-STARTED invocation=%s\n' "$invocation"
+                    exit 0
+                fi
+            fi
+            sleep 0.2
+        done
+        systemctl show --property=ActiveState --property=SubState --property=Result \
+            --property=InvocationID "$unit" >&2 || true
+        journalctl -u "$unit" -n 20 -o cat --no-pager 2>/dev/null |
+            sed -E 's/^(OPERATION_(REQUEST|COMPLETED)) .*/\1 [redacted]/' >&2 || true
+        fail 'systemd did not record a new workload invocation within 60 seconds'
         ;;
     wait-request)
         for _attempt in {1..300}; do
@@ -365,6 +413,91 @@ EOF
             sleep 0.2
         done
         fail 'revoked node did not fail the retried workload'
+        ;;
+    assert-policy-denied)
+        policy_version=${1:-}
+        expected_invocation=${2:-}
+        expected_marker_count=${3:-}
+        workload_error=''
+        [[ "$policy_version" =~ ^[1-9][0-9]*$ ]] || fail 'policy version is invalid'
+        [[ "$expected_invocation" =~ ^[a-f0-9]{32}$ ]] || fail 'workload invocation is invalid'
+        [[ "$expected_marker_count" =~ ^[0-9]+$ ]] || fail 'expected marker count is invalid'
+        policy_file=/var/lib/blindpass/broker/fleet-policy.json
+        for _attempt in {1..300}; do
+            if grep -Eq '"policy_version"[[:space:]]*:[[:space:]]*'"$policy_version"'([,}])' "$policy_file" 2>/dev/null \
+                && grep -Fq '"allowed_actions":[]' "$policy_file"; then
+                break
+            fi
+            sleep 0.2
+        done
+        grep -Eq '"policy_version"[[:space:]]*:[[:space:]]*'"$policy_version"'([,}])' "$policy_file" \
+            || fail 'broker did not retain the current signed policy version'
+        grep -Fq '"allowed_actions":[]' "$policy_file" \
+            || fail 'broker policy still permits the replayed action'
+        systemctl is-active --quiet blindpass-broker.service || fail 'broker service is not active'
+        systemctl is-active --quiet blindpass-node.service || fail 'node service is not active'
+        for _attempt in {1..100}; do
+            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
+            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
+            invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
+            if [[ "$invocation" =~ ^[a-f0-9]{32}$ && "$invocation" != "$expected_invocation" ]]; then
+                fail 'workload invocation changed before the policy result was checked'
+            fi
+            if [[ "$invocation" == "$expected_invocation" && "$state" == failed \
+                && "$result" == exit-code ]]; then
+                current_log=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" \
+                    -o cat --no-pager 2>/dev/null || true)
+                if grep -Eq '^OPERATION_(REQUEST|COMPLETED) ' <<<"$current_log"; then
+                    fail 'broker accepted an operation under the delayed stale policy'
+                fi
+                if grep -Fq 'blindpass-workload-client: operation request was denied by local policy' \
+                    <<<"$current_log"; then
+                    marker_count_after=$(operation_marker_count) || fail 'could not count operation markers'
+                    [[ "$marker_count_after" == "$expected_marker_count" ]] \
+                        || fail 'policy replay created a new operation marker'
+                    printf 'P03-GUEST-STALE-POLICY-DENIED policy_version=%s denial=local_policy marker_created=false\n' \
+                        "$policy_version"
+                    exit 0
+                fi
+                workload_error=$(sed -n 's/^blindpass-workload-client: //p' <<<"$current_log" | tail -n 1)
+                if [[ -n "$workload_error" ]]; then
+                    fail "workload failed for a reason other than local policy denial: $workload_error"
+                fi
+            fi
+            if [[ "$state" == active && "$invocation" == "$expected_invocation" ]]; then
+                current_log=$(journalctl -u "$unit" "_SYSTEMD_INVOCATION_ID=$invocation" \
+                    -o cat --no-pager 2>/dev/null || true)
+                if grep -Eq '^OPERATION_(REQUEST|COMPLETED) ' <<<"$current_log"; then
+                    fail 'broker accepted an operation under the delayed stale policy'
+                fi
+                workload_error=$(sed -n 's/^blindpass-workload-client: //p' <<<"$current_log" | tail -n 1)
+                if [[ -n "$workload_error" ]]; then
+                    fail "workload failed for a reason other than local policy denial: $workload_error"
+                fi
+            fi
+            sleep 0.2
+        done
+        journalctl -u "$unit" -n 30 -o cat --no-pager >&2 || true
+        [[ -n "$workload_error" ]] \
+            || workload_error='the expected local policy denial was not recorded'
+        fail "workload did not fail closed under the current policy: $workload_error"
+        ;;
+    wait-policy-version)
+        policy_version=${1:-}
+        [[ "$policy_version" =~ ^[1-9][0-9]*$ ]] || fail 'policy version is invalid'
+        policy_file=/var/lib/blindpass/broker/fleet-policy.json
+        for _attempt in {1..300}; do
+            if grep -Eq '"policy_version"[[:space:]]*:[[:space:]]*'"$policy_version"'([,}])' "$policy_file" 2>/dev/null \
+                && grep -Fq '"allowed_actions":[]' "$policy_file"; then
+                printf 'P03-GUEST-POLICY-APPLIED version=%s allowed_actions=0\n' "$policy_version"
+                exit 0
+            fi
+            sleep 0.2
+        done
+        fail 'broker did not apply the follow-up signed deny policy'
+        ;;
+    marker-count)
+        operation_marker_count || fail 'could not count operation markers'
         ;;
     wait-outbox-empty)
         outbox=/var/lib/blindpass/node/outbox.jsonl

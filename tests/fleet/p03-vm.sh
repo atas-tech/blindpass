@@ -247,8 +247,14 @@ start_proxy_process() {
 
 start_proxy() {
     local marker=$1
+    local capture_policy_snapshot=${2:-}
+    local -a capture_args=()
+    if [[ -n "$capture_policy_snapshot" ]]; then
+        capture_args=(--capture-policy-snapshot "$capture_policy_snapshot")
+    fi
     start_proxy_process "$(dirname "$marker")/tls-proxy.log" \
-        --drop-first-events-response --drop-marker "$marker" --drop-hold-seconds 3
+        --drop-first-events-response --drop-marker "$marker" --drop-hold-seconds 3 \
+        "${capture_args[@]}"
 }
 
 start_protocol_mismatch_proxy() {
@@ -276,6 +282,13 @@ start_time_reply_replay_proxy() {
     local marker=$1
     start_proxy_process "$(dirname "$marker")/tls-proxy-time-replay.log" \
         --replay-time-reply-on-reconnect --time-reply-marker "$marker"
+}
+
+start_policy_replay_proxy() {
+    local marker=$1
+    local policy_snapshot=$2
+    start_proxy_process "$(dirname "$marker")/tls-proxy-policy-replay.log" \
+        --replay-policy-snapshot "$policy_snapshot" --policy-replay-marker "$marker"
 }
 
 start_clear_proxy() {
@@ -339,6 +352,18 @@ wait_for_grant_acknowledgement() {
 
 json_field() {
     node -e 'const value = JSON.parse(process.argv[1]); console.log(value[process.argv[2]] ?? "");' "$1" "$2"
+}
+
+wait_for_node_online() {
+    local node_id=$1 status_json status
+    for _attempt in {1..100}; do
+        status_json=$(admin node-status "$node_id")
+        status=$(json_field "$status_json" status)
+        [[ "$status" == online ]] && return 0
+        sleep 0.2
+    done
+    printf 'P03-FAIL node %s did not become online before workload setup\n' "$node_id" >&2
+    return 1
 }
 
 create_enrollment() {
@@ -503,15 +528,21 @@ run_backend() {
     start_guest a "$current_backend"
     start_guest b "$current_backend"
     local drop_marker=$backend_dir/first-events-response-dropped
-    start_proxy "$drop_marker"
+    local initial_policy_snapshot=$backend_dir/initial-policy-snapshot.json
+    start_proxy "$drop_marker" "$initial_policy_snapshot"
 
     local request_json payload_a payload_b node_a node_b workload_a workload_b request_record
     node_a=$(create_enrollment a "p03-$current_backend-node-a")
+    guest_call a start-node
+    wait_for_node_online "$node_a"
     workload_a=
     payload_a=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 partition replay",resource_id:"P03-CANARY-A",ttl_seconds:60})).toString("base64url"))')
     workload_a=$(setup_workload a "$node_a" "$current_backend-a" "$payload_a")
-    guest_call a start-node
     sleep 2
+    [[ -s "$initial_policy_snapshot" ]] || {
+        printf 'P03-FAIL TLS proxy did not capture the initial signed fleet policy\n' >&2
+        return 1
+    }
 
     stop_proxy
     guest_call a start-workload
@@ -903,16 +934,135 @@ PY
         printf 'P03-FAIL recovery reused the revoked node identity\n' >&2
         return 1
     }
+    guest_call a start-node
+    wait_for_node_online "$recovered_node"
     local recovered_payload recovered_workload recovered_request
     recovered_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 recovered identity",resource_id:"P03-CANARY-RECOVERED",ttl_seconds:60})).toString("base64url"))')
     recovered_workload=$(setup_workload a "$recovered_node" "$current_backend-a-recovered" "$recovered_payload")
-    guest_call a start-node
     sleep 2
     guest_call a start-workload
     recovered_request=$(guest_call a wait-request)
     complete_operation a "$recovered_node" "$recovered_workload" P03-CANARY-RECOVERED \
         "$recovered_request" 'P03 recovered identity'
     printf 'P03-SCENARIO backend=%s scenario=P03-E02-revoked-node-recovery status=passed\n' "$current_backend"
+
+    local policy_replay_payload policy_replay_workload policy_replay_marker policy_update policy_workload_start
+    local policy_followup_update policy_followup_version
+    local policy_workload_invocation policy_marker_count_before
+    local policy_replay_version stale_policy_version policy_replay_acknowledged=false
+    local policy_restart_started_at policy_node_status policy_last_poll policy_previous_poll
+    local policy_fresh_poll_count=0 policy_channel_recovered=false
+    policy_replay_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 delayed policy replay",resource_id:"P03-CANARY-POLICY",ttl_seconds:60})).toString("base64url"))')
+    policy_replay_workload=$(setup_workload a "$recovered_node" "$current_backend-a-policy-replay" "$policy_replay_payload")
+    [[ "$policy_replay_workload" =~ ^wl_[A-Za-z0-9_-]{16,128}$ ]] || {
+        printf 'P03-FAIL controller returned a malformed policy-replay workload ID\n' >&2
+        return 1
+    }
+    guest_call b stop-node
+    policy_replay_marker=$backend_dir/policy-replay-events
+    start_policy_replay_proxy "$policy_replay_marker" "$initial_policy_snapshot"
+    policy_update=$(admin deny-policy)
+    policy_replay_version=$(json_field "$policy_update" version)
+    [[ "$policy_replay_version" =~ ^[1-9][0-9]*$ ]] || {
+        printf 'P03-FAIL controller returned a malformed deny-policy version\n' >&2
+        return 1
+    }
+    stale_policy_version=$(node -e 'const fs=require("node:fs");const value=JSON.parse(fs.readFileSync(process.argv[1],"utf8"));process.stdout.write(String(value.body.policy_version));' "$initial_policy_snapshot")
+    [[ "$stale_policy_version" =~ ^[1-9][0-9]*$ ]] && (( stale_policy_version < policy_replay_version )) || {
+        printf 'P03-FAIL captured policy version %s was not older than updated version %s\n' \
+            "$stale_policy_version" "$policy_replay_version" >&2
+        return 1
+    }
+    for _attempt in {1..600}; do
+        if grep -Fq "acknowledged stale_version=$stale_policy_version new_version=$policy_replay_version " \
+            "$policy_replay_marker" 2>/dev/null; then
+            policy_replay_acknowledged=true
+            break
+        fi
+        kill -0 "$proxy_pid" 2>/dev/null || break
+        sleep 0.1
+    done
+    [[ "$policy_replay_acknowledged" == true ]] || {
+        printf 'P03-FAIL broker did not acknowledge the delayed signed stale-policy replay\n' >&2
+        return 1
+    }
+    grep -Fq "new_policy version=$policy_replay_version " "$policy_replay_marker" \
+        || { printf 'P03-FAIL proxy did not observe the current signed policy\n' >&2; return 1; }
+    grep -Fq "injected stale_version=$stale_policy_version new_version=$policy_replay_version " \
+        "$policy_replay_marker" || {
+            printf 'P03-FAIL proxy did not replay the older policy after the current policy\n' >&2
+            return 1
+        }
+    policy_marker_count_before=$(guest_call a marker-count)
+    [[ "$policy_marker_count_before" =~ ^[0-9]+$ ]] || {
+        printf 'P03-FAIL guest returned a malformed policy-check marker count\n' >&2
+        return 1
+    }
+    policy_workload_start=$(guest_call a start-workload)
+    printf '%s\n' "$policy_workload_start"
+    policy_workload_invocation=$(sed -n 's/.*invocation=\([a-f0-9]*\).*/\1/p' <<<"$policy_workload_start")
+    [[ "$policy_workload_invocation" =~ ^[a-f0-9]{32}$ ]] || {
+        printf 'P03-FAIL guest returned a malformed policy-check invocation ID\n' >&2
+        return 1
+    }
+    guest_call a assert-policy-denied "$policy_replay_version" "$policy_workload_invocation" \
+        "$policy_marker_count_before"
+    policy_followup_update=$(admin deny-policy)
+    policy_followup_version=$(json_field "$policy_followup_update" version)
+    [[ "$policy_followup_version" =~ ^[1-9][0-9]*$ ]] \
+        && (( policy_followup_version > policy_replay_version )) || {
+        printf 'P03-FAIL controller did not advance the follow-up signed policy version\n' >&2
+        return 1
+    }
+    guest_call a wait-policy-version "$policy_followup_version"
+    guest_call a assert-node-channel-stable
+    policy_marker_count_before=$(guest_call a marker-count)
+    policy_workload_start=$(guest_call a start-workload)
+    printf '%s\n' "$policy_workload_start"
+    policy_workload_invocation=$(sed -n 's/.*invocation=\([a-f0-9]*\).*/\1/p' <<<"$policy_workload_start")
+    [[ "$policy_workload_invocation" =~ ^[a-f0-9]{32}$ ]] || {
+        printf 'P03-FAIL guest returned a malformed follow-up policy-check invocation ID\n' >&2
+        return 1
+    }
+    guest_call a assert-policy-denied "$policy_followup_version" "$policy_workload_invocation" \
+        "$policy_marker_count_before"
+    policy_restart_started_at=$(node -e 'process.stdout.write(String(Date.now()))')
+    guest_call a restart-channel
+    policy_previous_poll=0
+    for _attempt in {1..300}; do
+        policy_node_status=$(admin node-status "$recovered_node")
+        policy_last_poll=$(json_field "$policy_node_status" last_poll_at)
+        if [[ "$policy_last_poll" =~ ^[0-9]+$ ]] \
+            && (( policy_last_poll > policy_restart_started_at && policy_last_poll > policy_previous_poll )); then
+            policy_fresh_poll_count=$((policy_fresh_poll_count + 1))
+            policy_previous_poll=$policy_last_poll
+        fi
+        if (( policy_fresh_poll_count >= 2 )); then
+            policy_channel_recovered=true
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$policy_channel_recovered" == true ]] || {
+        printf 'P03-FAIL node did not complete two fresh authenticated polls after channel restart\n' >&2
+        return 1
+    }
+    policy_marker_count_before=$(guest_call a marker-count)
+    [[ "$policy_marker_count_before" =~ ^[0-9]+$ ]] || {
+        printf 'P03-FAIL guest returned a malformed policy-check marker count after channel restart\n' >&2
+        return 1
+    }
+    policy_workload_start=$(guest_call a start-workload)
+    printf '%s\n' "$policy_workload_start"
+    policy_workload_invocation=$(sed -n 's/.*invocation=\([a-f0-9]*\).*/\1/p' <<<"$policy_workload_start")
+    [[ "$policy_workload_invocation" =~ ^[a-f0-9]{32}$ ]] || {
+        printf 'P03-FAIL guest returned a malformed policy-check invocation ID after channel restart\n' >&2
+        return 1
+    }
+    guest_call a assert-policy-denied "$policy_followup_version" "$policy_workload_invocation" \
+        "$policy_marker_count_before"
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-delayed-policy-replay stale_version=%s current_version=%s followup_version=%s replay_acknowledged=true recovered_without_service_restart=true denied_after_restart=true status=passed\n' \
+        "$current_backend" "$stale_policy_version" "$policy_replay_version" "$policy_followup_version"
 
     stop_proxy
     stop_pid "$controller_pid"
