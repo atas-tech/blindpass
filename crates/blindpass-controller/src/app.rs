@@ -18,7 +18,7 @@ use serde_json::json;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer};
+use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer, ExposeHeaders};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
 use tower_http::trace::TraceLayer;
@@ -181,6 +181,9 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
                     HeaderName::from_static("idempotency-key"),
                     HeaderName::from_static("if-match"),
                 ]))
+                // A separately hosted input page reads Date to derive its
+                // expiry countdown from the controller clock (P04 slice 9).
+                .expose_headers(ExposeHeaders::list([header::DATE]))
                 .allow_credentials(true),
         )
         .layer(middleware::from_fn(normalize_allowed_preflight))

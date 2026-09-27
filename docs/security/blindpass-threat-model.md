@@ -12,7 +12,7 @@ An authorized process receiving a credential can read/copy it. The proposed brow
 
 ## Authentication storage
 
-Source: [SPS auth routes](../../packages/sps-server/src/routes/auth.ts), [dashboard AuthContext](../../packages/dashboard/src/auth/AuthContext.tsx), [browser auth storage](../../packages/browser-ui/src/auth-storage.js), [browser requests](../../packages/browser-ui/src/app.js).
+Source: [SPS auth routes](../../packages/sps-server/src/routes/auth.ts), [dashboard AuthContext](../../packages/dashboard/src/auth/AuthContext.tsx), [browser requests](../../packages/browser-ui/src/app.js).
 
 | Mode/path | Actual behavior |
 |---|---|
@@ -22,7 +22,7 @@ Source: [SPS auth routes](../../packages/sps-server/src/routes/auth.ts), [dashbo
 | Non-hosted mode | Returns the refresh token in JSON |
 | Refresh request parsing | A supplied body token takes precedence over the cookie, including in hosted mode; this is not cookie-only enforcement |
 | Dashboard | Access token in React memory/ref. A returned body refresh token is written to `localStorage`; refresh prefers that stored token with credentials omitted, otherwise uses cookies |
-| Browser input | The storage helper uses the `blindpass_refresh_token` key in `localStorage`, and its refresh path supports a body token plus cookie credentials |
+| Browser input | Since P04 slice 9 the input page has no session or refresh path: signed-link requests send no cookies (`credentials: "omit"`), and the page stores only the language preference. On load it removes a `blindpass_refresh_token` left in `localStorage` by the earlier page on the same origin |
 | Cleanup gap | Dashboard `clearAuth()` clears memory but does not remove the stored refresh token; changing to hosted cookie responses does not itself clear existing browser storage |
 
 The earlier claim that refresh tokens were uniformly in `sessionStorage` is incorrect for this checkout. Hosted cookies reduce direct JavaScript token readability on their intended path, but legacy/test body-token storage remains readable. XSS can also exercise an authenticated user's authority even without reading an HttpOnly cookie. Browser-session/CSRF-origin behavior and storage migration/cleanup need explicit testing; do not claim frontend compromise is contained by cookies alone.

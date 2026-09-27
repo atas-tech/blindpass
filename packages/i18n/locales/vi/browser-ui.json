@@ -1,105 +1,136 @@
 {
   "meta": {
-    "title": "Nhập bí mật an toàn | agent-BlindPass"
-  },
-  "banner": {
-    "important": "Quan trọng:",
-    "message": "Hãy kiểm tra thanh địa chỉ và chứng chỉ TLS trước khi nhập bất kỳ mật khẩu, khóa hay thông tin xác thực nào."
+    "title": "Nhập bí mật · BlindPass"
   },
   "brand": {
-    "name": "agent-BlindPass",
-    "subtitle": "Trao đổi bí mật an toàn"
+    "name": "BlindPass",
+    "caption": "Chuyển giao bí mật"
   },
-  "topbar": {
-    "clientEncryption": "Mã hóa phía trình duyệt",
-    "sessionRequired": "Cần có phiên",
-    "awaitingSession": "Đang chờ phiên",
-    "signedSession": "Phiên đã ký",
-    "previewMode": "Chế độ xem trước"
+  "language": {
+    "label": "Ngôn ngữ"
   },
-  "trust": {
-    "sectionLabel": "Bàn giao zero-knowledge",
-    "title": "Nhập bí mật an toàn",
-    "body": "Bí mật của bạn được mã hóa cục bộ ngay trong trình duyệt. Dữ liệu đã mã hóa sau đó được gửi an toàn đến agent. Bản rõ không bao giờ rời khỏi trang này.",
-    "you": "Bạn",
-    "agent": "Agent",
-    "plaintextInput": "Nhập bản rõ",
-    "localEncryption": "Mã hóa cục bộ",
-    "secureTransfer": "Truyền an toàn",
-    "cards": {
-      "localKicker": "Mã hóa cục bộ",
-      "localTitle": "Dữ liệu của bạn, khóa của bạn",
-      "localBody": "Việc mã hóa diễn ra ngay trong trình duyệt. Không có bản rõ nào được tải lên.",
-      "signedKicker": "Truy cập đã ký",
-      "signedTitle": "Phiên an toàn",
-      "signedBody": "Trang này được bảo vệ bằng một liên kết bảo mật tạm thời, chỉ dùng một lần.",
-      "deliveryKicker": "Giao một lần",
-      "deliveryTitle": "Trực tiếp đến agent",
-      "deliveryBody": "Dữ liệu được giữ an toàn cho đến khi agent đích truy xuất."
-    },
-    "checklist": {
-      "first": "1. Kiểm tra địa chỉ trên thanh địa chỉ là chính xác.",
-      "second": "2. Đối chiếu mã phiên với yêu cầu của bạn.",
-      "third": "3. Đóng tab này khi hoàn tất."
-    }
+  "intro": {
+    "eyebrow": "Chuyển giao riêng tư",
+    "titleLine1": "Chia sẻ bí mật.",
+    "titleLine2": "Không qua trò chuyện.",
+    "lead": "Cung cấp thông tin xác thực cho yêu cầu này. Trình duyệt mã hóa trước khi gửi đến BlindPass.",
+    "stepsLabel": "Các bước chuyển giao",
+    "step1Title": "Kiểm tra yêu cầu",
+    "step1Body": "Đối chiếu mã với yêu cầu bạn nhận được.",
+    "step2Title": "Nhập bí mật",
+    "step2Body": "Trang mã hóa dữ liệu bằng khóa của người yêu cầu.",
+    "step3Title": "Gửi một lần",
+    "step3Body": "Dữ liệu mã hóa có thể được lấy một lần trước khi hết hạn.",
+    "boundary": "Người nhận có thể giải mã và sử dụng bí mật này. Chỉ chia sẻ thông tin xác thực bạn muốn họ có."
+  },
+  "card": {
+    "label": "Yêu cầu bí mật",
+    "descriptionLabel": "Mô tả yêu cầu",
+    "descriptionHint": "Do người yêu cầu viết. BlindPass không xác minh nội dung này.",
+    "codeLabel": "Mã xác nhận",
+    "codeHint": "Nếu mã không khớp với yêu cầu của bạn, hãy đóng trang này.",
+    "remaining": "Còn {{time}}",
+    "validUntil": "Hiệu lực đến {{time}}",
+    "validUntilHint": "Theo đồng hồ của bộ điều khiển; đồng hồ thiết bị của bạn có thể khác.",
+    "minuteLeft": "Liên kết này còn chưa đến một phút.",
+    "addressReminder": "Kiểm tra địa chỉ trang trước khi nhập thông tin xác thực."
   },
   "form": {
-    "sectionLabel": "Kênh an toàn",
-    "title": "Gửi bí mật cho agent",
-    "sessionAwaiting": "Đang chờ phiên",
-    "statusLoading": "Đang tải yêu cầu...",
-    "sessionCaption": "Mã phiên định danh",
-    "sessionCaptionPreview": "Mã phiên QA cục bộ",
-    "previewNotice": "Chế độ xem trước đang hoạt động. Các ô nhập chỉ được bật cho QA cục bộ và sẽ không gửi bí mật nào.",
-    "secretLabel": "Giá trị bí mật nhạy cảm",
-    "singlePlaceholder": "Nhập mật khẩu, token hoặc khóa API",
-    "multiPlaceholder": "Dán chứng chỉ, khối PEM hoặc thông tin JSON",
-    "multilineToggle": "Bí mật nhiều dòng (PEM/JSON)",
+    "secretLabel": "Bí mật của bạn",
     "clear": "Xóa",
-    "showSecret": "Hiện bí mật",
-    "hideSecret": "Ẩn bí mật",
-    "submit": "Mã hóa và gửi",
-    "submitPreview": "Mô phỏng gửi an toàn",
-    "footnote": "Mã hóa phía trình duyệt diễn ra trước khi bất kỳ dữ liệu nào rời khỏi trang này.",
-    "footnotePreview": "Chế độ xem trước chỉ hoạt động cục bộ. Không có bí mật nào được mã hóa, tải lên hoặc lưu từ xa.",
-    "assurance": {
-      "tls": "Được bảo vệ bởi TLS",
-      "zeroKnowledge": "Luồng zero-knowledge",
-      "oneTimeExchange": "Trao đổi một lần"
-    }
+    "show": "Hiện",
+    "hide": "Ẩn",
+    "showLabel": "Hiện bí mật",
+    "hideLabel": "Ẩn bí mật",
+    "multiline": "Nhiều dòng (PEM / JSON)",
+    "singleHelp": "Được ẩn khi bạn nhập. Nút Hiện cho xem trong 12 giây.",
+    "multilineHelp": "Giá trị nhiều dòng hiển thị trên màn hình. Ký tự xuống dòng được giữ nguyên; kiểu xuống dòng Windows được gửi dưới dạng LF.",
+    "singlePlaceholder": "Mật khẩu, token hoặc khóa API",
+    "multiPlaceholder": "Dán khối PEM hoặc thông tin xác thực JSON",
+    "submit": "Mã hóa và gửi bí mật",
+    "footnote": "Mã hóa trong trình duyệt. Người nhận giải mã.",
+    "size": "{{size}} / {{limit}}"
   },
-  "success": {
-    "sectionLabel": "Đã nhận bí mật",
-    "title": "Bí mật đã được mã hóa an toàn",
-    "statusSubmitted": "Đã gửi bí mật thành công. Bạn có thể đóng cửa sổ này an toàn.",
-    "detailSubmitted": "Bí mật chỉ rời khỏi trình duyệt dưới dạng dữ liệu đã mã hóa gắn với yêu cầu hiện tại.",
-    "statusPreview": "Xem trước hoàn tất. Luồng biểu mẫu hoạt động đúng, nhưng không có bí mật nào được truyền đi.",
-    "detailPreview": "Hãy dùng liên kết phiên đã ký khi bạn muốn kiểm tra mã hóa và gửi thật.",
-    "pillEncrypted": "Chỉ có payload đã mã hóa",
-    "pillEphemeral": "Giao tạm thời",
-    "dismiss": "Đóng và tắt cửa sổ"
+  "errors": {
+    "empty": "Nhập bí mật để tiếp tục.",
+    "lineBreaks": "Giữ chế độ nhiều dòng khi giá trị còn ký tự xuống dòng, hoặc xóa trước.",
+    "switchedToMultiline": "Đã chuyển sang nhiều dòng để giữ các ký tự xuống dòng vừa dán.",
+    "tooLarge": "Giá trị này có kích thước {{size}}; giới hạn là {{limit}}. Chưa có gì được gửi.",
+    "rejected": "Bộ điều khiển đã từ chối dữ liệu mã hóa nên không có gì được lưu. Hãy kiểm tra giá trị và thử lại.",
+    "rateLimited": "Quá nhiều lần thử. Hãy chờ một phút rồi gửi lại.",
+    "encryption": "Trình duyệt không mã hóa được giá trị này. Chưa có gì được gửi."
   },
-  "status": {
-    "previewReady": "Chế độ xem trước đang hoạt động. Các ô nhập được mở cho QA cục bộ mà không cần phiên đã ký thực.",
-    "requestReady": "Hãy xác minh mã phiên, sau đó nhập bí mật bạn muốn mã hóa cho agent.",
-    "emptySecret": "Bí mật không được để trống.",
-    "metadataUnavailable": "Không có metadata của yêu cầu.",
-    "encrypting": "Đang mã hóa và gửi...",
-    "loginRequiredSubmit": "Cần đăng nhập không gian làm việc trước khi gửi bí mật này.",
-    "invalidSignature": "Chữ ký liên kết không hợp lệ.",
-    "alreadySubmitted": "Yêu cầu này đã có bí mật được gửi.",
-    "requestExpired": "Yêu cầu này đã hết hạn.",
-    "tooLarge": "Bí mật quá lớn.",
-    "submitFailed": "Gửi thất bại.",
-    "encryptionNetworkFailed": "Mã hóa hoặc mạng đã gặp lỗi.",
-    "invalidSession": "Phiên bảo mật không hợp lệ hoặc đã hết hạn.",
-    "loginRequiredOpen": "Cần đăng nhập không gian làm việc trước khi mở yêu cầu này.",
-    "wrongWorkspace": "Yêu cầu này không khả dụng trong phiên không gian làm việc hiện tại.",
-    "requestInvalid": "Yêu cầu đã hết hạn hoặc không hợp lệ.",
-    "connectFailed": "Không thể kết nối đến máy chủ. Chế độ xem trước vẫn khả dụng để kiểm tra bố cục và tương tác cục bộ.",
-    "unexpected": "Đã xảy ra lỗi không mong muốn."
+  "badge": {
+    "loading": "Đang kiểm tra",
+    "ready": "Chờ nhập",
+    "submitting": "Đang gửi",
+    "submitted": "Đã gửi",
+    "used": "Đã được gửi",
+    "expired": "Không còn khả dụng",
+    "invalid": "Không khả dụng",
+    "auth": "Cần đăng nhập",
+    "error": "Chưa tải được",
+    "unknown": "Chưa rõ trạng thái"
   },
-  "requestDetails": {
-    "expires": "{{description}} Hết hạn: {{expiresAt}}."
-  }
+  "state": {
+    "loading": {
+      "title": "Đang kiểm tra yêu cầu",
+      "body": "Đang tải chi tiết và kiểm tra xem liên kết còn khả dụng hay không.",
+      "note": "Chỉ có thể nhập bí mật khi yêu cầu sẵn sàng."
+    },
+    "submitting": {
+      "title": "Đang mã hóa và gửi",
+      "body": "Đang gửi dữ liệu mã hóa cho yêu cầu này.",
+      "note": "Hãy giữ trang này mở. Chỉ phản hồi của bộ điều khiển mới xác nhận việc gửi."
+    },
+    "submitted": {
+      "title": "Bạn đã hoàn tất.",
+      "body": "Bí mật mã hóa đã được gửi. Bạn có thể đóng thẻ này và quay lại công việc.",
+      "note": "Đã gửi không có nghĩa là đã nhận. Người nhận vẫn cần lấy và giải mã trước khi hết hạn."
+    },
+    "used": {
+      "title": "Yêu cầu đã được gửi.",
+      "body": "Yêu cầu này đã nhận dữ liệu mã hóa và không thể nhận thêm lần gửi khác.",
+      "note": "Nếu cần gửi thông tin khác, hãy nhờ người yêu cầu tạo yêu cầu mới. Trạng thái này không xác nhận việc lấy dữ liệu."
+    },
+    "expired": {
+      "title": "Liên kết không còn khả dụng.",
+      "body": "Liên kết đã hết hạn hoặc yêu cầu đã kết thúc. Không thể gửi thêm qua liên kết này.",
+      "bodyWhileOpen": "Liên kết đã hết hạn khi trang đang mở. Chưa có gì được gửi và ô nhập đã được xóa.",
+      "bodyOnSubmit": "Bộ điều khiển không còn nhận dữ liệu qua liên kết này. Hãy xác nhận với người yêu cầu xem họ còn cần không.",
+      "note": "Nhờ người yêu cầu tạo liên kết mới, rồi đối chiếu mã xác nhận trước khi nhập bí mật."
+    },
+    "invalid": {
+      "title": "Liên kết không khả dụng.",
+      "body": "Không thể mở yêu cầu này. Liên kết có thể bị thiếu hoặc đã bị thay đổi.",
+      "bodySubmit": "Bộ điều khiển từ chối quyền gửi của liên kết này. Không có gì được lưu.",
+      "note": "Mở đầy đủ liên kết gốc từ người yêu cầu. Nếu vẫn lỗi, hãy nhờ tạo yêu cầu mới."
+    },
+    "auth": {
+      "title": "Đăng nhập để tiếp tục.",
+      "body": "Yêu cầu này cần một phiên đăng nhập mà trang này không cung cấp được.",
+      "note": "Đăng nhập tại nơi bạn thường dùng BlindPass, rồi mở lại liên kết gốc. Chỉ nhập bí mật khi chi tiết yêu cầu xuất hiện."
+    },
+    "error": {
+      "title": "Không kết nối được bộ điều khiển.",
+      "body": "Chi tiết yêu cầu chưa tải được nên chưa thể nhập.",
+      "note": "Kiểm tra kết nối rồi thử lại. Chưa có gì được gửi.",
+      "action": "Thử lại"
+    },
+    "unknown": {
+      "title": "Chưa xác nhận việc gửi.",
+      "body": "Kết nối bị gián đoạn trước khi bộ điều khiển phản hồi. Bí mật có thể đã được gửi.",
+      "note": "Đừng gửi lại cho đến khi biết kết quả. Hãy hỏi người yêu cầu xem đã nhận được chưa."
+    },
+    "close": "Đóng thẻ này",
+    "closeRefused": "Trình duyệt vẫn giữ thẻ này. Bạn có thể tự đóng."
+  },
+  "frame": {
+    "blocked": "Không thể hiển thị trang này bên trong một trang khác."
+  },
+  "footer": {
+    "label": "BlindPass / Nhập bí mật",
+    "detail": "Một yêu cầu. Một lần chuyển giao mã hóa."
+  },
+  "noscript": "Trang này cần JavaScript để mã hóa bí mật trước khi gửi."
 }

@@ -2,13 +2,10 @@ import { resolveLocale, resolveLocaleFromBrowser } from "@blindpass/i18n";
 import en from "@blindpass/i18n/locales/en/browser-ui.json";
 import vi from "@blindpass/i18n/locales/vi/browser-ui.json";
 
+/** Shared with the console, so a language chosen there carries over. */
 export const LOCALE_STORAGE_KEY = "blindpass_locale";
 
-const translations = {
-  en,
-  vi
-};
-
+const translations = { en, vi };
 let activeLocale = "en";
 
 function getValueByPath(source, path) {
@@ -37,28 +34,30 @@ export function t(path, params) {
 }
 
 export function applyTranslations(root = document) {
+  root.documentElement.lang = activeLocale;
   root.querySelectorAll("[data-i18n]").forEach((element) => {
-    const key = element.dataset.i18n;
-    if (!key) {
-      return;
-    }
-    element.textContent = t(key);
+    if (element.dataset.i18n) element.textContent = t(element.dataset.i18n);
   });
-
-  root.querySelectorAll("[data-i18n-placeholder]").forEach((element) => {
-    const key = element.dataset.i18nPlaceholder;
-    if (!key || !("placeholder" in element)) {
-      return;
-    }
-    element.placeholder = t(key);
+  root.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
+    if (element.dataset.i18nAriaLabel) element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));
   });
-
-  document.title = t("meta.title");
+  root.title = t("meta.title");
 }
 
 export function initI18n(root = document) {
   activeLocale = resolveLocale(readStoredLocale() ?? resolveLocaleFromBrowser());
-  root.documentElement.lang = activeLocale;
+  applyTranslations(root);
+  return activeLocale;
+}
+
+/** Switch language for this browser. Storage failure only loses the preference. */
+export function setLocale(locale, root = document) {
+  activeLocale = resolveLocale(locale);
+  try {
+    globalThis.localStorage?.setItem(LOCALE_STORAGE_KEY, activeLocale);
+  } catch {
+    // Private windows may refuse storage; the page still switches.
+  }
   applyTranslations(root);
   return activeLocale;
 }

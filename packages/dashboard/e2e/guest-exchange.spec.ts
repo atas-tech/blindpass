@@ -59,7 +59,7 @@ test.describe("Guest Secret Exchange (Phase 3C)", () => {
     await page.getByTestId("submit-btn").click();
     
     // 6. Wait for success
-    await expect(page.getByTestId("success-message")).toBeVisible({ timeout: 15000 });
+    await expect(page.getByTestId("outcome")).toHaveAttribute("data-state", "submitted", { timeout: 15000 });
 
     // 7. Open the ciphertext with the generated private key and prove one-use retrieval.
     const retrieveRes = await page.request.get(`http://127.0.0.1:3100/api/v2/secret/retrieve/${request_id}`, {

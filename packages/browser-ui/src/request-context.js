@@ -1,53 +1,17 @@
-const PREVIEW_FLAGS = new Set(["1", "on", "true", "yes"]);
-const PREVIEW_CODE = "LOCAL-QA";
-
-function isPreviewFlag(value) {
-  if (typeof value !== "string") return false;
-  return PREVIEW_FLAGS.has(value.trim().toLowerCase());
-}
-
+/**
+ * Read the signed-link parameters. The link's api_url is deliberately
+ * ignored: the controller origin is fixed when the page is built, so a
+ * crafted link can't point the page at another server's public key.
+ */
 export function parseContext(search = "") {
-  const normalizedSearch = search.startsWith("?") ? search.slice(1) : search;
-  const params = new URLSearchParams(normalizedSearch);
-
+  const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   return {
-    metadataSig: params.get("metadata_sig"),
-    preview: isPreviewFlag(params.get("preview")) || isPreviewFlag(params.get("test")),
     requestId: params.get("id"),
+    metadataSig: params.get("metadata_sig"),
     submitSig: params.get("submit_sig")
   };
 }
 
 export function isValidRequestContext(ctx) {
   return Boolean(ctx?.requestId && ctx?.metadataSig && ctx?.submitSig);
-}
-
-export function getBootstrapMode(ctx) {
-  if (isValidRequestContext(ctx)) {
-    return "request";
-  }
-
-  return ctx?.preview ? "preview" : "invalid";
-}
-
-export function createPreviewMetadata() {
-  return {
-    confirmation_code: PREVIEW_CODE,
-    description: "Local browser-ui preview",
-    preview: true
-  };
-}
-
-export function buildPreviewHref(search = "", pathname = "/") {
-  const normalizedSearch = search.startsWith("?") ? search.slice(1) : search;
-  const params = new URLSearchParams(normalizedSearch);
-
-  params.delete("api_url");
-  params.delete("id");
-  params.delete("metadata_sig");
-  params.delete("submit_sig");
-  params.set("preview", "1");
-
-  const query = params.toString();
-  return query ? `${pathname}?${query}` : `${pathname}?preview=1`;
 }

@@ -1,105 +1,136 @@
 {
   "meta": {
-    "title": "Secure Secret Input | agent-BlindPass"
-  },
-  "banner": {
-    "important": "Important:",
-    "message": "Verify the address bar and TLS certificate before entering any password, key, or credential."
+    "title": "Secret input · BlindPass"
   },
   "brand": {
-    "name": "agent-BlindPass",
-    "subtitle": "Secure secret exchange"
+    "name": "BlindPass",
+    "caption": "Secret handoff"
   },
-  "topbar": {
-    "clientEncryption": "Client-side encryption",
-    "sessionRequired": "Session required",
-    "awaitingSession": "Awaiting session",
-    "signedSession": "Signed session",
-    "previewMode": "Preview mode"
+  "language": {
+    "label": "Language"
   },
-  "trust": {
-    "sectionLabel": "Zero-knowledge handoff",
-    "title": "Secure Secret Input",
-    "body": "Your secret is encrypted locally in your browser. Encrypted data is then sent securely to the agent. Plaintext never leaves this page.",
-    "you": "You",
-    "agent": "Agent",
-    "plaintextInput": "Plaintext input",
-    "localEncryption": "Local encryption",
-    "secureTransfer": "Secure transfer",
-    "cards": {
-      "localKicker": "Local Encryption",
-      "localTitle": "Your data, your key",
-      "localBody": "Encryption happens in your browser. No plaintext is ever uploaded.",
-      "signedKicker": "Signed Access",
-      "signedTitle": "Secure session",
-      "signedBody": "This page is protected by a temporary, single-use security link.",
-      "deliveryKicker": "One-time Delivery",
-      "deliveryTitle": "Direct to agent",
-      "deliveryBody": "Data is held securely until retrieved by the intended agent."
-    },
-    "checklist": {
-      "first": "1. Check that the address bar is correct.",
-      "second": "2. Match the session code with your request.",
-      "third": "3. Close this tab when you are finished."
-    }
+  "intro": {
+    "eyebrow": "A private handoff",
+    "titleLine1": "Share a secret.",
+    "titleLine2": "Keep it out of chat.",
+    "lead": "Provide the credential for this request. Your browser encrypts it before sending it to BlindPass.",
+    "stepsLabel": "Handoff steps",
+    "step1Title": "Check the request",
+    "step1Body": "Match the code with the request you were sent.",
+    "step2Title": "Enter your secret",
+    "step2Body": "The page encrypts it for the requester's key.",
+    "step3Title": "Send once",
+    "step3Body": "The encrypted payload can be retrieved once before it expires.",
+    "boundary": "The recipient can decrypt and use this secret. Only share a credential you intend them to have."
+  },
+  "card": {
+    "label": "Secret request",
+    "descriptionLabel": "Request description",
+    "descriptionHint": "Written by the requester. BlindPass doesn't verify it.",
+    "codeLabel": "Confirmation code",
+    "codeHint": "If this code doesn't match your request, close this page.",
+    "remaining": "{{time}} remaining",
+    "validUntil": "Valid until {{time}}",
+    "validUntilHint": "By the controller's clock; your device clock may differ.",
+    "minuteLeft": "Less than a minute left on this link.",
+    "addressReminder": "Check the page address before entering a credential."
   },
   "form": {
-    "sectionLabel": "Secure channel",
-    "title": "Submit a secret to the agent",
-    "sessionAwaiting": "Awaiting session",
-    "statusLoading": "Loading request...",
-    "sessionCaption": "Identity session code",
-    "sessionCaptionPreview": "Local QA session code",
-    "previewNotice": "Preview mode is active. Inputs are enabled for local QA only and no secret will be transmitted.",
-    "secretLabel": "Sensitive secret value",
-    "singlePlaceholder": "Enter a password, token, or API key",
-    "multiPlaceholder": "Paste a certificate, PEM block, or JSON credential",
-    "multilineToggle": "Multiline secret (PEM/JSON)",
+    "secretLabel": "Your secret",
     "clear": "Clear",
-    "showSecret": "Show Secret",
-    "hideSecret": "Hide Secret",
-    "submit": "Encrypt and Submit",
-    "submitPreview": "Simulate Secure Submit",
-    "footnote": "Client-side encryption happens before any payload leaves this page.",
-    "footnotePreview": "Preview mode stays local. No secret is encrypted, uploaded, or stored remotely.",
-    "assurance": {
-      "tls": "TLS protected",
-      "zeroKnowledge": "Zero-knowledge path",
-      "oneTimeExchange": "One-time exchange"
-    }
+    "show": "Show",
+    "hide": "Hide",
+    "showLabel": "Show the secret",
+    "hideLabel": "Hide the secret",
+    "multiline": "Multiline (PEM / JSON)",
+    "singleHelp": "Hidden as you type. Show reveals it for 12 seconds.",
+    "multilineHelp": "Multiline values are visible on screen. Line breaks are kept; Windows line endings are sent as LF.",
+    "singlePlaceholder": "Password, token or API key",
+    "multiPlaceholder": "Paste a PEM block or JSON credential",
+    "submit": "Encrypt & send secret",
+    "footnote": "Encrypted in your browser. Decrypted by the recipient.",
+    "size": "{{size}} of {{limit}}"
   },
-  "success": {
-    "sectionLabel": "Secret received",
-    "title": "Secret securely encrypted",
-    "statusSubmitted": "Secret submitted successfully. You may safely close this window.",
-    "detailSubmitted": "The secret left this browser only as an encrypted payload scoped to the current request.",
-    "statusPreview": "Preview complete. The form flow worked, but no secret was transmitted.",
-    "detailPreview": "Use a signed session link when you want to exercise real encryption and submission.",
-    "pillEncrypted": "Encrypted payload only",
-    "pillEphemeral": "Ephemeral delivery",
-    "dismiss": "Dismiss and Close Window"
+  "errors": {
+    "empty": "Enter the secret to continue.",
+    "lineBreaks": "Keep multiline on while the value has line breaks, or clear it first.",
+    "switchedToMultiline": "Switched to multiline so the pasted line breaks are kept.",
+    "tooLarge": "This value is {{size}}; the limit is {{limit}}. Nothing was sent.",
+    "rejected": "The controller rejected the encrypted payload, so nothing was stored. Check the value and try again.",
+    "rateLimited": "Too many attempts. Wait a minute, then submit again.",
+    "encryption": "Your browser couldn't encrypt this value. Nothing was sent."
   },
-  "status": {
-    "previewReady": "Preview mode is active. Inputs are unlocked for local QA without a live signed session.",
-    "requestReady": "Verify the session code, then enter the secret you want to encrypt for the agent.",
-    "emptySecret": "Secret cannot be empty.",
-    "metadataUnavailable": "Request metadata is unavailable.",
-    "encrypting": "Encrypting and submitting...",
-    "loginRequiredSubmit": "Workspace login is required before this secret can be submitted.",
-    "invalidSignature": "Link signature is invalid.",
-    "alreadySubmitted": "This request already has a submitted secret.",
-    "requestExpired": "This request has expired.",
-    "tooLarge": "Secret is too large.",
-    "submitFailed": "Submission failed.",
-    "encryptionNetworkFailed": "Encryption or network failed.",
-    "invalidSession": "Invalid or expired secure session.",
-    "loginRequiredOpen": "Workspace login is required before this request can be opened.",
-    "wrongWorkspace": "This request is not available in your current workspace session.",
-    "requestInvalid": "Request expired or invalid.",
-    "connectFailed": "Failed to connect to the server. Preview mode is available for local layout and interaction testing.",
-    "unexpected": "Unexpected error."
+  "badge": {
+    "loading": "Checking request",
+    "ready": "Awaiting input",
+    "submitting": "Sending",
+    "submitted": "Submitted",
+    "used": "Already submitted",
+    "expired": "No longer available",
+    "invalid": "Unavailable",
+    "auth": "Sign-in required",
+    "error": "Not loaded",
+    "unknown": "Status unknown"
   },
-  "requestDetails": {
-    "expires": "{{description}} Expires: {{expiresAt}}."
-  }
+  "state": {
+    "loading": {
+      "title": "Checking this request",
+      "body": "Loading the request details and checking that the link is still available.",
+      "note": "Secret entry stays disabled until the request is ready."
+    },
+    "submitting": {
+      "title": "Encrypting & sending",
+      "body": "Sending the encrypted payload for this request.",
+      "note": "Keep this page open. Only the controller's answer confirms submission."
+    },
+    "submitted": {
+      "title": "Your part is done.",
+      "body": "The encrypted secret was submitted. You can close this tab and return to your task.",
+      "note": "Submitted doesn't mean retrieved. The recipient still needs to collect and decrypt it before it expires."
+    },
+    "used": {
+      "title": "Already submitted.",
+      "body": "This request already received an encrypted payload and can't accept another.",
+      "note": "To send a different credential, ask the requester to start a new request. This doesn't confirm retrieval."
+    },
+    "expired": {
+      "title": "This link is no longer available.",
+      "body": "It has expired or its request is finished. Nothing can be submitted through it.",
+      "bodyWhileOpen": "The link expired while this page was open. Nothing was sent, and the field was cleared.",
+      "bodyOnSubmit": "The controller no longer accepts submissions for this link. Confirm with the requester whether they still need it.",
+      "note": "Ask the requester for a new link, then check its confirmation code before entering your secret."
+    },
+    "invalid": {
+      "title": "This link is unavailable.",
+      "body": "We couldn't open this request. The link may be incomplete or altered.",
+      "bodySubmit": "The controller refused this link's permission to submit. Nothing was stored.",
+      "note": "Open the complete original link from the requester. If it still fails, ask for a new request."
+    },
+    "auth": {
+      "title": "Sign in to continue.",
+      "body": "This request needs a signed-in session that this page can't provide.",
+      "note": "Sign in where you usually use BlindPass, then reopen the original link. Don't enter a secret until the request details appear."
+    },
+    "error": {
+      "title": "We couldn't reach the controller.",
+      "body": "The request details didn't load, so entry stays disabled.",
+      "note": "Check your connection, then try again. Nothing has been sent.",
+      "action": "Try again"
+    },
+    "unknown": {
+      "title": "Submission not confirmed.",
+      "body": "The connection was interrupted before the controller answered. Your secret may already have been submitted.",
+      "note": "Don't send it again until the outcome is known. Ask the requester whether it arrived."
+    },
+    "close": "Close this tab",
+    "closeRefused": "Your browser kept this tab open. You can close it yourself."
+  },
+  "frame": {
+    "blocked": "This page can't be shown inside another site."
+  },
+  "footer": {
+    "label": "BlindPass / Secret input",
+    "detail": "One request. One encrypted handoff."
+  },
+  "noscript": "This page needs JavaScript to encrypt your secret before sending it."
 }

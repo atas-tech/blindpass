@@ -1,184 +1,163 @@
 <!doctype html>
 <html lang="en">
-
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="referrer" content="no-referrer" />
-  <meta
-    http-equiv="Content-Security-Policy"
-    content="default-src 'self'; base-uri 'none'; object-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' http://127.0.0.1:3100 http://localhost:3100 https: ws: wss:; form-action 'self'; frame-src 'none'"
-  />
-  <title>Secure Secret Input | agent-BlindPass</title>
-  <link rel="icon" type="image/x-icon" href="/favicon.ico" />
-  <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
-</head>
-
-<body>
-  <header class="security-banner">
-    <strong data-i18n="banner.important">Important:</strong>
-    <span data-i18n="banner.message">Verify the address bar and TLS certificate before entering any password, key, or credential.</span>
-  </header>
-
-  <div class="app-shell">
-    <nav class="topbar">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">K</div>
-        <div class="brand-copy">
-          <span class="brand-name" data-i18n="brand.name">agent-BlindPass</span>
-          <span class="brand-subtitle" data-i18n="brand.subtitle">Secure secret exchange</span>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Secret input · BlindPass</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png" />
+    <script type="module" src="/src/app.js"></script>
+  </head>
+  <body>
+    <div class="product">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span class="brand-word">blindpass<span class="brand-dot">.</span></span>
+          <span class="sr-only" data-i18n="brand.name">BlindPass</span>
         </div>
-      </div>
+        <div class="header-actions">
+          <span class="header-caption" data-i18n="brand.caption">Secret handoff</span>
+          <label class="language">
+            <span class="sr-only" data-i18n="language.label">Language</span>
+            <select id="language" data-testid="language">
+              <option value="en" lang="en">English</option>
+              <option value="vi" lang="vi">Tiếng Việt</option>
+            </select>
+          </label>
+        </div>
+      </header>
 
-      <div class="topbar-actions">
-        <div class="status-chip" data-i18n="topbar.clientEncryption">Client-side encryption</div>
-        <div id="mode-badge" class="mode-chip" data-mode="locked" data-i18n="topbar.sessionRequired">Session required</div>
-      </div>
-    </nav>
+      <main class="layout">
+        <section class="intro" aria-labelledby="page-title">
+          <p class="eyebrow" data-i18n="intro.eyebrow">A private handoff</p>
+          <h1 id="page-title">
+            <span data-i18n="intro.titleLine1">Share a secret.</span>
+            <span data-i18n="intro.titleLine2">Keep it out of chat.</span>
+          </h1>
+          <p class="lead" data-i18n="intro.lead"></p>
+          <ol class="handoff" data-i18n-aria-label="intro.stepsLabel">
+            <li>
+              <span class="step-number" aria-hidden="true">01</span>
+              <div>
+                <h2 data-i18n="intro.step1Title"></h2>
+                <p data-i18n="intro.step1Body"></p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number" aria-hidden="true">02</span>
+              <div>
+                <h2 data-i18n="intro.step2Title"></h2>
+                <p data-i18n="intro.step2Body"></p>
+              </div>
+            </li>
+            <li>
+              <span class="step-number" aria-hidden="true">03</span>
+              <div>
+                <h2 data-i18n="intro.step3Title"></h2>
+                <p data-i18n="intro.step3Body"></p>
+              </div>
+            </li>
+          </ol>
+          <div class="boundary">
+            <span class="boundary-mark" data-icon="arrow-right" aria-hidden="true"></span>
+            <p data-i18n="intro.boundary"></p>
+          </div>
+        </section>
 
-    <main class="workspace">
-      <section class="trust-panel">
-        <p class="section-label" data-i18n="trust.sectionLabel">Zero-knowledge handoff</p>
-        <h1 data-i18n="trust.title">Secure Secret Input</h1>
-        <p class="hero-copy" data-i18n="trust.body">
-          Your secret is encrypted locally in your browser. Encrypted data is then sent securely to the agent—plaintext
-          never leaves this page.
-        </p>
+        <section id="secret-card" class="request-card" data-state="loading" aria-labelledby="card-label">
+          <div class="card-header">
+            <p id="card-label" class="eyebrow" data-i18n="card.label">Secret request</p>
+            <span id="status-badge" class="status-badge" data-tone="neutral" data-testid="status"></span>
+          </div>
 
-        <div class="handoff-visualizer" aria-hidden="true">
-          <div class="visualizer-track">
-            <div class="visual-node node-client">
-              <div class="node-icon">👤</div>
-              <span class="node-label" data-i18n="trust.you">You</span>
-            </div>
-            <div class="visual-connector">
-              <div class="pulse-line"></div>
-              <div class="encryption-morph">
-                <div class="morph-shield">🔒</div>
-                <div class="morph-data">•••</div>
+          <div id="entry-panel" hidden>
+            <div class="request-summary">
+              <p class="small-label" data-i18n="card.descriptionLabel"></p>
+              <p id="request-description" class="request-description" data-testid="request-description"></p>
+              <p class="hint" data-i18n="card.descriptionHint"></p>
+              <div class="confirmation">
+                <div class="confirmation-head">
+                  <span class="small-label" data-i18n="card.codeLabel"></span>
+                  <span id="expiry" class="expiry" data-testid="expiry"></span>
+                </div>
+                <p id="confirmation-code" class="confirmation-code" data-testid="confirmation-code"></p>
+                <p class="hint" data-i18n="card.codeHint"></p>
+                <p id="expiry-hint" class="hint" data-i18n="card.validUntilHint" hidden></p>
               </div>
             </div>
-            <div class="visual-node node-agent">
-              <div class="node-icon">🤖</div>
-              <span class="node-label" data-i18n="trust.agent">Agent</span>
+
+            <form id="secret-form" novalidate autocomplete="off">
+              <div class="field-heading">
+                <label id="secret-label" for="secret-single" data-i18n="form.secretLabel"></label>
+                <button id="clear" type="button" class="text-button" data-i18n="form.clear" data-testid="clear"></button>
+              </div>
+              <div id="single-field" class="secret-field">
+                <input
+                  id="secret-single"
+                  name="secret"
+                  type="password"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  aria-describedby="input-help input-error"
+                  data-testid="secret-input"
+                />
+                <button id="visibility" type="button" class="reveal" aria-pressed="false" aria-controls="secret-single" data-testid="visibility"></button>
+              </div>
+              <textarea
+                id="secret-multi"
+                name="secret-multiline"
+                rows="7"
+                autocomplete="off"
+                autocapitalize="off"
+                autocorrect="off"
+                spellcheck="false"
+                aria-describedby="input-help input-error"
+                data-testid="secret-input-multi"
+                hidden
+              ></textarea>
+              <div class="input-options">
+                <label class="checkbox-label">
+                  <input id="multiline" type="checkbox" data-testid="multiline" />
+                  <span data-i18n="form.multiline"></span>
+                </label>
+                <span id="input-size" class="input-size" data-testid="input-size"></span>
+              </div>
+              <p id="input-help" class="hint"></p>
+              <p id="input-error" class="field-error" role="alert" data-testid="input-error" hidden></p>
+              <button id="submit" type="submit" class="primary" data-testid="submit-btn">
+                <span data-i18n="form.submit"></span>
+                <span class="primary-mark" data-icon="arrow-up-right" aria-hidden="true"></span>
+              </button>
+              <p class="form-footnote" data-i18n="form.footnote"></p>
+            </form>
+            <div class="card-footer">
+              <span class="footer-dot" aria-hidden="true"></span>
+              <p data-i18n="card.addressReminder"></p>
             </div>
           </div>
-          <div class="visualizer-labels">
-            <span data-i18n="trust.plaintextInput">Plaintext input</span>
-            <span data-i18n="trust.localEncryption">Local encryption</span>
-            <span data-i18n="trust.secureTransfer">Secure transfer</span>
+
+          <div id="outcome-panel" class="outcome" data-tone="neutral" data-testid="outcome">
+            <span id="outcome-symbol" class="outcome-symbol" aria-hidden="true"></span>
+            <h2 id="outcome-title" tabindex="-1" data-testid="outcome-title"></h2>
+            <p id="outcome-body" data-testid="outcome-body"></p>
+            <p id="outcome-note" class="outcome-note" data-testid="outcome-note"></p>
+            <button id="outcome-action" type="button" class="secondary" data-testid="outcome-action" hidden></button>
+            <p id="outcome-followup" class="hint outcome-followup" hidden></p>
           </div>
-        </div>
+          <p id="announcer" class="sr-only" role="status" aria-live="polite"></p>
+        </section>
+      </main>
 
-        <div class="trust-grid">
-          <article class="trust-card">
-            <span class="trust-kicker" data-i18n="trust.cards.localKicker">Local Encryption</span>
-            <strong data-i18n="trust.cards.localTitle">Your data, your key</strong>
-            <p data-i18n="trust.cards.localBody">Encryption happens in your browser. No plaintext is ever uploaded.</p>
-          </article>
-
-          <article class="trust-card">
-            <span class="trust-kicker" data-i18n="trust.cards.signedKicker">Signed Access</span>
-            <strong data-i18n="trust.cards.signedTitle">Secure session</strong>
-            <p data-i18n="trust.cards.signedBody">This page is protected by a temporary, single-use security link.</p>
-          </article>
-
-          <article class="trust-card">
-            <span class="trust-kicker" data-i18n="trust.cards.deliveryKicker">One-time Delivery</span>
-            <strong data-i18n="trust.cards.deliveryTitle">Direct to agent</strong>
-            <p data-i18n="trust.cards.deliveryBody">Data is held securely until retrieved by the intended agent.</p>
-          </article>
-        </div>
-
-        <div class="trust-checklist">
-          <p data-i18n="trust.checklist.first">1. Check that the address bar is correct.</p>
-          <p data-i18n="trust.checklist.second">2. Match the session code with your request.</p>
-          <p data-i18n="trust.checklist.third">3. Close this tab when you are finished.</p>
-        </div>
-      </section>
-
-      <section id="form-container" class="secret-card">
-        <div class="card-header">
-          <div>
-            <p class="section-label" data-i18n="form.sectionLabel">Secure channel</p>
-            <h2 data-i18n="form.title">Submit a secret to the agent</h2>
-          </div>
-          <div id="session-state" class="card-state" data-mode="locked" data-i18n="form.sessionAwaiting">Awaiting session</div>
-        </div>
-
-        <p id="status" data-tone="muted" data-i18n="form.statusLoading" data-testid="status">Loading request...</p>
-
-        <div id="code-box" class="code-container" hidden>
-          <span id="session-caption" class="code-label" data-i18n="form.sessionCaption">Identity session code</span>
-          <p id="code" class="code"></p>
-        </div>
-
-        <div id="preview-notice" class="notice notice-info" hidden data-i18n="form.previewNotice">
-          Preview mode is active. Inputs are enabled for local QA only and no secret will be transmitted.
-        </div>
-
-        <div id="request-details" class="notice" hidden></div>
-
-        <div class="input-group">
-          <div class="input-header">
-            <label id="secret-label" for="secret-single" data-i18n="form.secretLabel">Sensitive secret value</label>
-          </div>
-
-          <div class="input-wrapper">
-            <input id="secret-single" type="password" autocomplete="off" autocorrect="off" autocapitalize="off"
-              spellcheck="false" data-i18n-placeholder="form.singlePlaceholder" placeholder="Enter a password, token, or API key" data-testid="secret-input" />
-            <textarea id="secret-multi" hidden autocomplete="off" autocorrect="off" autocapitalize="off"
-              spellcheck="false" data-i18n-placeholder="form.multiPlaceholder" placeholder="Paste a certificate, PEM block, or JSON credential" data-testid="secret-input-multi"></textarea>
-          </div>
-        </div>
-
-        <div id="secret-controls" class="secret-controls">
-          <label class="inline-toggle" for="multiline-toggle">
-            <input id="multiline-toggle" type="checkbox" />
-            <span data-i18n="form.multilineToggle">Multiline secret (PEM/JSON)</span>
-          </label>
-
-          <div class="toolbar-actions">
-            <button id="clear-secret" type="button" class="secondary" data-i18n="form.clear">Clear</button>
-            <button id="toggle-visibility" type="button" class="secondary" data-i18n="form.showSecret">Show Secret</button>
-          </div>
-        </div>
-
-        <button id="submit" type="button" disabled data-i18n="form.submit" data-testid="submit-btn">Encrypt and Submit</button>
-
-        <p id="security-footnote" class="security-footnote" data-i18n="form.footnote">
-          Client-side encryption happens before any payload leaves this page.
-        </p>
-
-        <div class="assurance-row">
-          <span class="assurance-pill" data-i18n="form.assurance.tls">TLS protected</span>
-          <span class="assurance-pill" data-i18n="form.assurance.zeroKnowledge">Zero-knowledge path</span>
-          <span class="assurance-pill" data-i18n="form.assurance.oneTimeExchange">One-time exchange</span>
-        </div>
-      </section>
-
-      <section id="success-container" class="secret-card success-container" hidden>
-        <div class="success-icon">✓</div>
-        <p class="section-label" data-i18n="success.sectionLabel">Secret received</p>
-        <h2 class="success-title" data-i18n="success.title">Secret securely encrypted</h2>
-        <p id="success-status" class="success-status" data-i18n="success.statusSubmitted" data-testid="success-message">
-          Secret submitted successfully. You may safely close this window.
-        </p>
-        <p id="success-detail" class="success-detail" data-i18n="success.detailSubmitted">
-          Only the intended retrieval flow should be able to decrypt the submitted payload.
-        </p>
-
-        <div class="assurance-row success-pills">
-          <span class="assurance-pill" data-i18n="success.pillEncrypted">Encrypted payload only</span>
-          <span class="assurance-pill" data-i18n="success.pillEphemeral">Ephemeral delivery</span>
-        </div>
-
-        <button id="dismiss-window" type="button" class="primary-close" data-i18n="success.dismiss">Dismiss and Close Window</button>
-      </section>
-    </main>
-  </div>
-
-  <script type="module" src="/src/app.js"></script>
-</body>
-
+      <footer class="page-footer">
+        <span data-i18n="footer.label">BlindPass / Secret input</span>
+        <span data-i18n="footer.detail">One request. One encrypted handoff.</span>
+      </footer>
+    </div>
+    <noscript><p class="noscript">This page needs JavaScript to encrypt your secret before sending it.</p></noscript>
+  </body>
 </html>

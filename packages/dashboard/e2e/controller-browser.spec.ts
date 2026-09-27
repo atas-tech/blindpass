@@ -207,7 +207,7 @@ test("CC02 runs scripts/e2e-human.mjs against Rust through the browser UI", asyn
     await expect(page.getByTestId("submit-btn")).toBeEnabled();
     await page.getByTestId("secret-input").fill("dummy-cc02-human-client");
     await page.getByTestId("submit-btn").click();
-    await expect(page.getByTestId("success-message")).toBeVisible();
+    await expect(page.getByTestId("outcome")).toHaveAttribute("data-state", "submitted");
 
     const result = await exited;
     expect(result.code).toBe(0);
@@ -230,7 +230,7 @@ test("CC03 loads a signed link, seals input in the page, and submits to Rust", a
     await expect(page.getByTestId("submit-btn")).toBeEnabled();
     await page.getByTestId("secret-input").fill(plaintext);
     await page.getByTestId("submit-btn").click();
-    await expect(page.getByTestId("success-message")).toBeVisible();
+    await expect(page.getByTestId("outcome")).toHaveAttribute("data-state", "submitted");
 
     const retrieved = await httpRequest<{
       enc: string;
@@ -255,9 +255,9 @@ test("CC03 disables entry when a signed browser link has expired", async ({ page
       response.url().includes(`/api/v2/secret/metadata/${request.requestId}`));
     await page.goto(request.secretUrl);
     expect((await metadata).status()).toBe(410);
-    const status = page.getByTestId("status");
-    await expect(status).toHaveText("Request expired or invalid.");
-    await expect(status).toHaveAttribute("data-tone", "danger");
+    // P04 slice 9 input page: a 410 is "no longer available" and entry stays disabled.
+    await expect(page.getByTestId("outcome")).toHaveAttribute("data-state", "expired");
+    await expect(page.getByTestId("status")).toHaveText("No longer available");
     await expect(page.getByTestId("submit-btn")).toBeDisabled();
   } finally {
     destroyKeyPair(request.keyPair);
