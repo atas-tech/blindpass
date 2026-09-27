@@ -384,8 +384,7 @@ impl BrokerState {
         }
         if let Some(encoded) = request.operation.strip_prefix("request:") {
             if self.pending_node_events.len() >= MAX_BROKER_AUDIT_EVENTS {
-                self.audit_overflow_pending = true;
-                self.persist_pending_node_events()?;
+                self.flag_audit_overflow()?;
                 return Err(BrokerError::Configuration("audit_backpressure"));
             }
             let body = self.operation_request_body(&authorization, encoded)?;
@@ -403,8 +402,7 @@ impl BrokerState {
         }
         if let Some(grant_id) = request.operation.strip_prefix("consume:") {
             if self.pending_node_events.len() > MAX_BROKER_AUDIT_EVENTS - 2 {
-                self.audit_overflow_pending = true;
-                self.persist_pending_node_events()?;
+                self.flag_audit_overflow()?;
                 return Err(BrokerError::Configuration("audit_backpressure"));
             }
             let observed_at_ms = self
@@ -789,13 +787,7 @@ impl BrokerState {
             ));
         }
         if self.pending_node_events.len() >= MAX_BROKER_AUDIT_EVENTS {
-            let previous_overflow = self.audit_overflow_pending;
-            self.audit_overflow_pending = true;
-            if let Err(error) = self.persist_pending_node_events() {
-                self.audit_overflow_pending = previous_overflow;
-                return Err(error);
-            }
-            return Ok(());
+            return self.flag_audit_overflow();
         }
         self.pending_node_events.push_back(PendingNodeEvent {
             idempotency_key: event_key,
@@ -911,7 +903,10 @@ impl BrokerState {
         }
         if self.deferred_revocation_outcomes.len() >= MAX_DEFERRED_REVOCATION_OUTCOMES {
             self.deferred_revocation_outcomes.pop_front();
-            self.audit_overflow_pending = true;
+            if let Err(error) = self.flag_audit_overflow() {
+                eprintln!("audit overflow could not be recorded durably: {error}");
+                self.audit_overflow_pending = true;
+            }
         }
         self.deferred_revocation_outcomes.push_back(event);
         if let Err(error) = self.queue_deferred_revocation_outcomes() {
@@ -925,7 +920,7 @@ impl BrokerState {
         if self.deferred_revocation_outcomes.is_empty()
             || self.pending_node_events.len() >= MAX_BROKER_AUDIT_EVENTS
         {
-            return self.persist_overflow_flag_if_needed();
+            return Ok(());
         }
         let previous_events = self.pending_node_events.clone();
         let previous_deferred = self.deferred_revocation_outcomes.clone();
@@ -943,9 +938,16 @@ impl BrokerState {
         Ok(())
     }
 
-    fn persist_overflow_flag_if_needed(&mut self) -> Result<(), BrokerError> {
+    /// Record that an audit event was refused. The queue file is rewritten
+    /// only when the flag changes, not on every denied request.
+    fn flag_audit_overflow(&mut self) -> Result<(), BrokerError> {
         if self.audit_overflow_pending {
-            self.persist_pending_node_events()?;
+            return Ok(());
+        }
+        self.audit_overflow_pending = true;
+        if let Err(error) = self.persist_pending_node_events() {
+            self.audit_overflow_pending = false;
+            return Err(error);
         }
         Ok(())
     }
@@ -2409,6 +2411,52 @@ mod tests {
         );
         drop(state);
         drop(identity);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    fn fill_audit_queue(state: &mut BrokerState, count: usize) {
+        state.pending_node_events = (0..count)
+            .map(|index| PendingNodeEvent {
+                idempotency_key: format!("broker-event-capacity-{index:08}"),
+                kind: "audit".to_owned(),
+                body: Value::Object(vec![(
+                    "action".to_owned(),
+                    Value::String("existing_event".to_owned()),
+                )]),
+            })
+            .collect();
+    }
+
+    #[test]
+    fn repeated_backpressure_denials_rewrite_the_queue_only_when_overflow_is_first_flagged() {
+        use std::os::unix::fs::MetadataExt;
+        let (directory, mut state, grant) = fleet_state_with_grant("backpressure-persist");
+        fill_audit_queue(&mut state, MAX_BROKER_AUDIT_EVENTS);
+        let queue = directory.join("pending-node-events.jsonl");
+        let peer = workload_peer();
+        assert_eq!(
+            error_code(state.process_workload(&peer, &consume_request(&grant.id))),
+            b"ERR audit_backpressure\n"
+        );
+        assert!(state.audit_overflow_pending);
+        let first = fs::metadata(&queue).unwrap().ino();
+        let mut request = consume_request(&grant.id);
+        request.operation = "request:bounded-test".to_owned();
+        for _ in 0..3 {
+            assert_eq!(
+                error_code(state.process_workload(&peer, &consume_request(&grant.id))),
+                b"ERR audit_backpressure\n"
+            );
+            assert_eq!(
+                error_code(state.process_workload(&peer, &request)),
+                b"ERR audit_backpressure\n"
+            );
+        }
+        assert_eq!(
+            fs::metadata(&queue).unwrap().ino(),
+            first,
+            "an unchanged overflow flag must not rewrite up to 10,000 events"
+        );
         fs::remove_dir_all(directory).unwrap();
     }
 
