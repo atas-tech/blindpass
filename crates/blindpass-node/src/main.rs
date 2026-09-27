@@ -617,13 +617,7 @@ fn run_channel_session(
             Duration::from_secs(35),
         );
         wipe(&mut poll_request);
-        let response = response.map_err(|error| {
-            if error == TransportError::ProtocolMismatch {
-                ChannelError::ProtocolMismatch
-            } else {
-                ChannelError::Retryable
-            }
-        })?;
+        let response = response.map_err(channel_error)?;
         let response_text = std::str::from_utf8(&response).map_err(|_| ChannelError::Retryable)?;
         let response_value = parse_json(response_text).map_err(|_| ChannelError::Retryable)?;
         let time_reply = response_value
@@ -684,7 +678,7 @@ fn run_channel_session(
                 Duration::from_secs(10),
             );
             wipe(&mut event_request);
-            let event_response = event_response.map_err(|_| ChannelError::Retryable)?;
+            let event_response = event_response.map_err(channel_error)?;
             let response_text =
                 std::str::from_utf8(&event_response).map_err(|_| ChannelError::Retryable)?;
             let response_value = parse_json(response_text).map_err(|_| ChannelError::Retryable)?;
@@ -718,6 +712,16 @@ fn run_channel_session(
                 .map_err(|_| ChannelError::Retryable)?;
         }
         *backoff_seconds = 1;
+    }
+}
+
+/// An incompatible controller protocol on any authenticated route stops the
+/// relay without a restart loop; every other transport failure is retried.
+fn channel_error(error: TransportError) -> ChannelError {
+    if error == TransportError::ProtocolMismatch {
+        ChannelError::ProtocolMismatch
+    } else {
+        ChannelError::Retryable
     }
 }
 
@@ -1115,6 +1119,18 @@ mod tests {
             NODE_SYSTEMD_UNIT
                 .lines()
                 .any(|line| line.trim() == "RestartPreventExitStatus=78")
+        );
+    }
+
+    #[test]
+    fn protocol_mismatch_on_authenticated_routes_is_not_retried() {
+        assert_eq!(
+            super::channel_error(super::TransportError::ProtocolMismatch),
+            super::ChannelError::ProtocolMismatch
+        );
+        assert_eq!(
+            super::channel_error(super::TransportError::RequestFailed),
+            super::ChannelError::Retryable
         );
     }
 
