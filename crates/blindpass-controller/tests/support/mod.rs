@@ -448,6 +448,12 @@ impl Harness {
             )
             .await;
         assert_eq!(created.status, 201, "{}", created.body);
+        self.login(created.body["id"].as_str().unwrap(), username, &password)
+            .await
+    }
+
+    /// Log in with the double-submit pre-session CSRF cookie.
+    pub async fn login(&self, id: &str, username: &str, password: &str) -> Operator {
         let login = self
             .request(
                 "POST",
@@ -463,7 +469,7 @@ impl Harness {
             .await;
         assert_eq!(login.status, 200, "{}", login.body);
         Operator {
-            id: created.body["id"].as_str().unwrap().to_owned(),
+            id: id.to_owned(),
             username: username.to_owned(),
             cookies: format!(
                 "{}; {}",

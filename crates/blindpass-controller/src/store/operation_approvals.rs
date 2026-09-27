@@ -11,7 +11,9 @@ use super::{
         enqueue_node_document_sqlite, operation_approval_from_postgres,
         operation_approval_from_sqlite, operation_from_postgres, operation_from_sqlite,
     },
-    fleet_lifecycle::FleetExpirySummary,
+    fleet_lifecycle::{
+        FleetExpirySummary, sign_pending_tombstones_postgres, sign_pending_tombstones_sqlite,
+    },
 };
 use blindpass_core::fleet::{DocumentKind, OperationClosed};
 use sqlx::{Postgres, Row, Sqlite, Transaction};
@@ -601,7 +603,7 @@ macro_rules! cancel_awaiting_impl {
 }
 
 macro_rules! expire {
-    ($pool:expr, $convert:expr, $now:expr, $meta_lock:expr, $targets:ident, $closures:ident,
+    ($pool:expr, $convert:expr, $now:expr, $meta_lock:expr, $targets:ident, $closures:ident, $sign:ident,
      $tenant_id:expr, $signer:expr) => {{
         let tenant_id: &str = $tenant_id;
         let mut summary = FleetExpirySummary::default();
@@ -745,6 +747,9 @@ macro_rules! expire {
             .await
             .map_err(StoreError::Database)?;
         }
+        if let Some(signer) = $signer {
+            summary.signed_tombstones = $sign(&mut tx, signer, tenant_id).await?;
+        }
         tx.commit().await.map_err(StoreError::Database)?;
         Ok(summary)
     }};
@@ -850,6 +855,7 @@ impl Store {
                 SQLITE_META_LOCK,
                 closure_targets_sqlite,
                 enqueue_closures_sqlite,
+                sign_pending_tombstones_sqlite,
                 &self.tenant_id,
                 signer
             ),
@@ -860,6 +866,7 @@ impl Store {
                 POSTGRES_META_LOCK,
                 closure_targets_postgres,
                 enqueue_closures_postgres,
+                sign_pending_tombstones_postgres,
                 &self.tenant_id,
                 signer
             ),

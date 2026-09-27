@@ -5,9 +5,10 @@
 
 use super::grants::with_revocation_result;
 use super::{
-    Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
     authorization::{enqueue_node_document_postgres, enqueue_node_document_sqlite},
 };
+use blindpass_core::fleet::{DocumentKind, Revocation};
 use sqlx::{Postgres, Row, Sqlite, Transaction};
 
 /// Maximum revocation documents re-queued for one node session.
@@ -19,6 +20,8 @@ pub struct FleetExpirySummary {
     pub expired_approvals: u64,
     pub expired_operations: u64,
     pub expired_grants: u64,
+    /// Clock-fence tombstones given a signed revocation this pass.
+    pub signed_tombstones: u64,
 }
 
 /// Counts of retention rows removed by one bounded maintenance pass.
@@ -273,3 +276,199 @@ impl Store {
         })
     }
 }
+
+/// Counts of fleet authority withdrawn when the controller clock is fenced
+/// or reconciled.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize)]
+pub struct FleetFencePurge {
+    pub expired_operation_approvals: u64,
+    pub denied_operations: u64,
+    pub revoked_grants: u64,
+    pub expired_enrollments: u64,
+    pub revoked_node_sessions: u64,
+}
+
+/// Actor recorded on grants withdrawn by a clock fence.
+const CLOCK_FENCE_ACTOR: &str = "system:clock_fence";
+
+macro_rules! fence_purge {
+    ($name:ident, $db:ty, $convert:expr) => {
+        /// Withdraw fleet authority whose deadlines came from an untrusted
+        /// clock (P02-D9 applied to P03): pending approval groups expire,
+        /// ungranted operations are denied, issued and delivered grants are
+        /// revoked with tombstones (their signed revocations are produced by
+        /// the next maintenance pass), unapproved enrollments expire, node
+        /// sessions are revoked and legacy challenges are removed.
+        pub(super) async fn $name(
+            tx: &mut Transaction<'_, $db>,
+            now_ms: i64,
+        ) -> Result<FleetFencePurge, StoreError> {
+            let mut purge = FleetFencePurge::default();
+            let fence_result = r#"{"reason":"clock_fence"}"#;
+            purge.expired_operation_approvals = sqlx::query(&$convert(
+                "UPDATE operation_approvals SET status = 'expired', decided_at = ?,
+                   version = version + 1 WHERE status = 'pending'",
+            ))
+            .bind(now_ms)
+            .execute(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?
+            .rows_affected();
+            purge.denied_operations = sqlx::query(&$convert(
+                "UPDATE operations SET status = 'denied', result_json = ?, completed_at = ?,
+                   version = version + 1 WHERE status IN ('requested', 'awaiting_approval')",
+            ))
+            .bind(fence_result)
+            .bind(now_ms)
+            .execute(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?
+            .rows_affected();
+            sqlx::query(&$convert(
+                "INSERT INTO grant_tombstones
+                   (grant_id, node_id, reason, created_at, retain_until, envelope_json)
+                 SELECT id, node_id, 'policy', ?,
+                   (CASE WHEN expires_at > ? THEN expires_at ELSE ? END) + ?, NULL
+                 FROM grants WHERE status IN ('issued', 'delivered')
+                 ON CONFLICT (grant_id) DO NOTHING",
+            ))
+            .bind(now_ms)
+            .bind(now_ms)
+            .bind(now_ms)
+            .bind(TOMBSTONE_RETENTION_MS)
+            .execute(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?;
+            sqlx::query(&$convert(
+                "UPDATE operations SET status = 'revoked', result_json = ?, completed_at = ?,
+                   version = version + 1
+                 WHERE status = 'granted' AND grant_id IN (
+                   SELECT id FROM grants WHERE status IN ('issued', 'delivered'))",
+            ))
+            .bind(fence_result)
+            .bind(now_ms)
+            .execute(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?;
+            purge.revoked_grants = sqlx::query(&$convert(
+                "UPDATE grants SET status = 'revoked', revoked_at = ?, revoked_by = ?
+                 WHERE status IN ('issued', 'delivered')",
+            ))
+            .bind(now_ms)
+            .bind(CLOCK_FENCE_ACTOR)
+            .execute(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?
+            .rows_affected();
+            purge.expired_enrollments = sqlx::query(&$convert(
+                "UPDATE enrollment_requests SET status = 'expired', version = version + 1
+                 WHERE status IN ('issued', 'submitted')",
+            ))
+            .execute(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?
+            .rows_affected();
+            purge.revoked_node_sessions = sqlx::query(&$convert(
+                "UPDATE node_sessions SET revoked_at = ? WHERE revoked_at IS NULL",
+            ))
+            .bind(now_ms)
+            .execute(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?
+            .rows_affected();
+            sqlx::query("DELETE FROM node_challenges")
+                .execute(&mut **tx)
+                .await
+                .map_err(StoreError::Database)?;
+            Ok(purge)
+        }
+    };
+}
+
+fence_purge!(fleet_fence_purge_sqlite, Sqlite, |sql: &str| sql.to_owned());
+fence_purge!(fleet_fence_purge_postgres, Postgres, super::pg);
+
+/// Tombstone retention used for fence-withdrawn grants.
+const TOMBSTONE_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+
+/// Upper bound on tombstones signed by one maintenance pass.
+const SIGN_BATCH: i64 = 200;
+
+macro_rules! sign_pending_tombstones {
+    ($name:ident, $db:ty, $convert:expr, $now:expr, $enqueue:path) => {
+        /// Sign and queue revocations for tombstones written without a
+        /// signed document (clock-fence withdrawals), for active nodes.
+        pub(super) async fn $name(
+            tx: &mut Transaction<'_, $db>,
+            signer: &FleetSigner,
+            tenant_id: &str,
+        ) -> Result<u64, StoreError> {
+            let epoch: i64 =
+                sqlx::query_scalar("SELECT issuer_epoch FROM controller_meta WHERE id = 1")
+                    .fetch_one(&mut **tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+            let rows = sqlx::query(&$convert(&format!(
+                "SELECT t.grant_id, t.node_id, t.created_at, t.retain_until
+                 FROM grant_tombstones t JOIN nodes n ON n.id = t.node_id
+                 WHERE n.tenant_id = ? AND n.status = 'active' AND t.envelope_json IS NULL
+                   AND t.retain_until > {}
+                 ORDER BY t.created_at, t.grant_id LIMIT ?",
+                $now
+            )))
+            .bind(tenant_id)
+            .bind(SIGN_BATCH)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(StoreError::Database)?;
+            let epoch =
+                u64::try_from(epoch).map_err(|_| StoreError::InvalidInput("issuer epoch"))?;
+            for row in &rows {
+                let grant_id: String = row.try_get("grant_id").map_err(StoreError::Database)?;
+                let node_id: String = row.try_get("node_id").map_err(StoreError::Database)?;
+                let created_at: i64 = row.try_get("created_at").map_err(StoreError::Database)?;
+                let retain_until: i64 =
+                    row.try_get("retain_until").map_err(StoreError::Database)?;
+                let body = Revocation {
+                    grant_id: grant_id.clone(),
+                    node_id: node_id.clone(),
+                    reason: "policy".to_owned(),
+                    revoked_at_ms: u64::try_from(created_at)
+                        .map_err(|_| StoreError::InvalidInput("revocation time"))?,
+                    retain_until_ms: u64::try_from(retain_until)
+                        .map_err(|_| StoreError::InvalidInput("tombstone retention"))?,
+                    issuer_epoch: epoch,
+                }
+                .to_value()
+                .map_err(|_| StoreError::InvalidInput("revocation"))?;
+                let envelope = signer.sign(DocumentKind::Revocation, body, epoch)?;
+                sqlx::query(&$convert(
+                    "UPDATE grant_tombstones SET envelope_json = ?
+                     WHERE grant_id = ? AND envelope_json IS NULL",
+                ))
+                .bind(&envelope)
+                .bind(&grant_id)
+                .execute(&mut **tx)
+                .await
+                .map_err(StoreError::Database)?;
+                $enqueue(tx, &node_id, &envelope).await?;
+            }
+            Ok(rows.len() as u64)
+        }
+    };
+}
+
+sign_pending_tombstones!(
+    sign_pending_tombstones_sqlite,
+    Sqlite,
+    |sql: &str| sql.to_owned(),
+    SQLITE_NOW_MS,
+    enqueue_node_document_sqlite
+);
+sign_pending_tombstones!(
+    sign_pending_tombstones_postgres,
+    Postgres,
+    super::pg,
+    POSTGRES_NOW_MS,
+    enqueue_node_document_postgres
+);

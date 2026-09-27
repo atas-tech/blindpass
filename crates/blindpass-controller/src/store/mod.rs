@@ -40,7 +40,7 @@ pub use fleet::{
     ENROLLMENT_EXPIRED, ENROLLMENT_KEY_REUSED, EnrollmentRecord, NodeGrantRevocationDraft,
     NodeKeyRotationDraft, NodeRecord,
 };
-pub use fleet_lifecycle::{FleetExpirySummary, FleetPruneSummary};
+pub use fleet_lifecycle::{FleetExpirySummary, FleetFencePurge, FleetPruneSummary};
 pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord, GrantRevocationOutcome};
 pub use node_channel::{
     InboxDocument, NodeEventInsert, NodeEventRecord, NodeSessionContext, NodeSessionDraft,
@@ -276,6 +276,9 @@ pub struct ClockReconciliation {
     pub removed_rate_windows: u64,
     pub removed_idempotency_keys: u64,
     pub revoked_sessions: u64,
+    /// Fleet authority withdrawn because its deadlines came from the
+    /// regressed clock.
+    pub fleet: FleetFencePurge,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -605,13 +608,17 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?
                     .rows_affected();
+                let fleet =
+                    fleet_lifecycle::fleet_fence_purge_sqlite(&mut transaction, database_now_ms)
+                        .await?;
                 let counts = serde_json::json!({
                     "removed_secret_requests":removed_secret_requests,
                     "removed_exchanges":removed_exchanges,
                     "removed_pending_approvals":removed_approvals,
                     "removed_bootstrap_tokens":removed_bootstrap_tokens,
                     "removed_rate_windows":removed_rate_windows,
-                    "removed_idempotency_keys":removed_idempotency_keys
+                    "removed_idempotency_keys":removed_idempotency_keys,
+                    "fleet":fleet
                 });
                 metadata = serde_json::to_string(&counts)
                     .map_err(|_| StoreError::InvalidInput("clock fence audit metadata"))?;
@@ -682,13 +689,17 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?
                     .rows_affected();
+                let fleet =
+                    fleet_lifecycle::fleet_fence_purge_postgres(&mut transaction, database_now_ms)
+                        .await?;
                 let counts = serde_json::json!({
                     "removed_secret_requests":removed_secret_requests,
                     "removed_exchanges":removed_exchanges,
                     "removed_pending_approvals":removed_approvals,
                     "removed_bootstrap_tokens":removed_bootstrap_tokens,
                     "removed_rate_windows":removed_rate_windows,
-                    "removed_idempotency_keys":removed_idempotency_keys
+                    "removed_idempotency_keys":removed_idempotency_keys,
+                    "fleet":fleet
                 });
                 metadata = serde_json::to_string(&counts)
                     .map_err(|_| StoreError::InvalidInput("clock fence audit metadata"))?;
@@ -927,6 +938,7 @@ impl Store {
                     removed_rate_windows: 0,
                     removed_idempotency_keys: 0,
                     revoked_sessions: 0,
+                    fleet: FleetFencePurge::default(),
                 };
                 if !summary.regression_detected {
                     transaction.rollback().await.map_err(StoreError::Database)?;
@@ -963,6 +975,9 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?
                     .rows_affected();
+                summary.fleet =
+                    fleet_lifecycle::fleet_fence_purge_sqlite(&mut transaction, database_now_ms)
+                        .await?;
                 let sql = format!(
                     "UPDATE operator_sessions SET revoked_at = {SQLITE_WALL_NOW_MS} WHERE revoked_at IS NULL"
                 );
@@ -1029,6 +1044,7 @@ impl Store {
                     removed_rate_windows: 0,
                     removed_idempotency_keys: 0,
                     revoked_sessions: 0,
+                    fleet: FleetFencePurge::default(),
                 };
                 if !summary.regression_detected {
                     transaction.rollback().await.map_err(StoreError::Database)?;
@@ -1065,6 +1081,9 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?
                     .rows_affected();
+                summary.fleet =
+                    fleet_lifecycle::fleet_fence_purge_postgres(&mut transaction, database_now_ms)
+                        .await?;
                 let sql = format!(
                     "UPDATE operator_sessions SET revoked_at = {POSTGRES_WALL_NOW_MS} WHERE revoked_at IS NULL"
                 );
