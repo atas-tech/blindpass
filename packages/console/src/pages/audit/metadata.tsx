@@ -1,8 +1,9 @@
 import { useTranslation } from "react-i18next";
+import { revealControls } from "../../lib/format.js";
 
 function display(value: unknown): string {
   if (value === null) return "null";
-  if (typeof value === "string") return value;
+  if (typeof value === "string") return revealControls(value);
   return JSON.stringify(value, null, 2);
 }
 
@@ -19,7 +20,7 @@ export function Metadata({ metadata }: { metadata: Record<string, unknown> }) {
       {entries.map(([key, value]) => (
         <div key={key} className="metadata-row">
           <dt className="mono">{key}</dt>
-          <dd className={typeof value === "string" ? "metadata-text" : "metadata-json mono"}>{display(value)}</dd>
+          <dd className={typeof value === "string" ? "metadata-text" : "metadata-json mono"} dir={typeof value === "string" ? "auto" : undefined}>{display(value)}</dd>
         </div>
       ))}
     </dl>

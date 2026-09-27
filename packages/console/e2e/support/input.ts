@@ -1,6 +1,7 @@
-// The P04 secret-input page against a real Rust controller. The page is built
-// for the controller's origin and served from its own origin, the separately
-// hosted compatibility profile; slice 13 adds the embedded same-origin build.
+// The P04 secret-input page against a real Rust controller. By default the
+// page is built for the controller's origin and served from its own origin,
+// the separately hosted compatibility profile. With `embedded`, the
+// controller serves its embedded same-origin copy (P04-D9).
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -62,6 +63,12 @@ export class InputStack {
   }
 
   private async boot(options: StackOptions): Promise<void> {
+    if (options.embedded) {
+      this.stack = await Stack.start(options);
+      this.inputUrl = this.stack.controllerUrl;
+      await this.seed();
+      return;
+    }
     const port = await freePort();
     this.inputUrl = `http://127.0.0.1:${port}`;
     this.stack = await Stack.start({ ...options, uiBaseUrl: this.inputUrl });
@@ -82,6 +89,10 @@ export class InputStack {
       if (Date.now() > deadline) throw new Error(`input preview did not start: ${output}`);
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
+    await this.seed();
+  }
+
+  private async seed(): Promise<void> {
     const keys = await this.stack.seedAgents(["e2e-input-requester", "e2e-input-other"]);
     this.requesterToken = await this.stack.agentToken(keys["e2e-input-requester"]!);
     this.otherToken = await this.stack.agentToken(keys["e2e-input-other"]!);

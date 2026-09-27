@@ -1,7 +1,10 @@
 // Starts an isolated Rust controller (SQLite, test mode, fleet issuer key)
 // and serves the built console from `vite preview` with a same-origin API
-// proxy, mirroring the embedded deployment. Generated secrets stay in a
-// private temp directory that is removed on stop().
+// proxy, mirroring the embedded deployment. With `embedded`, the controller
+// serves the console itself from the assets it was built with (P04-D9).
+// Generated secrets stay in a private temp directory removed on stop().
+// BLINDPASS_E2E_POSTGRES_URL runs the controller on PostgreSQL in a
+// throwaway schema instead of a temporary SQLite file.
 import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -37,6 +40,35 @@ export interface StackOptions {
   /** Extra origin allowed by CORS/Origin checks (the input page). */
   uiBaseUrl?: string;
   consoleDist?: string;
+  /**
+   * Use the console the controller embeds instead of `vite preview`. Defaults
+   * to BLINDPASS_E2E_EMBEDDED=1 for stacks without a separate input origin,
+   * so `npm run test:e2e:embedded` runs the console journeys on the embedded
+   * build.
+   */
+  embedded?: boolean;
+}
+
+interface PgPool {
+  query(text: string): Promise<unknown>;
+  end(): Promise<void>;
+}
+
+/** A throwaway schema, as the contract adapter does (hoisted `pg`, search_path). */
+async function postgresSchema(databaseUrl: string): Promise<{ url: string; drop: () => Promise<void> }> {
+  const pg = (await import("pg")) as unknown as { default: { Pool: new (options: { connectionString: string; max: number }) => PgPool } };
+  const pool = new pg.default.Pool({ connectionString: databaseUrl, max: 1 });
+  const schema = `console_e2e_${process.pid}_${randomBytes(5).toString("hex")}`;
+  await pool.query(`CREATE SCHEMA "${schema}"`);
+  const url = new URL(databaseUrl);
+  url.searchParams.set("options", `-c search_path=${schema}`);
+  return {
+    url: url.toString(),
+    drop: async () => {
+      await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`).catch(() => undefined);
+      await pool.end();
+    }
+  };
 }
 
 export async function freePort(): Promise<number> {
@@ -87,6 +119,7 @@ export class Stack {
   private controllerOutput = "";
   private previewOutput = "";
   private env: NodeJS.ProcessEnv = {};
+  private dropSchema: (() => Promise<void>) | null = null;
 
   static async start(options: StackOptions = {}): Promise<Stack> {
     const stack = new Stack();
@@ -104,11 +137,12 @@ export class Stack {
   }
 
   private async boot(options: StackOptions): Promise<void> {
+    const embedded = options.embedded ?? (process.env.BLINDPASS_E2E_EMBEDDED === "1" && !options.uiBaseUrl);
     this.tempDir = await mkdtemp(path.join(os.tmpdir(), "blindpass-console-e2e-"));
     const controllerPort = await freePort();
     const consolePort = await freePort();
     this.controllerUrl = `http://127.0.0.1:${controllerPort}`;
-    this.consoleUrl = `http://127.0.0.1:${consolePort}`;
+    this.consoleUrl = embedded ? this.controllerUrl : `http://127.0.0.1:${consolePort}`;
     const rootSecret = path.join(this.tempDir, "root.secret");
     const agentSecret = path.join(this.tempDir, "agent-jwt.secret");
     await writeFile(rootSecret, randomBytes(32).toString("base64url"), { mode: 0o600 });
@@ -140,6 +174,12 @@ export class Stack {
       }
     ];
     const uiBase = options.uiBaseUrl ?? this.consoleUrl;
+    let databaseUrl = `sqlite://${path.join(this.tempDir, "controller.db")}?mode=rwc`;
+    if (process.env.BLINDPASS_E2E_POSTGRES_URL) {
+      const schema = await postgresSchema(process.env.BLINDPASS_E2E_POSTGRES_URL);
+      this.dropSchema = schema.drop;
+      databaseUrl = schema.url;
+    }
     this.env = {
       PATH: process.env.PATH,
       TMPDIR: process.env.TMPDIR,
@@ -150,7 +190,7 @@ export class Stack {
       BLINDPASS_PUBLIC_URL: this.controllerUrl,
       BLINDPASS_UI_BASE_URL: uiBase,
       BLINDPASS_CORS_ALLOWED_ORIGINS: [...new Set([this.consoleUrl, uiBase])].join(","),
-      BLINDPASS_DATABASE_URL: `sqlite://${path.join(this.tempDir, "controller.db")}?mode=rwc`,
+      BLINDPASS_DATABASE_URL: databaseUrl,
       BLINDPASS_ROOT_SECRET_FILE: rootSecret,
       BLINDPASS_AGENT_JWT_SECRET_FILE: agentSecret,
       ...(options.fleet !== false ? { BLINDPASS_ISSUER_KEY_FILE: issuer } : {}),
@@ -171,6 +211,7 @@ export class Stack {
       BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT: "200"
     };
     await this.startController();
+    if (embedded) return;
 
     this.preview = spawn(process.execPath, [VITE, "preview", "--host", "127.0.0.1", "--port", String(consolePort), "--strictPort", ...(options.consoleDist ? ["--outDir", options.consoleDist] : [])], {
       cwd: CONSOLE_DIR,
@@ -182,8 +223,8 @@ export class Stack {
     await waitFor(this.consoleUrl, this.preview, () => this.previewOutput);
   }
 
-  async startController(): Promise<void> {
-    const binary = process.env.CONTRACT_RUST_BIN ?? path.join(REPO_ROOT, "target/debug/blindpass-controller");
+  /** Start the controller; `binary` swaps in another artifact on the same database. */
+  async startController(binary = process.env.CONTRACT_RUST_BIN ?? path.join(REPO_ROOT, "target/debug/blindpass-controller")): Promise<void> {
     this.controllerOutput = "";
     this.controller = spawn(binary, ["serve"], { env: this.env, stdio: ["ignore", "pipe", "pipe"] });
     this.controller.stdout?.on("data", (chunk: Buffer) => (this.controllerOutput = `${this.controllerOutput}${chunk}`.slice(-4000)));
@@ -199,6 +240,7 @@ export class Stack {
   async stop(): Promise<void> {
     await stop(this.preview);
     await stop(this.controller);
+    await this.dropSchema?.();
     if (this.tempDir) await rm(this.tempDir, { recursive: true, force: true });
   }
 

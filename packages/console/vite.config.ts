@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import type { Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
 // The controller serves the built console from its own origin (P04-D9), so
@@ -26,13 +27,34 @@ const securityHeaders = {
   "X-Content-Type-Options": "nosniff"
 };
 
+/**
+ * The embedded controller's cache profile (P04-D9) for `vite preview`:
+ * hashed assets immutable, everything else no-store. Proxied API responses
+ * keep the controller's own headers.
+ */
+function embeddedCacheProfile(): Plugin {
+  return {
+    name: "blindpass-embedded-cache-profile",
+    configurePreviewServer(server) {
+      server.middlewares.use((request, response, next) => {
+        if (/^\/(api|healthz)(\/|$|\?)/.test(request.url ?? "")) return next();
+        const immutable = request.url?.startsWith("/assets/") ?? false;
+        const setHeader = response.setHeader.bind(response);
+        response.setHeader = (name, value) => (name.toLowerCase() === "cache-control" ? response : setHeader(name, value));
+        setHeader("Cache-Control", immutable ? "public, max-age=31536000, immutable" : "no-store");
+        next();
+      });
+    }
+  };
+}
+
 const proxy = {
   "/api": { target: controllerUrl, changeOrigin: false, xfwd: false },
   "/healthz": { target: controllerUrl, changeOrigin: false }
 };
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), embeddedCacheProfile()],
   server: {
     host: "127.0.0.1",
     port: 5176,

@@ -3,6 +3,7 @@ import "../../../assets/ui/fonts.css";
 import "../../../assets/ui/tokens.css";
 import { createDeadline, formatRemaining } from "./clock.js";
 import { sealBase64 } from "./crypto.js";
+import { revealControls } from "./display-text.js";
 import { enforceTopLevelWindow } from "./frame-guard.js";
 import { applyTranslations, currentLocale, initI18n, setLocale, t } from "./i18n.js";
 import { TERMINAL_STATES, capabilityOutcome, metadataOutcome, statusOutcome, submitOutcome } from "./lifecycle.js";
@@ -237,7 +238,7 @@ function init() {
   function renderRequest() {
     const metadata = page.metadata;
     // Server-provided text is rendered as text nodes only.
-    ui.description.textContent = metadata?.description ?? "";
+    ui.description.textContent = revealControls(metadata?.description ?? "");
     ui.code.textContent = metadata?.confirmation_code ?? "";
     renderExpiry();
   }

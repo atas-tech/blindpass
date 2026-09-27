@@ -748,6 +748,7 @@ a.btn:hover {
 }
 
 .untrusted-text {
+  unicode-bidi: isolate;
   max-height: 14rem;
   overflow: auto;
   padding: var(--bp-space-3) var(--bp-space-4) var(--bp-space-4);
@@ -760,6 +761,8 @@ a.btn:hover {
 
 /* ---------- Tables ---------- */
 .table-wrap {
+  /* Positioned, so visually hidden header text stays inside the scroller. */
+  position: relative;
   width: 100%;
   overflow-x: auto;
 }

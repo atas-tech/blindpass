@@ -117,3 +117,16 @@ export function shortId(value: string | null | undefined, keep = 8): string {
   if (!value) return "—";
   return value.length <= keep + 3 ? value : `${value.slice(0, keep)}…`;
 }
+
+// C0/C1 controls except tab and line breaks, bidi embeddings, overrides and
+// isolates, and zero-width or invisible formatting characters.
+const INVISIBLE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\u061C\u200B-\u200F\u2028\u2029\u202A-\u202E\u2060-\u2064\u2066-\u2069\uFEFF]/g;
+
+/**
+ * Untrusted text with invisible characters shown as code points (O05), so a
+ * bidi override or terminal escape can't reorder or hide what the operator
+ * reads. The result is still plain text.
+ */
+export function revealControls(value: string): string {
+  return value.replace(INVISIBLE, (character) => `⟨U+${character.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}⟩`);
+}

@@ -36,8 +36,12 @@ function cspMeta(origin: string | null, dev: boolean): Plugin {
   };
 }
 
+// `--mode embedded` builds the copy the controller serves (P04-D9): same
+// origin API whatever VITE_* says, assets under /input/ so they can't
+// collide with the console's, written to dist-embedded/.
 export default defineConfig(({ command, mode }) => {
-  const origin = apiOrigin(loadEnv(mode, process.cwd(), "VITE_"));
+  const embedded = mode === "embedded";
+  const origin = embedded ? null : apiOrigin(loadEnv(mode, process.cwd(), "VITE_"));
   const dev = command === "serve" && mode !== "production";
   const headers = {
     "Content-Security-Policy": contentSecurityPolicy(origin, { dev, header: true }),
@@ -49,6 +53,7 @@ export default defineConfig(({ command, mode }) => {
     "Cache-Control": "no-store"
   };
   return {
+    ...(embedded ? { base: "/input/", build: { outDir: "dist-embedded", emptyOutDir: true } } : {}),
     plugins: [cspMeta(origin, dev)],
     server: { headers, port: 5175 },
     preview: { headers: { ...headers, "Content-Security-Policy": contentSecurityPolicy(origin, { header: true }) } }

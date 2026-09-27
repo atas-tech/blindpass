@@ -30,11 +30,12 @@ The Rust controller implements the P02 API locally on SQLite and PostgreSQL but 
 | [OpenClaw integration](plugins/openclaw-capability-extension.md) | Existing transport, storage and resolver contracts; MCP limitations |
 | [Unraid templates](deployment/Unraid.md) | Repository container/template configuration and release prerequisites |
 | [Dashboard maintenance](architecture/dashboard-maintainability.md) | Existing style and shared translation conventions |
-| Dashboard redesign proposal | Maintained in the Obsidian vault; the existing `packages/dashboard` remains the project-tied implementation |
+| Dashboard redesign proposal | Maintained in the Obsidian vault; implemented by `packages/console` (P04). The old `packages/dashboard` is eligible for removal |
 | [Test setup](testing/README.md) | Actual scripts, service requirements and skipped-suite behavior |
 | [P01 execution record](testing/p01-host-broker-evidence.md) | Portable broker checks, selected real-VM profile, teardown evidence and dated open/unsupported status |
 | [P02 execution record](testing/evidence/p02-controller-api-migration-rerun.md) | Rust controller gates on SQLite and PostgreSQL, the 2026-09-25 review fixes, coverage and open decisions |
 | [P03 execution record](testing/evidence/p03-fleet-authorization-execution.md) | Two-guest SQLite/PostgreSQL key rotation, reconnect and policy-cursor recovery, delayed-grant expiry audit, authorization, revocation and recovery evidence, with unrun scenarios stated explicitly |
+| [P04 execution record](testing/evidence/p04-ui-ux-redesign-execution.md) | Console, secret-input page, desktop approval app and widget, and embedded serving: gates on SQLite and PostgreSQL, scenario coverage, deviations, unrun cases and owner decisions |
 | [Demos](testing/Manual%20Demos.md) | Dummy-data exchange exercises and known helper limitations |
 | [Security status](security/README.md) | Current threat model, selected source checks and historical audits |
 

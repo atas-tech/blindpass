@@ -144,6 +144,13 @@ describe("primitives", () => {
     expect(screen.getByText("Not verified")).toBeTruthy();
   });
 
+  it("O05: untrusted text shows bidi overrides and terminal escapes instead of applying them, and is isolated from its surroundings", () => {
+    const { container } = render(<UntrustedText label="Requester-provided purpose">{"Rotate \u202Etxt.yek\u001b[2J"}</UntrustedText>);
+    const quote = container.querySelector("blockquote")!;
+    expect(quote.textContent).toBe("Rotate ⟨U+202E⟩txt.yek⟨U+001B⟩[2J");
+    expect(quote.getAttribute("dir")).toBe("auto");
+  });
+
   it("composite surfaces pass axe", async () => {
     const { container } = render(
       <main>

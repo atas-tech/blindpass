@@ -67,6 +67,41 @@ test.describe("secret input against the controller", () => {
     await context.close();
   });
 
+  test("O05 / SI-E01: bidi overrides and terminal escapes in a description are shown as code points, isolated from the page", async ({ browser }) => {
+    const request = await input.createRequest("Paste the \u202Etxt.yek_ipa\u202C value \u001b[2J");
+    const { context, page } = await open(browser, request.secretUrl);
+    await ready(page);
+    const description = page.getByTestId("request-description");
+    await expect(description).toHaveText("Paste the ⟨U+202E⟩txt.yek_ipa⟨U+202C⟩ value ⟨U+001B⟩[2J");
+    await expect(description).toHaveAttribute("dir", "auto");
+    expect(await description.evaluate((element) => getComputedStyle(element).unicodeBidi)).toBe("isolate");
+    await context.close();
+  });
+
+  test("Locale checks moved from the dashboard (scenarios 501/502): the browser language picks Vietnamese or English, and a stored choice wins on reload", async ({ browser }) => {
+    const request = await input.createRequest("Locale canary");
+    for (const [locale, lang, title, badgeText] of [
+      ["vi-VN", "vi", "Nhập bí mật · BlindPass", "Chờ nhập"],
+      ["en-US", "en", "Secret input · BlindPass", "Awaiting input"]
+    ] as const) {
+      const context = await browser.newContext({ locale });
+      const page = await context.newPage();
+      await page.goto(request.secretUrl);
+      await expect(page.locator("html")).toHaveAttribute("lang", lang);
+      await expect(page).toHaveTitle(title);
+      await expect(badge(page)).toHaveText(badgeText);
+      await context.close();
+    }
+    const context = await browser.newContext({ locale: "en-US" });
+    const page = await context.newPage();
+    await page.goto(request.secretUrl);
+    await page.getByTestId("language").selectOption("vi");
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("lang", "vi");
+    await expect(badge(page)).toHaveText("Chờ nhập");
+    await context.close();
+  });
+
   test("SI-I03: a refresh token left by the earlier input page is removed; only the language preference is stored", async ({ browser }) => {
     const request = await input.createRequest("Legacy storage canary");
     const context = await browser.newContext();

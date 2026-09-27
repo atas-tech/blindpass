@@ -146,24 +146,26 @@ export default function AuditPage() {
           </EmptyState>
         ) : null}
         {filtered.length > 0 ? (
-          <table className="data-table is-responsive audit-table">
-            <thead>
-              <tr>
-                <th scope="col">{t("audit.columns.time")}</th>
-                <th scope="col">{t("audit.columns.event")}</th>
-                <th scope="col">{t("audit.columns.actor")}</th>
-                <th scope="col">{t("audit.columns.resource")}</th>
-                <th scope="col">
-                  <span className="sr-only">{t("audit.details")}</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((event) => (
-                <AuditRow key={event.id} event={event} />
-              ))}
-            </tbody>
-          </table>
+          <div className="table-wrap">
+            <table className="data-table is-responsive audit-table">
+              <thead>
+                <tr>
+                  <th scope="col">{t("audit.columns.time")}</th>
+                  <th scope="col">{t("audit.columns.event")}</th>
+                  <th scope="col">{t("audit.columns.actor")}</th>
+                  <th scope="col">{t("audit.columns.resource")}</th>
+                  <th scope="col">
+                    <span className="sr-only">{t("audit.details")}</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((event) => (
+                  <AuditRow key={event.id} event={event} />
+                ))}
+              </tbody>
+            </table>
+          </div>
         ) : null}
         <div className="panel-pager">
           <Pager

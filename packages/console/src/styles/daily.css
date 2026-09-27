@@ -15,6 +15,13 @@
   color: var(--bp-color-lime);
 }
 
+@media (pointer: coarse) {
+  .text-link,
+  .text-button {
+    min-height: var(--bp-target-coarse);
+  }
+}
+
 .text-button {
   min-height: 1.75rem;
   padding: 0 0.35rem;

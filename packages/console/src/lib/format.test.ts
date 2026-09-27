@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { formatCountdown, formatDurationSeconds, groupFingerprint, normalizeFingerprint, toMs } from "./format.js";
+import { formatCountdown, formatDurationSeconds, groupFingerprint, normalizeFingerprint, revealControls, toMs } from "./format.js";
 import { safeReturnPath } from "./routing.js";
 
 describe("format", () => {
+  it("O05: shows invisible control, bidi and zero-width characters in untrusted text as visible code points", () => {
+    expect(revealControls("pay\u202Egpj.exe")).toBe("pay⟨U+202E⟩gpj.exe");
+    expect(revealControls("\u001b[31mred\u001b[0m")).toBe("⟨U+001B⟩[31mred⟨U+001B⟩[0m");
+    expect(revealControls("a\u200Bb\u2066c\u2069d\uFEFF\u0000\u007F\u0085")).toBe("a⟨U+200B⟩b⟨U+2066⟩c⟨U+2069⟩d⟨U+FEFF⟩⟨U+0000⟩⟨U+007F⟩⟨U+0085⟩");
+    // Line breaks, tabs and ordinary non-ASCII text are left as written.
+    const plain = "Thông tin 漢 🔑\n\tsecond line — ok";
+    expect(revealControls(plain)).toBe(plain);
+  });
+
   it("normalises controller timestamps in seconds, milliseconds and ISO form", () => {
     expect(toMs(1_790_000_000)).toBe(1_790_000_000_000);
     expect(toMs(1_790_000_000_123)).toBe(1_790_000_000_123);

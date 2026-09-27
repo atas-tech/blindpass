@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { revealControls } from "../lib/format.js";
 import { Button } from "./button.js";
 import { Icon, type IconName } from "./icon.js";
 
@@ -103,7 +104,9 @@ export function CopyButton({ value, label, variant = "quiet" }: { value: string;
 
 /**
  * Text supplied by a requester, agent or node. Rendered as a text node
- * with whitespace preserved; never Markdown, never HTML.
+ * with whitespace preserved; never Markdown, never HTML. Invisible control
+ * and bidi characters are shown as code points and the block is isolated,
+ * so the text can't reorder what surrounds it.
  */
 export function UntrustedText({ label, children, empty }: { label: ReactNode; children: string | null | undefined; empty?: ReactNode }) {
   const { t } = useTranslation();
@@ -114,7 +117,9 @@ export function UntrustedText({ label, children, empty }: { label: ReactNode; ch
         <span>{label}</span>
         <span className="untrusted-tag">{t("trust.notVerified")}</span>
       </figcaption>
-      <blockquote className="untrusted-text">{children ? children : <span className="muted">{empty ?? t("trust.empty")}</span>}</blockquote>
+      <blockquote className="untrusted-text" dir="auto">
+        {children ? revealControls(children) : <span className="muted">{empty ?? t("trust.empty")}</span>}
+      </blockquote>
     </figure>
   );
 }

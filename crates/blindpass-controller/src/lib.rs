@@ -5,6 +5,7 @@
 pub mod admin_socket;
 pub mod app;
 pub mod config;
+pub mod embedded_ui;
 pub mod observability;
 pub(crate) mod routes;
 pub mod seed;

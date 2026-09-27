@@ -247,6 +247,22 @@ test.describe("approvals against the controller", () => {
     await page.screenshot({ path: test.info().outputPath("approval-detail-390.png"), fullPage: true });
     await context.close();
   });
+
+  test("O05: bidi overrides, terminal escapes and zero-width characters in a purpose are shown as code points and can't reorder the verified facts", async ({ browser }) => {
+    const spoof = "Rotate \u202Etxt.yek_ipa\u202C now \u001b[2J\u001b[32mAPPROVED\u001b[0m zero\u200Bwidth";
+    const request = await stack.requestExchange(seeded.agentToken, spoof);
+    const ref = request.policy.approval_reference!;
+    const { context, page } = await signedIn(browser, stack, ADMIN.username, ADMIN.password, { bypassCSP: true });
+    await page.goto(`${stack.consoleUrl}/approvals/exchange/${ref}`);
+    await expect(page.getByRole("heading", { name: `${AGENT_IDS.requester} asks for e2e.approval_api_key` })).toBeVisible();
+    const quote = page.locator(".untrusted-text");
+    await expect(quote).toHaveText("Rotate ⟨U+202E⟩txt.yek_ipa⟨U+202C⟩ now ⟨U+001B⟩[2J⟨U+001B⟩[32mAPPROVED⟨U+001B⟩[0m zero⟨U+200B⟩width");
+    expect(await quote.evaluate((element) => getComputedStyle(element).unicodeBidi)).toBe("isolate");
+    await expect(quote).toHaveAttribute("dir", "auto");
+    // The raw characters never reach the page as text.
+    expect(await page.evaluate(() => /[\u202A-\u202E\u2066-\u2069\u200B-\u200F\u001b]/.test(document.body.innerText))).toBe(false);
+    await context.close();
+  });
 });
 
 test.describe("approval expiry", () => {

@@ -46,7 +46,7 @@ The detail view leads with the recipient and scope taken from the controller's v
 - operation: `Broker on <node>` and `<action> for <unit> as <account> (<mode>)`;
 - exchange: `Agent <requester>` and `One delivery of <secret>`.
 
-The requester-written purpose is shown only as quoted plain text. Approve and Reject open a confirmation that repeats recipient and scope and focuses Cancel. Escape or Return on Cancel dismisses it, and no key approves.
+The requester-written purpose is shown only as quoted plain text. Control, bidi-override and zero-width characters in it are shown as code points (`⟨U+202E⟩`), never applied. Approve and Reject open a confirmation that repeats recipient and scope and focuses Cancel. Escape or Return on Cancel dismisses it, and no key approves.
 
 On confirm, the app re-reads the approval and stops if its status, version or members changed. It then sends one decision with a fresh `Idempotency-Key` and `If-Match`. A missing reply is reported as unconfirmed and isn't resent automatically.
 

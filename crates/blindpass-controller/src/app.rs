@@ -155,6 +155,7 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
             state.clone(),
             routes::forced_password_change_gate,
         ))
+        .fallback(crate::embedded_ui::fallback)
         .with_state(state)
         .layer(middleware::from_fn(security_headers))
         .layer(RequestBodyLimitLayer::new(body_limit_bytes))

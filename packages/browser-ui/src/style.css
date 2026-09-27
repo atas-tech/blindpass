@@ -342,6 +342,7 @@ svg {
 }
 
 .request-description {
+  unicode-bidi: isolate;
   margin-top: 0.55rem;
   font-size: var(--bp-text-lg);
   font-weight: var(--bp-weight-medium);

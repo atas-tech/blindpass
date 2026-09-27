@@ -231,11 +231,14 @@ jobs:
         with:
           toolchain: 1.98.1
 
-      - name: Build the controller executable
-        run: cargo build -p blindpass-controller --locked
-
+      # The controller embeds packages/console/dist and
+      # packages/browser-ui/dist-embedded at compile time (P04-D9), so the
+      # workspace is built first.
       - name: Build the workspace
         run: npm run build
+
+      - name: Build the controller executable
+        run: cargo build -p blindpass-controller --locked
 
       - name: Run Rust store transition tests
         env:
@@ -293,7 +296,7 @@ jobs:
         run: npm run test:p02:clients
 
       - name: Install Chromium for P02 browser flows
-        run: npm exec --workspace=packages/dashboard -- playwright install --with-deps chromium
+        run: npm exec --workspace=packages/console -- playwright install --with-deps chromium
 
       - name: Run P02 CC02 human and CC03 browser flows
         env:
@@ -301,7 +304,7 @@ jobs:
           SUT: rust
           CONTRACT_RUST_BACKEND: ${{ matrix.backend }}
           CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
-        run: npm run test:p02-browser --workspace=packages/dashboard
+        run: npm run test:p02-browser --workspace=packages/console
 
       - name: Run P02 browser flows from packaged nginx image
         env:
@@ -315,7 +318,7 @@ jobs:
           docker run --detach --rm --name blindpass-p02-browser-csp-${{ matrix.backend }} -p 127.0.0.1::8080 blindpass-p02-browser-csp:${{ matrix.backend }}
           trap 'docker stop blindpass-p02-browser-csp-${{ matrix.backend }}' EXIT
           browser_port="$(docker port blindpass-p02-browser-csp-${{ matrix.backend }} 8080/tcp)"
-          P02_PACKAGED_BROWSER_UI_URL="http://127.0.0.1:${browser_port##*:}" npm run test:p02-browser --workspace=packages/dashboard
+          P02_PACKAGED_BROWSER_UI_URL="http://127.0.0.1:${browser_port##*:}" npm run test:p02-browser --workspace=packages/console
 
       - name: Test the contract progress gate
         run: npm run test:contract-progress
@@ -405,6 +408,49 @@ jobs:
           rm -f "$backup_file"
           trap - EXIT
           git diff --exit-code -- packages/contract-tests/src/generated/controller.d.ts
+
+  console:
+    name: P04 console, input page and embedded E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "26"
+          cache: npm
+
+      - name: Install lockfile dependencies
+        run: npm ci
+
+      - name: Install native controller libraries
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libssl-dev
+
+      - name: Set up pinned Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+
+      - name: Build the workspace and check the initial-route bundle budget
+        run: npm run build
+
+      - name: Build the controller with the embedded console and input page
+        run: cargo build -p blindpass-controller --locked
+
+      - name: Check the embedded asset routes
+        run: cargo test -p blindpass-controller --test embedded_ui --locked
+
+      - name: Install Chromium
+        run: npm exec --workspace=packages/console -- playwright install --with-deps chromium
+
+      - name: Run console and input E2E behind vite preview
+        run: npm run test:e2e --workspace=packages/console
+
+      - name: Run console and input E2E on the embedded build (P04-E04)
+        run: npm run test:e2e:embedded --workspace=packages/console
 
   rust:
     name: Rust broker checks

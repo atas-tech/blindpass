@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "test": "vitest run",
     "e2e": "playwright test",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:embedded": "BLINDPASS_E2E_EMBEDDED=1 playwright test",
+    "test:p02-browser": "playwright test --config=p02-browser/controller-browser.config.ts"
   },
   "dependencies": {
     "@blindpass/i18n": "*",

@@ -118,6 +118,14 @@ TestCase {
     compare(Model.purpose(operation), "rotate <b>db</b>")
   }
 
+  function test_model_purpose_reveals_invisible_characters() {
+    // O05: bidi overrides, terminal escapes and zero-width characters are
+    // shown as code points, never applied; line breaks and tabs stay.
+    var spoof = { kind: "exchange", reference: "ex/2", status: "pending", purpose: "pay\u202Egpj.exe \u001b[2J\u200B\nnext\tline" }
+    compare(Model.purpose(spoof), "pay⟨U+202E⟩gpj.exe ⟨U+001B⟩[2J⟨U+200B⟩\nnext\tline")
+    compare(Model.revealControls("Thông tin 漢"), "Thông tin 漢")
+  }
+
   function test_model_decision_block() {
     compare(Model.decisionBlock(operation, { id: "id_hung", username: "op_hung" }), null)
     compare(Model.decisionBlock(operation, { id: "id_x", username: "op_x" }), "not_named")
