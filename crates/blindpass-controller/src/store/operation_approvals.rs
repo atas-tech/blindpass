@@ -45,7 +45,7 @@ pub struct OperationDecision<'a> {
 /// Result of cancelling an operation that awaits approval.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OperationCancelOutcome {
-    Cancelled(OperationRecord),
+    Cancelled(Box<OperationRecord>),
     NotFound,
     Conflict,
 }
@@ -598,7 +598,7 @@ macro_rules! cancel_awaiting_impl {
         .map_err(StoreError::Database)?;
         let operation = $operation_from_row(&row)?;
         tx.commit().await.map_err(StoreError::Database)?;
-        Ok(OperationCancelOutcome::Cancelled(operation))
+        Ok(OperationCancelOutcome::Cancelled(Box::new(operation)))
     }};
 }
 

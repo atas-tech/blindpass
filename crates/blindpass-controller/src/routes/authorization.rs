@@ -2428,7 +2428,7 @@ fn sanitize_purpose(value: &str) -> String {
         match (ch, introducer) {
             (_, Some('[')) => {
                 // CSI: parameter and intermediate bytes, then one final byte.
-                while let Some(next) = chars.next() {
+                for next in chars.by_ref() {
                     if ('\u{40}'..='\u{7e}').contains(&next)
                         || !('\u{20}'..='\u{3f}').contains(&next)
                     {

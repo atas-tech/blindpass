@@ -985,6 +985,7 @@ pub(crate) async fn audit_operator_action(
     }
 }
 
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
 pub(crate) async fn require_operator(
     state: &AppState,
     headers: &HeaderMap,

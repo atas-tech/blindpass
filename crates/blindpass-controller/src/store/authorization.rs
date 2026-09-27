@@ -809,6 +809,7 @@ impl Store {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // Creation binds the operation, its approval draft, policy and signer.
 async fn create_operation_sqlite(
     pool: &sqlx::SqlitePool,
     tenant_id: &str,
@@ -920,6 +921,7 @@ async fn create_operation_sqlite(
     Ok(OperationCreateOutcome::Created(created))
 }
 
+#[allow(clippy::too_many_arguments)] // Creation binds the operation, its approval draft, policy and signer.
 async fn create_operation_postgres(
     pool: &sqlx::PgPool,
     tenant_id: &str,
