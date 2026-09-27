@@ -1,8 +1,8 @@
 # P03 fleet authorization execution record
 
-**Run date:** 2026-09-26
-**Status:** Partial runtime evidence; P03 acceptance remains open.
-**Runner owner:** `local-kvm-p03-i06-reboot-final-20260926`
+**Run date:** 2026-09-26; latest full run 2026-09-27
+**Status:** Local runtime evidence for the implemented P03 scope; acceptance review, hosted runs and inherited gates remain open.
+**Runner owner:** `local-kvm-p03-i06-reboot-final-20260926`; latest `local-kvm-p03-finish-20260927`
 
 ## Environment
 
@@ -379,15 +379,159 @@ proxy Python compilation and `git diff --check`. The default Rust workspace
 run ignored its PostgreSQL-only outage test; the default npm run skipped 101
 service-gated SPS tests across 17 files.
 
+## Review, fixes and extended VM verification — 2026-09-27
+
+A review of the implemented P03 code against the acceptance plan found gaps in
+the broker, controller and harness. They were fixed in 32 local commits from
+`61d2d99` to `2100222`. The commits are not pushed, and no hosted workflow has
+run on them.
+
+Decisions recorded for this pass:
+
+- Operation approvals must name approvers: `pending_approval` rules carry
+  `approver_ids`, and the decider must be named and must not be the requester.
+- Each (node, unit) pair has at most one active workload registration, and the
+  broker resolves the registration from the pidfd unit.
+- E10, O08, C13 and the credential-handle parts of C09/C10 are reassigned to
+  later phases (see below).
+
+Material fixes:
+
+- **Broker time estimate.** The signed `TimeReply` now carries
+  `challenge_received_at_ms`. The broker counts relay-held round-trip time as
+  elapsed controller time, so a held reply cannot extend an expired grant.
+- **Consume path.**
+  - Deadlines are clamped by every local ceiling.
+  - Consume denials return stable reason codes.
+  - Registrations are resolved from the pidfd unit.
+  - A journal failure denies consumption; it is not ignored.
+  - Revocations are applied in memory before they are persisted, with a fence.
+  - Old-epoch grants are retired.
+  - Torn journal appends are recovered.
+  - Each grant revocation emits a signed outcome.
+- **Operation closures.** A signed `OperationClosed` document tells a waiting
+  workload that its request was rejected, expired, cancelled or denied.
+- **Controller.**
+  - Node session challenges are stateless.
+  - Node events are bound to their session, with partial acknowledgement.
+  - Revocations are redelivered on each session.
+  - Grants expire through a sweep, followed by retention pruning.
+  - Retiring a workload revokes its grants.
+  - A fenced controller clock withdraws fleet authority.
+  - Fleet operator audit rows are written in the action's transaction.
+  - The fleet role matrix is tested.
+  - Schema version is 13.
+- **Execution outcomes found by the VM.**
+  - An operation still `executing` when its grant deadline passes becomes
+    `uncertain` with `completion_unconfirmed` (`af343b8`).
+  - Broker evidence older than the one-minute window returns 409
+    `broker_evidence_stale`; it is not reported as a binding mismatch
+    (`cdbd153`).
+- **Harness.**
+  - Each workload runs in its own system unit.
+  - A second operator is the named approver.
+  - Denial checks require the broker's exact reason code, replacing checks that
+    an unrelated socket failure could pass.
+  - Node-revocation transport replay was added to the main stage.
+  - A new extended stage, `tests/fleet/p03-vm-extended.sh`, was added.
+
+The two-guest QEMU/KVM runner passed all 24 scenarios on each backend. Host,
+QEMU version and image hash are as recorded above. The command was:
+
+```bash
+BLINDPASS_P03_KEEP_FAILED_ARTIFACTS=1 \
+BLINDPASS_P03_SSH_PORT_A=22322 \
+BLINDPASS_P03_SSH_PORT_B=22323 \
+BLINDPASS_FLEET_RUNNER_OWNER=local-kvm-p03-finish-20260927 \
+  ./tests/fleet/p03-vm.sh --backend both
+```
+
+```text
+P03-VM-COMPLETE runner_owner=local-kvm-p03-finish-20260927 backends=both guests=2 revocation=reconciled recovery=passed
+```
+
+| Scenario | SQLite | PostgreSQL | Observation |
+|---|---|---|---|
+| P03-I06 partition, protocol mismatch, time replay, key rotation (I01) | Pass | Pass | Exit 78 without a restart loop; stale time reply rejected; key version 2 |
+| P03-I06 reconnect storm | Pass; 947/2,369 ms | Pass; 1,286/2,447 ms | Three failures, bounded backoff, zero node-service restarts |
+| P03-I06 guest reboot | Pass; 108,423 ms left | Pass; 108,249 ms left | Old grant denied with `grant_unknown`; fresh operation completed |
+| P03-I06 suspend plus wall-clock rollback | Pass; 18,914 ms left | Pass; 19,044 ms left | Denied with `grant_expired` after 25 s suspend; no marker |
+| P03-I06 delayed expired grant | Observed | Observed | 10 s hold against 8 s TTL; one `expired_before_receipt` event |
+| P03-I06 node-revocation transport replay | Pass | Pass | Genuine signed node revocation duplicated under a synthetic outer sequence; exactly one `node_revocation_applied` event |
+| P03-E01 two-host authorization and connected node revocation | Pass; 10,714 ms | Pass; 10,866 ms | Within the 30 s bound; pending grant denied with `node_revoked` |
+| P03-E02 revoked-node recovery | Pass | Pass | Distinct identity enrolled; fresh operation completed |
+| E06 connected grant revocation | Pass; 1,323 ms | Pass; 1,342 ms | Broker-signed outcome `revoked_before_consumption` |
+| P03-I06 signed grant revocation replay | Pass | Pass | One tombstone across broker restart; held grant denied with `grant_revoked` |
+| P03-I06 delayed signed policy replay | Pass | Pass | Version 2 after 3 rejected; version 4 applied without restart |
+| I10 unprivileged approval | Pass | Pass | Requester self-approval 403; workload account on the approval API 401 |
+| E05 reject, cancel, expire | Pass | Pass | Worker ends with signed `operation_rejected`, `operation_cancelled`, `operation_expired`; no grant issued |
+| E12 and I02 forged callers | Pass | Pass | Unregistered unit, copied live grant, sibling claim and out-of-unit process all denied with specific codes; legitimate workload then completed |
+| E11 parallel workloads | Pass | Pass | Four workloads on two nodes completed once each; cross-identity reuse denied |
+| P03-I05 crash after consume intent (I08) | Pass | Pass | Broker aborted after the fsynced intent; one intent record, no marker, retry denied, operation `uncertain` |
+| E07 controller hang | Pass; 35,149 ms outage | Pass; 35,262 ms outage | Grant live for 28.9 s at outage start, denied after expiry; outage-era request refused `broker_evidence_stale` after recovery; fresh request completed; zero relay restarts |
+| O01 controller restart | Pass | Pass | Channel recovered; fresh operation completed |
+| E01 private-key exposure | Pass | Pass | 12 key encodings from both guests searched in a full database dump and controller log; positive-control canary found; 0 exposed |
+
+The runner removed its disposable guests and keys. Debug runs that used the
+`BLINDPASS_P03_EXTENDED_ONLY` filter are not evidence. Failed runs that kept
+their artifacts were diagnosed and then deleted.
+
+Scope reassigned in the vault plans on 2026-09-27:
+
+- E10 (Omarchy shell) moves to P04.
+- O08 (real-operator prompt load) moves to P08.
+- C13 and the credential-handle parts of C09/C10 move to P05.
+
+P03 retains only headless analogs:
+
+- a copied or expired grant presented by another unit is denied;
+- a substituted recipient key is rejected at enrollment and rotation.
+
+These analogs do not satisfy the reassigned IDs.
+
+Known limits of this pass:
+
+- A poison event can block the relay outbox until an operator intervenes.
+- Migration 0013 fails when duplicate active (node, unit) workloads already
+  exist; the operator must retire the duplicates first.
+- Operator routes return 401 while the controller clock is fenced.
+- The controller parses request bodies before authentication, so a malformed
+  unauthenticated body returns 422 rather than 401.
+- Controller clock rollback has Rust-level coverage only.
+
+Final gates on `2100222`: Rust formatting; workspace Clippy with warnings denied;
+`cargo test --workspace --locked` (264 passed, 0 failed, 1 ignored
+PostgreSQL-only outage test); controller tests against PostgreSQL (109 passed,
+1 ignored); `npm run build`; `npm test` (80 passed, 101 service-gated SPS tests
+skipped across 17 files); `test:controller-openapi`, `test:openapi-types` and
+`test:contract-progress`; shell syntax, proxy Python compilation, Node syntax
+and `git diff --check`.
+
 ## Remaining acceptance work
 
-This execution does not establish complete P03 acceptance. It leaves broader
-P03-I05 cases open; controller clock rollback, reboot cases beyond the tested
-guest reboot with an unconsumed grant, further transport-level policy replay
-and node-revocation replay cases in P03-I06; full P03-I07 coverage;
-and the broader pilot catalog, including E05–E07 and
-E10–E13. The broader P01/P02 inherited gates and P02.6 controller
-cutover gate also remain prerequisites. The VM drives the authenticated
-controller API directly; it does not exercise the administrator CLI or an
-operator fleet UI. The CLI has separate authenticated HTTP integration tests.
-Do not infer that an unlisted scenario passed from the two-backend VM run.
+This record does not establish P03 acceptance. Open items:
+
+- A dated acceptance review of the evidence above by the phase owner.
+- Hosted `ci-full.yml` and `fleet-vm.yml` runs on the pushed commits.
+- The inherited P01/P02 gates and the P02.6 controller cutover gate.
+- In P03-I06: controller clock rollback on real VMs, reboot cases beyond the
+  tested unconsumed-grant reboot, and repeated adversarial replays.
+- In P03-I07: an actual disk-full filesystem and the full delayed
+  duplicate-event matrix.
+- Pilot catalog cases with only partial evidence under other scenario names.
+  None has been reviewed as a complete pass.
+  - E13 and O07: old-identity denial and recovery (E01/E02, I01 key rotation).
+    The E13 provider-credential risk display belongs to P05.
+  - O03: delayed grant, node and policy replay. Duplicate approval delivery has
+    integration coverage only.
+  - O06: protocol mismatch. The unsupported-host profile is P01 evidence.
+  - C19: prior grant after reboot, and a copied grant. The restart race during
+    unit-to-invocation resolution is untested.
+  - O02 and O05: Rust and HTTP tests only; disk-full and UI rendering are
+    untested.
+  - C20: P01 host evidence only.
+
+The VM drives the authenticated controller API directly. It does not exercise
+the administrator CLI or an operator fleet UI; the CLI has separate
+authenticated HTTP integration tests. Do not infer that an unlisted scenario
+passed from the two-backend VM run.
