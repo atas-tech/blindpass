@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const inputPath = path.join(repoRoot, "docs/api/controller.openapi.yaml");
-const outputPath = path.join(repoRoot, "packages/contract-tests/src/generated/controller.d.ts");
+// The contract suite and the operator console consume the same generated file.
+const outputPaths = [
+  path.join(repoRoot, "packages/contract-tests/src/generated/controller.d.ts"),
+  path.join(repoRoot, "packages/console/src/api/generated/controller.d.ts")
+];
 const methods = ["get", "post", "put", "patch", "delete", "head", "options", "trace"];
 
 function resolveLocalRef(root, ref) {
@@ -178,17 +182,21 @@ async function main() {
   const document = JSON.parse(await readFile(inputPath, "utf8"));
   const output = renderControllerTypes(document);
   if (process.argv.includes("--check")) {
-    const current = await readFile(outputPath, "utf8").catch(() => "");
-    if (current !== output) {
-      console.error("Generated controller API types are stale; run npm run generate:api.");
-      process.exitCode = 1;
+    for (const outputPath of outputPaths) {
+      const current = await readFile(outputPath, "utf8").catch(() => "");
+      if (current !== output) {
+        console.error(`Generated controller API types are stale in ${path.relative(repoRoot, outputPath)}; run npm run generate:api.`);
+        process.exitCode = 1;
+      }
     }
     return;
   }
 
-  await mkdir(path.dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, output);
-  console.log(`Generated ${path.relative(repoRoot, outputPath)}`);
+  for (const outputPath of outputPaths) {
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, output);
+    console.log(`Generated ${path.relative(repoRoot, outputPath)}`);
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

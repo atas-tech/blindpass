@@ -387,7 +387,7 @@ jobs:
           npm run test:controller-openapi
           npm run test:openapi-types --workspace=@blindpass/contract-tests
           npm run build --workspace=@blindpass/contract-tests
-          git diff --exit-code -- packages/contract-tests/src/generated/controller.d.ts
+          git diff --exit-code -- packages/contract-tests/src/generated/controller.d.ts packages/console/src/api/generated/controller.d.ts
 
       - name: Prove stale generated declarations fail the drift check
         run: |

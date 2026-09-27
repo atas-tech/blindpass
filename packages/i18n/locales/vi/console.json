@@ -1,0 +1,319 @@
+{
+  "common": {
+    "close": "Đóng",
+    "retry": "Thử lại",
+    "loading": "Đang tải…",
+    "copy": "Sao chép",
+    "copied": "Đã sao chép",
+    "copyFailed": "Không sao chép được — hãy chọn văn bản",
+    "notifications": "Thông báo",
+    "dismiss": "Bỏ qua",
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "back": "Quay lại",
+    "reload": "Tải lại",
+    "none": "Không có",
+    "yes": "Có",
+    "no": "Không",
+    "unknown": "Không rõ",
+    "details": "Chi tiết",
+    "view": "Xem",
+    "confirm": "Xác nhận",
+    "refreshing": "Đang làm mới…",
+    "updated": "Cập nhật lúc {{time}}"
+  },
+  "errors": {
+    "forbidden": {
+      "title": "Vai trò của bạn không mở được mục này",
+      "body": "Bộ điều khiển đã từ chối yêu cầu này với vai trò của bạn. Hãy hỏi quản trị viên nếu bạn cần quyền truy cập."
+    },
+    "notFound": {
+      "title": "Không tìm thấy",
+      "body": "Bộ điều khiển không có bản ghi với mã định danh này. Bản ghi có thể đã bị xóa hoặc liên kết bị sai."
+    },
+    "rateLimited": {
+      "title": "Quá nhiều yêu cầu",
+      "body": "Bộ điều khiển đang giới hạn tần suất cho phiên này. Hãy chờ một lát rồi thử lại.",
+      "bodyAfter": "Bộ điều khiển đang giới hạn tần suất cho phiên này. Hãy thử lại sau {{seconds}} giây."
+    },
+    "timeout": {
+      "title": "Bộ điều khiển không phản hồi kịp",
+      "body": "Không có dữ liệu nào được hiển thị thay cho phần bị thiếu. Hãy thử lại; nếu vẫn hết thời gian chờ, hãy kiểm tra máy chủ bộ điều khiển."
+    },
+    "network": {
+      "title": "Không kết nối được bộ điều khiển",
+      "body": "Yêu cầu không nhận được phản hồi. Đây không phải là kết quả rỗng."
+    },
+    "unavailable": {
+      "title": "Bộ điều khiển chưa sẵn sàng",
+      "body": "Kho dữ liệu chưa khả dụng hoặc đang khởi động. Hãy thử lại sau ít phút."
+    },
+    "clockFenced": {
+      "title": "Đồng hồ bộ điều khiển đang bị chặn",
+      "body": "Bộ điều khiển phát hiện đồng hồ bị lùi và đã ngừng chấp nhận phiên. Quản trị viên cần chạy blindpass admin reconcile-clock trên máy chủ."
+    },
+    "passwordChange": {
+      "title": "Hãy đổi mật khẩu tạm thời trước",
+      "body": "Chức năng quản trị bị khóa cho đến khi mật khẩu tạm thời được thay."
+    },
+    "server": {
+      "title": "Bộ điều khiển trả về lỗi",
+      "body": "Yêu cầu thất bại với mã {{status}}. Không có kết quả nào được suy đoán từ lỗi này."
+    }
+  },
+  "trust": {
+    "notVerified": "Chưa xác minh",
+    "empty": "Không có nội dung."
+  },
+  "pager": {
+    "label": "Trang",
+    "newer": "Mới hơn",
+    "older": "Cũ hơn",
+    "first": "Về trang mới nhất"
+  },
+  "time": {
+    "expired": "Đã hết hạn",
+    "estimateNote": "Ước tính theo đồng hồ của bộ điều khiển. Kiểm tra hết hạn của bộ điều khiển là quyết định cuối cùng.",
+    "remaining": "Thời gian còn lại",
+    "never": "Chưa bao giờ"
+  },
+  "locale": {
+    "label": "Ngôn ngữ",
+    "en": "English",
+    "vi": "Tiếng Việt"
+  },
+  "nav": {
+    "label": "Điều hướng chính",
+    "open": "Mở điều hướng",
+    "close": "Đóng điều hướng",
+    "groups": {
+      "access": "Kiểm soát truy cập",
+      "fleet": "Đội máy",
+      "admin": "Quản trị"
+    },
+    "overview": "Tổng quan",
+    "approvals": "Phê duyệt",
+    "audit": "Nhật ký kiểm tra",
+    "enrollments": "Đăng ký nút",
+    "nodes": "Nút",
+    "workloads": "Khối lượng công việc",
+    "grants": "Quyền cấp",
+    "operations": "Thao tác",
+    "agents": "Tác tử",
+    "policy": "Chính sách trao đổi",
+    "fleetPolicy": "Chính sách đội máy",
+    "operators": "Người vận hành",
+    "settings": "Cài đặt"
+  },
+  "roles": {
+    "admin": "Quản trị viên",
+    "operator": "Người vận hành",
+    "viewer": "Người xem",
+    "adminHint": "Quản lý tác tử, chính sách, đăng ký đội máy và người vận hành",
+    "operatorHint": "Quyết định phê duyệt và thu hồi quyền cấp trong phạm vi chính sách",
+    "viewerHint": "Xem trạng thái đội máy, chính sách và lịch sử kiểm tra"
+  },
+  "shell": {
+    "controller": "Bộ điều khiển cục bộ",
+    "fleetEnabled": "có đội máy",
+    "exchangeOnly": "chỉ trao đổi",
+    "skipToContent": "Chuyển đến nội dung",
+    "sidebar": "Thanh bên bảng điều khiển"
+  },
+  "session": {
+    "extendFailed": "Không gia hạn được phiên. Hãy lưu công việc và đăng nhập lại.",
+    "expiresSoon": "Phiên của bạn sẽ kết thúc sau {{time}}.",
+    "staySignedIn": "Duy trì đăng nhập"
+  },
+  "system": {
+    "unreachable": {
+      "body": "Bảng điều khiển được bộ điều khiển phục vụ nhưng không kết nối được API. Hãy kiểm tra bộ điều khiển đang chạy và kho dữ liệu đã sẵn sàng."
+    },
+    "notFound": {
+      "eyebrow": "404",
+      "title": "Trang này không tồn tại",
+      "body": "Hãy kiểm tra địa chỉ hoặc quay lại trang tổng quan."
+    },
+    "forbidden": {
+      "eyebrow": "Không có quyền",
+      "title": "Vai trò của bạn không mở được trang này",
+      "body": "Bạn đang đăng nhập với vai trò {{role}}. Bộ điều khiển áp dụng cùng giới hạn này trên API."
+    },
+    "removed": {
+      "title": "Không có trong sản phẩm này",
+      "body": "Thanh toán, phân tích sử dụng, ưu đãi công khai, tự đăng ký và đặt lại mật khẩu qua email thuộc về dịch vụ lưu trữ. Bộ điều khiển BlindPass cục bộ không cung cấp các chức năng này."
+    },
+    "backToOverview": "Về trang tổng quan"
+  },
+  "gate": {
+    "footLabel": "BLINDPASS / BẢNG ĐIỀU KHIỂN",
+    "footDetail": "Được phục vụ bởi bộ điều khiển cục bộ của bạn."
+  },
+  "auth": {
+    "signIn": "Đăng nhập",
+    "signOut": "Đăng xuất",
+    "logoutFailed": {
+      "title": "Đăng xuất chưa hoàn tất",
+      "body": "Bộ điều khiển chưa xác nhận phiên đã kết thúc. Hãy thử lại trước khi rời thiết bị này."
+    },
+    "fields": {
+      "username": "Tên đăng nhập",
+      "password": "Mật khẩu",
+      "newPassword": "Mật khẩu mới",
+      "confirmPassword": "Nhập lại mật khẩu mới"
+    },
+    "passwordRule": "Ít nhất 12 ký tự. Một cụm mật khẩu gồm vài từ là lựa chọn tốt.",
+    "errors": {
+      "mismatch": "Hai mật khẩu không khớp.",
+      "usernameShort": "Dùng ít nhất 3 ký tự.",
+      "usernameLong": "Dùng tối đa 128 ký tự.",
+      "usernameChars": "Chỉ dùng chữ cái, chữ số và . _ @ -.",
+      "passwordShort": "Dùng ít nhất 12 ký tự.",
+      "passwordLong": "Dùng tối đa 1.024 byte.",
+      "origin": {
+        "title": "Địa chỉ này không được phép",
+        "body": "Bộ điều khiển đã từ chối nguồn gốc hoặc kiểm tra CSRF của yêu cầu. Hãy mở bảng điều khiển từ địa chỉ đã cấu hình của bộ điều khiển."
+      }
+    }
+  },
+  "setup": {
+    "eyebrow": "Lần chạy đầu tiên",
+    "titleLead": "Thiết lập",
+    "titleAccent": "bộ điều khiển này.",
+    "lead": "Tạo quản trị viên đầu tiên. Thiết lập chỉ dùng được một lần, với mã khởi tạo ngắn hạn được tạo trên máy chủ bộ điều khiển.",
+    "steps": {
+      "token": {
+        "title": "Tạo mã khởi tạo",
+        "body": "Trên máy chủ bộ điều khiển, với tài khoản dịch vụ, chạy"
+      },
+      "account": {
+        "title": "Chọn tài khoản quản trị",
+        "body": "Mã chỉ dùng một lần và hết hạn sau 15 phút."
+      },
+      "done": {
+        "title": "Bắt đầu trong bảng điều khiển",
+        "body": "Bạn được đăng nhập ngay. Sau đó chức năng thiết lập bị đóng vĩnh viễn."
+      }
+    },
+    "formTitle": "Tạo quản trị viên",
+    "formBody": "Mã khởi tạo chỉ được gửi một lần và không bao giờ hiển thị lại.",
+    "fields": {
+      "token": "Mã khởi tạo",
+      "tokenHint": "Dán giá trị do blindpass admin bootstrap-token in ra.",
+      "displayName": "Tên hiển thị"
+    },
+    "errors": {
+      "token": "Hãy dán đầy đủ mã khởi tạo (ít nhất 32 ký tự).",
+      "displayName": "Hãy nhập tên hiển thị.",
+      "displayNameLong": "Dùng tối đa 160 ký tự.",
+      "rejected": "Bộ điều khiển đã từ chối các trường này. Hãy kiểm tra quy tắc tên đăng nhập và mật khẩu.",
+      "failed": "Thiết lập chưa hoàn tất. Chưa có quản trị viên nào được tạo; bạn có thể thử lại bằng cùng mã nếu mã chưa hết hạn."
+    },
+    "raced": {
+      "title": "Thiết lập đã hoàn tất",
+      "body": "Một quản trị viên khác đã hoàn tất thiết lập trước. Tài khoản của bạn chưa được tạo. Hãy đăng nhập bằng tài khoản quản trị hiện có."
+    },
+    "tokenSpent": {
+      "title": "Không dùng được mã khởi tạo này",
+      "body": "Mã đã hết hạn hoặc đã được dùng. Hãy tạo mã mới trên máy chủ bộ điều khiển và dán vào đây."
+    },
+    "submit": "Tạo quản trị viên",
+    "submitting": "Đang tạo quản trị viên…"
+  },
+  "login": {
+    "eyebrow": "Bảng điều khiển vận hành",
+    "titleLead": "Truy cập,",
+    "titleAccent": "trong tầm kiểm soát.",
+    "lead": "Xem ai đang yêu cầu, quyết định dựa trên thông tin đã xác minh và lưu lại dấu vết kiểm tra của mọi việc đã xảy ra.",
+    "points": {
+      "verified": {
+        "title": "Thông tin đã xác minh trước",
+        "body": "Bằng chứng danh tính của bộ điều khiển được hiển thị tách biệt với mọi nội dung do người yêu cầu viết."
+      },
+      "decide": {
+        "title": "Quyết định đúng phạm vi",
+        "body": "Mỗi phê duyệt nêu rõ bên nhận, thao tác và thời hạn trước khi bạn xác nhận."
+      },
+      "audit": {
+        "title": "Mọi quyết định đều được ghi lại",
+        "body": "Lịch sử kiểm tra chỉ lưu siêu dữ liệu, không bao giờ lưu giá trị bí mật."
+      }
+    },
+    "formBody": "Dùng tài khoản cục bộ mà quản trị viên đã tạo cho bạn.",
+    "expired": "Phiên của bạn đã kết thúc. Hãy đăng nhập lại để tiếp tục.",
+    "signedOut": "Bạn đã đăng xuất. Bộ điều khiển đã kết thúc phiên.",
+    "errors": {
+      "credentials": "Tên đăng nhập hoặc mật khẩu không đúng.",
+      "missing": "Hãy nhập tên đăng nhập và mật khẩu.",
+      "rate": "Quá nhiều lần thử. Hãy chờ một lát rồi thử lại.",
+      "failed": "Đăng nhập chưa hoàn tất. Hãy thử lại."
+    },
+    "submitting": "Đang đăng nhập…",
+    "recovery": {
+      "title": "Không đăng nhập được?",
+      "admin": "Hãy nhờ quản trị viên đặt lại mật khẩu của bạn trong mục Người vận hành. Bạn sẽ nhận mật khẩu tạm thời và phải đổi khi đăng nhập.",
+      "host": "Nếu không quản trị viên nào đăng nhập được, hãy đặt lại mật khẩu trên máy chủ bộ điều khiển:",
+      "noEmail": "Không có chức năng đặt lại qua email: bộ điều khiển không có dịch vụ thư."
+    }
+  },
+  "password": {
+    "eyebrow": "Tài khoản",
+    "title": "Đổi mật khẩu",
+    "body": "Chọn mật khẩu mới cho tài khoản này.",
+    "submit": "Đổi mật khẩu",
+    "changed": "Đã đổi mật khẩu",
+    "fields": {
+      "current": "Mật khẩu hiện tại"
+    },
+    "forced": {
+      "eyebrow": "Mật khẩu tạm thời",
+      "body": "{{name}} đã đăng nhập bằng mật khẩu tạm thời. Hãy chọn mật khẩu mới để mở khóa bảng điều khiển.",
+      "submit": "Đặt mật khẩu và tiếp tục"
+    },
+    "errors": {
+      "current": "Mật khẩu hiện tại không đúng.",
+      "currentMissing": "Hãy nhập mật khẩu hiện tại.",
+      "same": "Hãy chọn mật khẩu khác mật khẩu hiện tại.",
+      "session": "Phiên đã kết thúc. Hãy đăng nhập lại.",
+      "failed": "Mật khẩu chưa được đổi. Hãy thử lại."
+    }
+  },
+  "settings": {
+    "eyebrow": "Tài khoản",
+    "title": "Cài đặt",
+    "description": "Hồ sơ, mật khẩu, ngôn ngữ và phiên của bạn trên bộ điều khiển này.",
+    "profile": {
+      "title": "Hồ sơ",
+      "role": "Vai trò",
+      "id": "Mã người vận hành",
+      "edit": "Sửa tên hiển thị",
+      "saved": "Đã lưu tên hiển thị",
+      "saveFailed": "Chưa lưu được tên hiển thị.",
+      "adminOnly": "Chỉ quản trị viên mới đổi được tên và vai trò."
+    },
+    "language": {
+      "title": "Ngôn ngữ",
+      "body": "Áp dụng cho trình duyệt này, kể cả các trang nhập bí mật mở tại đây."
+    },
+    "password": {
+      "title": "Mật khẩu"
+    },
+    "session": {
+      "title": "Phiên",
+      "expires": "Kết thúc muộn nhất",
+      "expiresHint": "Chọn duy trì đăng nhập để gia hạn; không hoạt động có thể kết thúc sớm hơn.",
+      "idle": "Giới hạn không hoạt động",
+      "idleValue": "12 giờ không có yêu cầu"
+    }
+  },
+  "overview": {
+    "eyebrow": "Bộ điều khiển của bạn, tóm tắt",
+    "greeting": "Chào mừng trở lại, {{name}}",
+    "description": "Các quyết định đang chờ trước, sau đó là trạng thái đội máy và hoạt động gần đây."
+  },
+  "approvals": {
+    "countUnavailable": "Không lấy được số lượng đang chờ",
+    "pendingCount_one": "{{count}} yêu cầu chờ duyệt",
+    "pendingCount_other": "{{count}} yêu cầu chờ duyệt"
+  }
+}

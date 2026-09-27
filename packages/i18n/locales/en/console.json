@@ -1,0 +1,319 @@
+{
+  "common": {
+    "close": "Close",
+    "retry": "Try again",
+    "loading": "Loading…",
+    "copy": "Copy",
+    "copied": "Copied",
+    "copyFailed": "Copy failed — select the text instead",
+    "notifications": "Notifications",
+    "dismiss": "Dismiss",
+    "save": "Save",
+    "cancel": "Cancel",
+    "back": "Back",
+    "reload": "Reload",
+    "none": "None",
+    "yes": "Yes",
+    "no": "No",
+    "unknown": "Unknown",
+    "details": "Details",
+    "view": "View",
+    "confirm": "Confirm",
+    "refreshing": "Refreshing…",
+    "updated": "Updated {{time}}"
+  },
+  "errors": {
+    "forbidden": {
+      "title": "Your role can't open this",
+      "body": "The controller refused this request for your role. Ask an administrator if you need access."
+    },
+    "notFound": {
+      "title": "Not found",
+      "body": "The controller has no record with this identifier. It may have been removed, or the link is wrong."
+    },
+    "rateLimited": {
+      "title": "Too many requests",
+      "body": "The controller is rate limiting this session. Wait a moment, then try again.",
+      "bodyAfter": "The controller is rate limiting this session. Try again in {{seconds}} s."
+    },
+    "timeout": {
+      "title": "The controller didn't answer in time",
+      "body": "Nothing is shown in place of the missing data. Try again; if it keeps timing out, check the controller host."
+    },
+    "network": {
+      "title": "Can't reach the controller",
+      "body": "The request didn't get a response. This is not an empty result."
+    },
+    "unavailable": {
+      "title": "The controller is not ready",
+      "body": "Its store is unavailable or still starting. Try again shortly."
+    },
+    "clockFenced": {
+      "title": "The controller clock is fenced",
+      "body": "The controller detected a clock regression and stopped accepting sessions. An administrator must run blindpass admin reconcile-clock on the host."
+    },
+    "passwordChange": {
+      "title": "Change your temporary password first",
+      "body": "Administration stays locked until the temporary password is replaced."
+    },
+    "server": {
+      "title": "The controller returned an error",
+      "body": "Request failed with status {{status}}. Nothing was assumed from it."
+    }
+  },
+  "trust": {
+    "notVerified": "Not verified",
+    "empty": "No text was provided."
+  },
+  "pager": {
+    "label": "Pages",
+    "newer": "Newer",
+    "older": "Older",
+    "first": "Back to newest"
+  },
+  "time": {
+    "expired": "Expired",
+    "estimateNote": "Estimated from the controller clock. The controller's own expiry check is final.",
+    "remaining": "Time remaining",
+    "never": "Never"
+  },
+  "locale": {
+    "label": "Language",
+    "en": "English",
+    "vi": "Tiếng Việt"
+  },
+  "nav": {
+    "label": "Main navigation",
+    "open": "Open navigation",
+    "close": "Close navigation",
+    "groups": {
+      "access": "Access control",
+      "fleet": "Fleet",
+      "admin": "Administration"
+    },
+    "overview": "Overview",
+    "approvals": "Approvals",
+    "audit": "Audit log",
+    "enrollments": "Enrollments",
+    "nodes": "Nodes",
+    "workloads": "Workloads",
+    "grants": "Grants",
+    "operations": "Operations",
+    "agents": "Agents",
+    "policy": "Exchange policy",
+    "fleetPolicy": "Fleet policy",
+    "operators": "Operators",
+    "settings": "Settings"
+  },
+  "roles": {
+    "admin": "Administrator",
+    "operator": "Operator",
+    "viewer": "Viewer",
+    "adminHint": "Manages agents, policy, fleet registration and operators",
+    "operatorHint": "Decides approvals and revokes grants within policy",
+    "viewerHint": "Reads fleet state, policy and audit history"
+  },
+  "shell": {
+    "controller": "Local controller",
+    "fleetEnabled": "fleet enabled",
+    "exchangeOnly": "exchange only",
+    "skipToContent": "Skip to content",
+    "sidebar": "Console sidebar"
+  },
+  "session": {
+    "extendFailed": "Couldn't extend the session. Save your work and sign in again.",
+    "expiresSoon": "Your session ends in {{time}}.",
+    "staySignedIn": "Stay signed in"
+  },
+  "system": {
+    "unreachable": {
+      "body": "The console is served by the controller but can't reach its API. Check that the controller is running and its store is ready."
+    },
+    "notFound": {
+      "eyebrow": "404",
+      "title": "This page doesn't exist",
+      "body": "Check the address, or go back to the overview."
+    },
+    "forbidden": {
+      "eyebrow": "Access denied",
+      "title": "Your role can't open this page",
+      "body": "You're signed in as {{role}}. The controller enforces the same limit on its API."
+    },
+    "removed": {
+      "title": "Not available in this product",
+      "body": "Billing, usage analytics, public offers, self-service sign-up and email password reset belonged to the hosted service. The local BlindPass controller doesn't provide them."
+    },
+    "backToOverview": "Back to overview"
+  },
+  "gate": {
+    "footLabel": "BLINDPASS / OPERATOR CONSOLE",
+    "footDetail": "Served by your local controller."
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "logoutFailed": {
+      "title": "Sign-out didn't complete",
+      "body": "The controller didn't confirm the session ended. Try again before leaving this device."
+    },
+    "fields": {
+      "username": "Username",
+      "password": "Password",
+      "newPassword": "New password",
+      "confirmPassword": "Confirm new password"
+    },
+    "passwordRule": "At least 12 characters. A passphrase of several words works well.",
+    "errors": {
+      "mismatch": "The passwords don't match.",
+      "usernameShort": "Use at least 3 characters.",
+      "usernameLong": "Use at most 128 characters.",
+      "usernameChars": "Use letters, digits and . _ @ - only.",
+      "passwordShort": "Use at least 12 characters.",
+      "passwordLong": "Use at most 1,024 bytes.",
+      "origin": {
+        "title": "This address isn't allowed",
+        "body": "The controller rejected the request's origin or CSRF check. Open the console from the controller's configured address."
+      }
+    }
+  },
+  "setup": {
+    "eyebrow": "First run",
+    "titleLead": "Set up",
+    "titleAccent": "this controller.",
+    "lead": "Create the first administrator. Setup works once, with a short-lived token minted on the controller host.",
+    "steps": {
+      "token": {
+        "title": "Mint a setup token",
+        "body": "On the controller host, as its service user, run"
+      },
+      "account": {
+        "title": "Choose the administrator account",
+        "body": "The token works once and expires after 15 minutes."
+      },
+      "done": {
+        "title": "Start in the console",
+        "body": "You're signed in straight away. Setup then closes for good."
+      }
+    },
+    "formTitle": "Create the administrator",
+    "formBody": "The setup token is sent once and never shown again.",
+    "fields": {
+      "token": "Setup token",
+      "tokenHint": "Paste the value printed by blindpass admin bootstrap-token.",
+      "displayName": "Display name"
+    },
+    "errors": {
+      "token": "Paste the full setup token (at least 32 characters).",
+      "displayName": "Enter a display name.",
+      "displayNameLong": "Use at most 160 characters.",
+      "rejected": "The controller rejected these fields. Check the username and password rules.",
+      "failed": "Setup didn't complete. No administrator was created; you can try again with the same token if it hasn't expired."
+    },
+    "raced": {
+      "title": "Setup is already complete",
+      "body": "Another administrator finished setup first. Your account was not created. Sign in with an existing administrator account."
+    },
+    "tokenSpent": {
+      "title": "This setup token can't be used",
+      "body": "It is expired or already used. Mint a new one on the controller host and paste it here."
+    },
+    "submit": "Create administrator",
+    "submitting": "Creating administrator…"
+  },
+  "login": {
+    "eyebrow": "Operator console",
+    "titleLead": "Access,",
+    "titleAccent": "under control.",
+    "lead": "Review who is asking, decide with the verified context, and keep an audit trail of what happened.",
+    "points": {
+      "verified": {
+        "title": "Verified context first",
+        "body": "The controller's own identity evidence is shown apart from anything a requester wrote."
+      },
+      "decide": {
+        "title": "Decide the exact scope",
+        "body": "Approvals name the recipient, action and lifetime before you confirm."
+      },
+      "audit": {
+        "title": "Every decision is recorded",
+        "body": "Audit history holds metadata only, never secret values."
+      }
+    },
+    "formBody": "Use the local account an administrator created for you.",
+    "expired": "Your session ended. Sign in again to continue.",
+    "signedOut": "You signed out. The controller ended the session.",
+    "errors": {
+      "credentials": "The username or password is incorrect.",
+      "missing": "Enter your username and password.",
+      "rate": "Too many attempts. Wait a moment before trying again.",
+      "failed": "Sign-in didn't complete. Try again."
+    },
+    "submitting": "Signing in…",
+    "recovery": {
+      "title": "Can't sign in?",
+      "admin": "Ask an administrator to reset your password from Operators. You'll get a temporary password and must change it at sign-in.",
+      "host": "If no administrator can sign in, reset one on the controller host:",
+      "noEmail": "There is no email reset: the controller has no mail service."
+    }
+  },
+  "password": {
+    "eyebrow": "Account",
+    "title": "Change password",
+    "body": "Choose a new password for this account.",
+    "submit": "Change password",
+    "changed": "Password changed",
+    "fields": {
+      "current": "Current password"
+    },
+    "forced": {
+      "eyebrow": "Temporary password",
+      "body": "{{name}} signed in with a temporary password. Choose a new one to unlock the console.",
+      "submit": "Set password and continue"
+    },
+    "errors": {
+      "current": "The current password is incorrect.",
+      "currentMissing": "Enter your current password.",
+      "same": "Choose a password different from the current one.",
+      "session": "Your session ended. Sign in again.",
+      "failed": "The password wasn't changed. Try again."
+    }
+  },
+  "settings": {
+    "eyebrow": "Account",
+    "title": "Settings",
+    "description": "Your profile, password, language and session on this controller.",
+    "profile": {
+      "title": "Profile",
+      "role": "Role",
+      "id": "Operator ID",
+      "edit": "Edit display name",
+      "saved": "Display name saved",
+      "saveFailed": "The display name wasn't saved.",
+      "adminOnly": "Only an administrator can change names and roles."
+    },
+    "language": {
+      "title": "Language",
+      "body": "Applies to this browser, including secret-input pages opened here."
+    },
+    "password": {
+      "title": "Password"
+    },
+    "session": {
+      "title": "Session",
+      "expires": "Ends at the latest",
+      "expiresHint": "Stay signed in extends it; inactivity can end it sooner.",
+      "idle": "Inactivity limit",
+      "idleValue": "12 hours without a request"
+    }
+  },
+  "overview": {
+    "eyebrow": "Your controller, at a glance",
+    "greeting": "Welcome back, {{name}}",
+    "description": "Pending decisions first, then fleet state and recent activity."
+  },
+  "approvals": {
+    "countUnavailable": "Pending count unavailable",
+    "pendingCount_one": "{{count}} pending approval",
+    "pendingCount_other": "{{count}} pending approvals"
+  }
+}

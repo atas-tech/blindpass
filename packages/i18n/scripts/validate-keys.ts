@@ -8,6 +8,7 @@ const __dirname = path.dirname(__filename);
 const LOCALES_DIR = path.join(__dirname, "..", "locales");
 const IDENTICAL_KEY_ALLOWLIST: Record<string, string[]> = {
   "browser-ui": ["brand.name"],
+  console: ["locale.en", "locale.vi", "system.notFound.eyebrow"],
   layout: ["brand.name"],
   offers: ["intentDetail.txHash"],
   policy: ["rules.requesterIdsPlaceholder", "rules.purposesPlaceholder", "rules.requesterRingsPlaceholder"]

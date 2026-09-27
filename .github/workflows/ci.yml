@@ -42,7 +42,7 @@ jobs:
           npm run generate:api
           npm run test:controller-openapi
           npm run test:openapi-types --workspace=@blindpass/contract-tests
-          git diff --exit-code -- packages/contract-tests/src/generated/controller.d.ts
+          git diff --exit-code -- packages/contract-tests/src/generated/controller.d.ts packages/console/src/api/generated/controller.d.ts
 
       - name: Check contract progress gate
         run: npm run test:contract-progress

@@ -62,7 +62,7 @@ test("the divider is never mistaken for a control boundary", () => {
 });
 
 test("status text reaches 4.5:1 on its own tinted background", () => {
-  const pairs = [["ok", "ok-soft"], ["lime", "lime-soft"], ["warn", "warn-soft"], ["danger", "danger-soft"], ["info", "info-soft"], ["neutral", "neutral-soft"], ["ink", "lime-soft"], ["muted", "lime-soft"]];
+  const pairs = [["ok", "ok-soft"], ["lime", "lime-soft"], ["warn", "warn-soft"], ["danger", "danger-soft"], ["info", "info-soft"], ["neutral", "neutral-soft"], ["ink", "lime-soft"], ["muted", "lime-soft"], ["danger-strong", "danger-hover"]];
   for (const [text, background] of pairs) {
     const ratio = contrast(color(text), color(background));
     assert.ok(ratio >= 4.5, `${text} on ${background} is ${ratio.toFixed(2)}:1`);
