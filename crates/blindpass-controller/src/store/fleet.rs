@@ -641,14 +641,15 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?;
                     sqlx::query(
-                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
-                         VALUES (?, ?, 'operator', ?, ?)",
+                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until, envelope_json)
+                         VALUES (?, ?, 'operator', ?, ?, ?)",
                     )
                     .bind(&draft.grant_id)
                     .bind(node_id)
                     .bind(now)
                     .bind(i64::try_from(revocation.retain_until_ms)
                         .map_err(|_| StoreError::InvalidInput("tombstone retention"))?)
+                    .bind(&draft.envelope_json)
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
@@ -816,14 +817,15 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?;
                     sqlx::query(
-                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
-                         VALUES ($1, $2, 'operator', $3, $4)",
+                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until, envelope_json)
+                         VALUES ($1, $2, 'operator', $3, $4, $5)",
                     )
                     .bind(&draft.grant_id)
                     .bind(node_id)
                     .bind(now)
                     .bind(i64::try_from(revocation.retain_until_ms)
                         .map_err(|_| StoreError::InvalidInput("tombstone retention"))?)
+                    .bind(&draft.envelope_json)
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
@@ -1028,14 +1030,15 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?;
                     sqlx::query(
-                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
-                         VALUES (?, ?, 'key_rotation', ?, ?)",
+                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until, envelope_json)
+                         VALUES (?, ?, 'key_rotation', ?, ?, ?)",
                     )
                     .bind(&grant_draft.grant_id)
                     .bind(node_id)
                     .bind(now)
                     .bind(i64::try_from(revocation.retain_until_ms)
                         .map_err(|_| StoreError::InvalidInput("tombstone retention"))?)
+                    .bind(&grant_draft.envelope_json)
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
@@ -1221,14 +1224,15 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?;
                     sqlx::query(
-                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
-                         VALUES ($1, $2, 'key_rotation', $3, $4)",
+                        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until, envelope_json)
+                         VALUES ($1, $2, 'key_rotation', $3, $4, $5)",
                     )
                     .bind(&grant_draft.grant_id)
                     .bind(node_id)
                     .bind(now)
                     .bind(i64::try_from(revocation.retain_until_ms)
                         .map_err(|_| StoreError::InvalidInput("tombstone retention"))?)
+                    .bind(&grant_draft.envelope_json)
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
