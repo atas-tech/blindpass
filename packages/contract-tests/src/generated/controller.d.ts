@@ -276,6 +276,7 @@ export interface components {
       "decision": "allow" | "pending_approval" | "deny";
       "approval_required": boolean;
       "max_ttl_seconds": number;
+      "approver_ids"?: Array<string>;
     };
     "FleetPolicy": {
       "version": number;
@@ -287,13 +288,26 @@ export interface components {
       "expected_version": number;
       "rules": Array<components["schemas"]["FleetPolicyRule"]>;
     };
-    "InvocationEvidence": {
+    "OperationApprovalScope": {
+      "tenant_id": string;
       "node_id": string;
       "workload_id": string;
       "unit": string;
       "account": string;
+      "action": string;
+      "mode": "file" | "socket";
+      "rule_id": string | null;
+      "policy_version": number;
+    };
+    "OperationApprovalMember": {
+      "id": string;
+      "requested_by": string;
       "invocation_id": string;
-      "observed_at": number;
+      "resource_id": string;
+      "purpose": string;
+      "broker_event_key": string | null;
+      "status": string;
+      "created_at": number;
     };
     "OperationInput": {
       "workload_id": string;
@@ -338,10 +352,15 @@ export interface components {
       "requester_summary": {
         [key: string]: unknown;
       };
-      "verified_identity": components["schemas"]["InvocationEvidence"];
+      "verified_identity": components["schemas"]["OperationApprovalScope"];
+      "approver_ids": Array<string>;
       "rule_id": string;
       "expires_at": number;
       "version": number;
+      "created_at": number;
+      "decided_by": string | null;
+      "decided_at": number | null;
+      "operations"?: Array<components["schemas"]["OperationApprovalMember"]>;
     };
     "UnifiedApprovalList": {
       "items": Array<components["schemas"]["OperationApproval"] | components["schemas"]["Approval"]>;
@@ -371,6 +390,11 @@ export interface components {
       "issued_at": number;
       "expires_at": number;
       "status": "issued" | "delivered" | "consumed" | "revoked" | "expired";
+      "unit": string;
+      "consumed_at": number | null;
+      "revoked_at": number | null;
+      "revoked_by": string | null;
+      "broker_revocation_outcome": string | null;
     };
     "GrantList": {
       "items": Array<components["schemas"]["Grant"]>;
@@ -471,6 +495,10 @@ export interface components {
       "accepted": number;
       "duplicates": number;
       "ack": components["schemas"]["ApplicationAck"] | null;
+      "rejected": {
+        "idempotency_key": string;
+        "error": string;
+      } | null;
     };
     "BootstrapInput": {
       "username": string;
@@ -2193,6 +2221,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "410": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -3084,7 +3117,7 @@ export interface operations {
   responses: {
     "200": {
       content: {
-        "application/json": components["schemas"]["GrantRevocationResult"];
+        "application/json": components["schemas"]["Operation"] | components["schemas"]["GrantRevocationResult"];
       };
     };
     "401": {
