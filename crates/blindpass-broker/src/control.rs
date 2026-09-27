@@ -180,6 +180,12 @@ fn handle_command(
                 Ok("grant_discarded_expired") => {
                     stream.write_all(b"OK document_discarded grant_expired\n")?
                 }
+                Ok("grant_discarded_settled") => {
+                    stream.write_all(b"OK document_discarded grant_settled\n")?
+                }
+                Ok("grant_discarded_rejected") => {
+                    stream.write_all(b"OK document_discarded grant_rejected\n")?
+                }
                 Ok(kind) => writeln!(stream, "OK document_applied {kind}")?,
                 Err(BrokerError::Configuration(
                     code @ ("controller_document_not_durable" | "broker_persistence_fenced"),
@@ -380,17 +386,34 @@ fn apply_controller_document_to_state(
                 now_boottime_ms,
             ) {
                 Ok(_) => {}
-                Err("grant expired before broker receipt") => {
+                Err(crate::grants::GRANT_ALREADY_SETTLED) => return Ok("grant_discarded_settled"),
+                Err(reason) => {
+                    // A verified grant that can never be accepted is audited and
+                    // discarded; only transient failures stay retryable, so one
+                    // grant cannot block every document queued behind it.
+                    let (reason_code, outcome) = match reason {
+                        "grant expired before broker receipt" => {
+                            ("expired_before_receipt", "grant_discarded_expired")
+                        }
+                        "grant issuer epoch is not the pinned issuer epoch"
+                        | "grant does not match current broker policy and workload registration" => {
+                            ("binding_mismatch", "grant_discarded_rejected")
+                        }
+                        "grant is stale or exceeds the broker lifetime maximum" => {
+                            ("stale_at_receipt", "grant_discarded_rejected")
+                        }
+                        _ => return Err(BrokerError::Configuration(reason)),
+                    };
                     if persist {
-                        state.queue_expired_grant_audit(
+                        state.queue_grant_rejection_audit(
                             &pin.node_id,
                             &grant_id,
                             grant_expires_at_ms,
+                            reason_code,
                         )?;
                     }
-                    return Ok("grant_discarded_expired");
+                    return Ok(outcome);
                 }
-                Err(reason) => return Err(BrokerError::Configuration(reason)),
             }
         }
         DocumentKind::Revocation => {
@@ -442,6 +465,11 @@ fn apply_controller_document_to_state(
                 ));
             }
             identity.apply_key_rotation(&rotation)?;
+            state.grant_verifier.retire_other_recipient_keys(&format!(
+                "{}-{}",
+                pin.node_id,
+                identity.key_version()?
+            ));
         }
         _ => {
             return Err(BrokerError::Configuration(
@@ -668,8 +696,9 @@ mod tests {
     use blindpass_core::canon::{Value, canonicalize_value, parse_json};
     use blindpass_core::delivery::DeliveryPolicy;
     use blindpass_core::fleet::{
-        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeRevocation, OperationClosed,
-        PolicySnapshot, Registration, Revocation, SignedEnvelope, TimeReply, node_event_message,
+        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeKeyRotation, NodeRevocation,
+        OperationClosed, PolicySnapshot, Registration, Revocation, SignedEnvelope, TimeReply,
+        node_event_message,
     };
     use blindpass_core::identity::{PeerIdentity, WorkloadRequest};
     use blindpass_core::signing::base64_url_encode;
@@ -1074,7 +1103,7 @@ mod tests {
         );
         assert_eq!(
             relay_signed_document(&identity, &state, &grant_document),
-            b"ERR invalid_controller_document\n"
+            b"OK document_discarded grant_settled\n"
         );
         drop(state);
 
@@ -1120,7 +1149,8 @@ mod tests {
         );
         assert_eq!(
             relay_signed_document(&identity, &state, &grant_document),
-            b"ERR invalid_controller_document\n"
+            b"OK document_discarded grant_settled\n",
+            "the durable tombstone settles the redelivered grant after restart"
         );
         let peer = PeerIdentity::fixture(
             1000,
@@ -1816,9 +1846,121 @@ mod tests {
         assert!(!fleet.marker_exists(&current.id));
         assert_eq!(
             fleet.deliver(&current),
-            b"ERR invalid_controller_document\n",
+            b"OK document_discarded grant_settled\n",
             "the tombstone also blocks redelivery"
         );
+        assert_eq!(denial(fleet.consume(&current.id)), "grant_revoked");
+    }
+
+    fn grant_rejection_reasons(fleet: &Fleet) -> Vec<(String, String)> {
+        fleet
+            .pulled_events()
+            .iter()
+            .filter_map(|event| {
+                let body = event.get("body")?;
+                (body.get("action").and_then(Value::as_str) == Some("grant_rejected")).then(|| {
+                    (
+                        body.get("grant_id")
+                            .and_then(Value::as_str)
+                            .unwrap()
+                            .to_owned(),
+                        body.get("reason_code")
+                            .and_then(Value::as_str)
+                            .unwrap()
+                            .to_owned(),
+                    )
+                })
+            })
+            .collect()
+    }
+
+    #[test]
+    fn redelivered_or_permanently_invalid_grants_are_discarded_not_retried() {
+        let fleet = Fleet::new(41);
+
+        // An identical retransmission of a live grant stays idempotent.
+        let live = fleet.grant(1, 1);
+        assert_eq!(fleet.deliver(&live), b"OK document_applied grant\n");
+        assert_eq!(fleet.deliver(&live), b"OK document_applied grant\n");
+
+        // A consumed grant redelivered after a session break is settled.
+        assert!(fleet.consume(&live.id).is_ok());
+        assert_eq!(
+            fleet.deliver(&live),
+            b"OK document_discarded grant_settled\n"
+        );
+        assert_eq!(denial(fleet.consume(&live.id)), "grant_consumed");
+
+        // A grant accepted under the old node key is retired by the signed
+        // rotation, and its redelivery no longer blocks the channel.
+        let before_rotation = fleet.grant(2, 1);
+        assert_eq!(
+            fleet.deliver(&before_rotation),
+            b"OK document_applied grant\n"
+        );
+        let (to_key_version, candidate) = fleet.identity.prepare_rotation().unwrap();
+        let rotation = NodeKeyRotation {
+            node_id: "nd_node-a".to_owned(),
+            rotation_id: "rot_test_rotation_000000000041".to_owned(),
+            from_key_version: 1,
+            to_key_version,
+            signing_public: candidate.signing_public,
+            recipient_public: candidate.recipient_public,
+            fingerprint: candidate.fingerprint,
+            issuer_epoch: 1,
+        };
+        assert_eq!(
+            fleet.relay(&fleet.sign(
+                DocumentKind::NodeKeyRotation,
+                rotation.to_value().unwrap(),
+                1
+            )),
+            b"OK document_applied node_key_rotation\n"
+        );
+        assert_eq!(
+            denial(fleet.consume(&before_rotation.id)),
+            "grant_key_rotated"
+        );
+        assert!(!fleet.marker_exists(&before_rotation.id));
+        assert_eq!(
+            fleet.deliver(&before_rotation),
+            b"OK document_discarded grant_settled\n"
+        );
+
+        // A grant that was never accepted and can never match the current
+        // key, policy or registration is discarded with a durable audit event.
+        let old_key = fleet.grant(3, 1);
+        assert_eq!(
+            fleet.deliver(&old_key),
+            b"OK document_discarded grant_rejected\n"
+        );
+        assert_eq!(denial(fleet.consume(&old_key.id)), "grant_unknown");
+        let mut stale = fleet.grant(4, 1);
+        stale.recipient_key_id = "nd_node-a-2".to_owned();
+        stale.issued_at_ms = fleet.now_ms - 61_000;
+        assert_eq!(
+            fleet.deliver(&stale),
+            b"OK document_discarded grant_rejected\n"
+        );
+        assert_eq!(
+            fleet.deliver(&stale),
+            b"OK document_discarded grant_rejected\n"
+        );
+        assert_eq!(
+            grant_rejection_reasons(&fleet),
+            vec![
+                (old_key.id.clone(), "binding_mismatch".to_owned()),
+                (stale.id.clone(), "stale_at_receipt".to_owned()),
+            ],
+            "each rejection is audited exactly once"
+        );
+
+        // A grant that is not the same signed content keeps failing loudly.
+        let mut reused = fleet.grant(5, 1);
+        reused.recipient_key_id = "nd_node-a-2".to_owned();
+        assert_eq!(fleet.deliver(&reused), b"OK document_applied grant\n");
+        reused.resource_id = "marker-other".to_owned();
+        assert_eq!(fleet.deliver(&reused), b"ERR invalid_controller_document\n");
     }
 
     fn request_operation() -> String {

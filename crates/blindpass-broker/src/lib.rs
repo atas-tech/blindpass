@@ -883,12 +883,24 @@ impl BrokerState {
         Ok(())
     }
 
-    pub(crate) fn queue_expired_grant_audit(
+    /// Queue one durable audit event for a verified grant the broker
+    /// discarded at receipt, so the relay can advance past it.
+    pub(crate) fn queue_grant_rejection_audit(
         &mut self,
         node_id: &str,
         grant_id: &str,
         expires_at_ms: u64,
+        reason_code: &'static str,
     ) -> Result<(), BrokerError> {
+        let key_prefix = match reason_code {
+            "expired_before_receipt" => "grant_expired",
+            "binding_mismatch" | "stale_at_receipt" => "grant_rejected",
+            _ => {
+                return Err(BrokerError::Configuration(
+                    "grant rejection reason is not supported",
+                ));
+            }
+        };
         if !valid_event_identifier(node_id)
             || !grant_id.starts_with("gr_")
             || !valid_event_identifier(grant_id)
@@ -901,7 +913,7 @@ impl BrokerState {
         let digest = blindpass_core::custody::sha256(grant_id.as_bytes())
             .map_err(|_| BrokerError::Configuration("expired grant audit key is unavailable"))?;
         let event_key = format!(
-            "grant_expired_{}",
+            "{key_prefix}_{}",
             blindpass_core::signing::base64_url_encode(&digest)
         );
         let body = Value::Object(vec![
@@ -914,7 +926,7 @@ impl BrokerState {
             ("node_id".to_owned(), Value::String(node_id.to_owned())),
             (
                 "reason_code".to_owned(),
-                Value::String("expired_before_receipt".to_owned()),
+                Value::String(reason_code.to_owned()),
             ),
         ]);
         if let Some(existing) = self

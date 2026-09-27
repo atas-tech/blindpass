@@ -523,8 +523,10 @@ impl Store {
                         .get("expires_at_ms")
                         .and_then(Value::as_u64)
                         .is_some_and(|value| value > 0)
-                    || body.get("reason_code").and_then(Value::as_str)
-                        != Some("expired_before_receipt")
+                    || !matches!(
+                        body.get("reason_code").and_then(Value::as_str),
+                        Some("expired_before_receipt" | "binding_mismatch" | "stale_at_receipt")
+                    )
                 {
                     return Err(StoreError::InvalidInput("node grant rejection audit"));
                 }

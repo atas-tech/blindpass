@@ -22,6 +22,8 @@ const GRANT_JOURNAL_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const GRANT_JOURNAL_MAX_RECORDS: usize = 1_000_000;
 const GRANT_REPLAY_RETENTION_MS: u64 = 24 * 60 * 60 * 1_000;
 const MAX_RETIRED_GRANTS: usize = 10_000;
+/// A verified grant whose fate is already recorded; redelivery changes nothing.
+pub(crate) const GRANT_ALREADY_SETTLED: &str = "grant is already settled";
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const NO_FOLLOW: i32 = 0x20000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -200,9 +202,28 @@ impl GrantVerifier {
         registration: &Registration,
         now_boottime_ms: u64,
     ) -> Result<bool, &'static str> {
-        if self.trusted_controller_time_ms(now_boottime_ms).is_none() {
-            return Err("grant has no fresh signed controller time proof");
+        let now_controller_ms = self
+            .trusted_controller_time_ms(now_boottime_ms)
+            .ok_or("grant has no fresh signed controller time proof")?;
+        // Settle redeliveries before any binding check. A grant already
+        // accepted, consumed, revoked or retired can be redelivered after a
+        // session break, a relay restart or a later key, policy or
+        // registration change; none of those may block the documents behind it.
+        let digest = sha256(document).map_err(|_| "grant digest could not be computed")?;
+        if let Some(existing) = self.accepted.get(&grant.id) {
+            if existing.document_hash == digest && existing.grant == grant {
+                return Ok(false);
+            }
+            return Err("grant id was reused with different signed content");
         }
+        if self.missing_grant_denial(&grant.id) != ConsumeDenial::Unknown {
+            return Err(GRANT_ALREADY_SETTLED);
+        }
+        let remaining_ms = grant
+            .expires_at_ms
+            .checked_sub(now_controller_ms)
+            .filter(|remaining| *remaining > 0)
+            .ok_or("grant expired before broker receipt")?;
         if self.issuer_epoch != Some(grant.issuer_epoch) {
             return Err("grant issuer epoch is not the pinned issuer epoch");
         }
@@ -231,40 +252,11 @@ impl GrantVerifier {
         {
             return Err("grant does not match current broker policy and workload registration");
         }
-        let now_controller_ms = self
-            .trusted_controller_time_ms(now_boottime_ms)
-            .ok_or("trusted controller time is stale or unavailable")?;
-        let remaining_ms = grant
-            .expires_at_ms
-            .checked_sub(now_controller_ms)
-            .filter(|remaining| *remaining > 0)
-            .ok_or("grant expired before broker receipt")?;
         if grant.issued_at_ms > now_controller_ms
             || now_controller_ms.saturating_sub(grant.issued_at_ms) > MAX_DOCUMENT_AGE_MS
             || grant.expires_at_ms.saturating_sub(grant.issued_at_ms) > 3_600_000
         {
             return Err("grant is stale or exceeds the broker lifetime maximum");
-        }
-        if self
-            .revocations
-            .as_ref()
-            .is_some_and(|journal| journal.contains_at(&grant.id, now_controller_ms))
-        {
-            return Err("grant has an active revocation tombstone");
-        }
-        if self
-            .journal
-            .as_ref()
-            .is_some_and(|journal| journal.consumed.contains_key(&grant.id))
-        {
-            return Err("grant was already consumed");
-        }
-        let digest = sha256(document).map_err(|_| "grant digest could not be computed")?;
-        if let Some(existing) = self.accepted.get(&grant.id) {
-            if existing.document_hash == digest && existing.grant == grant {
-                return Ok(false);
-            }
-            return Err("grant id was reused with different signed content");
         }
         // The broker enforces every local ceiling itself, even for a signed
         // grant whose ceiling passed the comparisons above.
@@ -425,6 +417,14 @@ impl GrantVerifier {
         self.issuer_epoch = Some(epoch);
     }
 
+    /// Retire every accepted grant bound to a recipient key other than the
+    /// node's current one. A signed rotation ends the old key's authority.
+    pub(crate) fn retire_other_recipient_keys(&mut self, current_recipient_key_id: &str) {
+        self.retire_where(ConsumeDenial::KeyRotated, |grant| {
+            grant.recipient_key_id != current_recipient_key_id
+        });
+    }
+
     pub(crate) fn revoke_workload(&mut self, workload_id: &str) {
         self.retire_where(ConsumeDenial::RegistrationChanged, |grant| {
             grant.workload_id == workload_id
@@ -512,13 +512,15 @@ pub(crate) enum ConsumeDenial {
     RegistrationChanged,
     /// The pinned issuer epoch advanced past the grant's epoch.
     EpochStale,
+    /// A signed node key rotation replaced the recipient key the grant names.
+    KeyRotated,
     /// The durable consumption intent could not be recorded.
     Unavailable,
 }
 
 impl ConsumeDenial {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 9] = [
+    pub(crate) const ALL: [Self; 10] = [
         Self::Expired,
         Self::Revoked,
         Self::Consumed,
@@ -527,6 +529,7 @@ impl ConsumeDenial {
         Self::PolicyStale,
         Self::RegistrationChanged,
         Self::EpochStale,
+        Self::KeyRotated,
         Self::Unavailable,
     ];
 
@@ -540,6 +543,7 @@ impl ConsumeDenial {
             Self::PolicyStale => "grant_policy_stale",
             Self::RegistrationChanged => "grant_registration_changed",
             Self::EpochStale => "grant_epoch_stale",
+            Self::KeyRotated => "grant_key_rotated",
             Self::Unavailable => "consumption_unavailable",
         }
     }
@@ -724,6 +728,7 @@ impl RevocationJournal {
         Ok(journal)
     }
 
+    #[cfg(test)]
     fn contains_at(&self, grant_id: &str, controller_time_ms: u64) -> bool {
         self.tombstones
             .get(grant_id)
@@ -1852,6 +1857,7 @@ mod tests {
                 "grant_policy_stale",
                 "grant_registration_changed",
                 "grant_epoch_stale",
+                "grant_key_rotated",
                 "consumption_unavailable",
             ]
         );

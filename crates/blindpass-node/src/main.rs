@@ -763,7 +763,12 @@ fn relay_document(socket: &Path, envelope: &Value) -> Result<(), String> {
 
 fn broker_document_response_succeeded(response: &[u8]) -> bool {
     response.starts_with(b"OK document_applied ")
-        || response == b"OK document_discarded grant_expired\n"
+        || matches!(
+            response,
+            b"OK document_discarded grant_expired\n"
+                | b"OK document_discarded grant_settled\n"
+                | b"OK document_discarded grant_rejected\n"
+        )
 }
 
 fn parse_broker_events(response: &[u8]) -> Result<Vec<NodeEvent>, &'static str> {
@@ -1114,12 +1119,18 @@ mod tests {
     }
 
     #[test]
-    fn broker_discard_of_a_verified_expired_grant_advances_the_inbox() {
+    fn broker_discard_of_a_verified_grant_advances_the_inbox() {
         assert!(broker_document_response_succeeded(
             b"OK document_applied grant\n"
         ));
         assert!(broker_document_response_succeeded(
             b"OK document_discarded grant_expired\n"
+        ));
+        assert!(broker_document_response_succeeded(
+            b"OK document_discarded grant_settled\n"
+        ));
+        assert!(broker_document_response_succeeded(
+            b"OK document_discarded grant_rejected\n"
         ));
         assert!(!broker_document_response_succeeded(
             b"OK document_discarded unsupported\n"

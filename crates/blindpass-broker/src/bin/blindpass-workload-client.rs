@@ -290,7 +290,7 @@ fn read_grant_id(path: &std::path::Path) -> Result<String, std::io::Error> {
 
 /// Consume denials name broker state that retrying cannot change, so the
 /// client stops at the first one and prints the stable reason code.
-const CONSUME_DENIAL_CODES: [&str; 11] = [
+const CONSUME_DENIAL_CODES: [&str; 12] = [
     "grant_expired",
     "grant_revoked",
     "grant_consumed",
@@ -299,6 +299,7 @@ const CONSUME_DENIAL_CODES: [&str; 11] = [
     "grant_policy_stale",
     "grant_registration_changed",
     "grant_epoch_stale",
+    "grant_key_rotated",
     "consumption_unavailable",
     "trusted_time_unavailable",
     "audit_backpressure",

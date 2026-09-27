@@ -2691,6 +2691,41 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             && event["metadata"]["expires_at_ms"] == first_grant_expiry
             && event["metadata"]["reason_code"] == "expired_before_receipt"
     }));
+    for (event_key, reason_code, expected_status) in [
+        ("grant-rejection-event-0002", "binding_mismatch", 200),
+        ("grant-rejection-event-0003", "stale_at_receipt", 200),
+        ("grant-rejection-event-0004", "operator_disliked_it", 400),
+    ] {
+        let event = signed_node_event(
+            &first_node_id,
+            event_key,
+            "audit",
+            json!({
+                "action":"grant_rejected",
+                "expires_at_ms":first_grant_expiry,
+                "grant_id":first_grant_id,
+                "node_id":first_node_id,
+                "reason_code":reason_code
+            }),
+            &replacement_keys.signing,
+        );
+        let response = request(
+            address,
+            "POST",
+            "/api/v3/node/events",
+            &[
+                ("authorization", &recovered_node_bearer),
+                ("content-type", "application/json"),
+            ],
+            Some(&event),
+        )
+        .await;
+        assert_eq!(
+            response.status, expected_status,
+            "{reason_code}: {}",
+            response.body
+        );
+    }
 
     let revoked_first_node = request(
         address,
