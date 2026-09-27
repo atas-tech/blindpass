@@ -2199,6 +2199,10 @@ mod tests {
             fleet.relay(&fleet.revocation(&grant.id, 1)),
             b"OK document_applied revocation\n"
         );
+        assert!(
+            fleet.state.lock().unwrap().audit_overflow_pending,
+            "a deferred outcome is recorded durably as an audit overflow"
+        );
         assert_eq!(denial(fleet.consume(&grant.id)), "audit_backpressure");
         assert!(
             !fleet

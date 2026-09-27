@@ -1055,6 +1055,14 @@ impl BrokerState {
         if let Err(error) = self.queue_deferred_revocation_outcomes() {
             eprintln!("grant revocation outcome remains deferred: {error}");
         }
+        if !self.deferred_revocation_outcomes.is_empty() {
+            // Deferred outcomes live in memory; the durable overflow flag
+            // records the gap should the broker restart before space returns.
+            if let Err(error) = self.flag_audit_overflow() {
+                eprintln!("audit overflow could not be recorded durably: {error}");
+                self.audit_overflow_pending = true;
+            }
+        }
     }
 
     /// Move deferred revocation outcomes into the audit queue while it has
