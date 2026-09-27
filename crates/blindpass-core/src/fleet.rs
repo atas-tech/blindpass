@@ -29,6 +29,7 @@ pub enum DocumentKind {
     ApplicationAck,
     OperationResult,
     AuditEvent,
+    OperationClosed,
 }
 
 /// Construct the exact message a newly generated node signing key must sign
@@ -209,6 +210,7 @@ impl DocumentKind {
             Self::ApplicationAck => "application_ack",
             Self::OperationResult => "operation_result",
             Self::AuditEvent => "audit_event",
+            Self::OperationClosed => "operation_closed",
         }
     }
 
@@ -224,6 +226,7 @@ impl DocumentKind {
             "application_ack" => Self::ApplicationAck,
             "operation_result" => Self::OperationResult,
             "audit_event" => Self::AuditEvent,
+            "operation_closed" => Self::OperationClosed,
             _ => return None,
         })
     }
@@ -899,6 +902,80 @@ impl Revocation {
     }
 }
 
+/// Controller-signed notice that an operation will never receive a grant.
+/// The broker reports it to the requesting workload by its request event key;
+/// it carries no authority.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationClosed {
+    pub node_id: String,
+    pub operation_id: String,
+    pub request_event_key: String,
+    pub status: String,
+    pub closed_at_ms: u64,
+    pub issuer_epoch: u64,
+}
+
+impl OperationClosed {
+    pub const STATUSES: [&'static str; 4] = ["rejected", "expired", "cancelled", "denied"];
+
+    pub fn from_value(value: &Value) -> Result<Self, DocumentError> {
+        expect_fields(
+            value,
+            &[
+                "node_id",
+                "operation_id",
+                "request_event_key",
+                "status",
+                "closed_at_ms",
+                "issuer_epoch",
+            ],
+            &[],
+        )?;
+        let closed = Self {
+            node_id: required_string(value, "node_id")?.to_owned(),
+            operation_id: required_string(value, "operation_id")?.to_owned(),
+            request_event_key: required_string(value, "request_event_key")?.to_owned(),
+            status: required_string(value, "status")?.to_owned(),
+            closed_at_ms: required_number(value, "closed_at_ms")?,
+            issuer_epoch: required_number(value, "issuer_epoch")?,
+        };
+        closed.to_value()?;
+        Ok(closed)
+    }
+
+    pub fn to_value(&self) -> Result<Value, DocumentError> {
+        validate_token(&self.node_id, "node id")?;
+        validate_token(&self.operation_id, "operation id")?;
+        validate_token(&self.request_event_key, "request event key")?;
+        if !Self::STATUSES.contains(&self.status.as_str())
+            || self.closed_at_ms == 0
+            || self.issuer_epoch == 0
+        {
+            return Err(DocumentError::Invalid("operation closure binding"));
+        }
+        Ok(Value::Object(vec![
+            (
+                "closed_at_ms".to_owned(),
+                Value::Unsigned(self.closed_at_ms),
+            ),
+            (
+                "issuer_epoch".to_owned(),
+                Value::Unsigned(self.issuer_epoch),
+            ),
+            ("node_id".to_owned(), Value::String(self.node_id.clone())),
+            (
+                "operation_id".to_owned(),
+                Value::String(self.operation_id.clone()),
+            ),
+            (
+                "request_event_key".to_owned(),
+                Value::String(self.request_event_key.clone()),
+            ),
+            ("status".to_owned(), Value::String(self.status.clone())),
+        ]))
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NodeRevocation {
     pub node_id: String,
@@ -1228,6 +1305,11 @@ fn validate_document_body(
                 return Err(DocumentError::Invalid("application acknowledgement epoch"));
             }
         }
+        DocumentKind::OperationClosed => {
+            if OperationClosed::from_value(body)?.issuer_epoch != envelope_epoch {
+                return Err(DocumentError::Invalid("operation closure issuer epoch"));
+            }
+        }
         DocumentKind::OperationResult | DocumentKind::AuditEvent => {
             if !matches!(body, Value::Object(_)) {
                 return Err(DocumentError::Invalid("body must be an object"));
@@ -1383,8 +1465,8 @@ fn decode_base64_url(value: &str) -> Result<Vec<u8>, DocumentError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeKeyRotation, PolicySnapshot,
-        Registration, SignedEnvelope, enrollment_proof_message, node_event_message,
+        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeKeyRotation, OperationClosed,
+        PolicySnapshot, Registration, SignedEnvelope, enrollment_proof_message, node_event_message,
         node_key_fingerprint, node_session_challenge_message,
     };
     use crate::canon::{Value, canonicalize_json};
@@ -1600,6 +1682,53 @@ mod tests {
                 .verify(issuer.public_key(), "controller-2", 3)
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn operation_closure_is_signed_typed_and_epoch_bound() {
+        let issuer = issuer();
+        let closed = OperationClosed {
+            node_id: "nd_node-a".to_owned(),
+            operation_id: "op_0123456789abcdef".to_owned(),
+            request_event_key: "operation_request_1234567890".to_owned(),
+            status: "rejected".to_owned(),
+            closed_at_ms: 1_800_000_000_000,
+            issuer_epoch: 2,
+        };
+        let envelope = SignedEnvelope::sign(
+            DocumentKind::OperationClosed,
+            closed.to_value().unwrap(),
+            KEY_ID,
+            2,
+            &issuer,
+        )
+        .unwrap();
+        let json = envelope.to_json().unwrap();
+        let parsed = SignedEnvelope::from_json(std::str::from_utf8(&json).unwrap()).unwrap();
+        assert!(parsed.verify(issuer.public_key(), KEY_ID, 2).unwrap());
+        assert_eq!(OperationClosed::from_value(&parsed.body).unwrap(), closed);
+        assert!(
+            SignedEnvelope::sign(
+                DocumentKind::OperationClosed,
+                closed.to_value().unwrap(),
+                KEY_ID,
+                3,
+                &issuer,
+            )
+            .is_err()
+        );
+        for status in ["approved", "granted", ""] {
+            let invalid = OperationClosed {
+                status: status.to_owned(),
+                ..closed.clone()
+            };
+            assert!(invalid.to_value().is_err());
+        }
+        let mut extra = closed.to_value().unwrap();
+        if let Value::Object(fields) = &mut extra {
+            fields.push(("grant_id".to_owned(), Value::String("gr_x".to_owned())));
+        }
+        assert!(OperationClosed::from_value(&extra).is_err());
     }
 
     #[test]
