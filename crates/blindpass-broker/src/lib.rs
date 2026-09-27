@@ -2119,7 +2119,24 @@ fn handle_workload_connection(
     state: &Arc<Mutex<BrokerState>>,
     deadline: Instant,
 ) -> Result<(), BrokerError> {
-    let peer = resolve_peer(stream, deadline, Duration::ZERO)?;
+    handle_workload_connection_as(stream, state, deadline, |stream, deadline| {
+        Ok(resolve_peer(stream, deadline, Duration::ZERO)?)
+    })
+}
+
+/// Serve one workload connection with an explicit peer resolver. Production
+/// always passes the pidfd resolver; tests substitute a fixture identity to
+/// drive real socket connections without a systemd unit.
+fn handle_workload_connection_as<R>(
+    stream: &mut UnixStream,
+    state: &Arc<Mutex<BrokerState>>,
+    deadline: Instant,
+    resolve: R,
+) -> Result<(), BrokerError>
+where
+    R: FnOnce(&UnixStream, Instant) -> Result<PeerIdentity, BrokerError>,
+{
+    let peer = resolve(stream, deadline)?;
     log_peer_identity("workload", &peer);
     let frame = read_frame(stream, deadline)?;
     let request = parse_workload_request(&frame)?;
@@ -2641,6 +2658,102 @@ mod tests {
             error_code(state.process_workload(&peer, &health("workload-a"))),
             b"ERR workload_mismatch\n"
         );
+    }
+
+    #[test]
+    fn concurrent_consumers_on_two_workload_socket_connections_create_one_marker() {
+        let (directory, state, grant) = fleet_state_with_grant("socket-race");
+        let state = Arc::new(Mutex::new(state));
+        let socket = directory.join("workload.sock");
+        let listener = bind_socket(&socket, 0o700, 0o600).unwrap();
+        // Both server threads resolve their peer and then wait for each
+        // other, so the two consume requests reach the broker together.
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let server_state = Arc::clone(&state);
+        std::thread::spawn(move || {
+            let _ = super::serve_connections(
+                listener,
+                Duration::from_secs(5),
+                move |stream, deadline| {
+                    let barrier = Arc::clone(&barrier);
+                    super::handle_workload_connection_as(
+                        stream,
+                        &server_state,
+                        deadline,
+                        move |_, _| {
+                            barrier.wait();
+                            Ok(workload_peer())
+                        },
+                    )
+                },
+                "workload",
+            );
+        });
+        let frame = format!(
+            "WORK node-a workload-a agent.service inv-live consume:{}\n",
+            grant.id
+        );
+        let clients = (0..2)
+            .map(|_| {
+                let socket = socket.clone();
+                let frame = frame.clone();
+                std::thread::spawn(move || {
+                    let mut stream = UnixStream::connect(&socket).unwrap();
+                    stream.write_all(frame.as_bytes()).unwrap();
+                    stream.shutdown(std::net::Shutdown::Write).unwrap();
+                    let mut response = Vec::new();
+                    std::io::Read::read_to_end(&mut stream, &mut response).unwrap();
+                    response
+                })
+            })
+            .collect::<Vec<_>>();
+        let mut responses = clients
+            .into_iter()
+            .map(|client| client.join().unwrap())
+            .collect::<Vec<_>>();
+        responses.sort();
+        assert_eq!(
+            responses,
+            [
+                b"ERR grant_consumed\n".to_vec(),
+                format!("OK operation_completed {}\n", grant.id).into_bytes(),
+            ]
+        );
+        let markers = fs::read_dir(directory.join("ops")).unwrap().count();
+        assert_eq!(markers, 1, "exactly one operation effect may run");
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn consumption_near_audit_capacity_is_denied_before_any_effect() {
+        let peer = workload_peer();
+        for queued in [MAX_BROKER_AUDIT_EVENTS - 1, MAX_BROKER_AUDIT_EVENTS] {
+            let (directory, mut state, grant) = fleet_state_with_grant("consume-capacity");
+            fill_audit_queue(&mut state, queued);
+            assert_eq!(
+                error_code(state.process_workload(&peer, &consume_request(&grant.id))),
+                b"ERR audit_backpressure\n",
+                "{queued} queued events leave no room for the result and audit pair"
+            );
+            assert_eq!(state.pending_node_events.len(), queued);
+            assert!(state.grant_verifier.is_accepted(&grant.id));
+            assert!(
+                !fs::exists(directory.join("ops").join(format!("{}.marker", grant.id))).unwrap()
+            );
+            assert!(!fs::exists(directory.join("consumed.jsonl")).unwrap());
+            fs::remove_dir_all(directory).unwrap();
+        }
+        // Two free slots are exactly enough for the result and its audit.
+        let (directory, mut state, grant) = fleet_state_with_grant("consume-capacity");
+        fill_audit_queue(&mut state, MAX_BROKER_AUDIT_EVENTS - 2);
+        assert_eq!(
+            state
+                .process_workload(&peer, &consume_request(&grant.id))
+                .unwrap(),
+            format!("OK operation_completed {}\n", grant.id).as_bytes()
+        );
+        assert_eq!(state.pending_node_events.len(), MAX_BROKER_AUDIT_EVENTS);
+        fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
