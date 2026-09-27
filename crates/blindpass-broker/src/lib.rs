@@ -163,6 +163,9 @@ pub struct BrokerState {
     fleet_registrations: BTreeMap<String, Registration>,
     fleet_policy: Option<PolicySnapshot>,
     grant_verifier: grants::GrantVerifier,
+    /// Controller documents applied in memory whose durable write failed,
+    /// keyed by their state file. While any remain the broker is fenced.
+    unpersisted_documents: BTreeMap<String, Vec<u8>>,
     operation_directory: PathBuf,
     pending_node_events: VecDeque<PendingNodeEvent>,
     pending_node_events_path: Option<PathBuf>,
@@ -258,6 +261,7 @@ impl BrokerState {
             fleet_registrations: BTreeMap::new(),
             fleet_policy: None,
             grant_verifier: grants::GrantVerifier::default(),
+            unpersisted_documents: BTreeMap::new(),
             operation_directory: PathBuf::from(DEFAULT_OPERATION_DIRECTORY),
             pending_node_events: VecDeque::new(),
             pending_node_events_path: None,
@@ -366,6 +370,11 @@ impl BrokerState {
             return Err(BrokerError::Configuration("node_revoked"));
         }
         let authorization = authorize_workload(peer, request, &self.workloads)?;
+        if (request.operation.starts_with("request:") || request.operation.starts_with("consume:"))
+            && self.persistence_fenced()
+        {
+            return Err(BrokerError::Configuration("broker_persistence_fenced"));
+        }
         if let Some(encoded) = request.operation.strip_prefix("request:") {
             if self.pending_node_events.len() >= MAX_BROKER_AUDIT_EVENTS {
                 self.audit_overflow_pending = true;
@@ -940,6 +949,47 @@ impl BrokerState {
             return Err(error);
         }
         Ok(())
+    }
+
+    /// A revocation, registration, policy or node revocation that is in
+    /// force only in memory fences the broker: no new grant is accepted or
+    /// consumed and no operation is requested until the write succeeds or
+    /// the broker restarts and reconciles from durable state.
+    pub(crate) fn persistence_fenced(&self) -> bool {
+        !self.unpersisted_documents.is_empty() || self.grant_verifier.has_unpersisted_revocations()
+    }
+
+    /// Retry every write that failed after its document was applied.
+    pub(crate) fn retry_pending_persistence(&mut self, identity: &keys::NodeIdentity) {
+        let pending = std::mem::take(&mut self.unpersisted_documents);
+        for (key, document) in pending {
+            if identity.persist_controller_document(&document).is_err() {
+                self.unpersisted_documents.insert(key, document);
+            }
+        }
+        let _ = self.grant_verifier.retry_revocation_persistence();
+    }
+
+    /// Persist an already applied controller document, or fence the broker
+    /// and report a retryable error to the relay.
+    pub(crate) fn persist_or_fence(
+        &mut self,
+        identity: &keys::NodeIdentity,
+        key: String,
+        document: &[u8],
+    ) -> Result<(), BrokerError> {
+        match identity.persist_controller_document(document) {
+            Ok(()) => {
+                self.unpersisted_documents.remove(&key);
+                Ok(())
+            }
+            Err(_) => {
+                self.unpersisted_documents.insert(key, document.to_vec());
+                Err(BrokerError::Configuration(
+                    "controller_document_not_durable",
+                ))
+            }
+        }
     }
 
     fn configure_grant_storage(

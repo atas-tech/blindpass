@@ -180,6 +180,12 @@ fn handle_command(
                     stream.write_all(b"OK document_discarded grant_expired\n")?
                 }
                 Ok(kind) => writeln!(stream, "OK document_applied {kind}")?,
+                Err(BrokerError::Configuration(
+                    code @ ("controller_document_not_durable" | "broker_persistence_fenced"),
+                )) => {
+                    eprintln!("controller document not applied durably: {code}");
+                    writeln!(stream, "ERR {code}")?;
+                }
                 Err(BrokerError::Configuration(reason)) => {
                     eprintln!("controller document rejected: {reason}");
                     stream.write_all(b"ERR invalid_controller_document\n")?;
@@ -226,6 +232,9 @@ fn apply_controller_document_to_state(
     if let Some(pin) = identity.pinned_issuer()? {
         state.grant_verifier.observe_issuer_epoch(pin.epoch);
     }
+    if persist {
+        state.retry_pending_persistence(identity);
+    }
     if kind == "stale_epoch" {
         let source = std::str::from_utf8(document)
             .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
@@ -243,10 +252,14 @@ fn apply_controller_document_to_state(
                     "controller node revocation is bound to another node",
                 ));
             }
-            if persist {
-                identity.persist_controller_document(document)?;
-            }
             state.apply_node_revocation(&revocation.node_id, revocation.revoked_at_ms)?;
+            if persist {
+                state.persist_or_fence(
+                    identity,
+                    format!("node_revocation:{}", revocation.node_id),
+                    document,
+                )?;
+            }
             return Ok("node_revocation");
         }
         if envelope.kind() == DocumentKind::Revocation {
@@ -262,10 +275,10 @@ fn apply_controller_document_to_state(
                     "controller revocation is bound to another node",
                 ));
             }
-            state
-                .grant_verifier
-                .revoke(&revocation)
-                .map_err(BrokerError::Configuration)?;
+            state.grant_verifier.revoke(&revocation).map_err(|reason| {
+                eprintln!("grant revocation is in force but not durable: {reason}");
+                BrokerError::Configuration("controller_document_not_durable")
+            })?;
             return Ok("revocation");
         }
         return Ok("stale_epoch");
@@ -288,10 +301,11 @@ fn apply_controller_document_to_state(
             }
             let changed = state.validate_fleet_registration(&registration)?;
             if changed {
-                if persist {
-                    identity.persist_controller_document(document)?;
-                }
+                let key = format!("registration:{}", registration.workload_id);
                 state.apply_fleet_registration(registration)?;
+                if persist {
+                    state.persist_or_fence(identity, key, document)?;
+                }
             }
         }
         DocumentKind::PolicySnapshot => {
@@ -299,10 +313,10 @@ fn apply_controller_document_to_state(
                 .map_err(|_| BrokerError::Configuration("controller fleet policy is malformed"))?;
             let changed = state.validate_fleet_policy(&policy)?;
             if changed {
-                if persist {
-                    identity.persist_controller_document(document)?;
-                }
                 state.apply_fleet_policy(policy)?;
+                if persist {
+                    state.persist_or_fence(identity, "policy".to_owned(), document)?;
+                }
             }
         }
         DocumentKind::TimeReply => {
@@ -342,6 +356,9 @@ fn apply_controller_document_to_state(
                 return Err(BrokerError::Configuration(
                     "controller grant is bound to another node",
                 ));
+            }
+            if state.persistence_fenced() {
+                return Err(BrokerError::Configuration("broker_persistence_fenced"));
             }
             let registration = state.fleet_registrations.get(&grant.workload_id).ok_or(
                 BrokerError::Configuration("controller grant has no current workload registration"),
@@ -386,10 +403,10 @@ fn apply_controller_document_to_state(
                     "controller revocation is bound to another node",
                 ));
             }
-            state
-                .grant_verifier
-                .revoke(&revocation)
-                .map_err(BrokerError::Configuration)?;
+            state.grant_verifier.revoke(&revocation).map_err(|reason| {
+                eprintln!("grant revocation is in force but not durable: {reason}");
+                BrokerError::Configuration("controller_document_not_durable")
+            })?;
         }
         DocumentKind::NodeRevocation => {
             let revocation = NodeRevocation::from_value(envelope.body()).map_err(|_| {
@@ -400,10 +417,14 @@ fn apply_controller_document_to_state(
                     "controller node revocation is bound to another node",
                 ));
             }
-            if persist {
-                identity.persist_controller_document(document)?;
-            }
             state.apply_node_revocation(&revocation.node_id, revocation.revoked_at_ms)?;
+            if persist {
+                state.persist_or_fence(
+                    identity,
+                    format!("node_revocation:{}", revocation.node_id),
+                    document,
+                )?;
+            }
         }
         DocumentKind::NodeKeyRotation => {
             let rotation = NodeKeyRotation::from_value(envelope.body()).map_err(|_| {
@@ -1791,6 +1812,220 @@ mod tests {
             b"ERR invalid_controller_document\n",
             "the tombstone also blocks redelivery"
         );
+    }
+
+    fn request_operation() -> String {
+        let body = Value::Object(vec![
+            ("action".to_owned(), Value::String("noop.marker".to_owned())),
+            ("mode".to_owned(), Value::String("file".to_owned())),
+            ("purpose".to_owned(), Value::String("test".to_owned())),
+            (
+                "resource_id".to_owned(),
+                Value::String("marker-request".to_owned()),
+            ),
+            ("ttl_seconds".to_owned(), Value::Unsigned(30)),
+        ]);
+        format!(
+            "request:{}",
+            base64_url_encode(&canonicalize_value(&body).unwrap())
+        )
+    }
+
+    fn operation_request(fleet: &Fleet) -> Result<Vec<u8>, crate::BrokerError> {
+        fleet
+            .state
+            .lock()
+            .unwrap()
+            .process_workload(&Fleet::peer(), &Fleet::request(request_operation()))
+    }
+
+    /// Replace a durable state file with a non-empty directory so that the
+    /// next atomic write or append to it fails.
+    fn block_path(path: &std::path::Path) {
+        let _ = std::fs::remove_file(path);
+        std::fs::create_dir(path).unwrap();
+        std::fs::write(path.join("blocker"), b"").unwrap();
+    }
+
+    fn unblock_path(path: &std::path::Path) {
+        std::fs::remove_dir_all(path).unwrap();
+    }
+
+    fn assert_fenced(fleet: &Fleet) {
+        assert_eq!(
+            fleet.deliver(&fleet.grant(90, 1)),
+            b"ERR broker_persistence_fenced\n"
+        );
+        assert_eq!(
+            denial(operation_request(fleet)),
+            "broker_persistence_fenced"
+        );
+    }
+
+    #[test]
+    fn grant_revocation_applies_in_memory_when_its_tombstone_cannot_be_persisted() {
+        let fleet = Fleet::new(37);
+        let grant = fleet.grant(1, 1);
+        assert_eq!(fleet.deliver(&grant), b"OK document_applied grant\n");
+        let journal = fleet.identity.revoked_grant_journal_path();
+        block_path(&journal);
+        let revocation = fleet.revocation(&grant.id, 1);
+        assert_eq!(
+            fleet.relay(&revocation),
+            b"ERR controller_document_not_durable\n"
+        );
+        assert!(
+            !fleet
+                .state
+                .lock()
+                .unwrap()
+                .grant_verifier
+                .is_accepted(&grant.id)
+        );
+        assert_eq!(
+            denial(fleet.consume(&grant.id)),
+            "broker_persistence_fenced"
+        );
+        assert!(!fleet.marker_exists(&grant.id));
+        assert_fenced(&fleet);
+
+        // The relay retries; once the write succeeds the fence lifts.
+        unblock_path(&journal);
+        assert_eq!(
+            fleet.relay(&revocation),
+            b"OK document_applied revocation\n"
+        );
+        assert!(
+            std::fs::read_to_string(&journal)
+                .unwrap()
+                .contains(&grant.id)
+        );
+        let next = fleet.grant(2, 1);
+        assert_eq!(fleet.deliver(&next), b"OK document_applied grant\n");
+        assert_eq!(denial(fleet.consume(&grant.id)), "grant_revoked");
+    }
+
+    #[test]
+    fn registration_revocation_applies_in_memory_when_it_cannot_be_persisted() {
+        let fleet = Fleet::new(41);
+        let grant = fleet.grant(1, 1);
+        assert_eq!(fleet.deliver(&grant), b"OK document_applied grant\n");
+        let path = fleet.directory.join("fleet-registration-wl_worker-a.json");
+        block_path(&path);
+        let revoked = Registration {
+            node_id: "nd_node-a".to_owned(),
+            workload_id: "wl_worker-a".to_owned(),
+            unit: "worker.service".to_owned(),
+            account: "worker".to_owned(),
+            invocation_id: None,
+            status: "revoked".to_owned(),
+            consumption_mode: ConsumptionMode::File,
+            registration_version: 2,
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+        };
+        let document = fleet.sign(DocumentKind::Registration, revoked.to_value().unwrap(), 1);
+        assert_eq!(
+            fleet.relay(&document),
+            b"ERR controller_document_not_durable\n"
+        );
+        assert!(fleet.consume(&grant.id).is_err());
+        assert!(!fleet.marker_exists(&grant.id));
+        let health = fleet
+            .state
+            .lock()
+            .unwrap()
+            .process_workload(&Fleet::peer(), &Fleet::request("health".to_owned()));
+        assert!(
+            health.is_err(),
+            "the revoked registration must not authorize"
+        );
+        assert_eq!(
+            fleet.deliver(&fleet.grant(90, 1)),
+            b"ERR broker_persistence_fenced\n"
+        );
+
+        unblock_path(&path);
+        assert_eq!(
+            fleet.relay(&document),
+            b"OK document_applied registration\n"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), document);
+        drop(fleet.state.lock().unwrap());
+        let mut restored = BrokerState::new(DeliveryPolicy::default());
+        restored.configure_grant_storage(&fleet.identity).unwrap();
+        restore_controller_documents(&mut restored, &fleet.identity).unwrap();
+        assert_eq!(
+            restored.fleet_registrations["wl_worker-a"].status,
+            "revoked"
+        );
+    }
+
+    #[test]
+    fn policy_narrowing_and_node_revocation_apply_when_they_cannot_be_persisted() {
+        let fleet = Fleet::new(43);
+        let grant = fleet.grant(1, 1);
+        assert_eq!(fleet.deliver(&grant), b"OK document_applied grant\n");
+        let policy_path = fleet.directory.join("fleet-policy.json");
+        block_path(&policy_path);
+        let narrowed = PolicySnapshot {
+            policy_version: 5,
+            local_ceiling_seconds: 30,
+            allowed_actions: Vec::new(),
+            allowed_modes: Vec::new(),
+        };
+        let policy_document = fleet.sign(
+            DocumentKind::PolicySnapshot,
+            narrowed.to_value().unwrap(),
+            1,
+        );
+        assert_eq!(
+            fleet.relay(&policy_document),
+            b"ERR controller_document_not_durable\n"
+        );
+        assert_eq!(
+            fleet
+                .state
+                .lock()
+                .unwrap()
+                .fleet_policy
+                .as_ref()
+                .unwrap()
+                .policy_version,
+            5
+        );
+        assert!(fleet.consume(&grant.id).is_err());
+        assert_fenced(&fleet);
+        unblock_path(&policy_path);
+        assert_eq!(
+            fleet.relay(&policy_document),
+            b"OK document_applied policy_snapshot\n"
+        );
+        assert_eq!(std::fs::read(&policy_path).unwrap(), policy_document);
+
+        let node_path = fleet.directory.join("node-revocation-nd_node-a.json");
+        block_path(&node_path);
+        let node_revocation = NodeRevocation {
+            node_id: "nd_node-a".to_owned(),
+            revoked_at_ms: fleet.now_ms,
+            issuer_epoch: 1,
+        };
+        let node_document = fleet.sign(
+            DocumentKind::NodeRevocation,
+            node_revocation.to_value().unwrap(),
+            1,
+        );
+        assert_eq!(
+            fleet.relay(&node_document),
+            b"ERR controller_document_not_durable\n"
+        );
+        assert!(fleet.state.lock().unwrap().node_revoked);
+        unblock_path(&node_path);
+        assert_eq!(
+            fleet.relay(&node_document),
+            b"OK document_applied node_revocation\n"
+        );
+        assert_eq!(std::fs::read(&node_path).unwrap(), node_document);
     }
 
     fn relay_signed_document(

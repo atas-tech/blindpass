@@ -8,7 +8,7 @@ use blindpass_core::fleet::{
 };
 use blindpass_core::identity::WorkloadAuthorization;
 use blindpass_core::signing::base64_url_encode;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
@@ -78,6 +78,8 @@ struct GrantJournal {
 struct RevocationJournal {
     path: Option<PathBuf>,
     tombstones: BTreeMap<String, u64>,
+    /// Tombstones in force in memory whose journal append has not succeeded.
+    unpersisted: BTreeSet<String>,
 }
 
 impl GrantVerifier {
@@ -429,15 +431,35 @@ impl GrantVerifier {
         });
     }
 
+    /// Apply a signed revocation. The grant loses its authority in memory
+    /// before the tombstone is written; a failed write returns an error so
+    /// the relay retries, while the revocation stays in force.
     pub(crate) fn revoke(&mut self, revocation: &Revocation) -> Result<(), &'static str> {
-        self.revocations
-            .as_mut()
-            .ok_or("durable grant revocation journal is unavailable")?
-            .record(&revocation.grant_id, revocation.retain_until_ms)?;
         if self.accepted.remove(&revocation.grant_id).is_some() {
             self.retire(revocation.grant_id.clone(), ConsumeDenial::Revoked);
         }
-        Ok(())
+        self.revocations
+            .get_or_insert_with(RevocationJournal::default)
+            .record(&revocation.grant_id, revocation.retain_until_ms)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn is_accepted(&self, grant_id: &str) -> bool {
+        self.accepted.contains_key(grant_id)
+    }
+
+    /// True while a revocation is in force only in memory.
+    pub(crate) fn has_unpersisted_revocations(&self) -> bool {
+        self.revocations
+            .as_ref()
+            .is_some_and(RevocationJournal::has_unpersisted)
+    }
+
+    pub(crate) fn retry_revocation_persistence(&mut self) -> Result<(), &'static str> {
+        match self.revocations.as_mut() {
+            Some(journal) => journal.retry_unpersisted(),
+            None => Ok(()),
+        }
     }
 
     pub(crate) fn revoke_stale_policy(&mut self, policy_version: u64) {
@@ -638,7 +660,7 @@ impl RevocationJournal {
     fn open(path: &Path) -> Result<Self, &'static str> {
         let mut journal = Self {
             path: Some(path.to_owned()),
-            tombstones: BTreeMap::new(),
+            ..Self::default()
         };
         let mut file = match open_private_for_recovery(path) {
             Ok(file) => file,
@@ -679,16 +701,45 @@ impl RevocationJournal {
             .is_some_and(|retain_until| *retain_until > controller_time_ms)
     }
 
+    /// Apply a tombstone in memory first, then make it durable. A failed
+    /// write leaves the tombstone in force and marks it unpersisted so the
+    /// caller can fence the broker and a later attempt can retry the write.
     fn record(&mut self, grant_id: &str, retain_until_ms: u64) -> Result<(), &'static str> {
-        if let Some(existing) = self.tombstones.get(grant_id)
-            && *existing >= retain_until_ms
-        {
+        let raises_retention = self
+            .tombstones
+            .get(grant_id)
+            .is_none_or(|existing| *existing < retain_until_ms);
+        if !raises_retention && !self.unpersisted.contains(grant_id) {
             return Ok(());
         }
-        if self.tombstones.len() >= GRANT_JOURNAL_MAX_RECORDS
-            && !self.tombstones.contains_key(grant_id)
-        {
-            return Err("grant revocation journal is full; revocation is denied");
+        if raises_retention {
+            self.tombstones.insert(grant_id.to_owned(), retain_until_ms);
+        }
+        self.unpersisted.insert(grant_id.to_owned());
+        self.append(grant_id)?;
+        self.unpersisted.remove(grant_id);
+        Ok(())
+    }
+
+    fn has_unpersisted(&self) -> bool {
+        !self.unpersisted.is_empty()
+    }
+
+    fn retry_unpersisted(&mut self) -> Result<(), &'static str> {
+        for grant_id in self.unpersisted.clone() {
+            self.append(&grant_id)?;
+            self.unpersisted.remove(&grant_id);
+        }
+        Ok(())
+    }
+
+    fn append(&self, grant_id: &str) -> Result<(), &'static str> {
+        let retain_until_ms = *self
+            .tombstones
+            .get(grant_id)
+            .ok_or("grant revocation tombstone is unavailable")?;
+        if self.tombstones.len() > GRANT_JOURNAL_MAX_RECORDS {
+            return Err("grant revocation journal is full; tombstone is not durable");
         }
         let path = self
             .path
@@ -708,12 +759,11 @@ impl RevocationJournal {
             .map_err(|_| "grant revocation journal metadata is unavailable")?
             .len();
         if length.saturating_add(line.len() as u64) > GRANT_JOURNAL_MAX_BYTES {
-            return Err("grant revocation journal is full; revocation is denied");
+            return Err("grant revocation journal is full; tombstone is not durable");
         }
         file.write_all(line.as_bytes())
             .and_then(|()| file.sync_all())
             .map_err(|_| "grant revocation tombstone could not be flushed")?;
-        self.tombstones.insert(grant_id.to_owned(), retain_until_ms);
         if !existed {
             let parent = path
                 .parent()
@@ -765,6 +815,9 @@ impl RevocationJournal {
         File::open(parent)
             .and_then(|directory| directory.sync_all())
             .map_err(|_| "grant revocation directory could not be synchronized")?;
+        // The compacted file holds every retained tombstone, including any
+        // whose earlier append failed.
+        self.unpersisted.clear();
         self.tombstones = pruned;
         Ok(())
     }
