@@ -1760,6 +1760,13 @@ fn validate_config(config: &BrokerConfig) -> Result<(), BrokerError> {
             "node group must be a non-empty group name",
         ));
     }
+    if config.workload_group.is_some() && config.workload_group == config.node_group {
+        // The control socket trusts its group to relay controller documents;
+        // workloads must never share that group.
+        return Err(BrokerError::Configuration(
+            "workload and node groups must differ",
+        ));
+    }
     Ok(())
 }
 
@@ -2795,6 +2802,20 @@ mod tests {
                 .to_string()
                 .contains("distinct")
         );
+
+        let mut shared_group = config.clone();
+        shared_group.workload_group = Some("blindpass-node".to_owned());
+        shared_group.node_group = Some("blindpass-node".to_owned());
+        assert!(
+            validate_config(&shared_group)
+                .unwrap_err()
+                .to_string()
+                .contains("workload and node groups must differ"),
+            "a shared group would let workloads reach the control socket"
+        );
+        let mut separate_groups = shared_group.clone();
+        separate_groups.workload_group = Some("blindpass-workload".to_owned());
+        assert!(validate_config(&separate_groups).is_ok());
 
         let mut relative_socket = config;
         relative_socket.loader_socket = "loader.sock".into();
