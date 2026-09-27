@@ -704,6 +704,184 @@ impl Harness {
     pub async fn now_ms(&self) -> i64 {
         self.store.database_now_ms().await.unwrap()
     }
+
+    /// Mark a node as recently seen without a 30-second empty long poll.
+    pub async fn touch_node(&self, node_id: &str) {
+        let now_ms = self.now_ms().await;
+        self.execute(
+            "UPDATE nodes SET last_seen_at = ? WHERE id = ?",
+            vec![now_ms.into(), node_id.into()],
+        )
+        .await;
+    }
+
+    /// Enroll a node, open a session and mark it online.
+    pub async fn online_node(&self, name: &str, seed: u8) -> FleetNode {
+        let keys = NodeKeys::from_seed(seed);
+        let id = self.enroll_node(name, &keys).await;
+        let bearer = self.open_session(&id, 1, &keys).await;
+        self.touch_node(&id).await;
+        FleetNode { id, keys, bearer }
+    }
+
+    /// Replace the fleet policy with `rules` using the current version.
+    pub async fn set_policy(&self, rules: Value) -> HttpResponse {
+        let current = self.get(&self.admin, "/api/v3/policies").await;
+        assert_eq!(current.status, 200, "{}", current.body);
+        let version = current.body["version"].as_i64().unwrap();
+        let if_match = format!("\"{version}\"");
+        self.call(
+            &self.admin,
+            "PUT",
+            "/api/v3/policies",
+            &[("if-match", if_match.as_str())],
+            Some(&json!({"expected_version":version,"rules":rules})),
+        )
+        .await
+    }
+
+    pub async fn create_workload(
+        &self,
+        node_id: &str,
+        name: &str,
+        unit: &str,
+        account: &str,
+        mode: &str,
+    ) -> HttpResponse {
+        self.call(
+            &self.admin,
+            "POST",
+            "/api/v3/workloads",
+            &[],
+            Some(&json!({
+                "node_id":node_id,
+                "name":name,
+                "unit":unit,
+                "account":account,
+                "consumption_mode":mode,
+                "local_ceiling_seconds":300
+            })),
+        )
+        .await
+    }
+
+    /// Submit a broker-signed operation request for `workload` and return
+    /// the matching controller operation input.
+    pub async fn broker_request(
+        &self,
+        node: &FleetNode,
+        workload: &Value,
+        request: &OperationSpec<'_>,
+    ) -> Value {
+        let now_ms = self.now_ms().await;
+        let body = json!({
+            "node_id": node.id,
+            "workload_id": workload["id"],
+            "unit": workload["unit"],
+            "account": workload["account"],
+            "invocation_id": request.invocation_id,
+            "action": "noop.marker",
+            "mode": workload["consumption_mode"],
+            "purpose": request.purpose,
+            "resource_id": request.resource_id,
+            "ttl_seconds": 60,
+            "observed_at_ms": now_ms
+        });
+        let events = signed_event(
+            &node.id,
+            &node.keys.signing,
+            request.event_key,
+            "operation_request",
+            body,
+        );
+        let posted = self.post_events(&node.bearer, &events).await;
+        assert_eq!(posted.status, 200, "{}", posted.body);
+        json!({
+            "workload_id": workload["id"],
+            "action": "noop.marker",
+            "mode": workload["consumption_mode"],
+            "purpose": request.purpose,
+            "resource_id": request.resource_id,
+            "invocation_id": request.invocation_id,
+            "ttl_seconds": 60,
+            "broker_event_key": request.event_key
+        })
+    }
+
+    /// Broker request plus controller operation creation by `operator`.
+    pub async fn request_operation(
+        &self,
+        operator: &Operator,
+        node: &FleetNode,
+        workload: &Value,
+        request: &OperationSpec<'_>,
+    ) -> HttpResponse {
+        let input = self.broker_request(node, workload, request).await;
+        let idempotency = format!("idem-{}", request.event_key);
+        self.call(
+            operator,
+            "POST",
+            "/api/v3/operations",
+            &[("idempotency-key", idempotency.as_str())],
+            Some(&input),
+        )
+        .await
+    }
+
+    /// Approve or reject an approval using its current version and members.
+    pub async fn decide(
+        &self,
+        operator: &Operator,
+        approval_id: &str,
+        verb: &str,
+        idempotency: &str,
+    ) -> HttpResponse {
+        let detail = self
+            .get(operator, &format!("/api/v3/approvals/{approval_id}"))
+            .await;
+        assert_eq!(detail.status, 200, "{}", detail.body);
+        let version = detail.body["version"].as_i64().unwrap();
+        let if_match = format!("\"{version}\"");
+        self.call(
+            operator,
+            "POST",
+            &format!("/api/v3/approvals/{approval_id}/{verb}"),
+            &[
+                ("idempotency-key", idempotency),
+                ("if-match", if_match.as_str()),
+            ],
+            Some(&json!({
+                "expected_status":"pending",
+                "expected_version":version,
+                "operation_ids":detail.body["operation_ids"]
+            })),
+        )
+        .await
+    }
+}
+
+pub struct FleetNode {
+    pub id: String,
+    pub keys: NodeKeys,
+    pub bearer: String,
+}
+
+pub struct OperationSpec<'a> {
+    pub event_key: &'a str,
+    pub invocation_id: &'a str,
+    pub resource_id: &'a str,
+    pub purpose: &'a str,
+}
+
+impl<'a> OperationSpec<'a> {
+    pub fn new(event_key: &'a str) -> Self {
+        Self {
+            event_key,
+            invocation_id: "invocation-1",
+            resource_id: "marker-a",
+            purpose: "review marker",
+        }
+    }
 }
 
 pub fn signed_events(

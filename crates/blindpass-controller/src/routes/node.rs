@@ -4,7 +4,9 @@
 
 use crate::app::AppState;
 use crate::routes::auth::jwt_validation;
-use crate::store::{InboxDocument, NodeEventInsert, NodeSessionDraft};
+use crate::store::{
+    InboxDocument, NodeEventInsert, NodeRecord, NodeSessionDraft, Store, StoreError,
+};
 use axum::extract::State;
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
@@ -599,146 +601,31 @@ async fn node_events(
     let mut accepted = 0_u32;
     let mut duplicates = 0_u32;
     let mut accepted_keys = Vec::with_capacity(body.events.len());
-    for event in body.events {
-        let body_source = match serde_json::to_string(&event.body) {
-            Ok(source) => source,
-            Err(_) => return invalid_event(),
-        };
-        let Ok(body_bytes) = canonicalize_json(&body_source) else {
-            return invalid_event();
-        };
-        if body_bytes.len() > MAX_NODE_EVENT_BYTES {
-            return invalid_event();
-        }
-        let body_json = match std::str::from_utf8(&body_bytes) {
-            Ok(value) => value,
-            Err(_) => return invalid_event(),
-        };
-        let body_value = match parse_json(body_json) {
-            Ok(value) => value,
-            Err(_) => return invalid_event(),
-        };
-        let mut message = match node_event_message(
-            &claims.node_id,
-            &event.idempotency_key,
-            &event.kind,
-            &body_value,
-        ) {
-            Ok(message) => message,
-            Err(_) => return invalid_event(),
-        };
-        let Some(signature) = decode_base64url(&event.broker_signature, 64) else {
-            blindpass_core::secret::wipe(&mut message);
-            return invalid_event();
-        };
-        let verified = verify(&public_key, &message, &signature);
-        let Some(body_hash) = digest_hex(&message) else {
-            blindpass_core::secret::wipe(&mut message);
-            return unavailable();
-        };
-        let prior = match store
-            .node_event_by_key(&claims.node_id, &event.idempotency_key)
-            .await
-        {
-            Ok(prior) => prior,
-            Err(_) => {
-                blindpass_core::secret::wipe(&mut message);
-                return unavailable();
+    let mut rejected = JsonValue::Null;
+    // Events apply in order. The first failure stops the batch: events
+    // before it are applied, recorded and acknowledged; it and later events
+    // are neither recorded nor acknowledged, so the broker retries them.
+    for event in &body.events {
+        match apply_node_event(store, &claims, &node, &public_key, event).await {
+            Ok(true) => {
+                accepted += 1;
+                accepted_keys.push(event.idempotency_key.clone());
             }
-        };
-        let exact_duplicate = prior
-            .as_ref()
-            .is_some_and(|record| record.body_hash == body_hash);
-        let verified = match verified {
-            Ok(true) => true,
-            Ok(false) if exact_duplicate && node.rotation_pending => {
-                let old_key = match store
-                    .node_signing_public_key(&claims.node_id, node.key_version)
-                    .await
-                {
-                    Ok(Some(public_key)) => decode_base64url(&public_key, 32),
-                    Ok(None) => None,
-                    Err(_) => {
-                        blindpass_core::secret::wipe(&mut message);
-                        return unavailable();
-                    }
-                };
-                let Some(old_key) = old_key else {
-                    blindpass_core::secret::wipe(&mut message);
-                    return invalid_event();
-                };
-                match verify(&old_key, &message, &signature) {
-                    Ok(valid) => valid,
-                    Err(_) => {
-                        blindpass_core::secret::wipe(&mut message);
-                        return unavailable();
-                    }
+            Ok(false) => {
+                duplicates += 1;
+                accepted_keys.push(event.idempotency_key.clone());
+            }
+            Err(failure) => {
+                if accepted_keys.is_empty() {
+                    return failure.response();
                 }
+                rejected = json!({
+                    "idempotency_key": event.idempotency_key,
+                    "error": failure.code()
+                });
+                break;
             }
-            Ok(false) => false,
-            Err(_) => {
-                blindpass_core::secret::wipe(&mut message);
-                return unavailable();
-            }
-        };
-        blindpass_core::secret::wipe(&mut message);
-        if !verified
-            || (node.rotation_pending && claims.key_version == node.key_version && !exact_duplicate)
-            || (node.status == "revoked" && event.kind == "operation_request")
-        {
-            return invalid_event();
         }
-        if node.rotation_pending
-            && event.kind == "operation_request"
-            && claims.key_version == node.pending_key_version.unwrap_or_default()
-        {
-            return invalid_event();
-        }
-        let insertion = match store
-            .record_node_event(
-                &format!("ne_{}", random_urlsafe(24)),
-                &claims.node_id,
-                &event.idempotency_key,
-                &event.kind,
-                body_json,
-                &body_hash,
-            )
-            .await
-        {
-            Ok(NodeEventInsert::Inserted) => true,
-            Ok(NodeEventInsert::Duplicate) => false,
-            Ok(NodeEventInsert::Conflict) => {
-                return api_error(
-                    StatusCode::CONFLICT,
-                    "event_idempotency_conflict",
-                    "an idempotency key was already used for different event bytes",
-                );
-            }
-            Err(_) => return unavailable(),
-        };
-        let applied = match event.kind.as_str() {
-            "operation_result" => {
-                store
-                    .reconcile_node_operation_result(&claims.node_id, body_json)
-                    .await
-            }
-            "audit" => {
-                store
-                    .record_node_audit_event(&claims.node_id, &event.idempotency_key, body_json)
-                    .await
-            }
-            "operation_request" => Ok(()),
-            _ => return invalid_event(),
-        };
-        if applied.is_err() {
-            return invalid_event();
-        }
-        if insertion {
-            accepted += 1;
-        } else {
-            duplicates += 1;
-        }
-        accepted_keys.push(event.idempotency_key);
     }
     if accepted_keys.is_empty() {
         return Json(json!({"accepted": accepted, "duplicates": duplicates, "ack": null}))
@@ -785,8 +672,167 @@ async fn node_events(
     let Ok(envelope_json) = serde_json::from_slice::<JsonValue>(&envelope_bytes) else {
         return unavailable();
     };
-    Json(json!({"accepted": accepted, "duplicates": duplicates, "ack": envelope_json}))
+    Json(json!({"accepted": accepted, "duplicates": duplicates, "ack": envelope_json, "rejected": rejected}))
         .into_response()
+}
+
+/// Why a node event was not accepted. Validation failures are the broker's
+/// to fix (400/409); store failures are transient (503).
+enum EventFailure {
+    Invalid,
+    Conflict,
+    Unavailable,
+}
+
+impl EventFailure {
+    fn from_store(error: &StoreError) -> Self {
+        match error {
+            StoreError::InvalidInput(_) | StoreError::MissingState(_) => Self::Invalid,
+            _ => Self::Unavailable,
+        }
+    }
+
+    fn code(&self) -> &'static str {
+        match self {
+            Self::Invalid => "invalid_node_event",
+            Self::Conflict => "event_idempotency_conflict",
+            Self::Unavailable => "service_unavailable",
+        }
+    }
+
+    fn response(&self) -> Response {
+        match self {
+            Self::Invalid => invalid_event(),
+            Self::Conflict => api_error(
+                StatusCode::CONFLICT,
+                "event_idempotency_conflict",
+                "an idempotency key was already used for different event bytes",
+            ),
+            Self::Unavailable => unavailable(),
+        }
+    }
+}
+
+/// Verify, apply and then record one node event. Returns `true` when newly
+/// recorded and `false` for an exact duplicate, which is not re-applied.
+/// Recording happens only after the event applied, so a recorded event is
+/// always an applied one and a failed event leaves no row behind.
+async fn apply_node_event(
+    store: &Store,
+    claims: &NodeSessionClaims,
+    node: &NodeRecord,
+    public_key: &[u8],
+    event: &NodeEventInput,
+) -> Result<bool, EventFailure> {
+    let body_source = serde_json::to_string(&event.body).map_err(|_| EventFailure::Invalid)?;
+    let body_bytes = canonicalize_json(&body_source).map_err(|_| EventFailure::Invalid)?;
+    if body_bytes.len() > MAX_NODE_EVENT_BYTES {
+        return Err(EventFailure::Invalid);
+    }
+    let body_json = std::str::from_utf8(&body_bytes).map_err(|_| EventFailure::Invalid)?;
+    let body_value = parse_json(body_json).map_err(|_| EventFailure::Invalid)?;
+    let mut message = node_event_message(
+        &claims.node_id,
+        &event.idempotency_key,
+        &event.kind,
+        &body_value,
+    )
+    .map_err(|_| EventFailure::Invalid)?;
+    let outcome = verify_node_event(store, claims, node, public_key, event, &message).await;
+    blindpass_core::secret::wipe(&mut message);
+    let (body_hash, exact_duplicate) = outcome?;
+    if exact_duplicate {
+        return Ok(false);
+    }
+    if (node.rotation_pending && claims.key_version == node.key_version)
+        || (node.status == "revoked" && event.kind == "operation_request")
+        || (node.rotation_pending
+            && event.kind == "operation_request"
+            && claims.key_version == node.pending_key_version.unwrap_or_default())
+    {
+        return Err(EventFailure::Invalid);
+    }
+    let applied = match event.kind.as_str() {
+        "operation_result" => {
+            store
+                .reconcile_node_operation_result(&claims.node_id, body_json)
+                .await
+        }
+        "audit" => {
+            store
+                .record_node_audit_event(&claims.node_id, &event.idempotency_key, body_json)
+                .await
+        }
+        "operation_request" => {
+            // The request is evidence for a later operator request; its node
+            // claim must match the authenticated session at ingestion.
+            if event.body.get("node_id").and_then(JsonValue::as_str)
+                != Some(claims.node_id.as_str())
+            {
+                return Err(EventFailure::Invalid);
+            }
+            Ok(())
+        }
+        _ => return Err(EventFailure::Invalid),
+    };
+    applied.map_err(|error| EventFailure::from_store(&error))?;
+    match store
+        .record_node_event(
+            &format!("ne_{}", random_urlsafe(24)),
+            &claims.node_id,
+            &event.idempotency_key,
+            &event.kind,
+            body_json,
+            &body_hash,
+        )
+        .await
+    {
+        Ok(NodeEventInsert::Inserted) => Ok(true),
+        Ok(NodeEventInsert::Duplicate) => Ok(false),
+        Ok(NodeEventInsert::Conflict) => Err(EventFailure::Conflict),
+        Err(error) => Err(EventFailure::from_store(&error)),
+    }
+}
+
+/// Check the broker signature and prior recording. Returns the event hash
+/// and whether the identical event was already applied.
+async fn verify_node_event(
+    store: &Store,
+    claims: &NodeSessionClaims,
+    node: &NodeRecord,
+    public_key: &[u8],
+    event: &NodeEventInput,
+    message: &[u8],
+) -> Result<(String, bool), EventFailure> {
+    let signature = decode_base64url(&event.broker_signature, 64).ok_or(EventFailure::Invalid)?;
+    let verified =
+        verify(public_key, message, &signature).map_err(|_| EventFailure::Unavailable)?;
+    let body_hash = digest_hex(message).ok_or(EventFailure::Unavailable)?;
+    let prior = store
+        .recorded_node_event(&claims.node_id, &event.idempotency_key)
+        .await
+        .map_err(|error| EventFailure::from_store(&error))?;
+    let exact_duplicate = match prior {
+        Some(record) if record.body_hash == body_hash => true,
+        Some(_) => return Err(EventFailure::Conflict),
+        None => false,
+    };
+    let verified = if !verified && exact_duplicate && node.rotation_pending {
+        // Replays signed by the pre-rotation key stay acknowledgeable.
+        let old_key = store
+            .node_signing_public_key(&claims.node_id, node.key_version)
+            .await
+            .map_err(|error| EventFailure::from_store(&error))?
+            .and_then(|key| decode_base64url(&key, 32))
+            .ok_or(EventFailure::Invalid)?;
+        verify(&old_key, message, &signature).map_err(|_| EventFailure::Unavailable)?
+    } else {
+        verified
+    };
+    if !verified {
+        return Err(EventFailure::Invalid);
+    }
+    Ok((body_hash, exact_duplicate))
 }
 
 #[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.

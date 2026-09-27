@@ -36,6 +36,8 @@ pub struct GrantRecord {
     pub consumed_at_ms: Option<i64>,
     pub revoked_at_ms: Option<i64>,
     pub created_at_ms: i64,
+    pub broker_revocation_outcome: Option<String>,
+    pub revoked_by: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,7 +90,8 @@ struct GrantContext {
 
 const GRANT_COLUMNS: &str = "id, operation_id, node_id, workload_id, invocation_id, unit,
     account, resource_id, recipient_key_id, policy_version, approval_reference, action, mode,
-    audience, issuer_epoch, issued_at, expires_at, status, consumed_at, revoked_at, created_at";
+    audience, issuer_epoch, issued_at, expires_at, status, consumed_at, revoked_at, created_at,
+    broker_revocation_outcome, revoked_by";
 
 impl Store {
     pub async fn grant_by_id(&self, id: &str) -> Result<Option<GrantRecord>, StoreError> {
@@ -234,6 +237,7 @@ impl Store {
         grant_id: &str,
         reason: &str,
         envelope_json: &str,
+        revoked_by: Option<&str>,
     ) -> Result<GrantRevocationOutcome, StoreError> {
         self.checkpoint_clock().await?;
         if !matches!(reason, "operator" | "cancelled") {
@@ -241,10 +245,26 @@ impl Store {
         }
         match &self.database {
             Database::Sqlite(pool) => {
-                revoke_grant_sqlite(pool, &self.tenant_id, grant_id, reason, envelope_json).await
+                revoke_grant_sqlite(
+                    pool,
+                    &self.tenant_id,
+                    grant_id,
+                    reason,
+                    envelope_json,
+                    revoked_by,
+                )
+                .await
             }
             Database::Postgres(pool) => {
-                revoke_grant_postgres(pool, &self.tenant_id, grant_id, reason, envelope_json).await
+                revoke_grant_postgres(
+                    pool,
+                    &self.tenant_id,
+                    grant_id,
+                    reason,
+                    envelope_json,
+                    revoked_by,
+                )
+                .await
             }
         }
     }
@@ -300,122 +320,98 @@ impl Store {
             return Err(StoreError::InvalidInput("node result binding"));
         }
         let result_json = format!("{{\"result_code\":\"{result_code}\"}}");
+        self.checkpoint_clock().await?;
+        let (now, lock) = match &self.database {
+            Database::Sqlite(_) => (SQLITE_NOW_MS, ""),
+            Database::Postgres(_) => (POSTGRES_NOW_MS, " FOR UPDATE OF g, o"),
+        };
+        let select_sql = format!(
+            "SELECT g.status AS grant_status, o.status AS operation_status, o.result_json
+             FROM grants g JOIN operations o ON o.id = g.operation_id AND o.tenant_id = g.tenant_id
+             WHERE g.id = ? AND g.node_id = ? AND g.operation_id = ? AND g.tenant_id = ?{lock}"
+        );
+        let consume_sql = format!(
+            "UPDATE grants SET status = CASE WHEN status IN ('issued', 'delivered')
+                 THEN 'consumed' ELSE status END,
+               consumed_at = COALESCE(consumed_at, {now})
+             WHERE id = ? AND tenant_id = ?"
+        );
+        let operation_sql = format!(
+            "UPDATE operations SET status = ?, result_json = ?,
+               completed_at = CASE WHEN ? THEN {now} ELSE completed_at END,
+               version = version + 1
+             WHERE id = ? AND tenant_id = ? AND status = ?"
+        );
+        macro_rules! reconcile {
+            ($pool:expr, $convert:expr) => {{
+                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                if matches!(self.database, Database::Sqlite(_)) {
+                    sqlx::query(
+                        "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
+                    )
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                }
+                let row = sqlx::query(&$convert(&select_sql))
+                    .bind(grant_id)
+                    .bind(node_id)
+                    .bind(operation_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let Some(row) = row else {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput("node result binding"));
+                };
+                let grant_status: String =
+                    row.try_get("grant_status").map_err(StoreError::Database)?;
+                let operation_status: String = row
+                    .try_get("operation_status")
+                    .map_err(StoreError::Database)?;
+                let existing_result: Option<String> =
+                    row.try_get("result_json").map_err(StoreError::Database)?;
+                if !matches!(
+                    grant_status.as_str(),
+                    "issued" | "delivered" | "consumed" | "revoked" | "expired"
+                ) {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput("node result grant state"));
+                }
+                let transition = result_transition(
+                    status,
+                    &operation_status,
+                    existing_result.as_deref(),
+                    &result_json,
+                    result_code,
+                )?;
+                // Any broker result proves the grant was received and used,
+                // including a late result after the controller revoked it.
+                sqlx::query(&$convert(&consume_sql))
+                    .bind(grant_id)
+                    .bind(&self.tenant_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                if let Some((next_status, next_result, completed)) = transition {
+                    sqlx::query(&$convert(&operation_sql))
+                        .bind(next_status)
+                        .bind(next_result)
+                        .bind(completed)
+                        .bind(operation_id)
+                        .bind(&self.tenant_id)
+                        .bind(&operation_status)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
+                tx.commit().await.map_err(StoreError::Database)?;
+            }};
+        }
         match &self.database {
-            Database::Sqlite(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                let row = sqlx::query(
-                    "SELECT g.status AS grant_status, o.status AS operation_status, o.result_json
-                     FROM grants g JOIN operations o ON o.id = g.operation_id AND o.tenant_id = g.tenant_id
-                     WHERE g.id = ? AND g.node_id = ? AND g.operation_id = ? AND g.tenant_id = ?",
-                )
-                .bind(grant_id)
-                .bind(node_id)
-                .bind(operation_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let Some(row) = row else {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result binding"));
-                };
-                let grant_status: String =
-                    row.try_get("grant_status").map_err(StoreError::Database)?;
-                let operation_status: String = row
-                    .try_get("operation_status")
-                    .map_err(StoreError::Database)?;
-                let existing_result: Option<String> =
-                    row.try_get("result_json").map_err(StoreError::Database)?;
-                if matches!(grant_status.as_str(), "issued" | "delivered") {
-                    sqlx::query(&format!(
-                        "UPDATE grants SET status = 'consumed', consumed_at = {SQLITE_NOW_MS}
-                        WHERE id = ? AND tenant_id = ? AND status IN ('issued', 'delivered')"
-                    ))
-                    .bind(grant_id)
-                    .bind(&self.tenant_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                } else if !matches!(grant_status.as_str(), "consumed" | "revoked" | "expired") {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result grant state"));
-                }
-                if matches!(operation_status.as_str(), "granted" | "executing") {
-                    sqlx::query(&format!("UPDATE operations SET status = ?, result_json = ?, completed_at = {SQLITE_NOW_MS}, version = version + 1
-                        WHERE id = ? AND tenant_id = ? AND status IN ('granted', 'executing')"))
-                        .bind(status).bind(&result_json).bind(operation_id).bind(&self.tenant_id)
-                        .execute(&mut *tx).await.map_err(StoreError::Database)?;
-                } else if operation_status == status
-                    && existing_result.as_deref() == Some(result_json.as_str())
-                {
-                    // Exact event replay; the transition already committed.
-                } else if !matches!(
-                    operation_status.as_str(),
-                    "revoked" | "cancelled" | "failed" | "completed" | "uncertain"
-                ) {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result operation state"));
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-            }
-            Database::Postgres(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                let row = sqlx::query(
-                    "SELECT g.status AS grant_status, o.status AS operation_status, o.result_json
-                     FROM grants g JOIN operations o ON o.id = g.operation_id AND o.tenant_id = g.tenant_id
-                     WHERE g.id = $1 AND g.node_id = $2 AND g.operation_id = $3 AND g.tenant_id = $4
-                     FOR UPDATE OF g, o",
-                )
-                .bind(grant_id)
-                .bind(node_id)
-                .bind(operation_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let Some(row) = row else {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result binding"));
-                };
-                let grant_status: String =
-                    row.try_get("grant_status").map_err(StoreError::Database)?;
-                let operation_status: String = row
-                    .try_get("operation_status")
-                    .map_err(StoreError::Database)?;
-                let existing_result: Option<String> =
-                    row.try_get("result_json").map_err(StoreError::Database)?;
-                if matches!(grant_status.as_str(), "issued" | "delivered") {
-                    sqlx::query(&format!(
-                        "UPDATE grants SET status = 'consumed', consumed_at = {POSTGRES_NOW_MS}
-                        WHERE id = $1 AND tenant_id = $2 AND status IN ('issued', 'delivered')"
-                    ))
-                    .bind(grant_id)
-                    .bind(&self.tenant_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                } else if !matches!(grant_status.as_str(), "consumed" | "revoked" | "expired") {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result grant state"));
-                }
-                if matches!(operation_status.as_str(), "granted" | "executing") {
-                    sqlx::query(&format!("UPDATE operations SET status = $1, result_json = $2, completed_at = {POSTGRES_NOW_MS}, version = version + 1
-                        WHERE id = $3 AND tenant_id = $4 AND status IN ('granted', 'executing')"))
-                        .bind(status).bind(&result_json).bind(operation_id).bind(&self.tenant_id)
-                        .execute(&mut *tx).await.map_err(StoreError::Database)?;
-                } else if operation_status == status
-                    && existing_result.as_deref() == Some(result_json.as_str())
-                {
-                    // Exact event replay; the transition already committed.
-                } else if !matches!(
-                    operation_status.as_str(),
-                    "revoked" | "cancelled" | "failed" | "completed" | "uncertain"
-                ) {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result operation state"));
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-            }
+            Database::Sqlite(pool) => reconcile!(pool, |sql: &str| sql.to_owned()),
+            Database::Postgres(pool) => reconcile!(pool, super::pg),
         }
         Ok(())
     }
@@ -428,6 +424,19 @@ impl Store {
     ) -> Result<(), StoreError> {
         let body =
             parse_json(body_json).map_err(|_| StoreError::InvalidInput("node audit event"))?;
+        // Applying an audit event and recording its node event are separate
+        // commits; an identical, already-applied event is acknowledged again
+        // rather than failing the now-completed transition a second time.
+        if let Some(applied) = self
+            .node_audit_metadata(&format!("aud_{node_id}_{idempotency_key}"))
+            .await?
+        {
+            return if applied == body_json {
+                Ok(())
+            } else {
+                Err(StoreError::InvalidInput("node audit event replay"))
+            };
+        }
         let fields = body
             .as_object()
             .filter(|fields| fields.len() <= 5)
@@ -646,6 +655,42 @@ impl Store {
                 }
                 ("node", node_id)
             }
+            "grant_revocation_applied" => {
+                let grant_id = body.get("grant_id").and_then(Value::as_str);
+                let outcome = body.get("outcome").and_then(Value::as_str);
+                if fields.len() != 5
+                    || fields.iter().any(|(name, _)| {
+                        !matches!(
+                            name.as_str(),
+                            "action" | "node_id" | "grant_id" | "outcome" | "observed_at_ms"
+                        )
+                    })
+                    || body.get("node_id").and_then(Value::as_str) != Some(node_id)
+                    || !grant_id.is_some_and(valid_node_event_id)
+                    || !outcome.is_some_and(|value| {
+                        matches!(
+                            value,
+                            "revoked_before_consumption" | "already_consumed" | "not_received"
+                        )
+                    })
+                    || !body
+                        .get("observed_at_ms")
+                        .and_then(Value::as_u64)
+                        .is_some_and(|value| value > 0)
+                {
+                    return Err(StoreError::InvalidInput("grant revocation acknowledgement"));
+                }
+                let grant_id = grant_id.unwrap_or_default();
+                if !self
+                    .apply_grant_revocation_outcome(node_id, grant_id, outcome.unwrap_or_default())
+                    .await?
+                {
+                    return Err(StoreError::InvalidInput(
+                        "grant revocation acknowledgement does not match a revoked grant",
+                    ));
+                }
+                ("grant", grant_id)
+            }
             _ => return Err(StoreError::InvalidInput("node audit event action")),
         };
         let id = format!("aud_{node_id}_{idempotency_key}");
@@ -776,6 +821,7 @@ async fn revoke_grant_sqlite(
     grant_id: &str,
     reason: &str,
     envelope_json: &str,
+    revoked_by: Option<&str>,
 ) -> Result<GrantRevocationOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
@@ -787,7 +833,7 @@ async fn revoke_grant_sqlite(
         .await
         .map_err(StoreError::Database)?;
     let row = sqlx::query(
-        "SELECT g.status, g.node_id, g.workload_id, g.operation_id, g.expires_at,
+        "SELECT g.status, g.consumed_at, g.node_id, g.workload_id, g.operation_id, g.expires_at,
                 w.local_ceiling_seconds, n.last_seen_at, o.status AS operation_status
          FROM grants g JOIN workloads w ON w.id = g.workload_id
          JOIN nodes n ON n.id = g.node_id JOIN operations o ON o.id = g.operation_id
@@ -815,7 +861,8 @@ async fn revoke_grant_sqlite(
         .map_err(StoreError::Database)?;
     let offline =
         last_seen_at.is_none_or(|last_seen| now.saturating_sub(last_seen) > NODE_OFFLINE_MS);
-    if status == "consumed" {
+    let consumed_at: Option<i64> = row.try_get("consumed_at").map_err(StoreError::Database)?;
+    if status == "consumed" || (status == "revoked" && consumed_at.is_some()) {
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(GrantRevocationOutcome::Consumed {
             grant_id: grant_id.to_owned(),
@@ -840,10 +887,11 @@ async fn revoke_grant_sqlite(
     validate_revocation_time(&revocation, now, expires_at)?;
     let result_json = format!("{{\"reason\":\"{reason}\"}}");
     let updated_grant = sqlx::query(
-        "UPDATE grants SET status = 'revoked', revoked_at = ?
+        "UPDATE grants SET status = 'revoked', revoked_at = ?, revoked_by = ?
         WHERE id = ? AND tenant_id = ? AND status IN ('issued', 'delivered')",
     )
     .bind(now)
+    .bind(revoked_by)
     .bind(grant_id)
     .bind(tenant_id)
     .execute(&mut *tx)
@@ -863,14 +911,15 @@ async fn revoke_grant_sqlite(
         return Ok(GrantRevocationOutcome::Conflict);
     }
     sqlx::query(
-        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
-        VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until, envelope_json)
+        VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(grant_id)
     .bind(&node_id)
     .bind(reason)
     .bind(now)
     .bind(to_i64(revocation.retain_until_ms, "tombstone retention")?)
+    .bind(envelope_json)
     .execute(&mut *tx)
     .await
     .map_err(StoreError::Database)?;
@@ -888,6 +937,7 @@ async fn revoke_grant_postgres(
     grant_id: &str,
     reason: &str,
     envelope_json: &str,
+    revoked_by: Option<&str>,
 ) -> Result<GrantRevocationOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
@@ -899,7 +949,7 @@ async fn revoke_grant_postgres(
         .await
         .map_err(StoreError::Database)?;
     let row = sqlx::query(
-        "SELECT g.status, g.node_id, g.workload_id, g.operation_id, g.expires_at,
+        "SELECT g.status, g.consumed_at, g.node_id, g.workload_id, g.operation_id, g.expires_at,
                 w.local_ceiling_seconds, n.last_seen_at, o.status AS operation_status
          FROM grants g JOIN workloads w ON w.id = g.workload_id
          JOIN nodes n ON n.id = g.node_id JOIN operations o ON o.id = g.operation_id
@@ -927,7 +977,8 @@ async fn revoke_grant_postgres(
         .map_err(StoreError::Database)?;
     let offline =
         last_seen_at.is_none_or(|last_seen| now.saturating_sub(last_seen) > NODE_OFFLINE_MS);
-    if status == "consumed" {
+    let consumed_at: Option<i64> = row.try_get("consumed_at").map_err(StoreError::Database)?;
+    if status == "consumed" || (status == "revoked" && consumed_at.is_some()) {
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(GrantRevocationOutcome::Consumed {
             grant_id: grant_id.to_owned(),
@@ -952,12 +1003,13 @@ async fn revoke_grant_postgres(
     validate_revocation_time(&revocation, now, expires_at)?;
     let result_json = format!("{{\"reason\":\"{reason}\"}}");
     let updated_grant = sqlx::query(
-        "UPDATE grants SET status = 'revoked', revoked_at = $1
+        "UPDATE grants SET status = 'revoked', revoked_at = $1, revoked_by = $4
         WHERE id = $2 AND tenant_id = $3 AND status IN ('issued', 'delivered')",
     )
     .bind(now)
     .bind(grant_id)
     .bind(tenant_id)
+    .bind(revoked_by)
     .execute(&mut *tx)
     .await
     .map_err(StoreError::Database)?;
@@ -975,14 +1027,15 @@ async fn revoke_grant_postgres(
         return Ok(GrantRevocationOutcome::Conflict);
     }
     sqlx::query(
-        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until)
-        VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO grant_tombstones (grant_id, node_id, reason, created_at, retain_until, envelope_json)
+        VALUES ($1, $2, $3, $4, $5, $6)",
     )
     .bind(grant_id)
     .bind(&node_id)
     .bind(reason)
     .bind(now)
     .bind(to_i64(revocation.retain_until_ms, "tombstone retention")?)
+    .bind(envelope_json)
     .execute(&mut *tx)
     .await
     .map_err(StoreError::Database)?;
@@ -1543,6 +1596,10 @@ fn grant_from_sqlite(row: &SqliteRow) -> Result<GrantRecord, StoreError> {
         consumed_at_ms: row.try_get("consumed_at").map_err(StoreError::Database)?,
         revoked_at_ms: row.try_get("revoked_at").map_err(StoreError::Database)?,
         created_at_ms: row.try_get("created_at").map_err(StoreError::Database)?,
+        broker_revocation_outcome: row
+            .try_get("broker_revocation_outcome")
+            .map_err(StoreError::Database)?,
+        revoked_by: row.try_get("revoked_by").map_err(StoreError::Database)?,
     })
 }
 
@@ -1575,5 +1632,59 @@ fn grant_from_postgres(row: &PgRow) -> Result<GrantRecord, StoreError> {
         consumed_at_ms: row.try_get("consumed_at").map_err(StoreError::Database)?,
         revoked_at_ms: row.try_get("revoked_at").map_err(StoreError::Database)?,
         created_at_ms: row.try_get("created_at").map_err(StoreError::Database)?,
+        broker_revocation_outcome: row
+            .try_get("broker_revocation_outcome")
+            .map_err(StoreError::Database)?,
+        revoked_by: row.try_get("revoked_by").map_err(StoreError::Database)?,
+    })
+}
+
+/// The typed result recorded when a broker used a grant the controller had
+/// already revoked.
+pub(super) const REVOKED_AFTER_CONSUMPTION: &str = "grant_revoked_after_consumption";
+
+/// Merge the post-consumption revocation result into an operation result,
+/// keeping the original revocation reason and any broker result code.
+pub(super) fn with_revocation_result(existing: Option<&str>, result_code: Option<&str>) -> String {
+    let mut fields = existing
+        .and_then(|value| serde_json::from_str::<serde_json::Value>(value).ok())
+        .and_then(|value| value.as_object().cloned())
+        .unwrap_or_default();
+    fields.insert(
+        "revocation_result".to_owned(),
+        serde_json::Value::String(REVOKED_AFTER_CONSUMPTION.to_owned()),
+    );
+    if let Some(code) = result_code {
+        fields.insert(
+            "result_code".to_owned(),
+            serde_json::Value::String(code.to_owned()),
+        );
+    }
+    serde_json::Value::Object(fields).to_string()
+}
+
+/// Decide how a broker result moves its operation: `uncertain` means the
+/// broker started execution without confirming it; `completed` is final.
+/// Returns the next status, result and whether it completes the operation,
+/// or `None` when the result changes nothing (replays, later evidence).
+fn result_transition(
+    status: &str,
+    operation_status: &str,
+    existing_result: Option<&str>,
+    result_json: &str,
+    result_code: &str,
+) -> Result<Option<(&'static str, String, bool)>, StoreError> {
+    Ok(match (status, operation_status) {
+        ("completed", "granted" | "executing" | "uncertain") => {
+            Some(("completed", result_json.to_owned(), true))
+        }
+        ("uncertain", "granted") => Some(("executing", result_json.to_owned(), false)),
+        ("completed", "completed") | ("uncertain", "executing" | "completed" | "uncertain") => None,
+        (_, "revoked") => {
+            let merged = with_revocation_result(existing_result, Some(result_code));
+            (existing_result != Some(merged.as_str())).then_some(("revoked", merged, false))
+        }
+        (_, "cancelled" | "failed" | "expired") => None,
+        _ => return Err(StoreError::InvalidInput("node result operation state")),
     })
 }

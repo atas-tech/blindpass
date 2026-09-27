@@ -1056,6 +1056,12 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             Some(&forged_event),
         )
         .await;
+        if field == "node_id" {
+            // A node claim that differs from the authenticated session is
+            // rejected at ingestion (P03 review C18).
+            assert_eq!(accepted_forged_event.status, 400, "{field}");
+            continue;
+        }
         assert_eq!(accepted_forged_event.status, 200, "{field}");
 
         let mut forged_operation = first_operation_input.clone();

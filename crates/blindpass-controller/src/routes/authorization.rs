@@ -1060,9 +1060,10 @@ async fn cancel_operation(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = require_fleet_operator(&state, &headers, true).await {
-        return response;
-    }
+    let operator = match require_fleet_operator(&state, &headers, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
@@ -1084,7 +1085,14 @@ async fn cancel_operation(
             "operation has no active grant to cancel",
         );
     };
-    perform_grant_revocation(&state, store, &grant_id, "cancelled").await
+    perform_grant_revocation(
+        &state,
+        store,
+        &grant_id,
+        "cancelled",
+        Some(&operator.operator.id),
+    )
+    .await
 }
 
 async fn list_grants(
@@ -1180,13 +1188,14 @@ async fn revoke_grant(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = require_fleet_operator(&state, &headers, true).await {
-        return response;
-    }
+    let operator = match require_fleet_operator(&state, &headers, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
-    perform_grant_revocation(&state, store, &id, "operator").await
+    perform_grant_revocation(&state, store, &id, "operator", Some(&operator.operator.id)).await
 }
 
 async fn perform_grant_revocation(
@@ -1194,6 +1203,7 @@ async fn perform_grant_revocation(
     store: &crate::store::Store,
     grant_id: &str,
     reason: &str,
+    revoked_by: Option<&str>,
 ) -> Response {
     let grant = match store.grant_by_id(grant_id).await {
         Ok(Some(grant)) => grant,
@@ -1268,7 +1278,10 @@ async fn perform_grant_revocation(
             Err(_) => return unavailable(),
         }
     };
-    match store.revoke_grant(grant_id, reason, &envelope_json).await {
+    match store
+        .revoke_grant(grant_id, reason, &envelope_json, revoked_by)
+        .await
+    {
         Ok(GrantRevocationOutcome::Revoked { grant_id, offline }) => Json(json!({
             "status": if offline { "not_revocable_offline" } else { "grant_revoked" },
             "grant_id": grant_id,
@@ -1898,7 +1911,10 @@ fn grant_body(record: &GrantRecord) -> JsonValue {
         "recipient_key_id":record.recipient_key_id,"policy_version":record.policy_version,
         "approval_reference":record.approval_reference,"action":record.action,"mode":record.mode,
         "audience":record.audience,"issuer_epoch":record.issuer_epoch,
-        "issued_at":record.issued_at_ms,"expires_at":record.expires_at_ms,"status":record.status
+        "issued_at":record.issued_at_ms,"expires_at":record.expires_at_ms,"status":record.status,
+        "consumed_at":record.consumed_at_ms,"revoked_at":record.revoked_at_ms,
+        "revoked_by":record.revoked_by,
+        "broker_revocation_outcome":record.broker_revocation_outcome
     })
 }
 
