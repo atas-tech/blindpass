@@ -443,6 +443,28 @@ impl GrantVerifier {
             .record(&revocation.grant_id, revocation.retain_until_ms)
     }
 
+    /// True when a tombstone for the grant is already in force.
+    pub(crate) fn has_tombstone(&self, grant_id: &str) -> bool {
+        self.revocations
+            .as_ref()
+            .is_some_and(|journal| journal.tombstones.contains_key(grant_id))
+    }
+
+    /// What a revocation applied now would change for this grant.
+    pub(crate) fn revocation_outcome(&self, grant_id: &str) -> &'static str {
+        if self.accepted.contains_key(grant_id) {
+            "revoked_before_consumption"
+        } else if self
+            .journal
+            .as_ref()
+            .is_some_and(|journal| journal.consumed.contains_key(grant_id))
+        {
+            "already_consumed"
+        } else {
+            "not_received"
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn is_accepted(&self, grant_id: &str) -> bool {
         self.accepted.contains_key(grant_id)

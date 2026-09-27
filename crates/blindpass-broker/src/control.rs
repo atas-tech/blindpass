@@ -52,6 +52,7 @@ fn handle_command(
             ))?;
             state.queue_overflow_event_if_possible(&pin.node_id)?;
             state.queue_node_revocation_ack_if_possible(&pin.node_id)?;
+            state.queue_deferred_revocation_outcomes()?;
             if let Some((rotation_id, key_version, fingerprint)) =
                 identity.applied_rotation_ack()?
             {
@@ -275,10 +276,7 @@ fn apply_controller_document_to_state(
                     "controller revocation is bound to another node",
                 ));
             }
-            state.grant_verifier.revoke(&revocation).map_err(|reason| {
-                eprintln!("grant revocation is in force but not durable: {reason}");
-                BrokerError::Configuration("controller_document_not_durable")
-            })?;
+            state.apply_grant_revocation(&pin.node_id, &revocation)?;
             return Ok("revocation");
         }
         return Ok("stale_epoch");
@@ -403,10 +401,7 @@ fn apply_controller_document_to_state(
                     "controller revocation is bound to another node",
                 ));
             }
-            state.grant_verifier.revoke(&revocation).map_err(|reason| {
-                eprintln!("grant revocation is in force but not durable: {reason}");
-                BrokerError::Configuration("controller_document_not_durable")
-            })?;
+            state.apply_grant_revocation(&pin.node_id, &revocation)?;
         }
         DocumentKind::NodeRevocation => {
             let revocation = NodeRevocation::from_value(envelope.body()).map_err(|_| {
@@ -2026,6 +2021,220 @@ mod tests {
             b"OK document_applied node_revocation\n"
         );
         assert_eq!(std::fs::read(&node_path).unwrap(), node_document);
+    }
+
+    fn revocation_outcomes(events: &[Value]) -> Vec<(String, Value)> {
+        events
+            .iter()
+            .filter(|event| {
+                event
+                    .get("idempotency_key")
+                    .and_then(Value::as_str)
+                    .is_some_and(|key| key.starts_with("grant_revocation_applied_"))
+            })
+            .map(|event| {
+                assert_eq!(event.get("kind").and_then(Value::as_str), Some("audit"));
+                (
+                    event
+                        .get("idempotency_key")
+                        .and_then(Value::as_str)
+                        .unwrap()
+                        .to_owned(),
+                    event.get("body").unwrap().clone(),
+                )
+            })
+            .collect()
+    }
+
+    fn acknowledge_all(fleet: &Fleet) {
+        let keys = fleet
+            .pulled_events()
+            .iter()
+            .map(|event| {
+                event
+                    .get("idempotency_key")
+                    .and_then(Value::as_str)
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect::<Vec<_>>();
+        if keys.is_empty() {
+            return;
+        }
+        let ack = ApplicationAck {
+            node_id: "nd_node-a".to_owned(),
+            issuer_epoch: 1,
+            acknowledged_at_ms: fleet.now_ms,
+            event_keys: keys,
+        };
+        assert_eq!(
+            fleet.relay(&fleet.sign(DocumentKind::ApplicationAck, ack.to_value().unwrap(), 1)),
+            b"OK document_applied application_ack\n"
+        );
+    }
+
+    #[test]
+    fn applied_grant_revocations_emit_one_signed_outcome_each() {
+        let fleet = Fleet::new(47);
+        let unconsumed = fleet.grant(1, 1);
+        let consumed = fleet.grant(2, 1);
+        for grant in [&unconsumed, &consumed] {
+            assert_eq!(fleet.deliver(grant), b"OK document_applied grant\n");
+        }
+        assert!(fleet.consume(&consumed.id).is_ok());
+        acknowledge_all(&fleet);
+        let never_delivered = fleet.grant(3, 1);
+        for grant in [&unconsumed, &consumed, &never_delivered] {
+            assert_eq!(
+                fleet.relay(&fleet.revocation(&grant.id, 1)),
+                b"OK document_applied revocation\n"
+            );
+        }
+        let events = fleet.pulled_events();
+        let outcomes = revocation_outcomes(&events);
+        assert_eq!(outcomes.len(), 3);
+        for ((key, body), (grant, outcome)) in outcomes.iter().zip([
+            (&unconsumed, "revoked_before_consumption"),
+            (&consumed, "already_consumed"),
+            (&never_delivered, "not_received"),
+        ]) {
+            assert_eq!(key, &format!("grant_revocation_applied_{}", grant.id));
+            let fields = body.as_object().unwrap();
+            assert_eq!(fields.len(), 5);
+            assert_eq!(
+                body.get("action").and_then(Value::as_str),
+                Some("grant_revocation_applied")
+            );
+            assert_eq!(
+                body.get("node_id").and_then(Value::as_str),
+                Some("nd_node-a")
+            );
+            assert_eq!(
+                body.get("grant_id").and_then(Value::as_str),
+                Some(grant.id.as_str())
+            );
+            assert_eq!(body.get("outcome").and_then(Value::as_str), Some(outcome));
+            assert!(body.get("observed_at_ms").and_then(Value::as_u64).unwrap() >= fleet.now_ms);
+        }
+        // The events carry a broker signature over the fixed node-event message.
+        let public = fleet.identity.public_identity().unwrap();
+        let public_key =
+            blindpass_core::signing::base64_url_decode(&public.signing_public, 32).unwrap();
+        for event in &events {
+            let message = node_event_message(
+                "nd_node-a",
+                event
+                    .get("idempotency_key")
+                    .and_then(Value::as_str)
+                    .unwrap(),
+                "audit",
+                event.get("body").unwrap(),
+            )
+            .unwrap();
+            let signature = blindpass_core::signing::base64_url_decode(
+                event
+                    .get("broker_signature")
+                    .and_then(Value::as_str)
+                    .unwrap(),
+                64,
+            )
+            .unwrap();
+            assert!(verify(&public_key, &message, &signature).unwrap());
+        }
+
+        // Replays neither duplicate a pending outcome nor recreate an
+        // acknowledged one, before or after a restart.
+        assert_eq!(
+            fleet.relay(&fleet.revocation(&unconsumed.id, 1)),
+            b"OK document_applied revocation\n"
+        );
+        assert_eq!(revocation_outcomes(&fleet.pulled_events()).len(), 3);
+        acknowledge_all(&fleet);
+        assert_eq!(
+            fleet.relay(&fleet.revocation(&unconsumed.id, 1)),
+            b"OK document_applied revocation\n"
+        );
+        assert!(fleet.pulled_events().is_empty());
+        let mut restarted = BrokerState::new(DeliveryPolicy::default());
+        restarted.configure_grant_storage(&fleet.identity).unwrap();
+        *fleet.state.lock().unwrap() = restarted;
+        assert_eq!(
+            fleet.relay(&fleet.revocation(&consumed.id, 1)),
+            b"OK document_applied revocation\n"
+        );
+        assert!(fleet.pulled_events().is_empty());
+    }
+
+    #[test]
+    fn grant_revocation_applies_under_audit_backpressure_and_reports_later() {
+        let fleet = Fleet::new(53);
+        let grant = fleet.grant(1, 1);
+        assert_eq!(fleet.deliver(&grant), b"OK document_applied grant\n");
+        {
+            let mut state = fleet.state.lock().unwrap();
+            state.pending_node_events = (0..crate::MAX_BROKER_AUDIT_EVENTS)
+                .map(|index| crate::PendingNodeEvent {
+                    idempotency_key: format!("broker-event-capacity-{index:08}"),
+                    kind: "audit".to_owned(),
+                    body: Value::Object(vec![(
+                        "action".to_owned(),
+                        Value::String("existing_event".to_owned()),
+                    )]),
+                })
+                .collect();
+        }
+        assert_eq!(
+            fleet.relay(&fleet.revocation(&grant.id, 1)),
+            b"OK document_applied revocation\n"
+        );
+        assert_eq!(denial(fleet.consume(&grant.id)), "audit_backpressure");
+        assert!(
+            !fleet
+                .state
+                .lock()
+                .unwrap()
+                .grant_verifier
+                .is_accepted(&grant.id)
+        );
+        assert!(!fleet.marker_exists(&grant.id));
+        assert_eq!(
+            fleet.state.lock().unwrap().pending_node_events.len(),
+            crate::MAX_BROKER_AUDIT_EVENTS
+        );
+
+        // Space returns after an acknowledgement; the outcome is emitted
+        // exactly once and the grant stays revoked. Four acknowledgements
+        // leave room for the overflow audit, the outcome and a consumption.
+        let ack = ApplicationAck {
+            node_id: "nd_node-a".to_owned(),
+            issuer_epoch: 1,
+            acknowledged_at_ms: fleet.now_ms,
+            event_keys: vec![
+                "broker-event-capacity-00000000".to_owned(),
+                "broker-event-capacity-00000001".to_owned(),
+                "broker-event-capacity-00000002".to_owned(),
+                "broker-event-capacity-00000003".to_owned(),
+            ],
+        };
+        assert_eq!(
+            fleet.relay(&fleet.sign(DocumentKind::ApplicationAck, ack.to_value().unwrap(), 1)),
+            b"OK document_applied application_ack\n"
+        );
+        let state = fleet.state.lock().unwrap();
+        let outcomes = state
+            .pending_node_events
+            .iter()
+            .filter(|event| {
+                event.idempotency_key == format!("grant_revocation_applied_{}", grant.id)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(outcomes.len(), 1);
+        assert_eq!(
+            outcomes[0].body.get("outcome").and_then(Value::as_str),
+            Some("revoked_before_consumption")
+        );
+        drop(state);
+        assert_eq!(denial(fleet.consume(&grant.id)), "grant_revoked");
     }
 
     fn relay_signed_document(

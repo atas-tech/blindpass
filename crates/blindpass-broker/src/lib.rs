@@ -43,6 +43,7 @@ const MAX_ACTIVE_CONNECTIONS: usize = 32;
 const DEFAULT_OPERATION_DIRECTORY: &str = "/run/blindpass/ops";
 pub(crate) const MAX_BROKER_AUDIT_EVENTS: usize = 10_000;
 const MAX_NODE_EVENT_BATCH: usize = 100;
+const MAX_DEFERRED_REVOCATION_OUTCOMES: usize = 10_000;
 const MAX_PENDING_NODE_EVENT_BYTES: usize = 64 * 1024;
 const MAX_PENDING_NODE_EVENTS_BYTES: u64 = 64 * 1024 * 1024;
 const PENDING_NODE_EVENT_FILE_MODE: u32 = 0o600;
@@ -169,6 +170,11 @@ pub struct BrokerState {
     operation_directory: PathBuf,
     pending_node_events: VecDeque<PendingNodeEvent>,
     pending_node_events_path: Option<PathBuf>,
+    /// Grant revocation outcomes that could not join the full audit queue.
+    /// They are emitted once space returns; the revocation itself is never
+    /// delayed. Held in memory only: after a restart they are lost and the
+    /// persisted audit overflow flag records the gap.
+    deferred_revocation_outcomes: VecDeque<PendingNodeEvent>,
     audit_overflow_pending: bool,
     node_revoked: bool,
     node_revocation_ack_pending: bool,
@@ -265,6 +271,7 @@ impl BrokerState {
             operation_directory: PathBuf::from(DEFAULT_OPERATION_DIRECTORY),
             pending_node_events: VecDeque::new(),
             pending_node_events_path: None,
+            deferred_revocation_outcomes: VecDeque::new(),
             audit_overflow_pending: false,
             node_revoked: false,
             node_revocation_ack_pending: false,
@@ -699,6 +706,7 @@ impl BrokerState {
         let previous_overflow = self.audit_overflow_pending;
         let previous_revocation_pending = self.node_revocation_ack_pending;
         let previous_revocation_acknowledged = self.node_revocation_acknowledged;
+        let previous_deferred = self.deferred_revocation_outcomes.clone();
         let acknowledged = event_keys.iter().collect::<std::collections::HashSet<_>>();
         if self.pending_node_events.iter().any(|event| {
             acknowledged.contains(&event.idempotency_key)
@@ -714,11 +722,13 @@ impl BrokerState {
         if let Err(error) = self
             .queue_overflow_event_if_possible(node_id)
             .and_then(|()| self.queue_node_revocation_ack_if_possible(node_id))
+            .and_then(|()| self.queue_deferred_revocation_outcomes())
         {
             self.pending_node_events = previous_events;
             self.audit_overflow_pending = previous_overflow;
             self.node_revocation_ack_pending = previous_revocation_pending;
             self.node_revocation_acknowledged = previous_revocation_acknowledged;
+            self.deferred_revocation_outcomes = previous_deferred;
             return Err(error);
         }
         if let Err(error) = self.persist_pending_node_events() {
@@ -726,6 +736,7 @@ impl BrokerState {
             self.audit_overflow_pending = previous_overflow;
             self.node_revocation_ack_pending = previous_revocation_pending;
             self.node_revocation_acknowledged = previous_revocation_acknowledged;
+            self.deferred_revocation_outcomes = previous_deferred;
             return Err(error);
         }
         Ok(())
@@ -830,6 +841,111 @@ impl BrokerState {
             self.pending_node_events.pop_back();
             self.audit_overflow_pending = true;
             return Err(error);
+        }
+        Ok(())
+    }
+
+    /// Apply a verified grant revocation and report what it changed. The
+    /// outcome is emitted once per newly tombstoned grant, so replays never
+    /// duplicate it; a full audit queue defers the outcome, not the
+    /// revocation. A failed tombstone write still leaves the revocation in
+    /// force and is returned so the relay retries.
+    pub(crate) fn apply_grant_revocation(
+        &mut self,
+        node_id: &str,
+        revocation: &blindpass_core::fleet::Revocation,
+    ) -> Result<(), BrokerError> {
+        let newly_revoked = !self.grant_verifier.has_tombstone(&revocation.grant_id);
+        let outcome = self.grant_verifier.revocation_outcome(&revocation.grant_id);
+        let applied = self.grant_verifier.revoke(revocation);
+        if newly_revoked {
+            let observed_at_ms = grants::boottime_ms()
+                .ok()
+                .and_then(|now| self.grant_verifier.trusted_controller_time_ms(now))
+                .unwrap_or(revocation.revoked_at_ms);
+            self.queue_grant_revocation_outcome(
+                node_id,
+                &revocation.grant_id,
+                outcome,
+                observed_at_ms,
+            );
+        }
+        applied.map_err(|reason| {
+            eprintln!("grant revocation is in force but not durable: {reason}");
+            BrokerError::Configuration("controller_document_not_durable")
+        })
+    }
+
+    fn queue_grant_revocation_outcome(
+        &mut self,
+        node_id: &str,
+        grant_id: &str,
+        outcome: &'static str,
+        observed_at_ms: u64,
+    ) {
+        let event = PendingNodeEvent {
+            idempotency_key: format!("grant_revocation_applied_{grant_id}"),
+            kind: "audit".to_owned(),
+            body: Value::Object(vec![
+                (
+                    "action".to_owned(),
+                    Value::String("grant_revocation_applied".to_owned()),
+                ),
+                ("grant_id".to_owned(), Value::String(grant_id.to_owned())),
+                ("node_id".to_owned(), Value::String(node_id.to_owned())),
+                ("observed_at_ms".to_owned(), Value::Unsigned(observed_at_ms)),
+                ("outcome".to_owned(), Value::String(outcome.to_owned())),
+            ]),
+        };
+        if !valid_node_event_key(&event.idempotency_key) {
+            eprintln!("grant revocation outcome key exceeds its bound; outcome not reported");
+            return;
+        }
+        if self
+            .pending_node_events
+            .iter()
+            .chain(self.deferred_revocation_outcomes.iter())
+            .any(|pending| pending.idempotency_key == event.idempotency_key)
+        {
+            return;
+        }
+        if self.deferred_revocation_outcomes.len() >= MAX_DEFERRED_REVOCATION_OUTCOMES {
+            self.deferred_revocation_outcomes.pop_front();
+            self.audit_overflow_pending = true;
+        }
+        self.deferred_revocation_outcomes.push_back(event);
+        if let Err(error) = self.queue_deferred_revocation_outcomes() {
+            eprintln!("grant revocation outcome remains deferred: {error}");
+        }
+    }
+
+    /// Move deferred revocation outcomes into the audit queue while it has
+    /// space, committing the queue once.
+    pub(crate) fn queue_deferred_revocation_outcomes(&mut self) -> Result<(), BrokerError> {
+        if self.deferred_revocation_outcomes.is_empty()
+            || self.pending_node_events.len() >= MAX_BROKER_AUDIT_EVENTS
+        {
+            return self.persist_overflow_flag_if_needed();
+        }
+        let previous_events = self.pending_node_events.clone();
+        let previous_deferred = self.deferred_revocation_outcomes.clone();
+        while self.pending_node_events.len() < MAX_BROKER_AUDIT_EVENTS {
+            let Some(event) = self.deferred_revocation_outcomes.pop_front() else {
+                break;
+            };
+            self.pending_node_events.push_back(event);
+        }
+        if let Err(error) = self.persist_pending_node_events() {
+            self.pending_node_events = previous_events;
+            self.deferred_revocation_outcomes = previous_deferred;
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn persist_overflow_flag_if_needed(&mut self) -> Result<(), BrokerError> {
+        if self.audit_overflow_pending {
+            self.persist_pending_node_events()?;
         }
         Ok(())
     }
