@@ -7,7 +7,11 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 
 const MARKER_MODE: u32 = 0o444;
-const DIRECTORY_MODE: u32 = 0o755;
+/// Searchable but not listable by other users, so a marker can be opened by
+/// its grant id while the set of consumed grant ids is not enumerable.
+const DIRECTORY_MODE: u32 = 0o711;
+/// The listable mode earlier brokers created; it is tightened in place.
+const LEGACY_DIRECTORY_MODE: u32 = 0o755;
 const O_NOFOLLOW: i32 = 0x20000;
 
 pub(crate) fn create_in(directory: &Path, grant_id: &str) -> Result<(), &'static str> {
@@ -36,6 +40,16 @@ pub(crate) fn create_in(directory: &Path, grant_id: &str) -> Result<(), &'static
 fn ensure_directory(directory: &Path) -> Result<(), &'static str> {
     let was_missing = match fs::symlink_metadata(directory) {
         Ok(metadata) => {
+            if metadata.is_dir()
+                && !metadata.file_type().is_symlink()
+                && metadata.uid() == effective_uid()
+                && metadata.permissions().mode() & 0o777 == LEGACY_DIRECTORY_MODE
+            {
+                fs::set_permissions(directory, fs::Permissions::from_mode(DIRECTORY_MODE))
+                    .map_err(|_| "operation marker directory permissions are unsafe")?;
+            }
+            let metadata = fs::symlink_metadata(directory)
+                .map_err(|_| "operation marker directory could not be inspected safely")?;
             validate_directory(&metadata)?;
             false
         }
@@ -113,7 +127,8 @@ mod tests {
         assert_eq!(metadata.len(), 0);
         assert_eq!(
             std::fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
-            0o755
+            0o711,
+            "other local users can open a marker by name but cannot list grant ids"
         );
         assert!(create_in(&directory, "gr_0123456789abcdef0123456789abcdef").is_err());
         assert!(create_in(&directory, "../outside").is_err());
@@ -132,6 +147,21 @@ mod tests {
         assert!(create_in(&link, "gr_0123456789abcdef0123456789abcdef").is_err());
         std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o777)).unwrap();
         assert!(create_in(&real, "gr_1123456789abcdef0123456789abcdef").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_listable_marker_directory_from_an_earlier_broker_is_tightened() {
+        let root = temporary_directory().parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(&root).unwrap();
+        let legacy = root.join("legacy");
+        std::fs::create_dir(&legacy).unwrap();
+        std::fs::set_permissions(&legacy, std::fs::Permissions::from_mode(0o755)).unwrap();
+        create_in(&legacy, "gr_2123456789abcdef0123456789abcdef").unwrap();
+        assert_eq!(
+            std::fs::metadata(&legacy).unwrap().permissions().mode() & 0o777,
+            0o711
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 }

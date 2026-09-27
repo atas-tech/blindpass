@@ -525,6 +525,8 @@ print(latest)
                 marker=/run/blindpass/ops/"$grant_id".marker
                 [[ -f "$marker" && ! -L "$marker" && ! -s "$marker" ]] || fail 'dummy marker is missing or malformed'
                 [[ $(stat -c '%a:%u' "$marker") == '444:0' ]] || fail 'dummy marker ownership or permissions are unsafe'
+                [[ $(stat -c '%a:%u' /run/blindpass/ops) == '711:0' ]] \
+                    || fail 'operation marker directory is listable or not root-owned'
                 printf 'P03-GUEST-OPERATION-COMPLETED grant_id=%s operation_id=%s\n' "$grant_id" "$operation_id"
                 exit 0
             fi
