@@ -154,6 +154,8 @@ async fn fixture_table_count(fixture: &StoreFixture, table: &str) -> i64 {
 async fn remove_fleet_schema(fixture: &mut StoreFixture, schema_version: i64) {
     fixture.store.take();
     let tables = [
+        "node_key_rotations",
+        "node_revocation_queue",
         "node_challenges",
         "node_events",
         "node_inbox",
@@ -2815,7 +2817,7 @@ async fn later_migration_table_missing_on_current_version_fails_closed() {
         let pool = PgPool::connect(&fixture.url)
             .await
             .expect("connect PostgreSQL schema fixture");
-        sqlx::query("DROP TABLE nodes")
+        sqlx::query("DROP TABLE nodes CASCADE")
             .execute(&pool)
             .await
             .expect("remove fleet PostgreSQL table");
@@ -2965,8 +2967,8 @@ async fn older_schema_version_migrates_forward_and_records_current_version() {
         pool.close().await;
         (version, clock != 0, idempotency != 0)
     };
-    // Version 4 adds boot-anchored clock checks; versions 5-12 add fleet state.
-    assert_eq!(version, 12);
+    // Version 4 adds boot-anchored clock checks; versions 5-13 add fleet state.
+    assert_eq!(version, 13);
     assert!(clock_present && idempotency_present);
     assert_fleet_schema_present(&fixture).await;
     fixture.close().await;

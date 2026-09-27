@@ -1,25 +1,39 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Short-lived node challenges, authenticated channel sessions and durable
-//! transport inbox/event state.
+//! Authenticated node channel sessions and durable transport inbox/event
+//! state. Session challenges are stateless: the controller authenticates its
+//! own nonce, and only a successfully signed nonce is recorded, one use, as
+//! part of the session row.
 
-use super::{Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, new_uuid};
-use sqlx::{Row, postgres::PgRow, sqlite::SqliteRow};
+use super::{Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, pg};
+use sqlx::Row;
 
-const NODE_CHALLENGE_TTL_MS: i64 = 60_000;
 const NODE_SESSION_TTL_MS: i64 = 15 * 60 * 1_000;
 
+/// Current node identity facts needed to issue or verify a stateless session
+/// challenge. Obtaining it is read-only and cannot disturb another handshake.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NodeChallenge {
-    pub id: String,
+pub struct NodeSessionContext {
     pub tenant_id: String,
+    pub node_id: String,
+    pub key_version: i64,
+    pub issuer_epoch: i64,
+    pub now_ms: i64,
+}
+
+/// A verified session handshake ready to be recorded. The nonce hash is
+/// unique across sessions, which makes each signed challenge one-use.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeSessionDraft {
     pub node_id: String,
     pub key_version: i64,
     pub issuer_epoch: i64,
     pub protocol_version: String,
     pub capabilities_json: String,
-    pub capabilities_hash: String,
-    pub created_at_ms: i64,
+    pub nonce_hash: String,
+    pub challenge_expires_at_ms: i64,
+    pub session_id: String,
+    pub token_hash: String,
     pub expires_at_ms: i64,
 }
 
@@ -47,187 +61,180 @@ pub struct NodeEventRecord {
     pub received_at_ms: i64,
 }
 
+/// Node rows that may authenticate a channel: active, or revoked with a
+/// signed revocation still awaiting broker acknowledgement.
+const CHANNEL_NODE_PREDICATE: &str = "n.id = ? AND n.tenant_id = ?
+    AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
+      SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
+    )))
+    AND n.protocol_version = ? AND n.capabilities_json = ?
+    AND (n.key_version = ? OR EXISTS (
+      SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = ?
+    ))";
+
 impl Store {
-    /// Create a one-use challenge only for an active node whose stored
-    /// protocol and capability snapshot exactly match the handshake.
-    pub async fn create_node_challenge(
+    /// Read the facts a stateless challenge binds for a node whose stored
+    /// protocol, capabilities and current or staged key version match.
+    pub async fn node_session_context(
         &self,
         node_id: &str,
         key_version: i64,
-        nonce_hash: &str,
         protocol_version: &str,
         capabilities_json: &str,
-        capabilities_hash: &str,
-    ) -> Result<Option<NodeChallenge>, StoreError> {
+    ) -> Result<Option<NodeSessionContext>, StoreError> {
         self.checkpoint_clock().await?;
-        let id = format!("ch_{}", new_uuid());
-        match &self.database {
-            Database::Sqlite(pool) => {
-                sqlx::query(&format!(
-                    "DELETE FROM node_challenges WHERE expires_at <= {SQLITE_NOW_MS}
-                       OR consumed_at IS NOT NULL OR (tenant_id = ? AND node_id = ?)"
-                ))
-                .bind(&self.tenant_id)
+        let now = match &self.database {
+            Database::Sqlite(_) => SQLITE_NOW_MS,
+            Database::Postgres(_) => POSTGRES_NOW_MS,
+        };
+        let sql = format!(
+            "SELECT n.tenant_id, n.id, m.issuer_epoch, {now} AS now_ms
+             FROM nodes n CROSS JOIN controller_meta m
+             WHERE m.id = 1 AND {CHANNEL_NODE_PREDICATE}"
+        );
+        let row = match &self.database {
+            Database::Sqlite(pool) => sqlx::query(&sql)
                 .bind(node_id)
-                .execute(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                let sql = format!(
-                    "INSERT INTO node_challenges
-                     (id, tenant_id, node_id, nonce_hash, key_version, issuer_epoch,
-                      protocol_version, capabilities_json, capabilities_hash, created_at, expires_at, consumed_at)
-                     SELECT ?, n.tenant_id, n.id, ?, ?, m.issuer_epoch,
-                            n.protocol_version, n.capabilities_json, ?, {SQLITE_NOW_MS},
-                            {SQLITE_NOW_MS} + ?, NULL
-                     FROM nodes n CROSS JOIN controller_meta m
-                     WHERE n.id = ? AND n.tenant_id = ?
-                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
-                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
-                       )))
-                       AND n.protocol_version = ? AND n.capabilities_json = ? AND m.id = 1
-                       AND (n.key_version = ? OR EXISTS (
-                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = ?
-                       ))"
-                );
-                let inserted = sqlx::query(&sql)
-                    .bind(&id)
-                    .bind(nonce_hash)
-                    .bind(key_version)
-                    .bind(capabilities_hash)
-                    .bind(NODE_CHALLENGE_TTL_MS)
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .bind(protocol_version)
-                    .bind(capabilities_json)
-                    .bind(key_version)
-                    .bind(key_version)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if inserted != 1 {
-                    return Ok(None);
-                }
-                let sql = format!(
-                    "SELECT id, tenant_id, node_id, key_version, issuer_epoch,
-                            protocol_version, capabilities_json, capabilities_hash, created_at, expires_at
-                     FROM node_challenges WHERE id = ? AND expires_at > {SQLITE_NOW_MS}"
-                );
-                sqlx::query(&sql)
-                    .bind(&id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(challenge_from_sqlite)
-                    .transpose()
-            }
-            Database::Postgres(pool) => {
-                sqlx::query(&format!(
-                    "DELETE FROM node_challenges WHERE expires_at <= {POSTGRES_NOW_MS}
-                       OR consumed_at IS NOT NULL OR (tenant_id = $1 AND node_id = $2)"
-                ))
                 .bind(&self.tenant_id)
-                .bind(node_id)
-                .execute(pool)
+                .bind(protocol_version)
+                .bind(capabilities_json)
+                .bind(key_version)
+                .bind(key_version)
+                .fetch_optional(pool)
                 .await
-                .map_err(StoreError::Database)?;
-                let sql = format!(
-                    "INSERT INTO node_challenges
-                     (id, tenant_id, node_id, nonce_hash, key_version, issuer_epoch,
-                      protocol_version, capabilities_json, capabilities_hash, created_at, expires_at, consumed_at)
-                     SELECT $1, n.tenant_id, n.id, $2, $3, m.issuer_epoch,
-                            n.protocol_version, n.capabilities_json, $4, {POSTGRES_NOW_MS},
-                            {POSTGRES_NOW_MS} + $5::BIGINT, NULL
-                     FROM nodes n CROSS JOIN controller_meta m
-                     WHERE n.id = $6 AND n.tenant_id = $7
-                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
-                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
-                       )))
-                       AND n.protocol_version = $8 AND n.capabilities_json = $9 AND m.id = 1
-                       AND (n.key_version = $10 OR EXISTS (
-                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = $11
-                       ))"
-                );
-                let inserted = sqlx::query(&sql)
-                    .bind(&id)
-                    .bind(nonce_hash)
-                    .bind(key_version)
-                    .bind(capabilities_hash)
-                    .bind(NODE_CHALLENGE_TTL_MS)
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .bind(protocol_version)
-                    .bind(capabilities_json)
-                    .bind(key_version)
-                    .bind(key_version)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if inserted != 1 {
-                    return Ok(None);
-                }
-                let sql = format!(
-                    "SELECT id, tenant_id, node_id, key_version, issuer_epoch,
-                            protocol_version, capabilities_json, capabilities_hash, created_at, expires_at
-                     FROM node_challenges WHERE id = $1 AND expires_at > {POSTGRES_NOW_MS}"
-                );
-                sqlx::query(&sql)
-                    .bind(&id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(challenge_from_postgres)
-                    .transpose()
-            }
-        }
+                .map_err(StoreError::Database)?
+                .map(|row| {
+                    Ok::<_, StoreError>((
+                        row.try_get::<String, _>(0).map_err(StoreError::Database)?,
+                        row.try_get::<String, _>(1).map_err(StoreError::Database)?,
+                        row.try_get::<i64, _>(2).map_err(StoreError::Database)?,
+                        row.try_get::<i64, _>(3).map_err(StoreError::Database)?,
+                    ))
+                })
+                .transpose()?,
+            Database::Postgres(pool) => sqlx::query(&pg(&sql))
+                .bind(node_id)
+                .bind(&self.tenant_id)
+                .bind(protocol_version)
+                .bind(capabilities_json)
+                .bind(key_version)
+                .bind(key_version)
+                .fetch_optional(pool)
+                .await
+                .map_err(StoreError::Database)?
+                .map(|row| {
+                    Ok::<_, StoreError>((
+                        row.try_get::<String, _>(0).map_err(StoreError::Database)?,
+                        row.try_get::<String, _>(1).map_err(StoreError::Database)?,
+                        row.try_get::<i64, _>(2).map_err(StoreError::Database)?,
+                        row.try_get::<i64, _>(3).map_err(StoreError::Database)?,
+                    ))
+                })
+                .transpose()?,
+        };
+        Ok(row.map(
+            |(tenant_id, node_id, issuer_epoch, now_ms)| NodeSessionContext {
+                tenant_id,
+                node_id,
+                key_version,
+                issuer_epoch,
+                now_ms,
+            },
+        ))
     }
 
-    pub async fn node_challenge(
-        &self,
-        node_id: &str,
-        nonce_hash: &str,
-    ) -> Result<Option<NodeChallenge>, StoreError> {
+    /// Record a session for a verified signed challenge. The node state,
+    /// issuer epoch and challenge deadline are re-checked under the node row
+    /// lock, and the unique nonce hash makes a replayed challenge lose.
+    /// The session inherits the highest inbox sequence already delivered to
+    /// the node so a reconnecting relay can acknowledge what it applied.
+    pub async fn create_node_session(&self, draft: &NodeSessionDraft) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
+        if draft.expires_at_ms <= 0
+            || draft
+                .expires_at_ms
+                .saturating_sub(draft.challenge_expires_at_ms)
+                > NODE_SESSION_TTL_MS
+        {
+            return Err(StoreError::InvalidInput("node session expiry"));
+        }
+        let (now, lock) = match &self.database {
+            Database::Sqlite(_) => (
+                SQLITE_NOW_MS,
+                "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ?",
+            ),
+            Database::Postgres(_) => (
+                POSTGRES_NOW_MS,
+                "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? FOR UPDATE",
+            ),
+        };
+        let eligible_sql = format!(
+            "SELECT COUNT(*) FROM nodes n CROSS JOIN controller_meta m
+             WHERE m.id = 1 AND m.issuer_epoch = ? AND ? > {now} AND {CHANNEL_NODE_PREDICATE}"
+        );
+        let insert_sql = format!(
+            "INSERT INTO node_sessions
+             (id, node_id, nonce_hash, token_hash, created_at, expires_at, revoked_at, delivered_seq)
+             VALUES (?, ?, ?, ?, {now}, ?, NULL,
+               COALESCE((SELECT MAX(s.delivered_seq) FROM node_sessions s WHERE s.node_id = ?), 0))
+             ON CONFLICT DO NOTHING"
+        );
+        macro_rules! record_session {
+            ($pool:expr, $convert:expr, $tombstones:path) => {{
+                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                sqlx::query(&$convert(lock))
+                    .bind(&draft.node_id)
+                    .bind(&self.tenant_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let eligible: i64 = sqlx::query_scalar(&$convert(&eligible_sql))
+                    .bind(draft.issuer_epoch)
+                    .bind(draft.challenge_expires_at_ms)
+                    .bind(&draft.node_id)
+                    .bind(&self.tenant_id)
+                    .bind(&draft.protocol_version)
+                    .bind(&draft.capabilities_json)
+                    .bind(draft.key_version)
+                    .bind(draft.key_version)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                if eligible != 1 {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(false);
+                }
+                let inserted = sqlx::query(&$convert(&insert_sql))
+                    .bind(&draft.session_id)
+                    .bind(&draft.node_id)
+                    .bind(&draft.nonce_hash)
+                    .bind(&draft.token_hash)
+                    .bind(draft.expires_at_ms)
+                    .bind(&draft.node_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                if inserted != 1 {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(false);
+                }
+                $tombstones(&mut tx, &self.tenant_id, &draft.node_id).await?;
+                tx.commit().await.map_err(StoreError::Database)?;
+                Ok(true)
+            }};
+        }
         match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!(
-                    "SELECT id, tenant_id, node_id, key_version, issuer_epoch,
-                            protocol_version, capabilities_json, capabilities_hash, created_at, expires_at
-                     FROM node_challenges WHERE tenant_id = ? AND node_id = ? AND nonce_hash = ?
-                       AND consumed_at IS NULL AND expires_at > {SQLITE_NOW_MS}"
-                );
-                sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(node_id)
-                    .bind(nonce_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(challenge_from_sqlite)
-                    .transpose()
-            }
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "SELECT id, tenant_id, node_id, key_version, issuer_epoch,
-                            protocol_version, capabilities_json, capabilities_hash, created_at, expires_at
-                     FROM node_challenges WHERE tenant_id = $1 AND node_id = $2 AND nonce_hash = $3
-                       AND consumed_at IS NULL AND expires_at > {POSTGRES_NOW_MS}"
-                );
-                sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(node_id)
-                    .bind(nonce_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(challenge_from_postgres)
-                    .transpose()
-            }
+            Database::Sqlite(pool) => record_session!(
+                pool,
+                |sql: &str| sql.to_owned(),
+                super::fleet_lifecycle::requeue_revocations_sqlite
+            ),
+            Database::Postgres(pool) => record_session!(
+                pool,
+                pg,
+                super::fleet_lifecycle::requeue_revocations_postgres
+            ),
         }
     }
 
@@ -264,136 +271,6 @@ impl Store {
             .fetch_optional(pool)
             .await
             .map_err(StoreError::Database),
-        }
-    }
-
-    /// Atomically consume the signed challenge and insert its short-lived
-    /// session. A losing concurrent replay observes `false`.
-    pub async fn consume_node_challenge(
-        &self,
-        challenge: &NodeChallenge,
-        nonce_hash: &str,
-        session_id: &str,
-        token_hash: &str,
-        expires_at_ms: i64,
-    ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        if expires_at_ms <= challenge.created_at_ms
-            || expires_at_ms.saturating_sub(challenge.created_at_ms)
-                > NODE_SESSION_TTL_MS + NODE_CHALLENGE_TTL_MS
-        {
-            return Err(StoreError::InvalidInput("node session expiry"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                let sql = format!(
-                    "UPDATE node_challenges SET consumed_at = {SQLITE_NOW_MS}
-                     WHERE id = ? AND tenant_id = ? AND node_id = ? AND nonce_hash = ?
-                       AND key_version = ? AND issuer_epoch = ? AND protocol_version = ?
-                       AND capabilities_json = ? AND capabilities_hash = ? AND consumed_at IS NULL
-                       AND expires_at > {SQLITE_NOW_MS}
-                       AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = ? AND n.tenant_id = ?
-                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
-                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
-                       ))) AND (n.key_version = ? OR EXISTS (
-                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = ?
-                       ))
-                         AND n.protocol_version = ? AND n.capabilities_json = ?)
-                       AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND m.issuer_epoch = ?)"
-                );
-                let updated = sqlx::query(&sql)
-                    .bind(&challenge.id)
-                    .bind(&challenge.tenant_id)
-                    .bind(&challenge.node_id)
-                    .bind(nonce_hash)
-                    .bind(challenge.key_version)
-                    .bind(challenge.issuer_epoch)
-                    .bind(&challenge.protocol_version)
-                    .bind(&challenge.capabilities_json)
-                    .bind(&challenge.capabilities_hash)
-                    .bind(&challenge.node_id)
-                    .bind(&self.tenant_id)
-                    .bind(challenge.key_version)
-                    .bind(challenge.key_version)
-                    .bind(&challenge.protocol_version)
-                    .bind(&challenge.capabilities_json)
-                    .bind(challenge.issuer_epoch)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if updated != 1 {
-                    transaction.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let sql = format!(
-                    "INSERT INTO node_sessions (id, node_id, nonce_hash, token_hash, created_at, expires_at, revoked_at)
-                     VALUES (?, ?, ?, ?, {SQLITE_NOW_MS}, ?, NULL)"
-                );
-                sqlx::query(&sql)
-                    .bind(session_id)
-                    .bind(&challenge.node_id)
-                    .bind(nonce_hash)
-                    .bind(token_hash)
-                    .bind(expires_at_ms)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                let sql = format!(
-                    "UPDATE node_challenges SET consumed_at = {POSTGRES_NOW_MS}
-                     WHERE id = $1 AND tenant_id = $2 AND node_id = $3 AND nonce_hash = $4
-                       AND key_version = $5 AND issuer_epoch = $6 AND protocol_version = $7
-                       AND capabilities_json = $9 AND capabilities_hash = $8 AND consumed_at IS NULL
-                       AND expires_at > {POSTGRES_NOW_MS}
-                       AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = $3 AND n.tenant_id = $2
-                       AND (n.status = 'active' OR (n.status = 'revoked' AND EXISTS (
-                         SELECT 1 FROM node_revocation_queue q WHERE q.node_id = n.id
-                       ))) AND (n.key_version = $5 OR EXISTS (
-                         SELECT 1 FROM node_key_rotations r WHERE r.node_id = n.id AND r.to_key_version = $5
-                       ))
-                         AND n.protocol_version = $7 AND n.capabilities_json = $9)
-                       AND EXISTS (SELECT 1 FROM controller_meta m WHERE m.id = 1 AND m.issuer_epoch = $6)"
-                );
-                let updated = sqlx::query(&sql)
-                    .bind(&challenge.id)
-                    .bind(&challenge.tenant_id)
-                    .bind(&challenge.node_id)
-                    .bind(nonce_hash)
-                    .bind(challenge.key_version)
-                    .bind(challenge.issuer_epoch)
-                    .bind(&challenge.protocol_version)
-                    .bind(&challenge.capabilities_hash)
-                    .bind(&challenge.capabilities_json)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if updated != 1 {
-                    transaction.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let sql = format!(
-                    "INSERT INTO node_sessions (id, node_id, nonce_hash, token_hash, created_at, expires_at, revoked_at)
-                     VALUES ($1, $2, $3, $4, {POSTGRES_NOW_MS}, $5, NULL)"
-                );
-                sqlx::query(&sql)
-                    .bind(session_id)
-                    .bind(&challenge.node_id)
-                    .bind(nonce_hash)
-                    .bind(token_hash)
-                    .bind(expires_at_ms)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }
         }
     }
 
@@ -479,106 +356,117 @@ impl Store {
         }
     }
 
-    /// Acknowledge only previously delivered inbox rows, mark at most fifty
-    /// outstanding rows delivered, and return those rows in sequence order.
+    /// Acknowledge rows at or below the relay's claimed sequence, clamped to
+    /// the highest sequence actually delivered to this session (including the
+    /// sequence it inherited at creation), mark at most fifty outstanding rows
+    /// delivered and return them in order. Delivered grant documents move
+    /// their grants from `issued` to `delivered`.
     pub async fn poll_node_inbox(
         &self,
         node_id: &str,
+        session_id: &str,
         ack_seq: Option<i64>,
     ) -> Result<Vec<InboxDocument>, StoreError> {
         self.checkpoint_clock().await?;
+        let (now, lock) = match &self.database {
+            Database::Sqlite(_) => (
+                SQLITE_NOW_MS,
+                "UPDATE node_sessions SET delivered_seq = delivered_seq
+                 WHERE id = ? AND node_id = ? RETURNING delivered_seq",
+            ),
+            Database::Postgres(_) => (
+                POSTGRES_NOW_MS,
+                "SELECT delivered_seq FROM node_sessions WHERE id = ? AND node_id = ? FOR UPDATE",
+            ),
+        };
+        let ack_sql = format!(
+            "UPDATE node_inbox SET acked_at = {now}
+             WHERE node_id = ? AND seq <= ? AND delivered_at IS NOT NULL AND acked_at IS NULL"
+        );
+        let deliver_sql = format!(
+            "UPDATE node_inbox SET delivered_at = COALESCE(delivered_at, {now})
+             WHERE node_id = ? AND acked_at IS NULL AND seq IN
+               (SELECT seq FROM node_inbox WHERE node_id = ? AND acked_at IS NULL ORDER BY seq LIMIT 50)"
+        );
+        let select_sql = "SELECT seq, envelope_json FROM node_inbox
+             WHERE node_id = ? AND acked_at IS NULL ORDER BY seq LIMIT 50";
+        let advance_sql = "UPDATE node_sessions SET delivered_seq = ?
+             WHERE id = ? AND node_id = ? AND delivered_seq < ?";
+        let delivered_sql = "UPDATE grants SET status = 'delivered'
+             WHERE id = ? AND node_id = ? AND tenant_id = ? AND status = 'issued'";
+        macro_rules! poll {
+            ($pool:expr, $convert:expr) => {{
+                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                let delivered_seq: Option<i64> = sqlx::query_scalar(&$convert(lock))
+                    .bind(session_id)
+                    .bind(node_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let Some(delivered_seq) = delivered_seq else {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::MissingState("node session"));
+                };
+                if let Some(ack_seq) = ack_seq {
+                    let acknowledged = ack_seq.min(delivered_seq);
+                    if acknowledged > 0 {
+                        sqlx::query(&$convert(&ack_sql))
+                            .bind(node_id)
+                            .bind(acknowledged)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(StoreError::Database)?;
+                    }
+                }
+                sqlx::query(&$convert(&deliver_sql))
+                    .bind(node_id)
+                    .bind(node_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let rows = sqlx::query(&$convert(select_sql))
+                    .bind(node_id)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let mut documents = Vec::with_capacity(rows.len());
+                for row in &rows {
+                    documents.push(InboxDocument {
+                        seq: row.try_get("seq").map_err(StoreError::Database)?,
+                        envelope_json: row
+                            .try_get("envelope_json")
+                            .map_err(StoreError::Database)?,
+                    });
+                }
+                if let Some(highest) = documents.iter().map(|document| document.seq).max() {
+                    sqlx::query(&$convert(advance_sql))
+                        .bind(highest)
+                        .bind(session_id)
+                        .bind(node_id)
+                        .bind(highest)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
+                for grant_id in documents
+                    .iter()
+                    .filter_map(|document| delivered_grant_id(&document.envelope_json))
+                {
+                    sqlx::query(&$convert(delivered_sql))
+                        .bind(&grant_id)
+                        .bind(node_id)
+                        .bind(&self.tenant_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
+                tx.commit().await.map_err(StoreError::Database)?;
+                Ok(documents)
+            }};
+        }
         match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                if let Some(ack_seq) = ack_seq {
-                    let sql = format!(
-                        "UPDATE node_inbox SET acked_at = {SQLITE_NOW_MS}
-                         WHERE node_id = ? AND seq <= ? AND delivered_at IS NOT NULL AND acked_at IS NULL"
-                    );
-                    sqlx::query(&sql)
-                        .bind(node_id)
-                        .bind(ack_seq)
-                        .execute(&mut *transaction)
-                        .await
-                        .map_err(StoreError::Database)?;
-                }
-                let sql = format!(
-                    "UPDATE node_inbox SET delivered_at = COALESCE(delivered_at, {SQLITE_NOW_MS})
-                     WHERE node_id = ? AND acked_at IS NULL AND seq IN
-                       (SELECT seq FROM node_inbox WHERE node_id = ? AND acked_at IS NULL ORDER BY seq LIMIT 50)"
-                );
-                sqlx::query(&sql)
-                    .bind(node_id)
-                    .bind(node_id)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let rows = sqlx::query(
-                    "SELECT seq, envelope_json FROM node_inbox WHERE node_id = ? AND acked_at IS NULL ORDER BY seq LIMIT 50",
-                )
-                .bind(node_id)
-                .fetch_all(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?;
-                let documents = rows
-                    .iter()
-                    .map(|row| {
-                        Ok(InboxDocument {
-                            seq: row.try_get("seq").map_err(StoreError::Database)?,
-                            envelope_json: row
-                                .try_get("envelope_json")
-                                .map_err(StoreError::Database)?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, StoreError>>()?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(documents)
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                if let Some(ack_seq) = ack_seq {
-                    let sql = format!(
-                        "UPDATE node_inbox SET acked_at = {POSTGRES_NOW_MS}
-                         WHERE node_id = $1 AND seq <= $2 AND delivered_at IS NOT NULL AND acked_at IS NULL"
-                    );
-                    sqlx::query(&sql)
-                        .bind(node_id)
-                        .bind(ack_seq)
-                        .execute(&mut *transaction)
-                        .await
-                        .map_err(StoreError::Database)?;
-                }
-                let sql = format!(
-                    "UPDATE node_inbox SET delivered_at = COALESCE(delivered_at, {POSTGRES_NOW_MS})
-                     WHERE (node_id, seq) IN
-                       (SELECT node_id, seq FROM node_inbox WHERE node_id = $1 AND acked_at IS NULL ORDER BY seq LIMIT 50)"
-                );
-                sqlx::query(&sql)
-                    .bind(node_id)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let rows = sqlx::query(
-                    "SELECT seq, envelope_json FROM node_inbox WHERE node_id = $1 AND acked_at IS NULL ORDER BY seq LIMIT 50",
-                )
-                .bind(node_id)
-                .fetch_all(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?;
-                let documents = rows
-                    .iter()
-                    .map(|row| {
-                        Ok(InboxDocument {
-                            seq: row.try_get("seq").map_err(StoreError::Database)?,
-                            envelope_json: row
-                                .try_get("envelope_json")
-                                .map_err(StoreError::Database)?,
-                        })
-                    })
-                    .collect::<Result<Vec<_>, StoreError>>()?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(documents)
-            }
+            Database::Sqlite(pool) => poll!(pool, |sql: &str| sql.to_owned()),
+            Database::Postgres(pool) => poll!(pool, pg),
         }
     }
 
@@ -732,44 +620,52 @@ fn node_event_from_postgres(row: &sqlx::postgres::PgRow) -> Result<NodeEventReco
     })
 }
 
-fn challenge_from_sqlite(row: &SqliteRow) -> Result<NodeChallenge, StoreError> {
-    Ok(NodeChallenge {
-        id: row.try_get("id").map_err(StoreError::Database)?,
-        tenant_id: row.try_get("tenant_id").map_err(StoreError::Database)?,
-        node_id: row.try_get("node_id").map_err(StoreError::Database)?,
-        key_version: row.try_get("key_version").map_err(StoreError::Database)?,
-        issuer_epoch: row.try_get("issuer_epoch").map_err(StoreError::Database)?,
-        protocol_version: row
-            .try_get("protocol_version")
-            .map_err(StoreError::Database)?,
-        capabilities_json: row
-            .try_get("capabilities_json")
-            .map_err(StoreError::Database)?,
-        capabilities_hash: row
-            .try_get("capabilities_hash")
-            .map_err(StoreError::Database)?,
-        created_at_ms: row.try_get("created_at").map_err(StoreError::Database)?,
-        expires_at_ms: row.try_get("expires_at").map_err(StoreError::Database)?,
-    })
+impl Store {
+    /// Look up a previously recorded event for idempotency, whatever the
+    /// node's current state. Ingestion uses it to short-circuit exact
+    /// duplicates without re-applying them.
+    pub async fn recorded_node_event(
+        &self,
+        node_id: &str,
+        idempotency_key: &str,
+    ) -> Result<Option<NodeEventRecord>, StoreError> {
+        self.checkpoint_clock().await?;
+        let sql = "SELECT e.id, e.node_id, e.idempotency_key, e.kind, e.body_json, e.body_hash, e.received_at
+            FROM node_events e JOIN nodes n ON n.id = e.node_id
+            WHERE e.node_id = ? AND e.idempotency_key = ? AND n.tenant_id = ?";
+        match &self.database {
+            Database::Sqlite(pool) => sqlx::query(sql)
+                .bind(node_id)
+                .bind(idempotency_key)
+                .bind(&self.tenant_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(StoreError::Database)?
+                .as_ref()
+                .map(node_event_from_sqlite)
+                .transpose(),
+            Database::Postgres(pool) => sqlx::query(&pg(sql))
+                .bind(node_id)
+                .bind(idempotency_key)
+                .bind(&self.tenant_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(StoreError::Database)?
+                .as_ref()
+                .map(node_event_from_postgres)
+                .transpose(),
+        }
+    }
 }
 
-fn challenge_from_postgres(row: &PgRow) -> Result<NodeChallenge, StoreError> {
-    Ok(NodeChallenge {
-        id: row.try_get("id").map_err(StoreError::Database)?,
-        tenant_id: row.try_get("tenant_id").map_err(StoreError::Database)?,
-        node_id: row.try_get("node_id").map_err(StoreError::Database)?,
-        key_version: row.try_get("key_version").map_err(StoreError::Database)?,
-        issuer_epoch: row.try_get("issuer_epoch").map_err(StoreError::Database)?,
-        protocol_version: row
-            .try_get("protocol_version")
-            .map_err(StoreError::Database)?,
-        capabilities_json: row
-            .try_get("capabilities_json")
-            .map_err(StoreError::Database)?,
-        capabilities_hash: row
-            .try_get("capabilities_hash")
-            .map_err(StoreError::Database)?,
-        created_at_ms: row.try_get("created_at").map_err(StoreError::Database)?,
-        expires_at_ms: row.try_get("expires_at").map_err(StoreError::Database)?,
-    })
+/// The grant identifier of a signed grant document, if the inbox row is one.
+fn delivered_grant_id(envelope_json: &str) -> Option<String> {
+    use blindpass_core::fleet::{DocumentKind, Grant, SignedEnvelope};
+    let envelope = SignedEnvelope::from_json(envelope_json).ok()?;
+    if envelope.kind() != DocumentKind::Grant {
+        return None;
+    }
+    Grant::from_value(envelope.body())
+        .ok()
+        .map(|grant| grant.id)
 }

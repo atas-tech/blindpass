@@ -12,7 +12,7 @@ pub(crate) mod auth;
 pub(crate) mod authorization;
 pub(crate) mod exchanges;
 pub(crate) mod fleet;
-mod node;
+pub(crate) mod node;
 pub(crate) mod secrets;
 
 pub(crate) use admin_session::forced_password_change_gate;

@@ -33,6 +33,13 @@ pub(super) async fn enqueue_node_document_sqlite(
     if envelope_json.is_empty() || envelope_json.len() > 64 * 1024 {
         return Err(StoreError::InvalidInput("signed node document size"));
     }
+    // Take the database write lock before reading MAX(seq) so the allocation
+    // and insert cannot interleave with another writer.
+    sqlx::query("UPDATE nodes SET version = version WHERE id = ?")
+        .bind(node_id)
+        .execute(&mut **transaction)
+        .await
+        .map_err(StoreError::Database)?;
     let current: i64 =
         sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM node_inbox WHERE node_id = ?")
             .bind(node_id)
@@ -63,6 +70,13 @@ pub(super) async fn enqueue_node_document_postgres(
     if envelope_json.is_empty() || envelope_json.len() > 64 * 1024 {
         return Err(StoreError::InvalidInput("signed node document size"));
     }
+    // Serialize every writer for this node on its row so MAX(seq) + 1 cannot
+    // be allocated twice by concurrent transactions.
+    sqlx::query("SELECT id FROM nodes WHERE id = $1 FOR UPDATE")
+        .bind(node_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .map_err(StoreError::Database)?;
     let current: i64 =
         sqlx::query_scalar("SELECT COALESCE(MAX(seq), 0) FROM node_inbox WHERE node_id = $1")
             .bind(node_id)

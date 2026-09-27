@@ -2,7 +2,7 @@
 
 use crate::config::Config;
 use crate::routes::{self, agents, exchanges, secrets};
-use crate::store::{SCHEMA_VERSION, Store};
+use crate::store::{FleetSigner, SCHEMA_VERSION, Store};
 use axum::body::Body;
 use axum::extract::{Request, State};
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode, header};
@@ -30,6 +30,7 @@ pub(crate) struct AppState {
     pub(crate) store: Option<Store>,
     pub(crate) root_secret: Arc<SecretBytes>,
     pub(crate) agent_jwt_secret: Arc<SecretBytes>,
+    pub(crate) node_keys: Arc<routes::node::NodeChannelKeys>,
     pub(crate) issuer_keypair: Option<Arc<Ed25519KeyPair>>,
     pub(crate) issuer_key_id: Option<String>,
     pub(crate) agent_auth_providers_json: Option<String>,
@@ -102,10 +103,19 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
     let issuer_key_id = issuer_keypair
         .as_ref()
         .map(|keypair| format!("ed25519-{}", base64_url_encode(keypair.public_key())));
+    let store = match (store, issuer_keypair.as_ref()) {
+        (Some(store), Some(keypair)) => {
+            Some(store.with_fleet_signer(FleetSigner::new(Arc::clone(keypair))))
+        }
+        (store, _) => store,
+    };
     let state = AppState {
         store,
         root_secret: Arc::new(SecretBytes::from_slice(config.root_secret())),
         agent_jwt_secret: Arc::new(SecretBytes::from_slice(config.agent_jwt_secret())),
+        node_keys: Arc::new(routes::node::NodeChannelKeys::derive(
+            config.agent_jwt_secret(),
+        )),
         issuer_keypair,
         issuer_key_id,
         agent_auth_providers_json: config.agent_auth_providers_json().map(str::to_owned),

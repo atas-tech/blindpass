@@ -8,6 +8,9 @@ use blindpass_core::clock::{
     ClockAnchor, ClockSample, ClockSource, StartupClockCheck, SystemClock, check_running_clock,
     check_startup_clock,
 };
+use blindpass_core::fleet::{DocumentKind, SignedEnvelope};
+use blindpass_core::signing::base64_url_encode;
+use blindpass_core::signing::ed25519::Ed25519KeyPair;
 use rand::{RngCore, rngs::OsRng};
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
 use sqlx::{PgPool, Row, SqlitePool, postgres::PgPoolOptions};
@@ -19,6 +22,7 @@ use std::time::{Duration, Instant};
 mod authorization;
 mod exchanges;
 mod fleet;
+mod fleet_lifecycle;
 mod grants;
 mod node_channel;
 mod operators;
@@ -31,8 +35,11 @@ pub use exchanges::{
     LifecycleRecord,
 };
 pub use fleet::{EnrollmentRecord, NodeGrantRevocationDraft, NodeKeyRotationDraft, NodeRecord};
+pub use fleet_lifecycle::{FleetExpirySummary, FleetPruneSummary};
 pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord, GrantRevocationOutcome};
-pub use node_channel::{InboxDocument, NodeChallenge, NodeEventInsert, NodeEventRecord};
+pub use node_channel::{
+    InboxDocument, NodeEventInsert, NodeEventRecord, NodeSessionContext, NodeSessionDraft,
+};
 pub use operators::{LocalOperator, LocalSession};
 
 const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
@@ -40,8 +47,9 @@ const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) 
 const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER) ELSE NULL END)";
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
 /// Current schema version. Versions 5-12 add fleet authorization, node
-/// revocation reconciliation, channel state and staged key rotation.
-pub const SCHEMA_VERSION: i64 = 12;
+/// revocation reconciliation, channel state and staged key rotation; version
+/// 13 adds approval scoping, revocation outcomes and fleet retention state.
+pub const SCHEMA_VERSION: i64 = 13;
 /// Tables that must exist for a database that reports the given version.
 /// A supported older version is migrated forward; a version whose tables
 /// are missing is damaged and fails closed instead of being recreated.
@@ -91,6 +99,7 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     (10, &["controller_meta"]),
     (11, &["node_revocation_queue"]),
     (12, &["node_key_rotations"]),
+    (13, &["operation_approvals", "grants", "node_sessions"]),
 ];
 /// The persisted clock high-water mark advances at most this often, so
 /// ordinary reads never take a write lock. The independent one-second clock
@@ -142,6 +151,37 @@ pub struct Store {
     clock_source: Arc<dyn ClockSource>,
     clock_tolerance_ms: i64,
     clock_monitor: Arc<Mutex<Option<ClockMonitorSample>>>,
+    fleet_signer: Option<FleetSigner>,
+}
+
+/// Signs the controller documents that store transitions emit to node inboxes,
+/// so a document commits atomically with the state change it announces.
+#[derive(Clone)]
+pub struct FleetSigner {
+    keypair: Arc<Ed25519KeyPair>,
+    key_id: String,
+}
+
+impl FleetSigner {
+    #[must_use]
+    pub fn new(keypair: Arc<Ed25519KeyPair>) -> Self {
+        let key_id = format!("ed25519-{}", base64_url_encode(keypair.public_key()));
+        Self { keypair, key_id }
+    }
+
+    pub(super) fn sign(
+        &self,
+        kind: DocumentKind,
+        body: blindpass_core::canon::Value,
+        epoch: u64,
+    ) -> Result<String, StoreError> {
+        let envelope = SignedEnvelope::sign(kind, body, &self.key_id, epoch, &self.keypair)
+            .map_err(|_| StoreError::InvalidInput("signed node document"))?;
+        let bytes = envelope
+            .to_json()
+            .map_err(|_| StoreError::InvalidInput("signed node document"))?;
+        String::from_utf8(bytes).map_err(|_| StoreError::InvalidInput("signed node document"))
+    }
 }
 
 #[derive(Clone)]
@@ -372,6 +412,7 @@ impl Store {
             clock_source,
             clock_tolerance_ms,
             clock_monitor: Arc::new(Mutex::new(None)),
+            fleet_signer: None,
         };
         let database_ms = database_wall_now_ms(&store.database).await?;
         store.initialize_clock(sample, database_ms).await?;
@@ -381,6 +422,14 @@ impl Store {
     #[must_use]
     pub fn tenant_id(&self) -> &str {
         &self.tenant_id
+    }
+
+    /// Attach the issuer signer used for documents emitted by fleet
+    /// transitions such as operation closures and grant revocations.
+    #[must_use]
+    pub fn with_fleet_signer(mut self, signer: FleetSigner) -> Self {
+        self.fleet_signer = Some(signer);
+        self
     }
 
     pub async fn database_now_ms(&self) -> Result<i64, StoreError> {
@@ -2274,7 +2323,41 @@ impl Database {
         if version >= 10 && !self.issuer_epoch_column_is_wide_enough().await? {
             return Err(StoreError::UnsupportedSchemaVersion);
         }
+        if version >= 13 && !self.review_columns_present().await? {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
         Ok(())
+    }
+
+    async fn review_columns_present(&self) -> Result<bool, StoreError> {
+        for (table, columns) in REVIEW_COLUMNS {
+            match self {
+                Self::Sqlite(pool) => {
+                    let present = sqlite_columns(pool, table).await?;
+                    if columns.iter().any(|(column, _)| !present.contains(*column)) {
+                        return Ok(false);
+                    }
+                }
+                Self::Postgres(pool) => {
+                    for (column, _) in *columns {
+                        let count: i64 = sqlx::query_scalar(
+                            "SELECT COUNT(*) FROM information_schema.columns
+                             WHERE table_schema = current_schema() AND table_name = $1
+                               AND column_name = $2",
+                        )
+                        .bind(table)
+                        .bind(column)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                        if count != 1 {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(true)
     }
 
     async fn issuer_epoch_column_is_wide_enough(&self) -> Result<bool, StoreError> {
@@ -2604,6 +2687,24 @@ impl Database {
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
+                for (table, columns) in REVIEW_COLUMNS {
+                    let present = sqlite_columns(pool, table).await?;
+                    for (column, definition) in *columns {
+                        if !present.contains(*column) {
+                            sqlx::query(&format!(
+                                "ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                            ))
+                            .execute(pool)
+                            .await
+                            .map_err(StoreError::Database)?;
+                        }
+                    }
+                }
+                rebuild_sqlite_nodes_without_name_constraint(pool).await?;
+                sqlx::raw_sql(include_str!("migrations/sqlite/0013_fleet_review.sql"))
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
                 Ok(())
             }
             Self::Postgres(pool) => {
@@ -2672,10 +2773,141 @@ impl Database {
                 .execute(pool)
                 .await
                 .map(|_| ())
-                .map_err(StoreError::Database)
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!("migrations/postgres/0013_fleet_review.sql"))
+                    .execute(pool)
+                    .await
+                    .map(|_| ())
+                    .map_err(StoreError::Database)
             }
         }
     }
+}
+
+/// Columns added by schema version 13. SQLite has no `ADD COLUMN IF NOT
+/// EXISTS`, so both the migration and the version check use this list.
+const REVIEW_COLUMNS: &[(&str, &[(&str, &str)])] = &[
+    (
+        "operation_approvals",
+        &[
+            ("approver_ids_json", "TEXT NOT NULL DEFAULT '[]'"),
+            ("group_scope_hash", "TEXT"),
+        ],
+    ),
+    (
+        "grants",
+        &[
+            ("broker_revocation_outcome", "TEXT"),
+            ("revoked_by", "TEXT"),
+        ],
+    ),
+    ("nodes", &[("revoked_by", "TEXT")]),
+    (
+        "node_sessions",
+        &[("delivered_seq", "BIGINT NOT NULL DEFAULT 0")],
+    ),
+    ("grant_tombstones", &[("envelope_json", "TEXT")]),
+];
+
+async fn sqlite_columns(
+    pool: &SqlitePool,
+    table: &str,
+) -> Result<std::collections::BTreeSet<String>, StoreError> {
+    let rows = sqlx::query(&format!("PRAGMA table_info({table})"))
+        .fetch_all(pool)
+        .await
+        .map_err(StoreError::Database)?;
+    Ok(rows
+        .iter()
+        .filter_map(|row| row.try_get::<String, _>("name").ok())
+        .collect())
+}
+
+/// Version 5 declared `UNIQUE (tenant_id, name)` on `nodes`, which prevents
+/// re-enrolling a revoked node's name. SQLite cannot drop a table constraint,
+/// so the table is rebuilt once with foreign-key enforcement suspended on a
+/// dedicated connection; a partial unique index on active names replaces it.
+async fn rebuild_sqlite_nodes_without_name_constraint(pool: &SqlitePool) -> Result<(), StoreError> {
+    let indexes = sqlx::query("PRAGMA index_list(nodes)")
+        .fetch_all(pool)
+        .await
+        .map_err(StoreError::Database)?;
+    let constrained = indexes
+        .iter()
+        .any(|row| row.try_get::<String, _>("origin").ok().as_deref() == Some("u"));
+    if !constrained {
+        return Ok(());
+    }
+    let mut connection = pool.acquire().await.map_err(StoreError::Database)?;
+    sqlx::query("PRAGMA foreign_keys = OFF")
+        .execute(&mut *connection)
+        .await
+        .map_err(StoreError::Database)?;
+    let rebuilt = sqlx::raw_sql(
+        "BEGIN IMMEDIATE;
+         CREATE TABLE nodes_rebuild (
+             id TEXT PRIMARY KEY,
+             tenant_id TEXT NOT NULL,
+             name TEXT NOT NULL,
+             signing_pub TEXT NOT NULL,
+             recipient_pub TEXT NOT NULL,
+             key_version BIGINT NOT NULL CHECK (key_version > 0),
+             status TEXT NOT NULL CHECK (status IN ('active', 'revoked')),
+             protocol_version TEXT NOT NULL,
+             capabilities_json TEXT NOT NULL,
+             last_seen_at BIGINT,
+             last_poll_at BIGINT,
+             created_at BIGINT NOT NULL,
+             revoked_at BIGINT,
+             version BIGINT NOT NULL DEFAULT 1,
+             revoked_by TEXT
+         );
+         INSERT INTO nodes_rebuild (id, tenant_id, name, signing_pub, recipient_pub, key_version,
+             status, protocol_version, capabilities_json, last_seen_at, last_poll_at, created_at,
+             revoked_at, version, revoked_by)
+         SELECT id, tenant_id, name, signing_pub, recipient_pub, key_version, status,
+             protocol_version, capabilities_json, last_seen_at, last_poll_at, created_at,
+             revoked_at, version, revoked_by FROM nodes;
+         DROP TABLE nodes;
+         ALTER TABLE nodes_rebuild RENAME TO nodes;
+         CREATE INDEX IF NOT EXISTS nodes_liveness_idx ON nodes (tenant_id, status, last_seen_at, id);
+         COMMIT;",
+    )
+    .execute(&mut *connection)
+    .await;
+    if rebuilt.is_err() {
+        let _ = sqlx::query("ROLLBACK").execute(&mut *connection).await;
+    }
+    let violations = sqlx::query("PRAGMA foreign_key_check")
+        .fetch_all(&mut *connection)
+        .await;
+    let restored = sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&mut *connection)
+        .await;
+    rebuilt.map_err(StoreError::Database)?;
+    restored.map_err(StoreError::Database)?;
+    if !violations.map_err(StoreError::Database)?.is_empty() {
+        return Err(StoreError::MissingState("node foreign keys after rebuild"));
+    }
+    Ok(())
+}
+
+/// Rewrite `?` placeholders as PostgreSQL `$n` parameters so a statement is
+/// written once for both backends. Statements passed here must not contain
+/// literal question marks.
+pub(super) fn pg(sql: &str) -> String {
+    let mut output = String::with_capacity(sql.len() + 16);
+    let mut index = 0;
+    for character in sql.chars() {
+        if character == '?' {
+            index += 1;
+            output.push('$');
+            output.push_str(&index.to_string());
+        } else {
+            output.push(character);
+        }
+    }
+    output
 }
 
 fn agent_credential_from_sqlite(
