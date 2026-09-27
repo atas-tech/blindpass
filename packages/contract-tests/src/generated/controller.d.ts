@@ -2145,6 +2145,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -2226,6 +2231,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -2264,6 +2274,11 @@ export interface operations {
       };
     };
     "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2370,6 +2385,11 @@ export interface operations {
       };
     };
     "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2507,6 +2527,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -2589,6 +2614,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -2622,6 +2652,11 @@ export interface operations {
       };
     };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2695,6 +2730,11 @@ export interface operations {
       };
     };
     "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2835,6 +2875,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -2875,6 +2920,11 @@ export interface operations {
       };
     };
     "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2987,6 +3037,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -3064,6 +3119,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
@@ -3136,6 +3196,11 @@ export interface operations {
       };
     };
     "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };

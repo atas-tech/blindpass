@@ -577,7 +577,7 @@
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentCreateInput" } } } },
-        "responses": { "201": { "description": "One-use enrollment token, shown once", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentCreated" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "201": { "description": "One-use enrollment token, shown once", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentCreated" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/enrollments/{id}": {
@@ -597,7 +597,7 @@
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentDecisionInput" } } } },
         "description": "Returns 409 enrollment_key_reused when the submitted keys belong to a previous node, 409 enrollment_changed when the enrollment changed, the fingerprint differs or an active node already holds the name, and 410 enrollment_expired after the enrollment expires. A revoked node's name may be reused.",
-        "responses": { "200": { "description": "Node enrolled after fingerprint verification", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "410": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Node enrolled after fingerprint verification", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "410": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/enrollments/{id}/reject": {
@@ -607,7 +607,7 @@
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentDecisionInput" } } } },
-        "responses": { "200": { "description": "Enrollment rejected", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Enrollment" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Enrollment rejected", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Enrollment" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/nodes": {
@@ -632,7 +632,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
-        "responses": { "200": { "description": "Node revoked; revocation_pending remains true until the node applies the signed revocation and its channel session is closed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Node revoked; revocation_pending remains true until the node applies the signed revocation and its channel session is closed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/nodes/{id}/rotate-key": {
@@ -660,7 +660,7 @@
         "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkloadInput" } } } },
         "description": "Returns 409 workload_unit_conflict when an active workload on the node already uses the unit.",
-        "responses": { "201": { "description": "Administrator-controlled workload registration", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "201": { "description": "Administrator-controlled workload registration", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/workloads/{id}": {
@@ -678,7 +678,7 @@
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkloadUpdateInput" } } } },
         "description": "Changing unit, account or consumption mode withdraws the workload's outstanding grants, approvals and requests; returns 409 workload_unit_conflict when the new unit is already active on the node.",
-        "responses": { "200": { "description": "Updated workload and incremented registration version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Updated workload and incremented registration version", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "delete": {
         "operationId": "revokeFleetWorkload",
@@ -686,7 +686,7 @@
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "description": "Revokes the workload's issued or delivered grants with signed revocations, expires its pending approvals and cancels its pending requests.",
-        "responses": { "200": { "description": "Workload revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Workload revoked", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/policies": {
@@ -703,7 +703,7 @@
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FleetPolicyInput" } } } },
-        "responses": { "200": { "description": "Policy version incremented", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FleetPolicy" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Policy version incremented", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FleetPolicy" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/approvals": {
@@ -741,7 +741,7 @@
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationDecisionInput" }, { "$ref": "#/components/schemas/ApprovalDecisionInput" }] } } } },
-        "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/approvals/{id}/reject": {
@@ -752,7 +752,7 @@
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationDecisionInput" }, { "$ref": "#/components/schemas/ApprovalDecisionInput" }] } } } },
-        "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/grants": {
@@ -777,7 +777,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
-        "responses": { "200": { "description": "Typed grant revocation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantRevocationResult" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Typed grant revocation result", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantRevocationResult" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/operations": {
@@ -795,7 +795,7 @@
         "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationInput" } } } },
         "description": "Returns 409 approval_rule_without_approvers when the matching pending_approval rule names no approvers. The purpose is stored with terminal control and bidirectional formatting characters removed.",
-        "responses": { "201": { "description": "Operation created with policy decision", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operation" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "201": { "description": "Operation created with policy decision", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operation" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/operations/{id}": {
@@ -812,7 +812,7 @@
         "security": [{ "adminSession": [], "csrfCookie": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
         "description": "An operation awaiting approval is removed from its approval group and returned as cancelled; a granted operation's grant is revoked.",
-        "responses": { "200": { "description": "Cancelled operation, or typed grant revocation result", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/Operation" }, { "$ref": "#/components/schemas/GrantRevocationResult" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Cancelled operation, or typed grant revocation result", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/Operation" }, { "$ref": "#/components/schemas/GrantRevocationResult" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/audit": {
