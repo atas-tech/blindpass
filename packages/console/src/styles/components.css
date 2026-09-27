@@ -916,6 +916,10 @@ a.btn:hover {
     display: none;
   }
 
+  .data-table.is-responsive td.cell-actions > * + * {
+    margin-left: 0;
+  }
+
   .truncate {
     max-width: 100%;
     white-space: normal;

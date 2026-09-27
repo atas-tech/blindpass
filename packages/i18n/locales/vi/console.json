@@ -1,4 +1,222 @@
 {
+  "reveal": {
+    "onceTitle": "Chỉ hiển thị một lần",
+    "copy": "Sao chép",
+    "confirm": "Tôi đã lưu giá trị này ở nơi an toàn",
+    "done": "Xong"
+  },
+  "agents": {
+    "eyebrow": "Danh tính",
+    "title": "Biết ai đang yêu cầu.",
+    "description": "Tác tử dùng khóa khởi tạo để yêu cầu hoặc thực hiện trao đổi bí mật.",
+    "filter": "Lọc tác tử",
+    "filters": {
+      "active": "Đang hoạt động",
+      "revoked": "Đã thu hồi",
+      "all": "Tất cả"
+    },
+    "columns": {
+      "agent": "Tác tử",
+      "status": "Trạng thái",
+      "created": "Đăng ký lúc",
+      "actions": "Thao tác"
+    },
+    "status": {
+      "active": "Đang hoạt động",
+      "revoked": "Đã thu hồi"
+    },
+    "empty": {
+      "title": "Chưa có tác tử nào",
+      "body": "Đăng ký một tác tử để cấp khóa khởi tạo.",
+      "revoked": "Không có tác tử bị thu hồi"
+    },
+    "boundary": "Đang hoạt động nghĩa là đã đăng ký và chưa bị thu hồi; không cho biết tác tử có trực tuyến không. Thu hồi sẽ chặn token và yêu cầu mới; không thể lấy lại bí mật đã giao.",
+    "fields": {
+      "agentId": "Mã tác tử",
+      "agentIdHint": "Tối đa 128 ký tự gồm chữ, số và . _ : @ / -. Không thể đổi sau này.",
+      "displayName": "Tên hiển thị"
+    },
+    "create": {
+      "open": "Đăng ký tác tử",
+      "title": "Đăng ký tác tử",
+      "body": "Bộ điều khiển cấp một khóa khởi tạo chỉ hiển thị một lần.",
+      "submit": "Đăng ký và hiện khóa"
+    },
+    "rotate": {
+      "short": "Xoay khóa",
+      "label": "Xoay khóa cho {{agent}}",
+      "title": "Xoay khóa cho {{agent}}?",
+      "body": "Khóa hiện tại ngừng hoạt động ngay. Tác tử cần khóa thay thế trước khi có thể yêu cầu token lại.",
+      "submit": "Xoay và hiện khóa"
+    },
+    "revoke": {
+      "short": "Thu hồi",
+      "label": "Thu hồi {{agent}}",
+      "title": "Thu hồi {{agent}}?",
+      "body": "Khóa và token của tác tử ngừng hoạt động. Bí mật đã nhận không bị thu hồi. Không thể hoàn tác.",
+      "submit": "Thu hồi tác tử",
+      "done": "Đã thu hồi {{agent}}"
+    },
+    "reveal": {
+      "bootstrapTitle": "Khóa khởi tạo cho {{agent}}",
+      "bootstrapBody": "Lưu khóa này vào môi trường chạy của tác tử ngay. Bộ điều khiển chỉ giữ bản băm và không thể hiện lại.",
+      "replacementTitle": "Khóa thay thế cho {{agent}}",
+      "replacementBody": "Khóa trước không còn hoạt động. Lưu khóa thay thế trước khi đóng; nó không thể hiện lại.",
+      "label": "Khóa API khởi tạo"
+    },
+    "errors": {
+      "agentId": "Chỉ dùng 1–128 ký tự gồm chữ, số và . _ : @ / -.",
+      "displayName": "Nhập tên hiển thị.",
+      "displayNameLong": "Tối đa 160 ký tự.",
+      "taken": "Đã có tác tử với mã này.",
+      "unknown": "Bộ điều khiển không phản hồi. Tác tử có thể đã được tạo mà chưa hiện khóa; kiểm tra danh sách và xoay khóa nếu nó xuất hiện.",
+      "createFailed": "Chưa tạo được tác tử ({{code}}).",
+      "rotateUnknown": "Bộ điều khiển không phản hồi. Khóa cũ có thể đã mất hiệu lực; hãy xoay lại để nhận khóa bạn xem được.",
+      "revokeUnknown": "Bộ điều khiển không phản hồi. Kiểm tra danh sách để xem tác tử đã bị thu hồi chưa.",
+      "gone": "Tác tử này không còn hoạt động. Danh sách đã được làm mới.",
+      "actionFailed": "Thao tác chưa hoàn tất ({{code}})."
+    }
+  },
+  "policy": {
+    "eyebrow": "Chính sách",
+    "eyebrowVersion": "Chính sách / phiên bản {{version}}",
+    "title": "Đặt ranh giới.",
+    "description": "Tác tử nào được trao đổi bí mật nào, và trao đổi nào cần người vận hành quyết định.",
+    "readOnly": "Chỉ quản trị viên mới được thay đổi chính sách trao đổi.",
+    "edit": "Sửa chính sách",
+    "view": "Phần chính sách",
+    "tabs": {
+      "rules": "Quy tắc",
+      "registry": "Danh mục bí mật",
+      "json": "JSON"
+    },
+    "evaluation": "Quy tắc được kiểm tra từ trên xuống, quy tắc khớp đầu tiên quyết định. Yêu cầu không khớp quy tắc nào sẽ bị từ chối.",
+    "order": "Quy tắc {{n}}",
+    "ruleN": "Quy tắc {{n}}",
+    "mode": {
+      "allow": "Cho phép",
+      "pending_approval": "Cần phê duyệt",
+      "deny": "Từ chối"
+    },
+    "fields": {
+      "ruleId": "Mã quy tắc",
+      "secretName": "Bí mật",
+      "mode": "Quyết định",
+      "requesterIds": "Người yêu cầu",
+      "fulfillerIds": "Bên cung cấp",
+      "approverIds": "Người phê duyệt",
+      "reason": "Lý do hiển thị cho người yêu cầu",
+      "classification": "Phân loại",
+      "description": "Mô tả"
+    },
+    "hints": {
+      "list": "Mỗi dòng một mã tác tử. Để trống để khớp mọi tác tử.",
+      "approvers": "Tên đăng nhập hoặc mã người vận hành, mỗi dòng một. Bắt buộc với quyết định này."
+    },
+    "optional": "Không bắt buộc",
+    "anyAgent": "Mọi tác tử",
+    "noApprovers": "Chưa chỉ định người phê duyệt",
+    "chooseSecret": "Chọn bí mật",
+    "otherFields": "Cũng có: {{fields}}",
+    "otherFieldsEdit": "Giữ nguyên: {{fields}}. Sửa trong chế độ JSON.",
+    "moveUp": "Đưa quy tắc {{n}} lên",
+    "moveDown": "Đưa quy tắc {{n}} xuống",
+    "removeRule": "Xóa quy tắc {{n}}",
+    "addRule": "Thêm quy tắc",
+    "emptyRules": "Chưa có quy tắc",
+    "emptyRulesBody": "Khi không có quy tắc, mọi yêu cầu trao đổi đều bị từ chối.",
+    "registry": {
+      "empty": "Chưa đăng ký bí mật nào",
+      "add": "Thêm bí mật",
+      "remove": "Xóa {{name}}"
+    },
+    "json": {
+      "label": "Tài liệu chính sách",
+      "hint": "Đúng tài liệu bộ điều khiển lưu. Các trường không có trong biểu mẫu được sửa ở đây.",
+      "invalid": "Đây không phải tài liệu chính sách hợp lệ. Cần có mảng secret_registry và exchange_policy."
+    },
+    "unsaved": "Có thay đổi chưa lưu",
+    "noChanges": "Chưa có thay đổi",
+    "editBar": "Thay đổi chính sách",
+    "editingFrom": "Đang sửa từ phiên bản {{version}}",
+    "discard": "Bỏ thay đổi",
+    "validate": "Kiểm tra",
+    "save": "Lưu chính sách",
+    "saved": "Đã lưu chính sách, phiên bản {{version}}",
+    "valid": "Bộ điều khiển chấp nhận chính sách này.",
+    "issuesTitle_one": "{{count}} lỗi cần sửa",
+    "issuesTitle_other": "{{count}} lỗi cần sửa",
+    "issuesInline": "Mỗi lỗi được hiển thị cạnh trường tương ứng.",
+    "conflict": {
+      "title": "Có người đã lưu phiên bản {{version}} khi bạn đang sửa",
+      "body": "Thay đổi của bạn dựa trên phiên bản {{base}}. Chưa có gì được lưu. Giữ bản nháp để xem lại so với phiên bản {{version}}, hoặc bỏ đi.",
+      "theirs": "Quy tắc thay đổi trong phiên bản đã lưu",
+      "theirsRegistry": "Bí mật thay đổi trong phiên bản đã lưu",
+      "mine": "Quy tắc bạn đã thay đổi",
+      "mineRegistry": "Bí mật bạn đã thay đổi",
+      "added": "Thêm",
+      "removed": "Xóa",
+      "changed": "Sửa",
+      "keep": "Giữ bản nháp trên phiên bản mới",
+      "discard": "Bỏ bản nháp"
+    },
+    "errors": {
+      "validateFailed": "Không kiểm tra được chính sách ({{code}}).",
+      "saveFailed": "Chưa lưu được chính sách ({{code}}).",
+      "conflictUnreadable": "Có người khác đã lưu chính sách và không đọc được phiên bản mới nhất. Tải lại trước khi lưu.",
+      "unknownTitle": "Không xác nhận được việc lưu",
+      "unknownBody": "Bộ điều khiển không phản hồi và chính sách hiện tại không khớp bản nháp. Bản nháp được giữ; hãy kiểm tra và lưu lại."
+    }
+  },
+  "audit": {
+    "eyebrow": "Kiểm tra",
+    "title": "Mọi quyết định đều được ghi lại.",
+    "description": "Siêu dữ liệu về yêu cầu, quyết định và quản trị. Nhật ký không bao giờ chứa giá trị bí mật, khóa hay liên kết.",
+    "refresh": "Mới nhất",
+    "filterLabel": "Lọc sự kiện",
+    "category": "Loại",
+    "categories": {
+      "all": "Tất cả sự kiện",
+      "exchange": "Trao đổi",
+      "agent": "Tác tử",
+      "policy": "Chính sách",
+      "fleet": "Đội máy",
+      "other": "Khác"
+    },
+    "search": "Tìm trong trang này",
+    "searchHint": "Khớp sự kiện, người thực hiện hoặc tài nguyên trong các dòng đã tải.",
+    "lookup": "Mã trao đổi",
+    "lookupHint": "Mở toàn bộ dòng thời gian của một lần trao đổi.",
+    "lookupSubmit": "Mở dòng thời gian",
+    "pageTitle": "Trang {{page}}",
+    "shown": "{{total}} sự kiện",
+    "shownFiltered": "{{shown}} trên {{total}} trong trang này",
+    "noMatch": "Không có mục nào trong trang này khớp",
+    "noMatchBody": "Bộ lọc chỉ áp dụng cho trang đã tải. Thử trang cũ hơn hoặc xóa bộ lọc.",
+    "columns": {
+      "time": "Thời gian",
+      "event": "Sự kiện",
+      "actor": "Người thực hiện",
+      "resource": "Tài nguyên"
+    },
+    "details": "Chi tiết",
+    "system": "Bộ điều khiển",
+    "noMetadata": "Không có siêu dữ liệu.",
+    "breadcrumb": "Đường dẫn",
+    "timeline": {
+      "crumb": "Dòng thời gian trao đổi",
+      "eyebrow": "Kiểm tra / trao đổi",
+      "title": "Dòng thời gian trao đổi",
+      "description": "Mọi bước đã ghi của lần trao đổi này, cũ nhất trước.",
+      "events_one": "{{count}} sự kiện",
+      "events_other": "{{count}} sự kiện",
+      "notFoundTitle": "Không có nhật ký cho lần trao đổi này",
+      "notFoundBody": "Bộ điều khiển không có sự kiện nào cho mã này. Kiểm tra đã sao chép đầy đủ chưa.",
+      "openApproval": "Mở phê duyệt",
+      "approvalNote": "Lần trao đổi này cần phê duyệt {{reference}}.",
+      "boundary": "Thời gian lấy từ bộ điều khiển. Sự kiện cho biết bộ điều khiển đã ghi gì, không cho biết người nhận làm gì với bí mật."
+    }
+  },
   "approvals": {
     "eyebrow": "Quyết định",
     "title": "Phê duyệt với đầy đủ bối cảnh.",

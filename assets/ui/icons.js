@@ -130,6 +130,7 @@ export const ICONS = {
   "chevron-right": [["path", { d: "m9.5 6 6 6-6 6" }]],
   "chevron-left": [["path", { d: "m14.5 6-6 6 6 6" }]],
   "chevron-down": [["path", { d: "m6 9.5 6 6 6-6" }]],
+  "chevron-up": [["path", { d: "m6 14.5 6-6 6 6" }]],
   "arrow-right": [["path", { d: "M5 12h14M13 6l6 6-6 6" }]],
   "arrow-up-right": [["path", { d: "M7 17 17 7M9 7h8v8" }]],
   external: [

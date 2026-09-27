@@ -17,6 +17,10 @@ const OverviewPage = lazy(() => import("./pages/overview.js"));
 const SettingsPage = lazy(() => import("./pages/settings/settings.js"));
 const ApprovalsPage = lazy(() => import("./pages/approvals/approvals.js"));
 const ApprovalDetail = lazy(() => import("./pages/approvals/detail.js"));
+const AgentsPage = lazy(() => import("./pages/agents.js"));
+const ExchangePolicyPage = lazy(() => import("./pages/policy/exchange-policy.js"));
+const AuditPage = lazy(() => import("./pages/audit/audit.js"));
+const ExchangeTimelinePage = lazy(() => import("./pages/audit/exchange-timeline.js"));
 
 /** Hosted-product paths that the local controller does not provide. */
 export const REMOVED_ROUTES = ["/billing", "/analytics", "/public-offers", "/public/*", "/register", "/signup", "/verify", "/forgot-password", "/reset-password", "/members"];
@@ -129,6 +133,10 @@ export const routes = [
                 element: <RequirePermission permission="approvals.read"><Lazy><ApprovalsPage /></Lazy></RequirePermission>,
                 children: [{ path: ":kind/:id", element: <Lazy><ApprovalDetail /></Lazy> }]
               },
+              { path: "/agents", element: <RequirePermission permission="agents.read"><Lazy><AgentsPage /></Lazy></RequirePermission> },
+              { path: "/policy", element: <RequirePermission permission="exchangePolicy.read"><Lazy><ExchangePolicyPage /></Lazy></RequirePermission> },
+              { path: "/audit", element: <RequirePermission permission="audit.read"><Lazy><AuditPage /></Lazy></RequirePermission> },
+              { path: "/audit/exchange/:id", element: <RequirePermission permission="audit.read"><Lazy><ExchangeTimelinePage /></Lazy></RequirePermission> },
               { path: "/settings", element: <Lazy><SettingsPage /></Lazy> },
               { path: "*", element: <NotFoundPage /> }
             ]

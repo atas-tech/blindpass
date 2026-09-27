@@ -26,13 +26,16 @@ export class ApiError extends Error {
   readonly code: string | null;
   readonly kind: ApiErrorKind;
   readonly retryAfterSeconds: number | null;
+  /** Validation issues the controller listed, as plain strings. */
+  readonly issues: string[];
 
-  constructor(status: number, code: string | null, message: string, retryAfterSeconds: number | null = null) {
+  constructor(status: number, code: string | null, message: string, retryAfterSeconds: number | null = null, issues: string[] = []) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.retryAfterSeconds = retryAfterSeconds;
+    this.issues = issues;
     this.kind = classify(status, code);
   }
 
@@ -210,7 +213,8 @@ export async function request<T>(method: string, path: string, options: RequestO
     const code = typeof body.error === "string" ? body.error : typeof body.code === "string" ? body.code : null;
     const message = typeof body.message === "string" ? body.message : response.statusText || "Request failed";
     const retryAfter = Number(response.headers.get("retry-after") ?? body.retry_after_seconds);
-    const error = new ApiError(response.status, code, message, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null);
+    const issues = Array.isArray(body.issues) ? body.issues.filter((issue): issue is string => typeof issue === "string") : [];
+    const error = new ApiError(response.status, code, message, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, issues);
     if (options.authenticated !== false && (error.kind === "unauthorized" || error.kind === "password_change_required")) {
       for (const listener of sessionListeners) listener(error);
     }

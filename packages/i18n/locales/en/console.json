@@ -1,4 +1,222 @@
 {
+  "reveal": {
+    "onceTitle": "Shown once",
+    "copy": "Copy",
+    "confirm": "I stored this value somewhere safe",
+    "done": "Done"
+  },
+  "agents": {
+    "eyebrow": "Identity",
+    "title": "Know who's asking.",
+    "description": "Agents authenticate with a bootstrap key to request or fulfil secret exchanges.",
+    "filter": "Filter agents",
+    "filters": {
+      "active": "Active",
+      "revoked": "Revoked",
+      "all": "All"
+    },
+    "columns": {
+      "agent": "Agent",
+      "status": "Status",
+      "created": "Enrolled",
+      "actions": "Actions"
+    },
+    "status": {
+      "active": "Active",
+      "revoked": "Revoked"
+    },
+    "empty": {
+      "title": "No agents enrolled",
+      "body": "Enroll an agent to give it a bootstrap key.",
+      "revoked": "No revoked agents"
+    },
+    "boundary": "Active means enrolled and not revoked; it doesn't show whether an agent is online. Revoking stops new tokens and requests; it can't recall secrets already delivered.",
+    "fields": {
+      "agentId": "Agent ID",
+      "agentIdHint": "Up to 128 letters, digits and . _ : @ / -. It can't be changed later.",
+      "displayName": "Display name"
+    },
+    "create": {
+      "open": "Enroll agent",
+      "title": "Enroll an agent",
+      "body": "The controller issues a bootstrap key that is shown once.",
+      "submit": "Enroll and show key"
+    },
+    "rotate": {
+      "short": "Rotate key",
+      "label": "Rotate the key for {{agent}}",
+      "title": "Rotate the key for {{agent}}?",
+      "body": "The current key stops working immediately. The agent needs the replacement before it can request tokens again.",
+      "submit": "Rotate and show key"
+    },
+    "revoke": {
+      "short": "Revoke",
+      "label": "Revoke {{agent}}",
+      "title": "Revoke {{agent}}?",
+      "body": "The agent's key and tokens stop working. Secrets it already received are not recalled. This can't be undone.",
+      "submit": "Revoke agent",
+      "done": "{{agent}} revoked"
+    },
+    "reveal": {
+      "bootstrapTitle": "Bootstrap key for {{agent}}",
+      "bootstrapBody": "Store this key in the agent's runtime now. The controller keeps only a hash and can't show it again.",
+      "replacementTitle": "Replacement key for {{agent}}",
+      "replacementBody": "The previous key no longer works. Store this replacement before closing; it can't be shown again.",
+      "label": "Bootstrap API key"
+    },
+    "errors": {
+      "agentId": "Use 1–128 letters, digits and . _ : @ / - only.",
+      "displayName": "Enter a display name.",
+      "displayNameLong": "Use at most 160 characters.",
+      "taken": "An agent with this ID already exists.",
+      "unknown": "The controller didn't answer. The agent may have been created without showing its key; check the list, and rotate its key if it appears.",
+      "createFailed": "The agent wasn't created ({{code}}).",
+      "rotateUnknown": "The controller didn't answer. The old key may already be invalid; rotate again to get a key you can see.",
+      "revokeUnknown": "The controller didn't answer. Check the list to see whether the agent was revoked.",
+      "gone": "This agent is no longer active. The list has been refreshed.",
+      "actionFailed": "The action didn't complete ({{code}})."
+    }
+  },
+  "policy": {
+    "eyebrow": "Policy",
+    "eyebrowVersion": "Policy / version {{version}}",
+    "title": "Set the boundaries.",
+    "description": "Which agents may exchange which secrets, and which exchanges need an operator's decision.",
+    "readOnly": "Only administrators can change the exchange policy.",
+    "edit": "Edit policy",
+    "view": "Policy section",
+    "tabs": {
+      "rules": "Rules",
+      "registry": "Secret registry",
+      "json": "JSON"
+    },
+    "evaluation": "Rules are checked top to bottom and the first match decides. A request no rule matches is refused.",
+    "order": "Rule {{n}}",
+    "ruleN": "Rule {{n}}",
+    "mode": {
+      "allow": "Allow",
+      "pending_approval": "Needs approval",
+      "deny": "Deny"
+    },
+    "fields": {
+      "ruleId": "Rule ID",
+      "secretName": "Secret",
+      "mode": "Decision",
+      "requesterIds": "Requesters",
+      "fulfillerIds": "Fulfillers",
+      "approverIds": "Approvers",
+      "reason": "Reason shown to the requester",
+      "classification": "Classification",
+      "description": "Description"
+    },
+    "hints": {
+      "list": "One agent ID per line. Leave empty to match any agent.",
+      "approvers": "Operator usernames or IDs, one per line. Required for this decision."
+    },
+    "optional": "Optional",
+    "anyAgent": "Any agent",
+    "noApprovers": "No approvers named",
+    "chooseSecret": "Choose a secret",
+    "otherFields": "Also set: {{fields}}",
+    "otherFieldsEdit": "Kept unchanged: {{fields}}. Edit them in the JSON view.",
+    "moveUp": "Move rule {{n}} up",
+    "moveDown": "Move rule {{n}} down",
+    "removeRule": "Remove rule {{n}}",
+    "addRule": "Add rule",
+    "emptyRules": "No rules",
+    "emptyRulesBody": "With no rules, every exchange request is refused.",
+    "registry": {
+      "empty": "No secrets registered",
+      "add": "Add secret",
+      "remove": "Remove {{name}}"
+    },
+    "json": {
+      "label": "Policy document",
+      "hint": "The exact document the controller stores. Fields the form doesn't show are edited here.",
+      "invalid": "This isn't a valid policy document. It needs secret_registry and exchange_policy arrays."
+    },
+    "unsaved": "Unsaved changes",
+    "noChanges": "No changes yet",
+    "editBar": "Policy changes",
+    "editingFrom": "Editing from version {{version}}",
+    "discard": "Discard changes",
+    "validate": "Check",
+    "save": "Save policy",
+    "saved": "Policy saved as version {{version}}",
+    "valid": "The controller accepts this policy.",
+    "issuesTitle_one": "{{count}} problem to fix",
+    "issuesTitle_other": "{{count}} problems to fix",
+    "issuesInline": "Each problem is shown next to its field.",
+    "conflict": {
+      "title": "Someone saved version {{version}} while you were editing",
+      "body": "Your changes are based on version {{base}}. Nothing was saved. Keep your draft to review it against version {{version}}, or discard it.",
+      "theirs": "Rules changed in the saved version",
+      "theirsRegistry": "Secrets changed in the saved version",
+      "mine": "Rules you changed",
+      "mineRegistry": "Secrets you changed",
+      "added": "Added",
+      "removed": "Removed",
+      "changed": "Changed",
+      "keep": "Keep my draft on version {{version}}",
+      "discard": "Discard my draft"
+    },
+    "errors": {
+      "validateFailed": "The policy couldn't be checked ({{code}}).",
+      "saveFailed": "The policy wasn't saved ({{code}}).",
+      "conflictUnreadable": "Someone else saved the policy, and the latest version couldn't be read. Reload before saving.",
+      "unknownTitle": "We couldn't confirm the save",
+      "unknownBody": "The controller didn't answer, and the policy it now returns doesn't match your draft. Your draft is kept; check and save again."
+    }
+  },
+  "audit": {
+    "eyebrow": "Audit",
+    "title": "Every decision, in view.",
+    "description": "Metadata for requests, decisions and administration. The log never holds secret values, keys or links.",
+    "refresh": "Newest",
+    "filterLabel": "Filter events",
+    "category": "Kind",
+    "categories": {
+      "all": "All events",
+      "exchange": "Exchanges",
+      "agent": "Agents",
+      "policy": "Policy",
+      "fleet": "Fleet",
+      "other": "Other"
+    },
+    "search": "Search this page",
+    "searchHint": "Matches event, actor or resource among the rows loaded.",
+    "lookup": "Exchange ID",
+    "lookupHint": "Open the full timeline of one exchange.",
+    "lookupSubmit": "Open timeline",
+    "pageTitle": "Page {{page}}",
+    "shown": "{{total}} events",
+    "shownFiltered": "{{shown}} of {{total}} on this page",
+    "noMatch": "Nothing on this page matches",
+    "noMatchBody": "Filters only apply to the page loaded. Try older pages or clear the filter.",
+    "columns": {
+      "time": "Time",
+      "event": "Event",
+      "actor": "Actor",
+      "resource": "Resource"
+    },
+    "details": "Details",
+    "system": "Controller",
+    "noMetadata": "No metadata recorded.",
+    "breadcrumb": "Breadcrumb",
+    "timeline": {
+      "crumb": "Exchange timeline",
+      "eyebrow": "Audit / exchange",
+      "title": "Exchange timeline",
+      "description": "Every recorded step of this exchange, oldest first.",
+      "events_one": "{{count}} event",
+      "events_other": "{{count}} events",
+      "notFoundTitle": "No audit for this exchange",
+      "notFoundBody": "The controller has no events for this ID. Check it was copied in full.",
+      "openApproval": "Open approval",
+      "approvalNote": "This exchange needed approval {{reference}}.",
+      "boundary": "Times come from the controller. Events show what the controller recorded, not what a recipient did with a secret."
+    }
+  },
   "approvals": {
     "eyebrow": "Decisions",
     "title": "Approve with context.",
