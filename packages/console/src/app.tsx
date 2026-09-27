@@ -21,6 +21,20 @@ const AgentsPage = lazy(() => import("./pages/agents.js"));
 const ExchangePolicyPage = lazy(() => import("./pages/policy/exchange-policy.js"));
 const AuditPage = lazy(() => import("./pages/audit/audit.js"));
 const ExchangeTimelinePage = lazy(() => import("./pages/audit/exchange-timeline.js"));
+const EnrollmentsPage = lazy(() => import("./pages/fleet/enrollments.js"));
+const NodesPage = lazy(() => import("./pages/fleet/nodes.js").then((module) => ({ default: module.NodesPage })));
+const NodeDetailPage = lazy(() => import("./pages/fleet/nodes.js").then((module) => ({ default: module.NodeDetailPage })));
+const WorkloadsPage = lazy(() => import("./pages/fleet/workloads.js").then((module) => ({ default: module.WorkloadsPage })));
+const WorkloadDetailPage = lazy(() => import("./pages/fleet/workloads.js").then((module) => ({ default: module.WorkloadDetailPage })));
+const FleetPolicyPage = lazy(() => import("./pages/fleet/fleet-policy.js"));
+const GrantsPage = lazy(() => import("./pages/fleet/grants.js"));
+const OperationsPage = lazy(() => import("./pages/fleet/operations.js").then((module) => ({ default: module.OperationsPage })));
+const OperationDetailPage = lazy(() => import("./pages/fleet/operations.js").then((module) => ({ default: module.OperationDetailPage })));
+
+/** A fleet route exists only when the controller reports fleet.v3 (DR-E25). */
+function fleetRoute(path: string, permission: Permission, page: ReactNode) {
+  return { path, element: <RequirePermission permission={permission} fleet><Lazy>{page}</Lazy></RequirePermission> };
+}
 
 /** Hosted-product paths that the local controller does not provide. */
 export const REMOVED_ROUTES = ["/billing", "/analytics", "/public-offers", "/public/*", "/register", "/signup", "/verify", "/forgot-password", "/reset-password", "/members"];
@@ -137,6 +151,15 @@ export const routes = [
               { path: "/policy", element: <RequirePermission permission="exchangePolicy.read"><Lazy><ExchangePolicyPage /></Lazy></RequirePermission> },
               { path: "/audit", element: <RequirePermission permission="audit.read"><Lazy><AuditPage /></Lazy></RequirePermission> },
               { path: "/audit/exchange/:id", element: <RequirePermission permission="audit.read"><Lazy><ExchangeTimelinePage /></Lazy></RequirePermission> },
+              fleetRoute("/enrollments", "enrollments.read", <EnrollmentsPage />),
+              fleetRoute("/nodes", "nodes.read", <NodesPage />),
+              fleetRoute("/nodes/:id", "nodes.read", <NodeDetailPage />),
+              fleetRoute("/workloads", "workloads.read", <WorkloadsPage />),
+              fleetRoute("/workloads/:id", "workloads.read", <WorkloadDetailPage />),
+              fleetRoute("/policy/fleet", "fleetPolicy.read", <FleetPolicyPage />),
+              fleetRoute("/grants", "grants.read", <GrantsPage />),
+              fleetRoute("/operations", "operations.read", <OperationsPage />),
+              fleetRoute("/operations/:id", "operations.read", <OperationDetailPage />),
               { path: "/settings", element: <Lazy><SettingsPage /></Lazy> },
               { path: "*", element: <NotFoundPage /> }
             ]

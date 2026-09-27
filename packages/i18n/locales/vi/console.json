@@ -201,6 +201,7 @@
     },
     "details": "Chi tiết",
     "system": "Bộ điều khiển",
+    "you": "Bạn",
     "noMetadata": "Không có siêu dữ liệu.",
     "breadcrumb": "Đường dẫn",
     "timeline": {
@@ -400,7 +401,8 @@
       "viewAll": "Xem nhật ký kiểm tra",
       "emptyTitle": "Chưa có sự kiện kiểm tra",
       "emptyBody": "Quyết định và thao tác quản trị sẽ xuất hiện ở đây.",
-      "by": "bởi {{actor}}"
+      "by": "bởi {{actor}}",
+      "byYou": "bởi bạn"
     },
     "eyebrow": "Bộ điều khiển của bạn, tóm tắt",
     "greeting": "Chào mừng trở lại, {{name}}",
@@ -742,6 +744,343 @@
       "expiresHint": "Chọn duy trì đăng nhập để gia hạn; không hoạt động có thể kết thúc sớm hơn.",
       "idle": "Giới hạn không hoạt động",
       "idleValue": "12 giờ không có yêu cầu"
+    }
+  },
+  "fleet": {
+    "eyebrow": "Đội máy",
+    "clearFilter": "Xóa bộ lọc",
+    "seconds_one": "{{count}} giây",
+    "seconds_other": "{{count}} giây",
+    "fields": {
+      "status": "Trạng thái",
+      "created": "Tạo lúc",
+      "submitted": "Gửi lúc",
+      "protocol": "Giao thức",
+      "actions": "Thao tác"
+    },
+    "errors": {
+      "actionFailed": "Thao tác chưa hoàn tất ({{code}})."
+    },
+    "enrollment": {
+      "title": "Đưa máy vào đội.",
+      "description": "Cấp token dùng một lần, để nút gửi khóa của nó, rồi chỉ phê duyệt đúng bộ khóa bạn đã xác minh trên máy.",
+      "empty": "Chưa có đăng ký nút",
+      "emptyBody": "Tạo đăng ký để nhận token dùng một lần cho nút mới.",
+      "boundary": "Tên nút là nhãn do quản trị viên đặt. Danh tính của nút là dấu vân tay khóa, và chỉ bước kiểm tra dấu vân tay mới gắn nó với máy.",
+      "status": {
+        "issued": "Chờ nút",
+        "submitted": "Cần xem xét",
+        "approved": "Đã phê duyệt",
+        "rejected": "Đã từ chối",
+        "expired": "Đã hết hạn"
+      },
+      "fields": {
+        "name": "Tên nút",
+        "nameHint": "Tối đa 128 ký tự. Hiển thị cho người vận hành; không dùng để nhận diện máy.",
+        "expires": "Hết hạn"
+      },
+      "create": {
+        "open": "Đăng ký nút mới",
+        "title": "Tạo đăng ký nút",
+        "body": "Bộ điều khiển cấp một token dùng một lần cho nút này.",
+        "submit": "Tạo và hiện token"
+      },
+      "reveal": {
+        "title": "Token đăng ký cho {{name}}",
+        "body": "Dán token vào lệnh bên dưới trên nút. Token dùng một lần và không thể hiện lại.",
+        "label": "Token đăng ký dùng một lần",
+        "command": "Trên nút, chạy lệnh này và dán token khi được hỏi:",
+        "copyCommand": "Sao chép lệnh",
+        "issuer": "Dấu vân tay bên cấp ghim bộ điều khiển này; nút sẽ từ chối bộ điều khiển khác.",
+        "issuerLoading": "Đang tính dấu vân tay bên cấp…",
+        "issuerUnavailable": "Không tính được dấu vân tay bên cấp ở đây (bộ điều khiển không có bên cấp, hoặc trang không chạy HTTPS hay localhost). Hãy lấy trên máy bộ điều khiển.",
+        "expires": "Token hết hạn sau"
+      },
+      "review": {
+        "short": "Xem xét",
+        "open": "Xem xét đăng ký {{name}}",
+        "title": "Xem xét {{name}}",
+        "capabilities": "Khả năng do nút tự báo",
+        "instructionTitle": "Chỉ phê duyệt khi dấu vân tay khớp chính xác.",
+        "instruction": "Sao chép dấu vân tay mà blindpass-node in ra trên chính máy đó. Bảng điều khiển không hiện giá trị đã gửi trước, nên khi khớp nghĩa là bạn đã thấy đúng bộ khóa.",
+        "fingerprintLabel": "Dấu vân tay do nút in ra",
+        "fingerprintHint": "64 ký tự hex. Bỏ qua khoảng trắng và dấu hai chấm.",
+        "mismatch": "Không khớp với bộ khóa bộ điều khiển nhận được. Đừng phê duyệt: token có thể đã bị máy khác dùng. Hãy từ chối và cấp token mới.",
+        "matchTitle": "Dấu vân tay khớp",
+        "approve": "Phê duyệt nút",
+        "reject": "Từ chối",
+        "confirmReject": "Xác nhận từ chối",
+        "approved": "Đã phê duyệt {{name}} làm nút",
+        "rejected": "Đã từ chối {{name}}"
+      },
+      "errors": {
+        "name": "Nhập tên tối đa 128 ký tự, không có ký tự điều khiển.",
+        "createUnknown": "Bộ điều khiển không phản hồi. Có thể đã tạo đăng ký mà chưa hiện token; hãy để nó hết hạn và tạo cái khác.",
+        "changed": "Đăng ký đã thay đổi, dấu vân tay khác, hoặc đã có nút đang hoạt động trùng tên. Tải lại và xem xét lại.",
+        "keyReused": "Bộ khóa này thuộc về một nút đã đăng ký trước đây. Hãy từ chối đăng ký này.",
+        "expired": "Đăng ký đã hết hạn. Hãy tạo cái mới.",
+        "decideUnknown": "Bộ điều khiển không phản hồi. Tải lại để xem quyết định đã được ghi nhận chưa."
+      }
+    },
+    "node": {
+      "title": "Các nút bạn tin cậy.",
+      "eyebrow": "Đội máy / nút",
+      "description": "Các máy đã phê duyệt, khóa của chúng và lần cuối bộ điều khiển nhận tín hiệu.",
+      "empty": "Chưa có nút",
+      "emptyBody": "Đăng ký đã phê duyệt sẽ xuất hiện ở đây.",
+      "open": "Mở nút {{name}}",
+      "boundary": "Trạng thái do bộ điều khiển tính từ lần liên lạc gần nhất. Trực tuyến nghĩa là vừa kết nối, không có nghĩa khối lượng công việc đang ổn.",
+      "status": {
+        "online": "Trực tuyến",
+        "stale": "Chậm phản hồi",
+        "offline": "Ngoại tuyến",
+        "revoked": "Đã thu hồi"
+      },
+      "revocationPending": "Đang chờ thu hồi",
+      "revocationPendingBody": "Bộ điều khiển không còn tin cậy nút này. Nút sẽ áp dụng lệnh thu hồi đã ký và đóng phiên khi kết nối lại; trước đó nó vẫn có thể giữ các quyền đã nhận.",
+      "revokedTitle": "Đã thu hồi",
+      "revokedBody": "Nút đã áp dụng lệnh thu hồi. Bộ khóa của nó không thể đăng ký lại.",
+      "rotationPending": "Đã chuẩn bị xoay khóa",
+      "rotationPendingBody": "Phiên bản khóa {{version}} đã được chuẩn bị. Khóa cũ vẫn hoạt động cho tới khi broker áp dụng lệnh xoay đã ký.",
+      "neverSeen": "Chưa có",
+      "identity": "Danh tính",
+      "connection": "Kết nối",
+      "capabilities": "Khả năng do nút tự báo",
+      "workloads": "Khối lượng công việc trên nút này",
+      "grants": "Quyền cấp gần đây",
+      "allGrants": "Tất cả quyền cấp",
+      "lastSeenHint": "Từ kênh đã xác thực của nút.",
+      "fields": {
+        "name": "Nút",
+        "id": "Mã nút",
+        "lastSeen": "Lần cuối thấy",
+        "lastPoll": "Lần hỏi gần nhất",
+        "key": "Phiên bản khóa",
+        "signing": "Dấu vân tay khóa ký",
+        "recipient": "Dấu vân tay khóa nhận"
+      },
+      "revoke": {
+        "open": "Thu hồi nút",
+        "title": "Thu hồi {{name}}?",
+        "body": "Bộ điều khiển ngừng tin cậy nút và xếp hàng lệnh thu hồi đã ký cho broker. Quyền đã giao không thể thu lại cho tới khi nút kết nối lại. Không thể hoàn tác.",
+        "typeName": "Gõ {{name}} để xác nhận",
+        "submit": "Thu hồi nút",
+        "done": "Đã thu hồi {{name}}; lệnh đang chờ gửi",
+        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem nút đã bị thu hồi chưa."
+      },
+      "rotate": {
+        "open": "Xoay khóa",
+        "title": "Xoay khóa cho {{name}}",
+        "body": "Chạy lệnh trên nút rồi dán ba giá trị nó in ra. Khóa cũ vẫn hoạt động cho tới khi broker áp dụng.",
+        "signing": "Khóa công khai ký mới",
+        "recipient": "Khóa công khai nhận mới",
+        "fingerprint": "Dấu vân tay khóa mới",
+        "fingerprintHint": "Bộ điều khiển đối chiếu với hai khóa trên.",
+        "submit": "Chuẩn bị xoay khóa",
+        "done": "Đã chuẩn bị xoay khóa cho {{name}}",
+        "invalid": "Khóa hoặc dấu vân tay không khớp. Sao chép lại từ nút.",
+        "changed": "Khóa của nút đã thay đổi từ khi tải trang. Hãy tải lại trước.",
+        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem đã chuẩn bị xoay khóa chưa."
+      }
+    },
+    "workload": {
+      "title": "Chạy gì, ở đâu.",
+      "eyebrow": "Đội máy / khối lượng công việc",
+      "description": "Khối lượng công việc gắn một service unit và tài khoản trên một nút. Chỉ bản đăng ký quyết định ai được nhận quyền cấp.",
+      "empty": "Chưa đăng ký khối lượng công việc",
+      "emptyBody": "Đăng ký khối lượng công việc trên một nút đã phê duyệt.",
+      "emptyNode": "Nút này chưa có khối lượng công việc",
+      "filteredByNode": "Nút",
+      "boundary": "Broker của nút kiểm tra unit và tài khoản của từng tiến trình trước khi giao quyền; tên khối lượng công việc chỉ là nhãn.",
+      "identityNote": "Bằng chứng danh tính là unit và tài khoản mà broker xác minh trên nút, không phải tên.",
+      "registration": "Đăng ký",
+      "registrationVersion": "Đăng ký v{{version}}",
+      "viewGrants": "Quyền cấp trên nút này",
+      "chooseNode": "Chọn nút",
+      "status": {
+        "active": "Đang hoạt động",
+        "revoked": "Đã thu hồi"
+      },
+      "fields": {
+        "id": "Mã khối lượng công việc",
+        "node": "Nút",
+        "nodeHint": "Chỉ liệt kê các nút đã phê duyệt và chưa thu hồi.",
+        "name": "Tên khối lượng công việc",
+        "unit": "systemd unit",
+        "unitHint": "Ví dụ deploy.service.",
+        "account": "Chạy với tài khoản",
+        "accountHint": "Tên tài khoản chữ thường, hoặc uid:N cho UID không phải root.",
+        "mode": "Hình thức nhận",
+        "ceiling": "Giới hạn cục bộ",
+        "ceilingHint": "Thời gian tối đa khối lượng công việc giữ giá trị đã nhận, 1–3600 giây."
+      },
+      "create": {
+        "open": "Đăng ký khối lượng công việc",
+        "title": "Đăng ký khối lượng công việc",
+        "body": "Quyền chỉ được giao cho tiến trình khớp unit và tài khoản này trên nút đã chọn.",
+        "submit": "Đăng ký",
+        "done": "Đã đăng ký {{name}}"
+      },
+      "edit": {
+        "open": "Sửa đăng ký",
+        "title": "Sửa đăng ký",
+        "submit": "Lưu đăng ký",
+        "done": "Đã lưu đăng ký v{{version}}",
+        "identityTitle": "Thay đổi này ảnh hưởng ai được nhận quyền",
+        "identityBody": "Đổi unit, tài khoản hoặc hình thức nhận sẽ rút lại các quyền cấp, phê duyệt và yêu cầu đang chờ của khối lượng công việc này."
+      },
+      "revoke": {
+        "open": "Thu hồi",
+        "title": "Thu hồi {{name}}?",
+        "body": "Quyền đã cấp hoặc đã giao sẽ nhận lệnh thu hồi đã ký, phê duyệt chờ sẽ hết hạn và yêu cầu chờ bị hủy. Giá trị đã nhận không bị thu lại. Không thể hoàn tác.",
+        "submit": "Thu hồi khối lượng công việc",
+        "done": "Đã thu hồi {{name}}"
+      },
+      "errors": {
+        "node": "Chọn một nút.",
+        "name": "Nhập tên tối đa 128 ký tự.",
+        "unit": "Nhập unit, tối đa 256 ký tự.",
+        "account": "Dùng tên tài khoản chữ thường (tối đa 32 ký tự a–z 0–9 _ . -) hoặc uid:N.",
+        "ceiling": "Dùng số nguyên từ 1 đến 3600.",
+        "unitConflict": "Đã có khối lượng công việc đang hoạt động trên nút dùng unit này.",
+        "modeDenied": "Nút không hỗ trợ hình thức nhận này.",
+        "nodeUnavailable": "Nút này không nhận khối lượng công việc (đã thu hồi hoặc chưa phê duyệt).",
+        "changed": "Đăng ký đã thay đổi từ khi bạn mở. Đã tải bản mới nhất; hãy xem lại và lưu.",
+        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem đã lưu gì."
+      }
+    },
+    "policy": {
+      "eyebrow": "Chính sách đội máy / phiên bản {{version}}",
+      "title": "Quyết định nút được làm gì.",
+      "description": "Mỗi hành động và hình thức nhận có một quy tắc. Thao tác không khớp quy tắc nào sẽ bị từ chối.",
+      "updated": "Cập nhật bởi {{by}}",
+      "neverEdited": "Chính sách mặc định — chưa có người vận hành nào chỉnh sửa.",
+      "readOnly": "Chỉ quản trị viên mới được thay đổi chính sách đội máy.",
+      "matrix": "Quy tắc cho {{action}}",
+      "decision": {
+        "none": "Không có quy tắc",
+        "allow": "Cho phép",
+        "pending_approval": "Cần phê duyệt",
+        "deny": "Từ chối"
+      },
+      "noneBody": "Yêu cầu với hình thức nhận này sẽ bị từ chối.",
+      "fields": {
+        "decision": "Quyết định",
+        "decisionFor": "Quyết định cho {{mode}}",
+        "ttl": "Thời hạn quyền tối đa",
+        "ttlHint": "1–3600 giây.",
+        "approvers": "Người phê duyệt",
+        "approversHint": "Tên đăng nhập hoặc mã người vận hành, mỗi dòng một (1–32). Người yêu cầu không được tự phê duyệt."
+      },
+      "otherRules_one": "Giữ nguyên {{count}} quy tắc khác.",
+      "otherRules_other": "Giữ nguyên {{count}} quy tắc khác.",
+      "boundary": "Lưu phiên bản mới sẽ rút lại các phê duyệt đang chờ dựa trên quy tắc cũ.",
+      "save": "Lưu chính sách đội máy",
+      "saved": "Đã lưu chính sách đội máy, phiên bản {{version}}",
+      "conflictTitle": "Có người đã lưu chính sách đội máy khi bạn đang sửa",
+      "conflictBody": "Chưa có gì được lưu. Phiên bản {{version}} hiện là mới nhất; hãy tải và sửa lại.",
+      "loadLatest": "Tải bản mới nhất",
+      "errors": {
+        "ttl": "Dùng số nguyên từ 1 đến 3600.",
+        "approvers": "Chỉ định 1–32 người phê duyệt, dùng chữ, số và _ . @ -.",
+        "invalid": "Bộ điều khiển từ chối một quy tắc. Kiểm tra quyết định, thời hạn và danh sách người phê duyệt.",
+        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem chính sách đã thay đổi chưa."
+      }
+    },
+    "grant": {
+      "title": "Quyền cấp đang lưu hành.",
+      "description": "Mỗi quyền cấp cho phép một thao tác cho một khối lượng công việc đã xác minh. Chỉ siêu dữ liệu; không chứa giá trị bí mật.",
+      "empty": "Không có quyền cấp",
+      "emptyNode": "Nút này chưa có quyền cấp",
+      "allStatuses": "Tất cả trạng thái",
+      "boundary": "Thu hồi ngăn việc dùng về sau. Không thể hoàn tác lần giao mà khối lượng công việc đã dùng; nó có thể giữ giá trị tới giới hạn cục bộ.",
+      "status": {
+        "issued": "Đã cấp",
+        "delivered": "Đã giao",
+        "consumed": "Đã dùng",
+        "revoked": "Đã thu hồi",
+        "expired": "Đã hết hạn"
+      },
+      "fields": {
+        "recipient": "Người nhận",
+        "issued": "Cấp lúc",
+        "expires": "Hết hạn"
+      },
+      "revoke": {
+        "short": "Thu hồi",
+        "label": "Thu hồi quyền cấp cho {{unit}}",
+        "title": "Thu hồi quyền cấp này?",
+        "body": "Bộ điều khiển ký lệnh thu hồi cho broker của nút. Kết quả sẽ cho biết đã có gì được dùng chưa.",
+        "submit": "Thu hồi quyền cấp"
+      },
+      "result": {
+        "grant_revoked": {
+          "title": "Đã thu hồi quyền cấp",
+          "body": "Nút đang kết nối và sẽ nhận lệnh thu hồi đã ký. Quyền cấp chưa được dùng."
+        },
+        "not_revocable_offline": {
+          "title": "Đã thu hồi nhưng nút đang ngoại tuyến",
+          "body": "Bộ điều khiển sẽ không chấp nhận quyền này nữa, nhưng không thể báo cho nút tới khi nó kết nối lại. Nếu broker đã giữ quyền, khối lượng công việc vẫn có thể dùng trước khi hết hạn."
+        },
+        "grant_revoked_after_consumption": {
+          "title": "Đã thu hồi sau khi được dùng",
+          "body": "Khối lượng công việc đã dùng quyền này. Nó có thể giữ giá trị đã nhận tối đa {{seconds}} giây (giới hạn cục bộ). Hãy xoay thông tin xác thực gốc nếu không chấp nhận được."
+        }
+      },
+      "errors": {
+        "notRevocable": "Quyền cấp này không còn thu hồi được (đã hết hạn hoặc đã đóng).",
+        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem trạng thái quyền cấp."
+      }
+    },
+    "operation": {
+      "title": "Thao tác, từ đầu đến cuối.",
+      "eyebrow": "Đội máy / thao tác",
+      "description": "Mỗi thao tác hiển thị quyết định chính sách, phê duyệt, quyền cấp và kết quả broker báo về.",
+      "empty": "Không có thao tác",
+      "emptyBody": "Thao tác xuất hiện khi yêu cầu của khối lượng công việc tới bộ điều khiển.",
+      "allStatuses": "Tất cả trạng thái",
+      "open": "Mở thao tác {{id}}",
+      "scope": "Phạm vi",
+      "lifecycle": "Vòng đời",
+      "result": "Kết quả được báo",
+      "resultNote": "Theo báo cáo của broker trên nút. Bộ điều khiển ghi lại; không xác minh kết quả riêng của khối lượng công việc.",
+      "uncertainTitle": "Kết quả không chắc chắn",
+      "uncertainBody": "Broker không xác nhận được thao tác đã chạy chưa. Kiểm tra khối lượng công việc trên nút trước khi thử lại.",
+      "status": {
+        "requested": "Đã yêu cầu",
+        "awaiting_approval": "Chờ phê duyệt",
+        "granted": "Đã cấp quyền",
+        "executing": "Đang chạy",
+        "completed": "Hoàn tất",
+        "failed": "Thất bại",
+        "uncertain": "Không chắc chắn",
+        "denied": "Bị từ chối",
+        "revoked": "Đã thu hồi",
+        "cancelled": "Đã hủy"
+      },
+      "fields": {
+        "id": "Mã thao tác",
+        "action": "Hành động",
+        "workload": "Khối lượng công việc",
+        "resource": "Tài nguyên",
+        "decision": "Quyết định chính sách",
+        "completed": "Hoàn tất lúc",
+        "approval": "Phê duyệt",
+        "grant": "Quyền cấp"
+      },
+      "cancel": {
+        "open": "Hủy thao tác",
+        "revokeOpen": "Hủy và thu hồi quyền",
+        "title": "Hủy thao tác này?",
+        "revokeTitle": "Hủy và thu hồi quyền cấp?",
+        "body": "Thao tác bị gỡ khỏi nhóm phê duyệt và sẽ không chạy.",
+        "revokeBody": "Quyền cấp bị thu hồi; kết quả cho biết khối lượng công việc đã dùng chưa.",
+        "submit": "Hủy thao tác"
+      },
+      "errors": {
+        "notCancellable": "Thao tác này không còn hủy được.",
+        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem trạng thái thao tác."
+      }
     }
   }
 }

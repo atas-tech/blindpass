@@ -201,6 +201,7 @@
     },
     "details": "Details",
     "system": "Controller",
+    "you": "You",
     "noMetadata": "No metadata recorded.",
     "breadcrumb": "Breadcrumb",
     "timeline": {
@@ -400,7 +401,8 @@
       "viewAll": "View audit log",
       "emptyTitle": "No audit events yet",
       "emptyBody": "Decisions and administration appear here as they happen.",
-      "by": "by {{actor}}"
+      "by": "by {{actor}}",
+      "byYou": "by you"
     },
     "eyebrow": "Your controller, at a glance",
     "greeting": "Welcome back, {{name}}",
@@ -742,6 +744,343 @@
       "expiresHint": "Stay signed in extends it; inactivity can end it sooner.",
       "idle": "Inactivity limit",
       "idleValue": "12 hours without a request"
+    }
+  },
+  "fleet": {
+    "eyebrow": "Fleet",
+    "clearFilter": "Clear filter",
+    "seconds_one": "{{count}} second",
+    "seconds_other": "{{count}} seconds",
+    "fields": {
+      "status": "Status",
+      "created": "Created",
+      "submitted": "Submitted",
+      "protocol": "Protocol",
+      "actions": "Actions"
+    },
+    "errors": {
+      "actionFailed": "The action didn't complete ({{code}})."
+    },
+    "enrollment": {
+      "title": "Bring a machine in.",
+      "description": "Issue a one-use token, let the node submit its keys, then approve only the exact keys you verified on the machine.",
+      "empty": "No enrollments yet",
+      "emptyBody": "Create an enrollment to get a one-use token for a new node.",
+      "boundary": "A node name is a label chosen by an administrator. The node's identity is its key fingerprint, and only the fingerprint check ties it to the machine.",
+      "status": {
+        "issued": "Waiting for node",
+        "submitted": "Needs review",
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "expired": "Expired"
+      },
+      "fields": {
+        "name": "Node name",
+        "nameHint": "Up to 128 characters. Shown to operators; it doesn't identify the machine.",
+        "expires": "Expires"
+      },
+      "create": {
+        "open": "New enrollment",
+        "title": "Create an enrollment",
+        "body": "The controller issues a one-use token for this node.",
+        "submit": "Create and show token"
+      },
+      "reveal": {
+        "title": "Enrollment token for {{name}}",
+        "body": "Paste it into the command below on the node. It works once and can't be shown again.",
+        "label": "One-use enrollment token",
+        "command": "On the node, run this and paste the token when asked:",
+        "copyCommand": "Copy command",
+        "issuer": "The issuer fingerprint pins this controller; the node refuses any other.",
+        "issuerLoading": "Computing the issuer fingerprint…",
+        "issuerUnavailable": "The issuer fingerprint can't be computed here (the controller has no fleet issuer, or this page isn't on HTTPS or localhost). Get it on the controller host.",
+        "expires": "Token expires in"
+      },
+      "review": {
+        "short": "Review",
+        "open": "Review enrollment {{name}}",
+        "title": "Review {{name}}",
+        "capabilities": "Capabilities reported by the node",
+        "instructionTitle": "Approve only when the fingerprint matches exactly.",
+        "instruction": "Copy the fingerprint that blindpass-node printed on the machine itself. The console never shows the submitted value first, so a match proves you saw the same keys.",
+        "fingerprintLabel": "Fingerprint printed by the node",
+        "fingerprintHint": "64 hex characters. Spaces and colons are ignored.",
+        "mismatch": "This doesn't match the keys the controller received. Don't approve: the token may have been used by another machine. Reject and issue a new one.",
+        "matchTitle": "Fingerprint matches",
+        "approve": "Approve node",
+        "reject": "Reject",
+        "confirmReject": "Confirm reject",
+        "approved": "{{name}} approved as a node",
+        "rejected": "{{name}} rejected"
+      },
+      "errors": {
+        "name": "Enter a name of up to 128 characters without control characters.",
+        "createUnknown": "The controller didn't answer. An enrollment may exist without its token; let it expire and create another.",
+        "changed": "The enrollment changed, the fingerprint differs, or an active node already has this name. Reload and review again.",
+        "keyReused": "These keys belong to a node enrolled before. Reject this enrollment.",
+        "expired": "The enrollment expired. Create a new one.",
+        "decideUnknown": "The controller didn't answer. Reload to see whether the decision was recorded."
+      }
+    },
+    "node": {
+      "title": "Nodes you trust.",
+      "eyebrow": "Fleet / node",
+      "description": "Approved machines, their keys and when the controller last heard from them.",
+      "empty": "No nodes",
+      "emptyBody": "Approved enrollments appear here as nodes.",
+      "open": "Open node {{name}}",
+      "boundary": "Status is computed by the controller from the node's last contact. Online means recently connected, not that a workload is healthy.",
+      "status": {
+        "online": "Online",
+        "stale": "Stale",
+        "offline": "Offline",
+        "revoked": "Revoked"
+      },
+      "revocationPending": "Revocation queued",
+      "revocationPendingBody": "The controller no longer trusts this node. The node applies the signed revocation and closes its session when it next connects; until then it may still hold grants it received.",
+      "revokedTitle": "Revoked",
+      "revokedBody": "The node applied its revocation. Its keys can't be enrolled again.",
+      "rotationPending": "Key rotation staged",
+      "rotationPendingBody": "Key version {{version}} is staged. The old key stays active until the broker applies the signed rotation.",
+      "neverSeen": "Not yet",
+      "identity": "Identity",
+      "connection": "Connection",
+      "capabilities": "Capabilities reported by the node",
+      "workloads": "Workloads on this node",
+      "grants": "Recent grants",
+      "allGrants": "All grants",
+      "lastSeenHint": "From the node's authenticated channel.",
+      "fields": {
+        "name": "Node",
+        "id": "Node ID",
+        "lastSeen": "Last seen",
+        "lastPoll": "Last poll",
+        "key": "Key version",
+        "signing": "Signing key fingerprint",
+        "recipient": "Recipient key fingerprint"
+      },
+      "revoke": {
+        "open": "Revoke node",
+        "title": "Revoke {{name}}?",
+        "body": "The controller stops trusting this node and queues a signed revocation for its broker. Grants already delivered can't be recalled until the node reconnects. This can't be undone.",
+        "typeName": "Type {{name}} to confirm",
+        "submit": "Revoke node",
+        "done": "{{name}} revoked; revocation queued",
+        "unknown": "The controller didn't answer. Reload to see whether the node was revoked."
+      },
+      "rotate": {
+        "open": "Rotate key",
+        "title": "Rotate keys for {{name}}",
+        "body": "Run the command on the node, then paste the three values it prints. The old key stays active until the broker applies the rotation.",
+        "signing": "New signing public key",
+        "recipient": "New recipient public key",
+        "fingerprint": "New key fingerprint",
+        "fingerprintHint": "The controller checks it against the two keys.",
+        "submit": "Stage rotation",
+        "done": "Rotation staged for {{name}}",
+        "invalid": "The keys or fingerprint don't match. Copy them again from the node.",
+        "changed": "The node's keys changed since this page loaded. Reload first.",
+        "unknown": "The controller didn't answer. Reload to see whether the rotation was staged."
+      }
+    },
+    "workload": {
+      "title": "What runs where.",
+      "eyebrow": "Fleet / workload",
+      "description": "A workload binds a service unit and account on one node. Only the registration decides who may receive a grant.",
+      "empty": "No workloads registered",
+      "emptyBody": "Register a workload on an approved node.",
+      "emptyNode": "No workloads on this node",
+      "filteredByNode": "Node",
+      "boundary": "The node's broker checks the unit and account of each process before delivering a grant; the workload name is only a label.",
+      "identityNote": "Identity evidence is the unit and account the broker verifies on the node, not the name.",
+      "registration": "Registration",
+      "registrationVersion": "Registration v{{version}}",
+      "viewGrants": "Grants on this node",
+      "chooseNode": "Choose a node",
+      "status": {
+        "active": "Active",
+        "revoked": "Revoked"
+      },
+      "fields": {
+        "id": "Workload ID",
+        "node": "Node",
+        "nodeHint": "Only approved, unrevoked nodes are listed.",
+        "name": "Workload name",
+        "unit": "systemd unit",
+        "unitHint": "For example deploy.service.",
+        "account": "Runs as",
+        "accountHint": "Lowercase account name, or uid:N for a non-root UID.",
+        "mode": "Delivery",
+        "ceiling": "Local ceiling",
+        "ceilingHint": "Longest the workload may keep a delivered value, 1–3600 seconds."
+      },
+      "create": {
+        "open": "Register workload",
+        "title": "Register a workload",
+        "body": "Grants go only to processes that match this unit and account on the chosen node.",
+        "submit": "Register",
+        "done": "{{name}} registered"
+      },
+      "edit": {
+        "open": "Edit registration",
+        "title": "Edit registration",
+        "submit": "Save registration",
+        "done": "Registration saved as v{{version}}",
+        "identityTitle": "This changes who can receive grants",
+        "identityBody": "Changing the unit, account or delivery withdraws this workload's outstanding grants, approvals and requests."
+      },
+      "revoke": {
+        "open": "Revoke",
+        "title": "Revoke {{name}}?",
+        "body": "Issued or delivered grants get signed revocations, pending approvals expire and pending requests are cancelled. A value the workload already received isn't recalled. This can't be undone.",
+        "submit": "Revoke workload",
+        "done": "{{name}} revoked"
+      },
+      "errors": {
+        "node": "Choose a node.",
+        "name": "Enter a name of up to 128 characters.",
+        "unit": "Enter the unit, up to 256 characters.",
+        "account": "Use a lowercase account name (up to 32 of a–z 0–9 _ . -) or uid:N.",
+        "ceiling": "Use a whole number from 1 to 3600.",
+        "unitConflict": "An active workload on this node already uses this unit.",
+        "modeDenied": "The node doesn't support this delivery.",
+        "nodeUnavailable": "This node can't take workloads (revoked or not approved).",
+        "changed": "The registration changed since you opened it. The latest is loaded; review and save again.",
+        "unknown": "The controller didn't answer. Reload to see what was saved."
+      }
+    },
+    "policy": {
+      "eyebrow": "Fleet policy / version {{version}}",
+      "title": "Decide what nodes may do.",
+      "description": "One rule per action and delivery. Operations that match no rule are refused.",
+      "updated": "Updated by {{by}}",
+      "neverEdited": "Default policy — no operator has edited it yet.",
+      "readOnly": "Only administrators can change the fleet policy.",
+      "matrix": "Rules for {{action}}",
+      "decision": {
+        "none": "No rule",
+        "allow": "Allow",
+        "pending_approval": "Needs approval",
+        "deny": "Deny"
+      },
+      "noneBody": "Requests for this delivery are refused.",
+      "fields": {
+        "decision": "Decision",
+        "decisionFor": "Decision for {{mode}}",
+        "ttl": "Longest grant",
+        "ttlHint": "1–3600 seconds.",
+        "approvers": "Approvers",
+        "approversHint": "Operator usernames or IDs, one per line (1–32). A requester can't approve their own operation."
+      },
+      "otherRules_one": "{{count}} other rule is kept unchanged.",
+      "otherRules_other": "{{count}} other rules are kept unchanged.",
+      "boundary": "Saving a new version withdraws pending approvals that relied on the old rules.",
+      "save": "Save fleet policy",
+      "saved": "Fleet policy saved as version {{version}}",
+      "conflictTitle": "Someone saved the fleet policy while you were editing",
+      "conflictBody": "Nothing was saved. Version {{version}} is now current; load it and make your change again.",
+      "loadLatest": "Load latest",
+      "errors": {
+        "ttl": "Use a whole number from 1 to 3600.",
+        "approvers": "Name 1–32 approvers using letters, digits and _ . @ -.",
+        "invalid": "The controller refused a rule. Check each decision, lifetime and approver list.",
+        "unknown": "The controller didn't answer. Reload to see whether the policy changed."
+      }
+    },
+    "grant": {
+      "title": "Grants in flight.",
+      "description": "Each grant authorizes one operation for one verified workload. Metadata only; grants never carry secret values here.",
+      "empty": "No grants",
+      "emptyNode": "No grants for this node",
+      "allStatuses": "All statuses",
+      "boundary": "Revoking stops future use. It can't undo a delivery the workload already consumed; that workload may hold the value up to its local ceiling.",
+      "status": {
+        "issued": "Issued",
+        "delivered": "Delivered",
+        "consumed": "Consumed",
+        "revoked": "Revoked",
+        "expired": "Expired"
+      },
+      "fields": {
+        "recipient": "Recipient",
+        "issued": "Issued",
+        "expires": "Expires"
+      },
+      "revoke": {
+        "short": "Revoke",
+        "label": "Revoke grant for {{unit}}",
+        "title": "Revoke this grant?",
+        "body": "The controller signs a revocation for the node's broker. The result below says whether anything may already have been used.",
+        "submit": "Revoke grant"
+      },
+      "result": {
+        "grant_revoked": {
+          "title": "Grant revoked",
+          "body": "The node is connected and receives the signed revocation. The grant wasn't used."
+        },
+        "not_revocable_offline": {
+          "title": "Revoked, but the node is offline",
+          "body": "The controller won't honour this grant again, but the node can't be told until it reconnects. If its broker already holds the grant, the workload may use it before it expires."
+        },
+        "grant_revoked_after_consumption": {
+          "title": "Revoked after it was used",
+          "body": "The workload already consumed this grant. It may keep the delivered value for up to {{seconds}} seconds (its local ceiling). Rotate the underlying credential if that's not acceptable."
+        }
+      },
+      "errors": {
+        "notRevocable": "This grant is no longer revocable (expired or already closed).",
+        "unknown": "The controller didn't answer. Reload to see the grant's status."
+      }
+    },
+    "operation": {
+      "title": "Operations, end to end.",
+      "eyebrow": "Fleet / operation",
+      "description": "Each operation shows its policy decision, approval, grant and the result the broker reported.",
+      "empty": "No operations",
+      "emptyBody": "Operations appear when a workload's request reaches the controller.",
+      "allStatuses": "All statuses",
+      "open": "Open operation {{id}}",
+      "scope": "Scope",
+      "lifecycle": "Lifecycle",
+      "result": "Reported result",
+      "resultNote": "As reported by the node's broker. The controller records it; it doesn't verify the workload's own outcome.",
+      "uncertainTitle": "Outcome uncertain",
+      "uncertainBody": "The broker couldn't confirm whether the operation ran. Check the workload on the node before retrying.",
+      "status": {
+        "requested": "Requested",
+        "awaiting_approval": "Awaiting approval",
+        "granted": "Granted",
+        "executing": "Executing",
+        "completed": "Completed",
+        "failed": "Failed",
+        "uncertain": "Uncertain",
+        "denied": "Denied",
+        "revoked": "Revoked",
+        "cancelled": "Cancelled"
+      },
+      "fields": {
+        "id": "Operation ID",
+        "action": "Action",
+        "workload": "Workload",
+        "resource": "Resource",
+        "decision": "Policy decision",
+        "completed": "Completed",
+        "approval": "Approval",
+        "grant": "Grant"
+      },
+      "cancel": {
+        "open": "Cancel operation",
+        "revokeOpen": "Cancel and revoke grant",
+        "title": "Cancel this operation?",
+        "revokeTitle": "Cancel and revoke its grant?",
+        "body": "It is removed from its approval group and won't run.",
+        "revokeBody": "The grant is revoked; the result says whether the workload already used it.",
+        "submit": "Cancel operation"
+      },
+      "errors": {
+        "notCancellable": "This operation can no longer be cancelled.",
+        "unknown": "The controller didn't answer. Reload to see the operation's status."
+      }
     }
   }
 }

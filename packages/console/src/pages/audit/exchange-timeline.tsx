@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router";
 import * as endpoints from "../../api/endpoints.js";
+import { useIsMe } from "../../lib/actor.js";
 import { eventLabel } from "../../lib/events.js";
 import { useResource } from "../../lib/use-resource.js";
 import { useSession } from "../../session/session.js";
@@ -12,6 +13,7 @@ import { Metadata } from "./metadata.js";
 
 export default function ExchangeTimelinePage() {
   const { t, i18n } = useTranslation();
+  const isMe = useIsMe();
   const { id = "" } = useParams();
   const exchangeId = decodeURIComponent(id);
   const { can } = useSession();
@@ -57,7 +59,7 @@ export default function ExchangeTimelinePage() {
                         <Timestamp value={event.created_at} />
                       </div>
                       <p className="timeline-meta">
-                        {event.actor_id ? t("overview.activity.by", { actor: event.actor_id }) : t("audit.system")}
+                        {event.actor_id ? (isMe(event.actor_id) ? t("overview.activity.byYou") : t("overview.activity.by", { actor: event.actor_id })) : t("audit.system")}
                         {known ? <code className="mono"> · {event.event}</code> : null}
                       </p>
                       <Metadata metadata={event.metadata} />

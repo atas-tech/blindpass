@@ -45,7 +45,7 @@ function install({ role = "admin", fleet = true, fail = [] as string[] }: { role
           return json(200, {
             items: [
               { id: "e1", event: "exchange_approved", actor_id: "op_ada", resource_id: "apr_ref_9", created_at: Date.now() - 60_000, metadata: {} },
-              { id: "e2", event: "fleet.node_revoked", actor_id: "op_ada", resource_id: "node_3", created_at: Date.now() - 120_000, metadata: {} },
+              { id: "e2", event: "fleet.node_revoked", actor_id: "op_rina", resource_id: "node_3", created_at: Date.now() - 120_000, metadata: {} },
               { id: "e3", event: "future_event_kind", actor_id: null, resource_id: null, created_at: Date.now() - 180_000, metadata: {} }
             ],
             next_cursor: null
@@ -96,6 +96,8 @@ describe("overview", () => {
     expect(await screen.findByText("future_event_kind")).toBeTruthy();
     expect(screen.getByText("Exchange approved")).toBeTruthy();
     expect(screen.getByText("Node revoked")).toBeTruthy();
+    expect(screen.getByText("by you").getAttribute("title")).toBe("op_ada");
+    expect(screen.getByText("by op_rina")).toBeTruthy();
     expect(await axeViolations(container)).toEqual([]);
   });
 

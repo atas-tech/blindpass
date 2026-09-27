@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router";
 import * as endpoints from "../../api/endpoints.js";
 import type { AuditEvent } from "../../api/types.js";
 import { eventLabel } from "../../lib/events.js";
+import { useIsMe } from "../../lib/actor.js";
 import { useResource } from "../../lib/use-resource.js";
 import { Button } from "../../ui/button.js";
 import { EmptyState, ErrorState, Skeleton } from "../../ui/feedback.js";
@@ -17,6 +18,7 @@ import { Metadata } from "./metadata.js";
 const PAGE_SIZE = 50;
 
 function AuditRow({ event }: { event: AuditEvent }) {
+  const isMe = useIsMe();
   const { t, i18n } = useTranslation();
   const [open, setOpen] = useState(false);
   const { label, known } = eventLabel(event.event, t, i18n);
@@ -35,7 +37,7 @@ function AuditRow({ event }: { event: AuditEvent }) {
             {known ? <code className="cell-sub">{event.event}</code> : null}
           </span>
         </td>
-        <td data-label={t("audit.columns.actor")}>{event.actor_id ? <code className="mono">{event.actor_id}</code> : <span className="muted">{t("audit.system")}</span>}</td>
+        <td data-label={t("audit.columns.actor")}>{event.actor_id ? isMe(event.actor_id) ? <span title={event.actor_id}>{t("audit.you")}</span> : <code className="mono">{event.actor_id}</code> : <span className="muted">{t("audit.system")}</span>}</td>
         <td data-label={t("audit.columns.resource")} className="cell-text">
           {exchangeId ? (
             <Link to={`/audit/exchange/${encodeURIComponent(exchangeId)}`} className="row-link mono" title={event.resource_id ?? exchangeId}>

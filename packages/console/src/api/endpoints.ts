@@ -135,7 +135,9 @@ export const enrollments = {
 export const nodes = {
   list: (query: PageQuery = {}) => api.get<NodeList>("/api/v3/nodes", { query: { ...query } }),
   get: (id: string) => api.get<FleetNode>(`/api/v3/nodes/${seg(id)}`),
-  revoke: (id: string) => api.delete<FleetNode>(`/api/v3/nodes/${seg(id)}`)
+  revoke: (id: string) => api.delete<FleetNode>(`/api/v3/nodes/${seg(id)}`),
+  rotateKey: (id: string, body: { expected_key_version: number; expected_fingerprint: string; signing_pub: string; recipient_pub: string }) =>
+    api.post<FleetNode>(`/api/v3/nodes/${seg(id)}/rotate-key`, body)
 };
 
 export const workloads = {

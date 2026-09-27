@@ -8,6 +8,7 @@ import "./styles/shell.css";
 import "./styles/pages.css";
 import "./styles/daily.css";
 import "./styles/admin.css";
+import "./styles/fleet.css";
 import { App } from "./app.js";
 import { initI18n } from "./i18n/index.js";
 import { SessionProvider } from "./session/session.js";

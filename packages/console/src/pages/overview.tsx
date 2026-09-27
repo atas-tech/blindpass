@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import * as endpoints from "../api/endpoints.js";
 import type { AnyApproval, AuditEvent, FleetNode } from "../api/types.js";
 import { isOperationApproval } from "../api/types.js";
+import { useIsMe } from "../lib/actor.js";
 import { eventLabel } from "../lib/events.js";
 import { formatNumber } from "../lib/format.js";
 import { collectAll, useResource, type ResourceState } from "../lib/use-resource.js";
@@ -123,6 +124,7 @@ function QueuePreview({ items, total }: { items: AnyApproval[]; total: number | 
 function ActivityItem({ event }: { event: AuditEvent }) {
   const { t, i18n } = useTranslation();
   const { label, known } = eventLabel(event.event, t, i18n);
+  const isMe = useIsMe();
   return (
     <li className="activity-item">
       <Icon name={event.event.startsWith("fleet.") ? "nodes" : event.event.startsWith("exchange") ? "key" : "audit"} size={16} className="activity-icon" />
@@ -130,7 +132,7 @@ function ActivityItem({ event }: { event: AuditEvent }) {
         <span className={known ? "activity-title" : "activity-title mono"}>{label}</span>
         <span className="activity-meta">
           {event.resource_id ? <code className="mono">{event.resource_id}</code> : null}
-          {event.actor_id ? <span>{t("overview.activity.by", { actor: event.actor_id })}</span> : null}
+          {event.actor_id ? <span title={event.actor_id}>{isMe(event.actor_id) ? t("overview.activity.byYou") : t("overview.activity.by", { actor: event.actor_id })}</span> : null}
         </span>
       </div>
       <Timestamp value={event.created_at} relative />
