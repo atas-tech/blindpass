@@ -581,7 +581,8 @@
     },
     "removed": {
       "title": "Not available in this product",
-      "body": "Billing, usage analytics, public offers, self-service sign-up and email password reset belonged to the hosted service. The local BlindPass controller doesn't provide them."
+      "body": "Billing, usage analytics, public offers, self-service sign-up and email password reset belonged to the hosted service. The local BlindPass controller doesn't provide them.",
+      "docs": "What changed in BlindPass"
     },
     "backToOverview": "Back to overview"
   },
@@ -1081,6 +1082,88 @@
         "notCancellable": "This operation can no longer be cancelled.",
         "unknown": "The controller didn't answer. Reload to see the operation's status."
       }
+    }
+  },
+  "operators": {
+    "eyebrow": "Settings / Operators",
+    "title": "Who can run this controller.",
+    "description": "Local accounts that sign in to this console. Roles decide who approves, who administers and who only reads.",
+    "you": "You",
+    "columns": {
+      "operator": "Operator",
+      "role": "Role",
+      "actions": "Actions"
+    },
+    "empty": "No operators",
+    "boundary": "Accounts are local to this controller. There is no email reset or self-service sign-up; an administrator issues every password.",
+    "reasons": {
+      "lastAdmin": "The controller must keep one active administrator. Make another operator an administrator first.",
+      "selfRemove": "Ask another administrator to remove your account.",
+      "selfReset": "Change your own password in Settings."
+    },
+    "fields": {
+      "username": "Username",
+      "usernameHint": "Used to sign in. Can't be changed later.",
+      "displayName": "Display name",
+      "role": "Role",
+      "newRole": "New role",
+      "id": "Operator ID"
+    },
+    "errors": {
+      "username": "Use 3–128 letters, digits, dots, underscores, hyphens or @.",
+      "displayName": "Enter a display name of up to 160 characters.",
+      "taken": "An operator with this username already exists.",
+      "createUnknown": "The controller may have created this operator. Check the list before trying again.",
+      "failed": "The controller refused the change ({{code}}).",
+      "gone": "This operator no longer exists. The list has been refreshed.",
+      "unknown": "The controller didn't confirm the change. The list has been refreshed; check it before trying again."
+    },
+    "create": {
+      "open": "Add operator",
+      "title": "Add an operator",
+      "body": "The controller issues a one-time temporary password. They choose their own at first sign-in.",
+      "submit": "Create and show password",
+      "partialTitle": "{{username}} was created, but no password was issued",
+      "partialBody": "They can't sign in until you issue one. Nothing you typed was used as their password.",
+      "issue": "Issue temporary password",
+      "done": "{{username}} added"
+    },
+    "role": {
+      "short": "Role",
+      "label": "Change role for {{username}}",
+      "title": "Change {{username}}'s role",
+      "titleSelf": "Change your role",
+      "current": "Current",
+      "transition": "{{from}} → {{to}}",
+      "effect": "The change takes effect on their open sessions immediately.",
+      "selfWarning": "You'll lose access to operator management and other administrator pages as soon as this is saved.",
+      "submit": "Change role",
+      "done": "{{username}} is now {{role}}"
+    },
+    "reset": {
+      "short": "Reset password",
+      "label": "Reset password for {{username}}",
+      "title": "Reset {{username}}'s password?",
+      "body": "The controller issues a one-time temporary password, ends their open sessions and requires a new password at their next sign-in.",
+      "submit": "Reset and show password"
+    },
+    "remove": {
+      "short": "Remove",
+      "label": "Remove {{username}}",
+      "title": "Remove {{username}}?",
+      "body": "Their open sessions end immediately and they can't sign in again. Audit events keep their operator ID. This can't be undone.",
+      "submit": "Remove operator",
+      "done": "{{username}} removed"
+    },
+    "reveal": {
+      "title": "Temporary password for {{username}}",
+      "body": "Give it to them over a channel you trust. It works once: at sign-in they must choose a new password.",
+      "label": "Temporary password"
+    },
+    "manage": {
+      "title": "Operators",
+      "body": "Add operators, change roles, issue temporary passwords and remove accounts.",
+      "open": "Manage operators"
     }
   }
 }

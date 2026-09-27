@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useSession } from "../session/session.js";
 import { ButtonLink } from "../ui/button.js";
-import { EmptyState } from "../ui/feedback.js";
+import { Icon } from "../ui/icon.js";
 import { PageHeader } from "../ui/layout.js";
 import { Gate } from "./auth/gate.js";
 
@@ -34,6 +34,9 @@ export function ForbiddenPage() {
   );
 }
 
+/** Stable docs-vault record of the retired hosted features. A plain link: nothing is fetched. */
+const FREEZE_REGISTER = "https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#freeze-register";
+
 /**
  * Hosted-product paths (billing, analytics, public offers, signup, email
  * reset). The local controller has none of them; show that plainly with no
@@ -45,10 +48,18 @@ export function UnavailableFeaturePage() {
   const signedIn = state.status === "authenticated";
   return (
     <Gate single>
-      <div className="gate-card" data-testid="unavailable-feature">
-        <EmptyState icon="ban" title={t("system.removed.title")}>
-          <p>{t("system.removed.body")}</p>
-        </EmptyState>
+      <div className="gate-card unavailable-card" data-testid="unavailable-feature">
+        <span className="empty-state-mark" aria-hidden="true">
+          <Icon name="ban" size={22} />
+        </span>
+        <div className="gate-card-head">
+          <h1 className="gate-card-title">{t("system.removed.title")}</h1>
+          <p className="gate-card-body">{t("system.removed.body")}</p>
+        </div>
+        <a className="text-link" href={FREEZE_REGISTER} rel="noreferrer noopener" target="_blank">
+          {t("system.removed.docs")}
+          <Icon name="arrow-up-right" size={14} />
+        </a>
         <ButtonLink to={signedIn ? "/" : "/login"} variant="secondary" icon={signedIn ? "overview" : "arrow-right"}>
           {signedIn ? t("system.backToOverview") : t("auth.signIn")}
         </ButtonLink>

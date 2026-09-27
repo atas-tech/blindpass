@@ -15,6 +15,7 @@ const LoginPage = lazy(() => import("./pages/auth/login.js"));
 const ChangePasswordPage = lazy(() => import("./pages/auth/change-password.js"));
 const OverviewPage = lazy(() => import("./pages/overview.js"));
 const SettingsPage = lazy(() => import("./pages/settings/settings.js"));
+const OperatorsPage = lazy(() => import("./pages/settings/operators.js"));
 const ApprovalsPage = lazy(() => import("./pages/approvals/approvals.js"));
 const ApprovalDetail = lazy(() => import("./pages/approvals/detail.js"));
 const AgentsPage = lazy(() => import("./pages/agents.js"));
@@ -161,6 +162,7 @@ export const routes = [
               fleetRoute("/operations", "operations.read", <OperationsPage />),
               fleetRoute("/operations/:id", "operations.read", <OperationDetailPage />),
               { path: "/settings", element: <Lazy><SettingsPage /></Lazy> },
+              { path: "/settings/operators", element: <RequirePermission permission="operators.manage"><Lazy><OperatorsPage /></Lazy></RequirePermission> },
               { path: "*", element: <NotFoundPage /> }
             ]
           }

@@ -660,3 +660,11 @@
     padding: var(--bp-space-5) var(--bp-space-4);
   }
 }
+
+.unavailable-card {
+  justify-items: start;
+}
+
+.unavailable-card .empty-state-mark {
+  margin: 0;
+}

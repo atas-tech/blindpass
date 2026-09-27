@@ -581,7 +581,8 @@
     },
     "removed": {
       "title": "Không có trong sản phẩm này",
-      "body": "Thanh toán, phân tích sử dụng, ưu đãi công khai, tự đăng ký và đặt lại mật khẩu qua email thuộc về dịch vụ lưu trữ. Bộ điều khiển BlindPass cục bộ không cung cấp các chức năng này."
+      "body": "Thanh toán, phân tích sử dụng, ưu đãi công khai, tự đăng ký và đặt lại mật khẩu qua email thuộc về dịch vụ lưu trữ. Bộ điều khiển BlindPass cục bộ không cung cấp các chức năng này.",
+      "docs": "Những thay đổi của BlindPass"
     },
     "backToOverview": "Về trang tổng quan"
   },
@@ -1081,6 +1082,88 @@
         "notCancellable": "Thao tác này không còn hủy được.",
         "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem trạng thái thao tác."
       }
+    }
+  },
+  "operators": {
+    "eyebrow": "Cài đặt / Người vận hành",
+    "title": "Ai có thể vận hành bộ điều khiển này.",
+    "description": "Tài khoản cục bộ đăng nhập vào bảng điều khiển này. Vai trò quyết định ai phê duyệt, ai quản trị và ai chỉ được xem.",
+    "you": "Bạn",
+    "columns": {
+      "operator": "Người vận hành",
+      "role": "Vai trò",
+      "actions": "Thao tác"
+    },
+    "empty": "Không có người vận hành",
+    "boundary": "Tài khoản chỉ tồn tại trên bộ điều khiển này. Không có đặt lại qua email hay tự đăng ký; quản trị viên cấp mọi mật khẩu.",
+    "reasons": {
+      "lastAdmin": "Bộ điều khiển phải luôn có một quản trị viên đang hoạt động. Hãy cấp quyền quản trị cho người khác trước.",
+      "selfRemove": "Hãy nhờ một quản trị viên khác xóa tài khoản của bạn.",
+      "selfReset": "Đổi mật khẩu của bạn trong phần Cài đặt."
+    },
+    "fields": {
+      "username": "Tên đăng nhập",
+      "usernameHint": "Dùng để đăng nhập. Không thể đổi sau này.",
+      "displayName": "Tên hiển thị",
+      "role": "Vai trò",
+      "newRole": "Vai trò mới",
+      "id": "Mã người vận hành"
+    },
+    "errors": {
+      "username": "Dùng 3–128 ký tự gồm chữ, số, dấu chấm, gạch dưới, gạch ngang hoặc @.",
+      "displayName": "Nhập tên hiển thị tối đa 160 ký tự.",
+      "taken": "Đã có người vận hành với tên đăng nhập này.",
+      "createUnknown": "Bộ điều khiển có thể đã tạo người vận hành này. Hãy kiểm tra danh sách trước khi thử lại.",
+      "failed": "Bộ điều khiển đã từ chối thay đổi ({{code}}).",
+      "gone": "Người vận hành này không còn tồn tại. Danh sách đã được làm mới.",
+      "unknown": "Bộ điều khiển chưa xác nhận thay đổi. Danh sách đã được làm mới; hãy kiểm tra trước khi thử lại."
+    },
+    "create": {
+      "open": "Thêm người vận hành",
+      "title": "Thêm người vận hành",
+      "body": "Bộ điều khiển cấp một mật khẩu tạm dùng một lần. Họ sẽ tự đặt mật khẩu ở lần đăng nhập đầu tiên.",
+      "submit": "Tạo và hiện mật khẩu",
+      "partialTitle": "Đã tạo {{username}} nhưng chưa cấp mật khẩu",
+      "partialBody": "Họ chưa thể đăng nhập cho đến khi bạn cấp mật khẩu. Không có nội dung bạn nhập nào được dùng làm mật khẩu.",
+      "issue": "Cấp mật khẩu tạm",
+      "done": "Đã thêm {{username}}"
+    },
+    "role": {
+      "short": "Vai trò",
+      "label": "Đổi vai trò của {{username}}",
+      "title": "Đổi vai trò của {{username}}",
+      "titleSelf": "Đổi vai trò của bạn",
+      "current": "Hiện tại",
+      "transition": "{{from}} → {{to}}",
+      "effect": "Thay đổi có hiệu lực ngay trên các phiên đang mở của họ.",
+      "selfWarning": "Bạn sẽ mất quyền quản lý người vận hành và các trang quản trị khác ngay khi lưu.",
+      "submit": "Đổi vai trò",
+      "done": "{{username}} giờ là {{role}}"
+    },
+    "reset": {
+      "short": "Đặt lại mật khẩu",
+      "label": "Đặt lại mật khẩu cho {{username}}",
+      "title": "Đặt lại mật khẩu của {{username}}?",
+      "body": "Bộ điều khiển cấp một mật khẩu tạm dùng một lần, kết thúc các phiên đang mở và yêu cầu mật khẩu mới ở lần đăng nhập tiếp theo.",
+      "submit": "Đặt lại và hiện mật khẩu"
+    },
+    "remove": {
+      "short": "Xóa",
+      "label": "Xóa {{username}}",
+      "title": "Xóa {{username}}?",
+      "body": "Các phiên đang mở của họ kết thúc ngay và họ không thể đăng nhập lại. Sự kiện kiểm tra vẫn giữ mã người vận hành. Không thể hoàn tác.",
+      "submit": "Xóa người vận hành",
+      "done": "Đã xóa {{username}}"
+    },
+    "reveal": {
+      "title": "Mật khẩu tạm cho {{username}}",
+      "body": "Hãy gửi cho họ qua kênh bạn tin cậy. Mật khẩu chỉ dùng một lần: khi đăng nhập họ phải chọn mật khẩu mới.",
+      "label": "Mật khẩu tạm"
+    },
+    "manage": {
+      "title": "Người vận hành",
+      "body": "Thêm người vận hành, đổi vai trò, cấp mật khẩu tạm và xóa tài khoản.",
+      "open": "Quản lý người vận hành"
     }
   }
 }

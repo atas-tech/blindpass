@@ -4,8 +4,7 @@ import { ApiError } from "../../api/client.js";
 import * as endpoints from "../../api/endpoints.js";
 import { setLocale, SUPPORTED_LOCALES, type SupportedLocale } from "../../i18n/index.js";
 import { useSession } from "../../session/session.js";
-import { Button } from "../../ui/button.js";
-import { Notice } from "../../ui/feedback.js";
+import { Button, ButtonLink } from "../../ui/button.js";
 import { TextField } from "../../ui/field.js";
 import { Identifier, KeyValue, PageHeader, Panel, SegmentedControl } from "../../ui/layout.js";
 import { Timestamp } from "../../ui/time.js";
@@ -49,8 +48,7 @@ function ProfilePanel() {
     <Panel title={t("settings.profile.title")} icon="user">
       {editing ? (
         <form className="form-grid" onSubmit={onSave} noValidate>
-          {error ? <Notice tone="danger">{error}</Notice> : null}
-          <TextField label={t("setup.fields.displayName")} value={name} onChange={(event) => setName(event.target.value)} autoComplete="name" disabled={busy} data-autofocus />
+          <TextField label={t("setup.fields.displayName")} value={name} onChange={(event) => setName(event.target.value)} error={error ?? undefined} autoComplete="name" disabled={busy} data-autofocus />
           <div className="form-actions">
             <Button type="submit" variant="primary" busy={busy}>
               {t("common.save")}
@@ -94,7 +92,7 @@ function ProfilePanel() {
 
 export default function SettingsPage() {
   const { t, i18n } = useTranslation();
-  const { session } = useSession();
+  const { session, can } = useSession();
   const toast = useToast();
   return (
     <div className="stack">
@@ -115,6 +113,18 @@ export default function SettingsPage() {
         <Panel title={t("settings.password.title")} icon="key">
           <PasswordForm submitLabel={t("password.submit")} onDone={() => toast.show({ tone: "ok", title: t("password.changed") })} />
         </Panel>
+        {can("operators.manage") ? (
+          <Panel title={t("operators.manage.title")} icon="operators">
+            <div className="stack-sm">
+              <p className="muted">{t("operators.manage.body")}</p>
+              <div>
+                <ButtonLink to="/settings/operators" size="sm" iconEnd="arrow-right">
+                  {t("operators.manage.open")}
+                </ButtonLink>
+              </div>
+            </div>
+          </Panel>
+        ) : null}
         <Panel title={t("settings.session.title")} icon="clock">
           <KeyValue
             columns={1}
