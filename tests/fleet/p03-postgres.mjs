@@ -23,7 +23,34 @@ async function main() {
     }
     return grantAcknowledged(firstPath, secondPath, extra[0]);
   }
-  throw new Error('command must be create, drop or grant-acknowledged');
+  if (command === 'dump-text') {
+    if (!secondPath || extra.length !== 0) throw new Error('dump-text requires DATABASE_URL_FILE OUT_FILE');
+    return dumpText(firstPath, secondPath);
+  }
+  throw new Error('command must be create, drop, grant-acknowledged or dump-text');
+}
+
+// Write every row of every table in the isolated schema as JSON text so the
+// host can scan controller state for canaries.
+async function dumpText(databaseUrlPath, outPath) {
+  const connectionString = (await readFile(databaseUrlPath, 'utf8')).trim();
+  const client = new Client({ connectionString });
+  await client.connect();
+  try {
+    const { rows: tables } = await client.query(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' ORDER BY table_name`,
+    );
+    const lines = [];
+    for (const { table_name: table } of tables) {
+      if (!/^[a-z_][a-z0-9_]*$/.test(table)) throw new Error('unexpected table name');
+      const { rows } = await client.query(`SELECT row_to_json(t)::text AS row FROM "${table}" t`);
+      for (const { row } of rows) lines.push(`${table} ${row}`);
+    }
+    await writeFile(outPath, `${lines.join('\n')}\n`, { flag: 'wx', mode: 0o600 });
+  } finally {
+    await client.end();
+  }
 }
 
 async function grantAcknowledged(databaseUrlPath, nodeId, grantId) {

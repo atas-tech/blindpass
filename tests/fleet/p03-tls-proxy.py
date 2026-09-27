@@ -72,6 +72,18 @@ class ProxyHandler(BaseHTTPRequestHandler):
                         self._append_grant_replay_marker(
                             f"acknowledged seq={self.server.grant_replay_injected_seq}"
                         )
+                with self.server.node_revocation_lock:
+                    if (
+                        self.server.node_revocation_duplicated_seq is not None
+                        and not self.server.node_revocation_duplicate_acknowledged
+                        and poll_ack_seq is not None
+                        and poll_ack_seq >= self.server.node_revocation_duplicated_seq
+                    ):
+                        self.server.node_revocation_duplicate_acknowledged = True
+                        self._append_marker(
+                            self.server.node_revocation_marker,
+                            f"acknowledged seq={self.server.node_revocation_duplicated_seq}",
+                        )
             if self.command == "POST" and self.path == "/api/v3/node/poll":
                 with self.server.poll_failure_lock:
                     if self.server.poll_failures_remaining > 0:
@@ -279,6 +291,37 @@ class ProxyHandler(BaseHTTPRequestHandler):
                             self.server.grant_replay_injected_seq = injected_seq
                             self._append_grant_replay_marker(f"injected seq={injected_seq}")
                             response_body_modified = True
+                    with self.server.node_revocation_lock:
+                        if (
+                            self.server.node_revocation_marker
+                            and self.server.node_revocation_duplicated_seq is None
+                        ):
+                            revocation = next(
+                                (
+                                    item.get("envelope")
+                                    for item in documents
+                                    if isinstance(item, dict)
+                                    and isinstance(item.get("envelope"), dict)
+                                    and item["envelope"].get("kind") == "node_revocation"
+                                ),
+                                None,
+                            )
+                            if revocation is not None:
+                                highest_seq = poll_ack_seq if poll_ack_seq is not None else 0
+                                for item in documents:
+                                    seq = item.get("seq") if isinstance(item, dict) else None
+                                    if isinstance(seq, int) and not isinstance(seq, bool):
+                                        highest_seq = max(highest_seq, seq)
+                                duplicated_seq = highest_seq + 1
+                                # Replay the genuine signed document under a
+                                # synthetic outer sequence in the same response.
+                                documents.append({"seq": duplicated_seq, "envelope": revocation})
+                                self.server.node_revocation_duplicated_seq = duplicated_seq
+                                self._append_marker(
+                                    self.server.node_revocation_marker,
+                                    f"duplicated seq={duplicated_seq}",
+                                )
+                                response_body_modified = True
                 try:
                     has_grant = any(
                         item.get("envelope", {}).get("kind") == "grant"
@@ -369,6 +412,16 @@ class ProxyHandler(BaseHTTPRequestHandler):
             marker.flush()
             os.fsync(marker.fileno())
 
+    @staticmethod
+    def _append_marker(path, message):
+        if not path:
+            return
+        marker_fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(marker_fd, "ab") as marker:
+            marker.write(f"{message} at={int(time.time() * 1000)}\n".encode())
+            marker.flush()
+            os.fsync(marker.fileno())
+
     def _append_grant_replay_marker(self, message):
         if not self.server.grant_replay_marker:
             return
@@ -405,6 +458,7 @@ def main():
     parser.add_argument("--capture-grant-revocation")
     parser.add_argument("--replay-grant-revocation")
     parser.add_argument("--grant-replay-marker")
+    parser.add_argument("--duplicate-node-revocation-marker")
     args = parser.parse_args()
     if args.fail_first_node_polls < 0 or args.fail_first_node_polls > 10:
         parser.error("--fail-first-node-polls must be between 0 and 10")
@@ -464,6 +518,10 @@ def main():
     server.grant_replay_acknowledged = False
     server.grant_replay_marker = args.grant_replay_marker
     server.grant_replay_lock = threading.Lock()
+    server.node_revocation_marker = args.duplicate_node_revocation_marker
+    server.node_revocation_duplicated_seq = None
+    server.node_revocation_duplicate_acknowledged = False
+    server.node_revocation_lock = threading.Lock()
     if args.replay_policy_snapshot:
         try:
             with open(args.replay_policy_snapshot, encoding="utf-8") as source:

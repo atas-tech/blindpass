@@ -216,19 +216,63 @@ node-service restart. Denial persists after channel restart, with no new marker.
 The proxy also captures and replays a signed grant revocation after broker
 restart. The held grant is denied, its private tombstone stays at one record,
 and the replay is acknowledged without a node-service restart. Controller time
-rollback, reboot cases beyond this tested guest scenario, further
-transport-level policy replay, and node-revocation replay
-scenarios remain open. Portable Rust tests cover bounded queues,
+rollback (covered only by Rust tests), reboot cases beyond this tested guest
+scenario and further transport-level policy replay remain open; node-revocation
+transport replay is covered by the main stage below. Portable Rust tests cover bounded queues,
 durable audit backpressure and purpose sanitization; actual disk-full and all
-delayed duplicate-event cases remain open. Broader I05 cases, pilot scenarios
-and inherited gates still require implementation or execution evidence. See
+delayed duplicate-event cases remain open. The extended stage below covers the
+crash-after-intent I05 case and pilot scenarios E05, E07, E11 and E12;
+inherited P01/P02 gates and hosted runs still require execution evidence. See
 `docs/testing/evidence/p03-fleet-authorization-execution.md` for the last
 two-backend result and its exact limits.
+
+### Extended P03 stage and harness conventions
+
+Each registered workload runs in its own system unit (`blindpass-p03-<label>.service`)
+with its own root-owned grant file, because a node allows one active registration
+per unit. The runner seeds a second operator and names it in the
+`pending_approval` rule's `approver_ids`; the administrator requests operations
+and the named approver decides them, since the controller refuses self-approval.
+Denial checks require the broker's exact reason code (for example
+`grant_revoked`, `grant_unknown` after reboot, `grant_expired` after suspend),
+so an unrelated socket or permission failure cannot pass them.
+
+After the E02 recovery, `tests/fleet/p03-vm-extended.sh` runs on each backend:
+
+- E05 and I10: reject, cancel and expire approvals (the runner sets
+  `BLINDPASS_TEST_APPROVAL_TTL_SECONDS=20`). The waiting worker ends with the
+  controller-signed `operation_<status>` closure. The requester's own approval
+  returns 403, and the workload account cannot reach the approval API.
+- E12 and I02: an unregistered unit claiming a registered workload, the same
+  unit presenting a copied live grant, a registered sibling claiming another
+  workload, and a process outside any unit claiming the unit, invocation and
+  grant are all denied with specific codes; the legitimate workload then
+  consumes its grant.
+- E11: four workloads on two nodes run concurrently; each grant completes once
+  with its own audit linkage, and a consumed grant presented by another
+  workload is denied.
+- P03-I05 and I08: with a test-mode drop-in and a one-shot root-owned flag, the
+  broker aborts after the durable consume intent and before the marker. The
+  retry is denied, no marker appears and the controller records `uncertain`.
+- E07 and O01: the controller is stopped with `SIGSTOP` while a grant is held
+  and another request is queued; the held grant is denied after expiry and the
+  relay does not restart. After `SIGCONT` the queued request's broker evidence
+  is older than the one-minute window, so the controller refuses it with
+  `broker_evidence_stale`; a fresh request on the same unit then completes.
+  The controller process is then restarted and a fresh operation completes.
+- E01 exposure: every private node key encoding from both guests is searched
+  for in a full controller database dump and log. A random canary placed in an
+  operation purpose must be found first, so an empty dump cannot pass.
+
+The main stage also duplicates the genuine signed node revocation under a
+synthetic outer sequence and requires exactly one controller
+`node_revocation_applied` event, and it measures connected grant revocation
+(E06) against the 30-second bound with the broker-signed
+`revoked_before_consumption` outcome.
 
 Focused broker control-socket tests also reject an older signed policy after a
 newer snapshot has been applied, keep that policy across broker restart, and
 preserve grant and node revocations when their signed documents are replayed.
 They verify the revoked grant remains denied after a fresh signed time reply.
-The VM scenarios above exercise policy and grant revocation replay through the
-node HTTPS transport; node-revocation replay through that transport remains
-open.
+The VM scenarios above exercise policy, grant revocation and node revocation
+replay through the node HTTPS transport.

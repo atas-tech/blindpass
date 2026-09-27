@@ -24,6 +24,18 @@ async function main() {
       return createWorkload(...args);
     case 'operation':
       return createAndApproveOperation(...args);
+    case 'request-operation':
+      return requestPendingOperation(...args);
+    case 'decide':
+      return decide(...args);
+    case 'cancel-operation':
+      return cancelOperation(...args);
+    case 'approval-status':
+      return approvalStatus(...args);
+    case 'audit-count':
+      return auditCount(...args);
+    case 'ensure-approver':
+      return ensureApprover();
     case 'operation-status':
       return operationStatus(...args);
     case 'grant-status':
@@ -87,6 +99,7 @@ async function approveEnrollment(id) {
 }
 
 async function setPolicy() {
+  const approver = await approverSession();
   const policy = await api('/api/v3/policies', { method: 'GET' });
   const updated = await api('/api/v3/policies', {
     method: 'PUT',
@@ -99,6 +112,7 @@ async function setPolicy() {
         mode: 'file',
         decision: 'pending_approval',
         approval_required: true,
+        approver_ids: [approver.operator_id],
         max_ttl_seconds: 120,
       }],
     }),
@@ -126,10 +140,11 @@ async function setDeniedPolicy() {
   print({ version: updated.version, decision: 'deny' });
 }
 
-async function createWorkload(nodeId, name, account) {
+async function createWorkload(nodeId, name, account, unit) {
   const uid = /^uid:([1-9][0-9]*)$/.exec(account ?? '');
-  if (!nodeId || !name || !uid || Number(uid[1]) > 0xffff_ffff) {
-    throw new Error('create-workload requires NODE_ID NAME OS_ACCOUNT');
+  if (!nodeId || !name || !uid || Number(uid[1]) > 0xffff_ffff
+      || !/^blindpass-p03-[a-z0-9-]{1,48}\.service$/.test(unit ?? '')) {
+    throw new Error('create-workload requires NODE_ID NAME OS_ACCOUNT UNIT');
   }
   const workload = await api('/api/v3/workloads', {
     method: 'POST',
@@ -137,7 +152,7 @@ async function createWorkload(nodeId, name, account) {
     body: JSON.stringify({
       node_id: nodeId,
       name: `p03-${name}`,
-      unit: 'blindpass-p03-workload.service',
+      unit,
       account,
       consumption_mode: 'file',
       local_ceiling_seconds: 120,
@@ -146,7 +161,7 @@ async function createWorkload(nodeId, name, account) {
   print({ id: workload.id, node_id: workload.node_id, registration_version: workload.registration_version });
 }
 
-async function createAndApproveOperation(workloadId, eventKey, invocationId, resourceId, purpose, ttlSeconds = '60') {
+async function requestOperation(workloadId, eventKey, invocationId, resourceId, purpose, ttlSeconds = '60') {
   if (!workloadId || !eventKey || !invocationId || !resourceId || !purpose) {
     throw new Error('operation requires WORKLOAD_ID EVENT_KEY INVOCATION_ID RESOURCE_ID PURPOSE');
   }
@@ -154,12 +169,9 @@ async function createAndApproveOperation(workloadId, eventKey, invocationId, res
   if (!Number.isSafeInteger(requestedTtlSeconds) || requestedTtlSeconds < 1 || requestedTtlSeconds > 3600) {
     throw new Error('operation TTL must be an integer between 1 and 3600 seconds');
   }
-  const headers = writeHeaders({
-    'idempotency-key': `p03-${randomUUID().replaceAll('-', '')}`,
-  });
   const createRequest = {
     method: 'POST',
-    headers,
+    headers: writeHeaders({ 'idempotency-key': `p03-${randomUUID().replaceAll('-', '')}` }),
     body: JSON.stringify({
       workload_id: workloadId,
       action: 'noop.marker',
@@ -189,23 +201,87 @@ async function createAndApproveOperation(workloadId, eventKey, invocationId, res
   if (!Array.isArray(approval.operation_ids) || !approval.operation_ids.includes(operation.id)) {
     throw new Error('approval did not include the requested operation');
   }
-  await api(`/api/v3/approvals/${encodeURIComponent(operation.approval_id)}/approve`, {
+  return { operation, approval };
+}
+
+async function decideApproval(approvalId, decision, actor = 'approver') {
+  const approval = await api(`/api/v3/approvals/${encodeURIComponent(approvalId)}`, { method: 'GET' });
+  return api(`/api/v3/approvals/${encodeURIComponent(approvalId)}/${decision}`, {
     method: 'POST',
     headers: writeHeaders({
-      'idempotency-key': `p03-approve-${randomUUID().replaceAll('-', '')}`,
+      'idempotency-key': `p03-${decision}-${randomUUID().replaceAll('-', '')}`,
       'if-match': `"${approval.version}"`,
     }),
     body: JSON.stringify({
       expected_status: 'pending',
       expected_version: approval.version,
-      operation_ids: [operation.id],
+      operation_ids: approval.operation_ids,
     }),
-  });
+  }, true, actor);
+}
+
+async function createAndApproveOperation(...args) {
+  const { operation } = await requestOperation(...args);
+  await decideApproval(operation.approval_id, 'approve');
   const granted = await api(`/api/v3/operations/${encodeURIComponent(operation.id)}`, { method: 'GET' });
   if (granted.status !== 'granted' || typeof granted.grant_id !== 'string') {
     throw new Error(`approved operation entered unexpected state ${granted.status}`);
   }
   print({ operation_id: operation.id, grant_id: granted.grant_id, status: granted.status });
+}
+
+async function requestPendingOperation(...args) {
+  const { operation, approval } = await requestOperation(...args);
+  print({ operation_id: operation.id, approval_id: approval.id, approval_version: approval.version });
+}
+
+async function decide(approvalId, decision, actor = 'approver') {
+  if (!/^oa_[A-Za-z0-9_-]+$/.test(approvalId ?? '') || !['approve', 'reject'].includes(decision)
+      || !['approver', 'admin'].includes(actor)) {
+    throw new Error('decide requires APPROVAL_ID approve|reject [approver|admin]');
+  }
+  try {
+    await decideApproval(approvalId, decision, actor);
+    print({ approval_id: approvalId, decision, status: 200 });
+  } catch (error) {
+    if (!error.status) throw error;
+    print({ approval_id: approvalId, decision, status: error.status, error: error.code });
+  }
+}
+
+async function cancelOperation(id) {
+  if (!id) throw new Error('cancel-operation requires OPERATION_ID');
+  const result = await api(`/api/v3/operations/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: writeHeaders(),
+  });
+  print({ operation_id: id, status: result.status ?? null });
+}
+
+async function approvalStatus(id) {
+  if (!id) throw new Error('approval-status requires APPROVAL_ID');
+  const approval = await api(`/api/v3/approvals/${encodeURIComponent(id)}`, { method: 'GET' });
+  print({ id: approval.id, status: approval.status, version: approval.version });
+}
+
+// Count audit rows across every page; fleet operator actions also write audit
+// rows, so a single page is not authoritative.
+async function auditCount(event, actorId, resourceId) {
+  if (!event) throw new Error('audit-count requires EVENT [ACTOR_ID] [RESOURCE_ID]');
+  let cursor = null;
+  let count = 0;
+  for (let page = 0; page < 200; page += 1) {
+    const query = new URLSearchParams({ limit: '100' });
+    if (cursor) query.set('cursor', cursor);
+    const audit = await api(`/api/v3/admin/audit?${query}`, { method: 'GET' });
+    const rows = audit.items ?? audit.events ?? [];
+    count += rows.filter((row) => row.event === event
+      && (!actorId || row.actor_id === actorId)
+      && (!resourceId || row.resource_id === resourceId)).length;
+    cursor = audit.next_cursor ?? null;
+    if (!cursor) break;
+  }
+  print({ event, count });
 }
 
 async function operationStatus(id) {
@@ -222,6 +298,7 @@ async function grantStatus(id) {
     status: grant.status,
     issued_at: grant.issued_at,
     expires_at: grant.expires_at,
+    broker_revocation_outcome: grant.broker_revocation_outcome ?? null,
   });
 }
 
@@ -249,6 +326,7 @@ async function nodeStatus(id) {
     key_version: node.key_version,
     last_seen_at: node.last_seen_at,
     last_poll_at: node.last_poll_at,
+    signing_fingerprint: node.signing_fingerprint ?? null,
   });
 }
 
@@ -364,12 +442,12 @@ async function grantRejectionCheck(nodeId, grantId) {
   print({ node_id: nodeId, grant_id: grantId, reason_code: 'expired_before_receipt', audit_events: 1 });
 }
 
-async function api(path, init, authenticated = true) {
+async function api(path, init, authenticated = true, actor = 'admin') {
   const headers = new Headers(init.headers ?? {});
   headers.set('accept', 'application/json');
   if (init.body !== undefined) headers.set('content-type', 'application/json');
   if (authenticated) {
-    const seed = await adminSeed();
+    const seed = actor === 'approver' ? await approverSession() : await adminSeed();
     headers.set('cookie', `bp_session=${seed.session_id}; bp_csrf=${seed.csrf_token}`);
     if (!['GET', 'HEAD'].includes((init.method ?? 'GET').toUpperCase())) {
       headers.set('origin', origin);
@@ -392,6 +470,85 @@ async function api(path, init, authenticated = true) {
     throw error;
   }
   return body;
+}
+
+// A second operator named as the approver in pending_approval rules. The
+// controller refuses decisions by the operator who requested an operation.
+function approverPath() {
+  if (!seedPath) throw new Error('P03_ADMIN_SEED_FILE is required');
+  return `${seedPath}.approver.json`;
+}
+
+async function readApprover() {
+  try {
+    return JSON.parse(await readFile(approverPath(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function ensureApprover() {
+  const existing = await readApprover();
+  if (existing?.operator_id) return print({ operator_id: existing.operator_id, username: existing.username });
+  const username = `p03-approver-${randomBytes(4).toString('hex')}`;
+  const password = randomBytes(24).toString('base64url');
+  const created = await api('/api/v3/admin/operators', {
+    method: 'POST',
+    headers: writeHeaders(),
+    body: JSON.stringify({ username, display_name: 'P03 approver', role: 'operator', password }),
+  });
+  if (typeof created.id !== 'string') throw new Error('controller did not create the approver operator');
+  const session = await login(username, password);
+  const record = { operator_id: created.id, username, ...session };
+  await writeFile(approverPath(), JSON.stringify(record), { flag: 'wx', mode: 0o600 });
+  await chmod(approverPath(), 0o600);
+  print({ operator_id: created.id, username });
+}
+
+async function login(username, password) {
+  const preSessionCsrf = randomBytes(24).toString('base64url');
+  const response = await fetch(new URL('/api/v3/admin/session/login', baseUrl), {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      cookie: `bp_csrf=${preSessionCsrf}`,
+      origin,
+      'x-csrf-token': preSessionCsrf,
+    },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!response.ok) throw new Error(`approver login failed (${response.status})`);
+  const cookies = Object.fromEntries(response.headers.getSetCookie()
+    .map((value) => value.split(';')[0].split('='))
+    .filter((pair) => pair.length === 2));
+  if (!cookies.bp_session || !cookies.bp_csrf) throw new Error('approver login returned no session');
+  const session = { session_id: cookies.bp_session, csrf_token: cookies.bp_csrf };
+  const current = await fetch(new URL('/api/v3/admin/session', baseUrl), {
+    headers: { accept: 'application/json', cookie: `bp_session=${session.session_id}; bp_csrf=${session.csrf_token}` },
+  });
+  if (!current.ok) throw new Error('approver session is unavailable');
+  if ((await current.json()).must_change_password === true) {
+    const changed = await fetch(new URL('/api/v3/admin/session/change-password', baseUrl), {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        cookie: `bp_session=${session.session_id}; bp_csrf=${session.csrf_token}`,
+        origin,
+        'x-csrf-token': session.csrf_token,
+      },
+      body: JSON.stringify({ current_password: password, new_password: randomBytes(32).toString('base64url') }),
+    });
+    if (!changed.ok) throw new Error('approver password change was rejected');
+  }
+  return session;
+}
+
+async function approverSession() {
+  const approver = await readApprover();
+  if (!approver?.session_id) throw new Error('approver operator is not initialized; run ensure-approver');
+  return approver;
 }
 
 async function adminSeed() {

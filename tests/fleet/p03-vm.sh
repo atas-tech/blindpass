@@ -39,6 +39,8 @@ done
 }
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
+# shellcheck source=tests/fleet/p03-vm-extended.sh
+source "$repo_root/tests/fleet/p03-vm-extended.sh"
 guest_user=${BLINDPASS_FLEET_GUEST_USER:-blindpass}
 guest_image=${BLINDPASS_FLEET_GUEST_IMAGE:-"${XDG_DATA_HOME:-$HOME/.local/share}/blindpass/vm-images/noble-server-cloudimg-amd64.img"}
 guest_image_sha=${BLINDPASS_FLEET_GUEST_IMAGE_SHA256:-612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354}
@@ -47,6 +49,10 @@ ssh_port_a=${BLINDPASS_P03_SSH_PORT_A:-22222}
 ssh_port_b=${BLINDPASS_P03_SSH_PORT_B:-22223}
 declare -A guest_ports
 guest_ports=([a]=$ssh_port_a [b]=$ssh_port_b)
+# The workload unit each guest command targets. Every registered workload has
+# its own system unit because a node allows one active registration per unit.
+declare -A guest_units
+guest_units=([a]= [b]=)
 
 [[ -r "$guest_image" ]] || unsupported 'pinned guest image is missing or unreadable'
 [[ "$guest_image_sha" =~ ^[a-f0-9]{64}$ ]] || unsupported 'BLINDPASS_FLEET_GUEST_IMAGE_SHA256 is malformed'
@@ -138,7 +144,28 @@ guest_ssh() {
 guest_call() {
     local guest=$1
     shift
-    guest_ssh "$guest" sudo /usr/local/sbin/blindpass-p03-guest "$@"
+    local -a unit_args=()
+    if [[ -n "${guest_units[$guest]:-}" ]]; then
+        unit_args=(--unit "${guest_units[$guest]}")
+    fi
+    # ssh joins its arguments into one remote shell command; quote each one so
+    # values such as alternative denial codes (a|b) are not reinterpreted.
+    local remote_command
+    printf -v remote_command '%q ' sudo /usr/local/sbin/blindpass-p03-guest "${unit_args[@]}" "$@"
+    guest_ssh "$guest" "$remote_command"
+}
+
+use_unit() {
+    local guest=$1 unit=$2
+    [[ "$unit" =~ ^blindpass-p03-[a-z0-9-]{1,48}\.service$ ]] || {
+        printf 'P03-FAIL workload unit name %s is invalid\n' "$unit" >&2
+        return 1
+    }
+    guest_units[$guest]=$unit
+}
+
+unit_for_label() {
+    printf 'blindpass-p03-%s.service\n' "$(tr -c 'a-z0-9\n' '-' <<<"${1,,}")"
 }
 
 reboot_guest() {
@@ -266,9 +293,14 @@ start_protocol_mismatch_proxy() {
 start_delayed_grant_proxy() {
     local marker=$1
     local delay_seconds=${2:-4}
+    local node_revocation_marker=${3:-}
+    local -a duplicate_args=()
+    if [[ -n "$node_revocation_marker" ]]; then
+        duplicate_args=(--duplicate-node-revocation-marker "$node_revocation_marker")
+    fi
     start_proxy_process "$(dirname "$marker")/tls-proxy-grant-delay.log" \
         --delay-first-grant-response --grant-marker "$marker" \
-        --grant-delay-seconds "$delay_seconds"
+        --grant-delay-seconds "$delay_seconds" "${duplicate_args[@]}"
 }
 
 start_reconnect_storm_proxy() {
@@ -409,7 +441,10 @@ setup_workload() {
         printf 'P03-FAIL guest returned a malformed workload account binding\n' >&2
         return 1
     }
-    workload_json=$(admin create-workload "$node_id" "$label" "$account")
+    local unit
+    unit=$(unit_for_label "$label")
+    use_unit "$guest" "$unit"
+    workload_json=$(admin create-workload "$node_id" "$label" "$account" "$unit")
     local workload_id
     workload_id=$(json_field "$workload_json" id)
     [[ "$workload_id" =~ ^wl_[A-Za-z0-9_-]+$ ]] || {
@@ -417,7 +452,9 @@ setup_workload() {
         return 1
     }
     guest_call "$guest" configure-workload "$node_id" "$workload_id" "$payload" >&2
-    printf '%s\n' "$workload_id"
+    # Returned through a variable: a command substitution would run in a
+    # subshell and lose the guest unit selection.
+    SETUP_WORKLOAD_ID=$workload_id
 }
 
 issue_operation() {
@@ -505,6 +542,8 @@ run_backend() {
         BLINDPASS_AGENT_JWT_SECRET_FILE="$agent_secret"
         BLINDPASS_ISSUER_KEY_FILE="$issuer_secret"
         BLINDPASS_ADMIN_SOCKET_PATH="$admin_socket"
+        # Short pending-approval lifetime so pilot E05 observes expiry.
+        BLINDPASS_TEST_APPROVAL_TTL_SECONDS=20
     )
     env "${controller_env[@]}" "$repo_root/target/release/blindpass-controller" migrate
     printf '{"agents":["p03-synthetic-fixture"],"local_admin":true}\n' >"$backend_dir/seed.fixture.json"
@@ -535,6 +574,7 @@ run_backend() {
         printf 'P03-FAIL controller returned a malformed issuer fingerprint\n' >&2
         return 1
     }
+    admin ensure-approver >/dev/null
     admin policy >/dev/null
 
     start_guest a "$current_backend"
@@ -547,9 +587,20 @@ run_backend() {
     node_a=$(create_enrollment a "p03-$current_backend-node-a")
     guest_call a start-node
     wait_for_node_online "$node_a"
+    if [[ "${BLINDPASS_P03_EXTENDED_ONLY:-0}" == 1 ]]; then
+        # Debugging aid only: skips the main stage, so its output is never
+        # acceptance evidence.
+        printf 'P03-DEBUG extended-only run; not acceptance evidence\n'
+        node_b=$(create_enrollment b "p03-$current_backend-node-b")
+        start_clear_proxy "$backend_dir/tls-proxy-extended.log"
+        run_extended_scenarios "$node_a" "$node_b"
+        teardown_backend
+        return 0
+    fi
     workload_a=
     payload_a=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 partition replay",resource_id:"P03-CANARY-A",ttl_seconds:60})).toString("base64url"))')
-    workload_a=$(setup_workload a "$node_a" "$current_backend-a" "$payload_a")
+    setup_workload a "$node_a" "$current_backend-a" "$payload_a"
+    workload_a=$SETUP_WORKLOAD_ID
     sleep 2
     [[ -s "$initial_policy_snapshot" ]] || {
         printf 'P03-FAIL TLS proxy did not capture the initial signed fleet policy\n' >&2
@@ -760,7 +811,8 @@ PY
 
     local reboot_payload reboot_workload reboot_request reboot_grant reboot_started_ms
     reboot_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 grant reboot fence",resource_id:"P03-CANARY-REBOOT",ttl_seconds:120})).toString("base64url"))')
-    reboot_workload=$(setup_workload a "$node_a" "$current_backend-a-reboot" "$reboot_payload")
+    setup_workload a "$node_a" "$current_backend-a-reboot" "$reboot_payload"
+    reboot_workload=$SETUP_WORKLOAD_ID
     guest_call a start-workload
     reboot_request=$(guest_call a wait-request)
     issue_operation "$reboot_workload" P03-CANARY-REBOOT "$reboot_request" \
@@ -831,7 +883,8 @@ PY
 
     local suspend_payload suspend_workload suspend_request suspend_operation suspend_grant
     suspend_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 suspend-aware grant expiry",resource_id:"P03-CANARY-SUSPENDED",ttl_seconds:20})).toString("base64url"))')
-    suspend_workload=$(setup_workload a "$node_a" "$current_backend-a-suspend" "$suspend_payload")
+    setup_workload a "$node_a" "$current_backend-a-suspend" "$suspend_payload"
+    suspend_workload=$SETUP_WORKLOAD_ID
     guest_call a start-workload
     suspend_request=$(guest_call a wait-request)
     issue_operation "$suspend_workload" P03-CANARY-SUSPENDED "$suspend_request" \
@@ -860,6 +913,23 @@ PY
         return 1
     }
     printf '%s\n' "$suspend_output"
+    # Present the grant only after a fresh signed poll, so the denial is the
+    # suspend-aware BOOTTIME deadline rather than stale trusted time.
+    local suspend_resumed_ms suspend_poll_status suspend_last_poll suspend_polled=false
+    suspend_resumed_ms=$(node -e 'process.stdout.write(String(Date.now()))')
+    for _attempt in {1..150}; do
+        suspend_poll_status=$(admin node-status "$node_a")
+        suspend_last_poll=$(json_field "$suspend_poll_status" last_poll_at)
+        if [[ "$suspend_last_poll" =~ ^[0-9]+$ ]] && (( suspend_last_poll > suspend_resumed_ms )); then
+            suspend_polled=true
+            break
+        fi
+        sleep 0.2
+    done
+    [[ "$suspend_polled" == true ]] || {
+        printf 'P03-FAIL node did not poll after guest resume\n' >&2
+        return 1
+    }
     guest_call a roll-clock-back 7200
     printf '%s\n' "$suspend_grant" | guest_call a provide-grant
     guest_call a assert-expired-workload "$suspend_grant"
@@ -870,7 +940,8 @@ PY
 
     node_b=$(create_enrollment b "p03-$current_backend-node-b")
     payload_b=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 second host",resource_id:"P03-CANARY-B",ttl_seconds:60})).toString("base64url"))')
-    workload_b=$(setup_workload b "$node_b" "$current_backend-b" "$payload_b")
+    setup_workload b "$node_b" "$current_backend-b" "$payload_b"
+    workload_b=$SETUP_WORKLOAD_ID
     guest_call b start-node
     sleep 2
     guest_call b start-workload
@@ -879,14 +950,16 @@ PY
 
     local pending_payload pending_workload pending_request pending_operation pending_grant delayed_grant_marker
     pending_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 revoked undelivered grant",resource_id:"P03-CANARY-REVOKED",ttl_seconds:8})).toString("base64url"))')
-    pending_workload=$(setup_workload a "$node_a" "$current_backend-a-revoked" "$pending_payload")
+    setup_workload a "$node_a" "$current_backend-a-revoked" "$pending_payload"
+    pending_workload=$SETUP_WORKLOAD_ID
     sleep 2
     guest_call a start-workload
     pending_request=$(guest_call a wait-request)
     delayed_grant_marker=$backend_dir/expired-grant-response-held
     # Leave time for grant issuance and revocation to reach the controller
     # while the grant is live, then hold the node response past its deadline.
-    start_delayed_grant_proxy "$delayed_grant_marker" 10
+    local node_revocation_replay_marker=$backend_dir/node-revocation-replay
+    start_delayed_grant_proxy "$delayed_grant_marker" 10 "$node_revocation_replay_marker"
     issue_operation "$pending_workload" P03-CANARY-REVOKED "$pending_request" 'P03 revoked undelivered grant' 8
     pending_operation=$ISSUED_OPERATION_ID
     pending_grant=$ISSUED_GRANT_ID
@@ -918,6 +991,22 @@ PY
         return 1
     }
     guest_call a wait-outbox-empty
+    # The proxy replayed the genuine signed node revocation under a synthetic
+    # outer sequence in the same poll response. The broker must apply it once
+    # and the controller must hold exactly one signed application event.
+    grep -Fq 'duplicated seq=' "$node_revocation_replay_marker" 2>/dev/null || {
+        printf 'P03-FAIL TLS proxy did not replay the signed node revocation\n' >&2
+        return 1
+    }
+    local node_revocation_events
+    node_revocation_events=$(json_field "$(admin audit-count node_revocation_applied "$node_a")" count)
+    [[ "$node_revocation_events" == 1 ]] || {
+        printf 'P03-FAIL replayed node revocation produced %s application events\n' \
+            "$node_revocation_events" >&2
+        return 1
+    }
+    printf 'P03-SCENARIO backend=%s scenario=P03-I06-node-revocation-transport-replay replayed=true application_events=1 status=passed\n' \
+        "$current_backend"
     admin grant-rejection-check "$node_a" "$pending_grant"
     revocation_finished_ms=$(node -e 'process.stdout.write(String(Date.now()))')
     revocation_elapsed_ms=$((revocation_finished_ms - revocation_started_ms))
@@ -931,7 +1020,7 @@ PY
         printf 'P03-FAIL undelivered operation %s was not revoked with its node\n' "$pending_operation" >&2
         return 1
     }
-    guest_call a verify-revoked-grant "$pending_grant"
+    guest_call a verify-revoked-grant "$pending_grant" node_revoked
     guest_call a stop-workload
     guest_call a restart-channel
     guest_call a start-workload
@@ -950,7 +1039,8 @@ PY
     wait_for_node_online "$recovered_node"
     local recovered_payload recovered_workload recovered_request
     recovered_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 recovered identity",resource_id:"P03-CANARY-RECOVERED",ttl_seconds:60})).toString("base64url"))')
-    recovered_workload=$(setup_workload a "$recovered_node" "$current_backend-a-recovered" "$recovered_payload")
+    setup_workload a "$recovered_node" "$current_backend-a-recovered" "$recovered_payload"
+    recovered_workload=$SETUP_WORKLOAD_ID
     sleep 2
     guest_call a start-workload
     recovered_request=$(guest_call a wait-request)
@@ -963,7 +1053,8 @@ PY
     local grant_revocation_capture grant_replay_marker grant_revocation_result
     local grant_replay_status grant_replay_expiry grant_replay_acknowledged=false
     grant_replay_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 signed grant revocation replay",resource_id:"P03-CANARY-GRANT-REPLAY",ttl_seconds:120})).toString("base64url"))')
-    grant_replay_workload=$(setup_workload a "$recovered_node" "$current_backend-a-grant-replay" "$grant_replay_payload")
+    setup_workload a "$recovered_node" "$current_backend-a-grant-replay" "$grant_replay_payload"
+    grant_replay_workload=$SETUP_WORKLOAD_ID
     guest_call a start-workload
     grant_replay_request=$(guest_call a wait-request)
     issue_operation "$grant_replay_workload" P03-CANARY-GRANT-REPLAY "$grant_replay_request" \
@@ -981,6 +1072,9 @@ PY
     grant_revocation_capture=$backend_dir/signed-grant-revocation.json
     start_grant_revocation_capture_proxy "$grant_revocation_capture"
     guest_call a start-node
+    wait_for_node_online "$recovered_node"
+    local grant_revoke_started_ms grant_revoke_elapsed_ms grant_broker_outcome=
+    grant_revoke_started_ms=$(node -e 'process.stdout.write(String(Date.now()))')
     grant_revocation_result=$(admin revoke-grant "$grant_replay_grant")
     [[ $(json_field "$grant_revocation_result" status) == grant_revoked ]] || {
         printf 'P03-FAIL controller did not revoke the live connected grant\n' >&2
@@ -1001,6 +1095,24 @@ PY
         return 1
     }
     guest_call a assert-grant-revocation-journal "$grant_replay_grant"
+    grant_revoke_elapsed_ms=$(( $(node -e 'process.stdout.write(String(Date.now()))') - grant_revoke_started_ms ))
+    # E06: the connected broker must hold the tombstone within the bound, and
+    # the controller must learn the broker-signed outcome rather than infer it.
+    for _attempt in {1..150}; do
+        grant_broker_outcome=$(json_field "$(admin grant-status "$grant_replay_grant")" broker_revocation_outcome)
+        [[ -n "$grant_broker_outcome" && "$grant_broker_outcome" != null ]] && break
+        sleep 0.2
+    done
+    [[ "$grant_broker_outcome" == revoked_before_consumption ]] || {
+        printf 'P03-FAIL controller recorded broker revocation outcome %s\n' "${grant_broker_outcome:-none}" >&2
+        return 1
+    }
+    ((grant_revoke_elapsed_ms <= 30000)) || {
+        printf 'P03-FAIL connected grant revocation exceeded 30 seconds (%s ms)\n' "$grant_revoke_elapsed_ms" >&2
+        return 1
+    }
+    printf 'P03-SCENARIO backend=%s scenario=E06-connected-grant-revocation propagation_ms=%s broker_outcome=%s status=passed\n' \
+        "$current_backend" "$grant_revoke_elapsed_ms" "$grant_broker_outcome"
     guest_call a verify-revoked-grant "$grant_replay_grant"
     guest_call a stop-workload
     guest_call a restart-channel
@@ -1040,7 +1152,8 @@ PY
     local policy_restart_started_at policy_node_status policy_last_poll policy_previous_poll
     local policy_fresh_poll_count=0 policy_channel_recovered=false
     policy_replay_payload=$(node -e 'process.stdout.write(Buffer.from(JSON.stringify({action:"noop.marker",mode:"file",purpose:"P03 delayed policy replay",resource_id:"P03-CANARY-POLICY",ttl_seconds:60})).toString("base64url"))')
-    policy_replay_workload=$(setup_workload a "$recovered_node" "$current_backend-a-policy-replay" "$policy_replay_payload")
+    setup_workload a "$recovered_node" "$current_backend-a-policy-replay" "$policy_replay_payload"
+    policy_replay_workload=$SETUP_WORKLOAD_ID
     [[ "$policy_replay_workload" =~ ^wl_[A-Za-z0-9_-]{16,128}$ ]] || {
         printf 'P03-FAIL controller returned a malformed policy-replay workload ID\n' >&2
         return 1
@@ -1151,6 +1264,12 @@ PY
     printf 'P03-SCENARIO backend=%s scenario=P03-I06-delayed-policy-replay stale_version=%s current_version=%s followup_version=%s replay_acknowledged=true recovered_without_service_restart=true denied_after_restart=true status=passed\n' \
         "$current_backend" "$stale_policy_version" "$policy_replay_version" "$policy_followup_version"
 
+    start_clear_proxy "$backend_dir/tls-proxy-extended.log"
+    run_extended_scenarios "$recovered_node" "$node_b"
+    teardown_backend
+}
+
+teardown_backend() {
     stop_proxy
     stop_pid "$controller_pid"
     wait "$controller_pid" 2>/dev/null || true
@@ -1178,5 +1297,9 @@ case "$backend_selection" in
         run_backend postgres
         ;;
 esac
+if [[ "${BLINDPASS_P03_EXTENDED_ONLY:-0}" == 1 ]]; then
+    printf 'P03-DEBUG-COMPLETE backends=%s extended_only=true\n' "$backend_selection"
+    exit 0
+fi
 printf 'P03-VM-COMPLETE runner_owner=%s backends=%s guests=2 revocation=reconciled recovery=passed\n' \
     "$BLINDPASS_FLEET_RUNNER_OWNER" "$backend_selection"

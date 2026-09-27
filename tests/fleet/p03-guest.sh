@@ -3,7 +3,6 @@
 set -Eeuo pipefail
 
 unit=blindpass-p03-workload.service
-grant_file=/run/blindpass/grants/current
 workload_group=blindpass-workload
 
 fail() {
@@ -53,7 +52,66 @@ for row in rows[start:]:
 ' "$expected_invocation"
 }
 
+# Wait for the current workload invocation to fail and require the broker's
+# exact consume-denial code. Any other failure, a marker, or a completion
+# fails the check, so an unrelated socket or permission error cannot pass.
+assert_consume_denied() {
+    local grant_id=$1 expected_codes=$2 state result invocation current_log denial
+    [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
+    [[ "$expected_codes" =~ ^[a-z_]+(\|[a-z_]+)*$ ]] || fail 'expected denial codes are invalid'
+    # A grant consumed earlier by its own workload already has its marker;
+    # the denied attempt must not create one where none existed.
+    local marker=/run/blindpass/ops/"$grant_id".marker marker_existed=false
+    [[ -e "$marker" || -L "$marker" ]] && marker_existed=true
+    for _attempt in {1..800}; do
+        state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
+        result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
+        invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
+        if [[ "$state" == failed && "$result" == exit-code && "$invocation" =~ ^[a-f0-9]{32}$ ]]; then
+            current_log=$(invocation_log "$invocation" || true)
+            if [[ "$marker_existed" == false && ( -e "$marker" || -L "$marker" ) ]]; then
+                fail 'denied grant created a marker'
+            fi
+            if grep -Fq "OPERATION_COMPLETED $grant_id" <<<"$current_log"; then
+                fail 'denied grant reported completion'
+            fi
+            # Permanent grant denials end the client at once; broker-level
+            # denials such as node_revoked are retried and then reported.
+            denial=$(sed -n -e 's/^blindpass-workload-client: consume denied: \([a-z_]*\)$/\1/p' \
+                -e 's/^blindpass-workload-client: workload socket unavailable: ERR \([a-z_]*\)$/\1/p' \
+                <<<"$current_log" | tail -n 1)
+            [[ -n "$denial" ]] || fail "workload failed without a broker consume denial: $(tail -n 1 <<<"$current_log")"
+            [[ "$denial" =~ ^($expected_codes)$ ]] || \
+                fail "grant was denied for $denial, expected $expected_codes"
+            printf 'P03-GUEST-CONSUME-DENIED grant_id=%s code=%s\n' "$grant_id" "$denial"
+            return 0
+        fi
+        sleep 0.2
+    done
+    journalctl -u "$unit" -n 30 -o cat --no-pager >&2 || true
+    fail 'workload did not fail closed when presenting the grant'
+}
+
+deliver_grant_file() {
+    local grant_id=$1 temp_file
+    install -d -o root -g root -m 0755 /run/blindpass/grants
+    temp_file=$(mktemp /run/blindpass/grants/.grant.XXXXXXXX)
+    chmod 0600 "$temp_file"
+    printf '%s\n' "$grant_id" >"$temp_file"
+    chown "root:$workload_group" "$temp_file"
+    chmod 0640 "$temp_file"
+    mv -f -- "$temp_file" "$grant_file"
+}
+
 [[ $(id -u) == 0 ]] || fail 'guest helper requires root'
+if [[ "${1:-}" == --unit ]]; then
+    [[ "${2:-}" =~ ^blindpass-p03-[a-z0-9-]{1,48}\.service$ ]] || fail 'workload unit name is invalid'
+    unit=$2
+    shift 2
+fi
+# Each workload unit has its own root-owned grant file so parallel workloads
+# never read another unit's grant.
+grant_file=/run/blindpass/grants/${unit%.service}
 command=${1:-}
 shift || true
 
@@ -239,6 +297,143 @@ EOF
         systemctl reset-failed "$unit" >/dev/null 2>&1 || true
         printf 'P03-GUEST-WORKLOAD-CONFIGURED\n'
         ;;
+    configure-consumer)
+        # A unit that presents a known grant ID directly, without first
+        # making its own request. Used for copied-grant attempts.
+        node_id=${1:-}
+        workload_id=${2:-}
+        grant_id=${3:-}
+        valid_id "$node_id" || fail 'node identifier is invalid'
+        valid_id "$workload_id" || fail 'workload identifier is invalid'
+        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
+        cat >/etc/systemd/system/"$unit" <<UNIT
+[Unit]
+Description=BlindPass P03 copied-grant consumer
+Requires=blindpass-broker.service
+After=blindpass-broker.service
+
+[Service]
+Type=oneshot
+User=blindpass-agent
+Group=$workload_group
+ExecStart=/usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock --node $node_id --workload $workload_id --unit $unit --operation consume:$grant_id
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/run/blindpass
+RestrictAddressFamilies=AF_UNIX
+UNIT
+        chmod 0644 /etc/systemd/system/"$unit"
+        systemctl daemon-reload
+        systemctl reset-failed "$unit" >/dev/null 2>&1 || true
+        printf 'P03-GUEST-CONSUMER-CONFIGURED\n'
+        ;;
+    run-outside-unit)
+        # An ordinary process running as the workload account outside any
+        # registered unit, claiming a registered unit and workload by name.
+        node_id=${1:-}
+        workload_id=${2:-}
+        claimed_unit=${3:-}
+        operation=${4:-}
+        claimed_invocation=${5:-}
+        valid_id "$node_id" || fail 'node identifier is invalid'
+        valid_id "$workload_id" || fail 'workload identifier is invalid'
+        [[ "$claimed_invocation" =~ ^[a-f0-9]{32}$ ]] || fail 'claimed invocation is invalid'
+        [[ "$claimed_unit" =~ ^blindpass-p03-[a-z0-9-]{1,48}\.service$ ]] || fail 'claimed unit is invalid'
+        [[ "$operation" =~ ^(request|consume):[A-Za-z0-9_-]{1,1024}$ ]] || fail 'operation is invalid'
+        marker_count_before=$(operation_marker_count) || fail 'could not count operation markers'
+        set +e
+        output=$(timeout 90 runuser -u blindpass-agent -g "$workload_group" -- \
+            /usr/libexec/blindpass-workload-client --socket /run/blindpass/workload.sock \
+            --node "$node_id" --workload "$workload_id" --unit "$claimed_unit" \
+            --invocation "$claimed_invocation" --operation "$operation" 2>&1)
+        status=$?
+        set -e
+        [[ "$status" != 0 ]] || fail 'a process outside the registered unit was authorized'
+        if grep -Eq '^OPERATION_(REQUEST|COMPLETED) ' <<<"$output"; then
+            fail 'a process outside the registered unit reached the broker operation path'
+        fi
+        marker_count_after=$(operation_marker_count) || fail 'could not count operation markers'
+        [[ "$marker_count_after" == "$marker_count_before" ]] || fail 'outside process created a marker'
+        reason=$(sed -n 's/^blindpass-workload-client: //p' <<<"$output" | tail -n 1 | tr -c 'A-Za-z0-9_:. \n-' '_')
+        printf 'P03-GUEST-OUTSIDE-UNIT-DENIED status=%s reason=%s\n' "$status" "$reason"
+        ;;
+    assert-request-denied)
+        # The current invocation must fail before any broker request with the
+        # broker's exact denial code.
+        expected_code=${1:-}
+        [[ "$expected_code" =~ ^[a-z_]+(\|[a-z_]+)*$ ]] || fail 'expected denial code is invalid'
+        marker_count_before=$(operation_marker_count) || fail 'could not count operation markers'
+        for _attempt in {1..800}; do
+            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
+            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
+            invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
+            if [[ "$state" == failed && "$result" == exit-code && "$invocation" =~ ^[a-f0-9]{32}$ ]]; then
+                current_log=$(invocation_log "$invocation" || true)
+                if grep -Eq '^OPERATION_(REQUEST|COMPLETED) ' <<<"$current_log"; then
+                    fail 'a forged or unregistered workload reached the broker operation path'
+                fi
+                reason=$(sed -n 's/^blindpass-workload-client: //p' <<<"$current_log" | tail -n 1)
+                [[ "$reason" =~ (^|[^a-z_])($expected_code)$ ]] || \
+                    fail "workload was denied for '$reason', expected $expected_code"
+                code=${BASH_REMATCH[2]}
+                marker_count_after=$(operation_marker_count) || fail 'could not count operation markers'
+                [[ "$marker_count_after" == "$marker_count_before" ]] || fail 'denied workload created a marker'
+                printf 'P03-GUEST-REQUEST-DENIED code=%s\n' "$code"
+                exit 0
+            fi
+            sleep 0.2
+        done
+        journalctl -u "$unit" -n 30 -o cat --no-pager >&2 || true
+        fail 'forged or unregistered workload did not fail closed'
+        ;;
+    assert-operation-closed)
+        # The waiting worker must end with the controller's typed closure,
+        # not a grant or a timeout.
+        expected_status=${1:-}
+        [[ "$expected_status" =~ ^(rejected|expired|cancelled|denied)$ ]] || fail 'closure status is invalid'
+        started_ms=$(date +%s%3N)
+        for _attempt in {1..900}; do
+            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
+            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
+            invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
+            if [[ "$state" == failed && "$result" == exit-code && "$invocation" =~ ^[a-f0-9]{32}$ ]]; then
+                current_log=$(invocation_log "$invocation" || true)
+                if grep -Fq 'OPERATION_COMPLETED ' <<<"$current_log"; then
+                    fail 'closed operation completed'
+                fi
+                grep -Eq "(^|[^a-z_])operation_${expected_status}\$" <<<"$current_log" || \
+                    fail "worker did not report operation_${expected_status}: $(tail -n 1 <<<"$current_log")"
+                printf 'P03-GUEST-OPERATION-CLOSED status=%s observed_after_ms=%s\n' \
+                    "$expected_status" "$(( $(date +%s%3N) - started_ms ))"
+                exit 0
+            fi
+            sleep 0.2
+        done
+        journalctl -u "$unit" -n 30 -o cat --no-pager >&2 || true
+        fail "worker did not receive the operation_${expected_status} closure"
+        ;;
+    unprivileged-api-attempt)
+        # The workload account sends a well-formed approval while naming an
+        # operator in a header, so only authentication decides the result.
+        # Print only the HTTP status code.
+        approval_id=${1:-}
+        operation_id=${2:-}
+        operator_id=${3:-}
+        [[ "$approval_id" =~ ^oa_[A-Za-z0-9_-]{8,128}$ ]] || fail 'approval identifier is invalid'
+        valid_id "$operation_id" || fail 'operation identifier is invalid'
+        valid_id "$operator_id" || fail 'operator identifier is invalid'
+        body=$(printf '{"expected_status":"pending","expected_version":1,"operation_ids":["%s"]}' "$operation_id")
+        code=$(runuser -u blindpass-agent -- curl --silent --output /dev/null --write-out '%{http_code}' \
+            --max-time 10 -X POST \
+            -H 'Content-Type: application/json' -H "X-Operator-Id: $operator_id" \
+            -H 'Idempotency-Key: p03-unprivileged-approval-attempt' -H 'If-Match: "1"' \
+            --data "$body" \
+            "https://p03-controller:8443/api/v3/approvals/$approval_id/approve" || true)
+        [[ "$code" =~ ^[0-9]{3}$ ]] || fail 'operator API attempt did not return an HTTP status'
+        printf 'P03-GUEST-UNPRIVILEGED-API status=%s\n' "$code"
+        ;;
     start-workload)
         previous_invocation=$(systemctl show --property=InvocationID --value "$unit" 2>/dev/null || true)
         journal_cursor=$(journalctl -u "$unit" -n 1 --show-cursor --no-pager 2>/dev/null |
@@ -302,7 +497,7 @@ print(latest)
         ;;
     provide-grant)
         install -d -o root -g root -m 0755 /run/blindpass/grants
-        temp_file=$(mktemp /run/blindpass/grants/.current.XXXXXXXX)
+        temp_file=$(mktemp /run/blindpass/grants/.grant.XXXXXXXX)
         chmod 0600 "$temp_file"
         cat >"$temp_file"
         [[ $(stat -c '%s' "$temp_file") -le 140 ]] || {
@@ -347,30 +542,10 @@ print(latest)
         ;;
     verify-revoked-grant)
         grant_id=${1:-}
+        expected_codes=${2:-grant_revoked}
         [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
-        install -d -o root -g root -m 0755 /run/blindpass/grants
-        temp_file=$(mktemp /run/blindpass/grants/.current.XXXXXXXX)
-        chmod 0600 "$temp_file"
-        printf '%s\n' "$grant_id" >"$temp_file"
-        chown "root:$workload_group" "$temp_file"
-        chmod 0640 "$temp_file"
-        mv -f -- "$temp_file" "$grant_file"
-        for _attempt in {1..600}; do
-            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
-            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
-            if [[ "$state" == failed && "$result" == exit-code ]]; then
-                marker=/run/blindpass/ops/"$grant_id".marker
-                [[ ! -e "$marker" && ! -L "$marker" ]] || fail 'revoked grant created a marker'
-                if journalctl -u "$unit" -o cat --no-pager 2>/dev/null |
-                    grep -Fq "OPERATION_COMPLETED $grant_id"; then
-                    fail 'revoked grant reported completion'
-                fi
-                printf 'P03-GUEST-REVOKED-GRANT-DENIED\n'
-                exit 0
-            fi
-            sleep 0.2
-        done
-        fail 'revoked grant did not fail closed in the workload'
+        deliver_grant_file "$grant_id"
+        assert_consume_denied "$grant_id" "$expected_codes"
         ;;
     assert-grant-revocation-journal)
         grant_id=${1:-}
@@ -390,46 +565,19 @@ print(latest)
         printf 'P03-GUEST-GRANT-REVOCATION-DURABLE records=%s\n' "$matches"
         ;;
     assert-rebooted-grant-denied)
-        grant_id=${1:-}
-        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
-        for _attempt in {1..600}; do
-            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
-            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
-            if [[ "$state" == failed && "$result" == exit-code ]]; then
-                marker=/run/blindpass/ops/"$grant_id".marker
-                [[ ! -e "$marker" && ! -L "$marker" ]] || fail 'pre-reboot grant created a marker after restart'
-                if journalctl -u "$unit" -o cat --no-pager 2>/dev/null |
-                    grep -Fq "OPERATION_COMPLETED $grant_id"; then
-                    fail 'pre-reboot grant reported completion after restart'
-                fi
-                rm -f -- "$grant_file"
-                printf 'P03-GUEST-REBOOTED-GRANT-DENIED\n'
-                exit 0
-            fi
-            sleep 0.2
-        done
-        fail 'pre-reboot grant remained usable after guest restart'
+        # After reboot the broker holds no accepted grants until fresh
+        # reconciliation. An identity-mismatch denial would mean the old
+        # grant survived and only the new invocation stopped it.
+        assert_consume_denied "${1:-}" grant_unknown
+        rm -f -- "$grant_file"
+        printf 'P03-GUEST-REBOOTED-GRANT-DENIED\n'
         ;;
     assert-expired-workload)
-        grant_id=${1:-}
-        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
-        for _attempt in {1..300}; do
-            state=$(systemctl show --property=ActiveState --value "$unit" 2>/dev/null || true)
-            result=$(systemctl show --property=Result --value "$unit" 2>/dev/null || true)
-            if [[ "$state" == failed && "$result" == exit-code ]]; then
-                marker=/run/blindpass/ops/"$grant_id".marker
-                [[ ! -e "$marker" && ! -L "$marker" ]] || fail 'expired grant created a marker'
-                if journalctl -u "$unit" -o cat --no-pager 2>/dev/null |
-                    grep -Fq "OPERATION_COMPLETED $grant_id"; then
-                    fail 'expired grant reported operation completion'
-                fi
-                printf 'P03-GUEST-EXPIRED-GRANT-DENIED\n'
-                exit 0
-            fi
-            sleep 0.2
-        done
-        journalctl -u "$unit" -n 30 -o cat --no-pager >&2 || true
-        fail 'expired grant did not fail closed in the workload'
+        assert_consume_denied "${1:-}" grant_expired
+        printf 'P03-GUEST-EXPIRED-GRANT-DENIED\n'
+        ;;
+    assert-consume-denied)
+        assert_consume_denied "${1:-}" "${2:-}"
         ;;
     stop-workload)
         systemctl stop "$unit" >/dev/null 2>&1 || true
@@ -539,6 +687,89 @@ print(latest)
             sleep 0.2
         done
         fail 'broker did not apply the follow-up signed deny policy'
+        ;;
+    wait-policy-allows)
+        policy_version=${1:-}
+        [[ "$policy_version" =~ ^[1-9][0-9]*$ ]] || fail 'policy version is invalid'
+        policy_file=/var/lib/blindpass/broker/fleet-policy.json
+        for _attempt in {1..300}; do
+            if grep -Eq '"policy_version"[[:space:]]*:[[:space:]]*'"$policy_version"'([,}])' "$policy_file" 2>/dev/null \
+                && grep -Fq '"noop.marker"' "$policy_file"; then
+                printf 'P03-GUEST-POLICY-APPLIED version=%s allows=noop.marker\n' "$policy_version"
+                exit 0
+            fi
+            sleep 0.2
+        done
+        fail 'broker did not apply the signed allowing policy'
+        ;;
+    key-canaries)
+        # Print encodings of this disposable guest's private node key material
+        # so the host can prove none of it reached the controller.
+        identity=/var/lib/blindpass/broker/node-identity.state
+        [[ -f "$identity" && ! -L "$identity" ]] || fail 'node identity state is unavailable'
+        python3 - "$identity" <<'PY'
+import base64
+import sys
+
+data = open(sys.argv[1], "rb").read()
+if len(data) < 72:
+    raise SystemExit("node identity state is truncated")
+for name, secret in (("signing_seed", data[8:40]), ("recipient_private", data[40:72])):
+    print(f"secret {base64.urlsafe_b64encode(secret).decode().rstrip('=')}")
+    print(f"secret {base64.b64encode(secret).decode()}")
+    print(f"secret {secret.hex()}")
+PY
+        ;;
+    enable-crash-hook)
+        # Test-mode drop-in for the disposable guest only; test mode alone
+        # changes nothing until the root-owned flag file is armed.
+        install -d -m 0755 /etc/systemd/system/blindpass-broker.service.d
+        printf '[Service]\nEnvironment=BLINDPASS_P01_TEST_MODE=1\n' \
+            >/etc/systemd/system/blindpass-broker.service.d/p03-crash-hook.conf
+        systemctl daemon-reload
+        systemctl restart blindpass-broker.service
+        systemctl restart blindpass-node.service
+        printf 'P03-GUEST-CRASH-HOOK-ENABLED\n'
+        ;;
+    arm-crash-hook)
+        install -d -o root -g root -m 0700 /run/blindpass/test
+        install -o root -g root -m 0600 /dev/null /run/blindpass/test/crash-after-consume-intent
+        restarts=$(systemctl show --property=NRestarts --value blindpass-broker.service)
+        printf 'P03-GUEST-CRASH-HOOK-ARMED broker_restarts=%s\n' "$restarts"
+        ;;
+    assert-crash-after-intent)
+        grant_id=${1:-}
+        restarts_before=${2:-}
+        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
+        [[ "$restarts_before" =~ ^[0-9]+$ ]] || fail 'broker restart count is invalid'
+        for _attempt in {1..150}; do
+            restarts=$(systemctl show --property=NRestarts --value blindpass-broker.service)
+            if ((restarts > restarts_before)) && systemctl is-active --quiet blindpass-broker.service; then
+                break
+            fi
+            sleep 0.2
+        done
+        [[ ! -e /run/blindpass/test/crash-after-consume-intent ]] || fail 'crash hook did not fire'
+        ((restarts > restarts_before)) || fail 'broker did not abort and restart after the consume intent'
+        systemctl is-active --quiet blindpass-broker.service || fail 'broker did not recover after the crash'
+        # The workload unit Requires= the broker, so systemd stopped it when
+        # the broker aborted and started a new invocation with the broker's
+        # restart. Stop that invocation; it cannot hold the old grant binding.
+        systemctl stop "$unit" >/dev/null 2>&1 || true
+        journal=/var/lib/blindpass/broker/consumed.jsonl
+        [[ $(grep -F -c '"'"$grant_id"'"' "$journal" 2>/dev/null || true) == 1 ]] \
+            || fail 'consume intent was not durable exactly once'
+        marker=/run/blindpass/ops/"$grant_id".marker
+        [[ ! -e "$marker" && ! -L "$marker" ]] || fail 'crash between intent and effect created a marker'
+        printf 'P03-GUEST-CRASH-AFTER-INTENT broker_restarts=%s intent_records=1 marker_created=false\n' "$restarts"
+        ;;
+    disable-crash-hook)
+        rm -f /etc/systemd/system/blindpass-broker.service.d/p03-crash-hook.conf \
+            /run/blindpass/test/crash-after-consume-intent
+        systemctl daemon-reload
+        systemctl restart blindpass-broker.service
+        systemctl restart blindpass-node.service
+        printf 'P03-GUEST-CRASH-HOOK-DISABLED\n'
         ;;
     marker-count)
         operation_marker_count || fail 'could not count operation markers'
