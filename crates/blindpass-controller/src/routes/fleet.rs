@@ -123,16 +123,28 @@ async fn create_enrollment(
         )
         .await
     {
-        Ok(expires_at_ms) => (
-            StatusCode::CREATED,
-            Json(json!({
-                "id": id,
-                "node_id": node_id,
-                "token": token,
-                "expires_at": expires_at_ms
-            })),
-        )
-            .into_response(),
+        Ok(expires_at_ms) => {
+            audit_operator_action(
+                store,
+                &operator,
+                "fleet.enrollment_created",
+                "enrollment",
+                &id,
+                "created",
+                json!({"node_id": node_id, "name": name}),
+            )
+            .await;
+            (
+                StatusCode::CREATED,
+                Json(json!({
+                    "id": id,
+                    "node_id": node_id,
+                    "token": token,
+                    "expires_at": expires_at_ms
+                })),
+            )
+                .into_response()
+        }
         Err(_) => unavailable(),
     }
 }
@@ -332,9 +344,10 @@ async fn approve_enrollment(
     headers: HeaderMap,
     Json(body): Json<EnrollmentDecisionInput>,
 ) -> Response {
-    if let Err(response) = require_operator(&state, &headers, true, true).await {
-        return response;
-    }
+    let operator = match require_operator(&state, &headers, true, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     if !valid_fingerprint(&body.expected_fingerprint) || body.expected_version <= 0 {
         return api_error(
             StatusCode::BAD_REQUEST,
@@ -350,6 +363,16 @@ async fn approve_enrollment(
         .await
     {
         Ok(Some(node)) => {
+            audit_operator_action(
+                store,
+                &operator,
+                "fleet.enrollment_approved",
+                "enrollment",
+                &id,
+                "approved",
+                json!({"node_id": node.id, "fingerprint": body.expected_fingerprint}),
+            )
+            .await;
             let now = match store.database_now_ms().await {
                 Ok(now) => now,
                 Err(_) => return unavailable(),
@@ -384,9 +407,10 @@ async fn reject_enrollment(
     headers: HeaderMap,
     Json(body): Json<EnrollmentDecisionInput>,
 ) -> Response {
-    if let Err(response) = require_operator(&state, &headers, true, true).await {
-        return response;
-    }
+    let operator = match require_operator(&state, &headers, true, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     if !valid_fingerprint(&body.expected_fingerprint) || body.expected_version <= 0 {
         return api_error(
             StatusCode::BAD_REQUEST,
@@ -401,13 +425,27 @@ async fn reject_enrollment(
         .reject_enrollment(&id, body.expected_version, &body.expected_fingerprint)
         .await
     {
-        Ok(true) => match store.enrollment_by_id(&id).await {
-            Ok(Some(record)) => match store.database_now_ms().await {
-                Ok(now) => (StatusCode::OK, Json(enrollment_body(&record, now))).into_response(),
-                Err(_) => unavailable(),
-            },
-            Ok(None) | Err(_) => unavailable(),
-        },
+        Ok(true) => {
+            audit_operator_action(
+                store,
+                &operator,
+                "fleet.enrollment_rejected",
+                "enrollment",
+                &id,
+                "rejected",
+                json!({"fingerprint": body.expected_fingerprint}),
+            )
+            .await;
+            match store.enrollment_by_id(&id).await {
+                Ok(Some(record)) => match store.database_now_ms().await {
+                    Ok(now) => {
+                        (StatusCode::OK, Json(enrollment_body(&record, now))).into_response()
+                    }
+                    Err(_) => unavailable(),
+                },
+                Ok(None) | Err(_) => unavailable(),
+            }
+        }
         Ok(false) => api_error(
             StatusCode::CONFLICT,
             "enrollment_changed",
@@ -503,9 +541,10 @@ async fn revoke_node(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = require_operator(&state, &headers, true, true).await {
-        return response;
-    }
+    let operator = match require_operator(&state, &headers, true, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
@@ -646,10 +685,29 @@ async fn revoke_node(
         None => return unavailable(),
     };
     match store
-        .revoke_node(&id, &revocations, &node_revocation_json)
+        .revoke_node(
+            &id,
+            &revocations,
+            &node_revocation_json,
+            &operator.operator.id,
+        )
         .await
     {
         Ok(true) => {
+            let grant_ids = revocations
+                .iter()
+                .map(|draft| draft.grant_id.clone())
+                .collect::<Vec<_>>();
+            audit_operator_action(
+                store,
+                &operator,
+                "fleet.node_revoked",
+                "node",
+                &id,
+                "revoked",
+                json!({"grant_ids": grant_ids}),
+            )
+            .await;
             let node = match store.node_by_id(&id).await {
                 Ok(Some(node)) => node,
                 Ok(None) | Err(_) => return unavailable(),
@@ -683,9 +741,10 @@ async fn rotate_node_key(
     headers: HeaderMap,
     Json(body): Json<NodeKeyRotationInput>,
 ) -> Response {
-    if let Err(response) = require_operator(&state, &headers, true, true).await {
-        return response;
-    }
+    let operator = match require_operator(&state, &headers, true, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     let (Some(signing_public), Some(recipient_public)) = (
         decode_base64url(&body.signing_pub, 32),
         decode_base64url(&body.recipient_pub, 32),
@@ -855,16 +914,28 @@ async fn rotate_node_key(
         .stage_node_key_rotation(&id, body.expected_key_version, &draft)
         .await
     {
-        Ok(true) => match store.node_by_id(&id).await {
-            Ok(Some(node)) => match store.database_now_ms().await {
-                Ok(now) => match node_body(&node, now) {
-                    Some(body) => (StatusCode::ACCEPTED, Json(body)).into_response(),
-                    None => unavailable(),
+        Ok(true) => {
+            audit_operator_action(
+                store,
+                &operator,
+                "fleet.node_key_rotation_staged",
+                "node",
+                &id,
+                "staged",
+                json!({"expected_key_version": body.expected_key_version}),
+            )
+            .await;
+            match store.node_by_id(&id).await {
+                Ok(Some(node)) => match store.database_now_ms().await {
+                    Ok(now) => match node_body(&node, now) {
+                        Some(body) => (StatusCode::ACCEPTED, Json(body)).into_response(),
+                        None => unavailable(),
+                    },
+                    Err(_) => unavailable(),
                 },
-                Err(_) => unavailable(),
-            },
-            Ok(None) | Err(_) => unavailable(),
-        },
+                Ok(None) | Err(_) => unavailable(),
+            }
+        }
         Ok(false) => api_error(
             StatusCode::CONFLICT,
             "node_key_changed",
@@ -880,6 +951,40 @@ async fn rotate_node_key(
 }
 
 #[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
+/// Record an operator's fleet action in the audit log. Metadata holds the
+/// target type, outcome and identifiers only, never secrets or tokens. The
+/// write follows the committed action; a failed write is logged.
+pub(crate) async fn audit_operator_action(
+    store: &crate::store::Store,
+    operator: &LocalSession,
+    action: &str,
+    target_type: &str,
+    target_id: &str,
+    outcome: &str,
+    details: Value,
+) {
+    let mut metadata = json!({"target_type": target_type, "outcome": outcome});
+    if let (Some(fields), Some(extra)) = (metadata.as_object_mut(), details.as_object()) {
+        for (name, value) in extra {
+            fields.insert(name.clone(), value.clone());
+        }
+    }
+    if store
+        .append_audit(
+            action,
+            "operator",
+            Some(&operator.operator.id),
+            target_type,
+            Some(target_id),
+            &metadata,
+        )
+        .await
+        .is_err()
+    {
+        tracing::warn!(action, "fleet operator audit write failed");
+    }
+}
+
 pub(crate) async fn require_operator(
     state: &AppState,
     headers: &HeaderMap,

@@ -3,7 +3,7 @@
 //! Administrator-controlled workload registrations and fleet policy.
 
 use crate::app::AppState;
-use crate::routes::fleet::{api_error, require_operator, unavailable};
+use crate::routes::fleet::{api_error, audit_operator_action, require_operator, unavailable};
 use crate::store::{
     ApprovalDecisionOutcome, ApprovalRecord, FleetPolicyRecord, GrantIssueDraft, GrantIssueOutcome,
     GrantRecord, GrantRevocationOutcome, OperationApprovalDraft, OperationApprovalRecord,
@@ -314,7 +314,17 @@ async fn create_workload(
         .await
     {
         Ok(true) => match store.workload_by_id(&record.id).await {
-            Ok(Some(saved)) => (StatusCode::CREATED, Json(workload_body(&saved))).into_response(),
+            Ok(Some(saved)) => {
+                audit_workload(
+                    store,
+                    &operator,
+                    "fleet.workload_created",
+                    "created",
+                    &saved,
+                )
+                .await;
+                (StatusCode::CREATED, Json(workload_body(&saved))).into_response()
+            }
             _ => unavailable(),
         },
         Ok(false) => api_error(
@@ -448,7 +458,17 @@ async fn update_workload(
         .await
     {
         Ok(true) => match store.workload_by_id(&id).await {
-            Ok(Some(record)) => Json(workload_body(&record)).into_response(),
+            Ok(Some(record)) => {
+                audit_workload(
+                    store,
+                    &operator,
+                    "fleet.workload_updated",
+                    "updated",
+                    &record,
+                )
+                .await;
+                Json(workload_body(&record)).into_response()
+            }
             _ => unavailable(),
         },
         Ok(false) => api_error(
@@ -528,7 +548,17 @@ async fn revoke_workload(
         .await
     {
         Ok(true) => match store.workload_by_id(&id).await {
-            Ok(Some(record)) => Json(workload_body(&record)).into_response(),
+            Ok(Some(record)) => {
+                audit_workload(
+                    store,
+                    &operator,
+                    "fleet.workload_revoked",
+                    "revoked",
+                    &record,
+                )
+                .await;
+                Json(workload_body(&record)).into_response()
+            }
             _ => unavailable(),
         },
         Ok(false) => api_error(
@@ -657,7 +687,19 @@ async fn update_policy(
         .await
     {
         Ok(true) => match store.fleet_policy().await {
-            Ok(policy) => policy_body(policy),
+            Ok(policy) => {
+                audit_operator_action(
+                    store,
+                    &operator,
+                    "fleet.policy_replaced",
+                    "policy",
+                    &policy.version.to_string(),
+                    "replaced",
+                    json!({"version": policy.version, "rule_count": body.rules.len()}),
+                )
+                .await;
+                policy_body(policy)
+            }
             Err(_) => unavailable(),
         },
         Ok(false) => api_error(
@@ -970,6 +1012,7 @@ async fn create_operation(
                     Err(GrantIssuanceError::Unavailable) => return unavailable(),
                 }
             }
+            audit_operation(store, &operator, "fleet.operation_requested", &operation).await;
             (StatusCode::CREATED, Json(operation_body(&operation))).into_response()
         }
         Ok(OperationCreateOutcome::Existing(mut operation)) => {
@@ -1132,6 +1175,7 @@ async fn cancel_operation(
             .await
         {
             Ok(OperationCancelOutcome::Cancelled(operation)) => {
+                audit_operation(store, &operator, "fleet.operation_cancelled", &operation).await;
                 Json(operation_body(&operation)).into_response()
             }
             Ok(OperationCancelOutcome::NotFound) => api_error(
@@ -1154,14 +1198,7 @@ async fn cancel_operation(
             "operation has no active grant to cancel",
         );
     };
-    perform_grant_revocation(
-        &state,
-        store,
-        &grant_id,
-        "cancelled",
-        Some(&operator.operator.id),
-    )
-    .await
+    perform_grant_revocation(&state, store, &grant_id, "cancelled", &operator).await
 }
 
 async fn list_grants(
@@ -1268,7 +1305,7 @@ async fn revoke_grant(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
-    perform_grant_revocation(&state, store, &id, "operator", Some(&operator.operator.id)).await
+    perform_grant_revocation(&state, store, &id, "operator", &operator).await
 }
 
 async fn perform_grant_revocation(
@@ -1276,7 +1313,7 @@ async fn perform_grant_revocation(
     store: &crate::store::Store,
     grant_id: &str,
     reason: &str,
-    revoked_by: Option<&str>,
+    operator: &crate::store::LocalSession,
 ) -> Response {
     let grant = match store.grant_by_id(grant_id).await {
         Ok(Some(grant)) => grant,
@@ -1352,24 +1389,47 @@ async fn perform_grant_revocation(
         }
     };
     match store
-        .revoke_grant(grant_id, reason, &envelope_json, revoked_by)
+        .revoke_grant(
+            grant_id,
+            reason,
+            &envelope_json,
+            Some(&operator.operator.id),
+        )
         .await
     {
-        Ok(GrantRevocationOutcome::Revoked { grant_id, offline }) => Json(json!({
-            "status": if offline { "not_revocable_offline" } else { "grant_revoked" },
-            "grant_id": grant_id,
-            "consumer_lifetime_seconds": null
-        }))
-        .into_response(),
+        Ok(GrantRevocationOutcome::Revoked { grant_id, offline }) => {
+            let status = if offline {
+                "not_revocable_offline"
+            } else {
+                "grant_revoked"
+            };
+            audit_grant_revocation(store, operator, reason, &grant, status).await;
+            Json(json!({
+                "status": status,
+                "grant_id": grant_id,
+                "consumer_lifetime_seconds": null
+            }))
+            .into_response()
+        }
         Ok(GrantRevocationOutcome::Consumed {
             grant_id,
             consumer_lifetime_seconds,
-        }) => Json(json!({
-            "status":"grant_revoked_after_consumption",
-            "grant_id":grant_id,
-            "consumer_lifetime_seconds":consumer_lifetime_seconds
-        }))
-        .into_response(),
+        }) => {
+            audit_grant_revocation(
+                store,
+                operator,
+                reason,
+                &grant,
+                "grant_revoked_after_consumption",
+            )
+            .await;
+            Json(json!({
+                "status":"grant_revoked_after_consumption",
+                "grant_id":grant_id,
+                "consumer_lifetime_seconds":consumer_lifetime_seconds
+            }))
+            .into_response()
+        }
         Ok(GrantRevocationOutcome::NotFound) => api_error(
             StatusCode::NOT_FOUND,
             "grant_not_found",
@@ -1623,7 +1683,7 @@ async fn decide_unified_approval(
         let Some(key_hash) = digest_hex(idempotency_key.as_bytes()) else {
             return unavailable();
         };
-        return match store
+        let outcome = store
             .decide_operation_approval(&OperationDecision {
                 id: &id,
                 expected_version,
@@ -1633,8 +1693,30 @@ async fn decide_unified_approval(
                 decider_username: &operator.operator.username,
                 decision_key_hash: &key_hash,
             })
-            .await
-        {
+            .await;
+        let audited = match &outcome {
+            Ok(OperationDecisionOutcome::Applied(_)) => Some(decision),
+            Ok(OperationDecisionOutcome::ScopeDenied) => Some("approval_scope_denied"),
+            Ok(OperationDecisionOutcome::SelfApproval) => Some("self_approval_denied"),
+            Ok(OperationDecisionOutcome::StalePolicy) => Some("ended_without_decision"),
+            _ => None,
+        };
+        if let Some(audited) = audited {
+            audit_operator_action(
+                store,
+                &operator,
+                "fleet.approval_decided",
+                "operation_approval",
+                &id,
+                audited,
+                json!({
+                    "decision": decision, "operation_ids": operation_ids,
+                    "expected_version": expected_version
+                }),
+            )
+            .await;
+        }
+        return match outcome {
             Ok(OperationDecisionOutcome::ScopeDenied) => api_error(
                 StatusCode::FORBIDDEN,
                 "approval_scope_denied",
@@ -2055,6 +2137,79 @@ fn exchange_approval_body(record: &ApprovalRecord) -> JsonValue {
         "requester_id":record.requester_id,"secret_name":record.secret_name,
         "purpose":record.purpose,"created_at":record.created_at_ms,"timeline":[]
     })
+}
+
+async fn audit_workload(
+    store: &crate::store::Store,
+    operator: &crate::store::LocalSession,
+    action: &str,
+    outcome: &str,
+    record: &WorkloadRecord,
+) {
+    audit_operator_action(
+        store,
+        operator,
+        action,
+        "workload",
+        &record.id,
+        outcome,
+        json!({
+            "node_id": record.node_id, "unit": record.unit, "account": record.account,
+            "consumption_mode": record.consumption_mode,
+            "registration_version": record.registration_version
+        }),
+    )
+    .await;
+}
+
+async fn audit_operation(
+    store: &crate::store::Store,
+    operator: &crate::store::LocalSession,
+    action: &str,
+    record: &OperationRecord,
+) {
+    audit_operator_action(
+        store,
+        operator,
+        action,
+        "operation",
+        &record.id,
+        &record.status,
+        json!({
+            "workload_id": record.workload_id, "node_id": record.node_id,
+            "decision": record.decision, "policy_version": record.policy_version,
+            "approval_id": record.approval_id, "grant_id": record.grant_id,
+            "broker_event_key": record.broker_event_key
+        }),
+    )
+    .await;
+}
+
+async fn audit_grant_revocation(
+    store: &crate::store::Store,
+    operator: &crate::store::LocalSession,
+    reason: &str,
+    grant: &GrantRecord,
+    outcome: &str,
+) {
+    let action = if reason == "cancelled" {
+        "fleet.operation_cancelled"
+    } else {
+        "fleet.grant_revoked"
+    };
+    audit_operator_action(
+        store,
+        operator,
+        action,
+        "grant",
+        &grant.id,
+        outcome,
+        json!({
+            "operation_id": grant.operation_id, "node_id": grant.node_id,
+            "workload_id": grant.workload_id, "reason": reason
+        }),
+    )
+    .await;
 }
 
 fn unit_conflict() -> Response {

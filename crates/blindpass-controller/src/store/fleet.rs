@@ -595,6 +595,7 @@ impl Store {
         node_id: &str,
         revocations: &[NodeGrantRevocationDraft],
         node_revocation_json: &str,
+        revoked_by: &str,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         match &self.database {
@@ -763,11 +764,24 @@ impl Store {
                 .await
                 .map_err(StoreError::Database)?;
                 sqlx::query(&format!(
-                    "UPDATE nodes SET status = 'revoked', revoked_at = {SQLITE_NOW_MS}, version = version + 1
+                    "UPDATE nodes SET status = 'revoked', revoked_at = {SQLITE_NOW_MS},
+                     revoked_by = ?, version = version + 1
                      WHERE id = ? AND tenant_id = ? AND status = 'active'"
                 ))
+                .bind(revoked_by)
                 .bind(node_id)
                 .bind(&self.tenant_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::query(
+                    "UPDATE grants SET revoked_by = ? WHERE node_id = ? AND tenant_id = ?
+                     AND status = 'revoked' AND revoked_at = ? AND revoked_by IS NULL",
+                )
+                .bind(revoked_by)
+                .bind(node_id)
+                .bind(&self.tenant_id)
+                .bind(now)
                 .execute(&mut *tx)
                 .await
                 .map_err(StoreError::Database)?;
@@ -938,11 +952,24 @@ impl Store {
                 .await
                 .map_err(StoreError::Database)?;
                 sqlx::query(&format!(
-                    "UPDATE nodes SET status = 'revoked', revoked_at = {POSTGRES_NOW_MS}, version = version + 1
+                    "UPDATE nodes SET status = 'revoked', revoked_at = {POSTGRES_NOW_MS},
+                     revoked_by = $3, version = version + 1
                      WHERE id = $1 AND tenant_id = $2 AND status = 'active'"
                 ))
                 .bind(node_id)
                 .bind(&self.tenant_id)
+                .bind(revoked_by)
+                .execute(&mut *tx)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::query(
+                    "UPDATE grants SET revoked_by = $1 WHERE node_id = $2 AND tenant_id = $3
+                     AND status = 'revoked' AND revoked_at = $4 AND revoked_by IS NULL",
+                )
+                .bind(revoked_by)
+                .bind(node_id)
+                .bind(&self.tenant_id)
+                .bind(now)
                 .execute(&mut *tx)
                 .await
                 .map_err(StoreError::Database)?;
