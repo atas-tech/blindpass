@@ -372,7 +372,7 @@ impl GrantJournal {
             path: Some(path.to_owned()),
             consumed: BTreeMap::new(),
         };
-        let mut file = match open_private(path, false) {
+        let mut file = match open_private_for_recovery(path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(journal),
             Err(_) => return Err("grant journal could not be opened safely"),
@@ -386,9 +386,8 @@ impl GrantJournal {
         let mut contents = Vec::with_capacity(metadata.len() as usize);
         file.read_to_end(&mut contents)
             .map_err(|_| "grant journal could not be read")?;
-        if contents.last() != Some(&b'\n') {
-            return Err("grant journal ends with an incomplete record");
-        }
+        truncate_torn_tail(&file, &mut contents)
+            .map_err(|_| "grant journal torn record could not be truncated")?;
         for line in contents
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
@@ -506,7 +505,7 @@ impl RevocationJournal {
             path: Some(path.to_owned()),
             tombstones: BTreeMap::new(),
         };
-        let mut file = match open_private(path, false) {
+        let mut file = match open_private_for_recovery(path) {
             Ok(file) => file,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(journal),
             Err(_) => return Err("grant revocation journal could not be opened safely"),
@@ -520,9 +519,8 @@ impl RevocationJournal {
         let mut contents = Vec::with_capacity(metadata.len() as usize);
         file.read_to_end(&mut contents)
             .map_err(|_| "grant revocation journal could not be read")?;
-        if !contents.is_empty() && contents.last() != Some(&b'\n') {
-            return Err("grant revocation journal ends with an incomplete record");
-        }
+        truncate_torn_tail(&file, &mut contents)
+            .map_err(|_| "grant revocation journal torn record could not be truncated")?;
         for line in contents
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
@@ -707,6 +705,46 @@ fn open_private(path: &Path, append: bool) -> std::io::Result<File> {
         ));
     }
     Ok(file)
+}
+
+/// Open an existing journal for startup reading and torn-tail repair. It
+/// never creates the file and applies the same ownership and mode checks.
+fn open_private_for_recovery(path: &Path) -> std::io::Result<File> {
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .custom_flags(NO_FOLLOW)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file()
+        || metadata.uid() != effective_uid()
+        || metadata.permissions().mode() & 0o777 != PRIVATE_FILE_MODE
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "grant journal file ownership or mode is unsafe",
+        ));
+    }
+    Ok(file)
+}
+
+/// Every journal record is appended as one line and fsynced before the
+/// caller may act on it. A final line without its newline is therefore an
+/// append that never became durable, so its effect never ran: cut it off and
+/// fsync so later appends start on a record boundary. Complete lines are
+/// still parsed strictly by the caller and fail closed when corrupt.
+fn truncate_torn_tail(file: &File, contents: &mut Vec<u8>) -> std::io::Result<()> {
+    if contents.is_empty() || contents.last() == Some(&b'\n') {
+        return Ok(());
+    }
+    let keep = contents
+        .iter()
+        .rposition(|byte| *byte == b'\n')
+        .map_or(0, |index| index + 1);
+    file.set_len(keep as u64)?;
+    file.sync_all()?;
+    contents.truncate(keep);
+    Ok(())
 }
 
 fn parse_journal_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
@@ -1462,6 +1500,80 @@ mod tests {
         let restored = RevocationJournal::open(&path).unwrap();
         assert!(restored.contains_at("gr_0123456789abcdef0123456789abcdef", 1_800_000_000_000));
         assert!(!restored.contains_at("gr_0123456789abcdef0123456789abcdef", 1_800_700_000_000));
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    fn write_private(path: &std::path::Path, contents: &[u8]) {
+        use std::io::Write;
+        use std::os::unix::fs::OpenOptionsExt;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(path)
+            .unwrap();
+        file.write_all(contents).unwrap();
+    }
+
+    #[test]
+    fn empty_and_torn_consumed_journals_recover_without_losing_durable_intents() {
+        let path = temporary_path();
+        write_private(&path, b"");
+        assert!(GrantJournal::open(&path).unwrap().consumed.is_empty());
+
+        // A crash mid-append leaves an unterminated record. The intent was
+        // never fsynced, so its effect never ran: drop only that tail.
+        let durable = "{\"grant_id\":\"gr_0123456789abcdef0123456789abcdef\",\"expires_at_ms\":1800000060000}\n";
+        let torn = "{\"grant_id\":\"gr_1123456789abcdef01234";
+        write_private(&path, format!("{durable}{torn}").as_bytes());
+        let mut journal = GrantJournal::open(&path).unwrap();
+        assert_eq!(journal.consumed.len(), 1);
+        assert!(
+            journal
+                .consumed
+                .contains_key("gr_0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), durable.as_bytes());
+        // Appending after recovery produces well-formed records again.
+        journal
+            .record_consumption("gr_1123456789abcdef0123456789abcdef", 1_800_000_060_000)
+            .unwrap();
+        assert_eq!(GrantJournal::open(&path).unwrap().consumed.len(), 2);
+
+        // Only an unterminated record at all: the file becomes empty.
+        write_private(&path, torn.as_bytes());
+        assert!(GrantJournal::open(&path).unwrap().consumed.is_empty());
+        assert!(std::fs::read(&path).unwrap().is_empty());
+
+        // A corrupt complete record still fails closed.
+        write_private(&path, b"{\"grant_id\":\"gr_bad.id\",\"expires_at_ms\":1}\n");
+        assert!(GrantJournal::open(&path).is_err());
+        write_private(&path, format!("not-json\n{durable}").as_bytes());
+        assert!(GrantJournal::open(&path).is_err());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn empty_and_torn_revocation_journals_recover_and_corrupt_records_fail_closed() {
+        let path = temporary_path();
+        write_private(&path, b"");
+        assert!(
+            RevocationJournal::open(&path)
+                .unwrap()
+                .tombstones
+                .is_empty()
+        );
+
+        let durable = "{\"grant_id\":\"gr_0123456789abcdef0123456789abcdef\",\"retain_until_ms\":1800604800000}\n";
+        write_private(&path, format!("{durable}{{\"grant_id\":\"gr_1").as_bytes());
+        let journal = RevocationJournal::open(&path).unwrap();
+        assert!(journal.contains_at("gr_0123456789abcdef0123456789abcdef", 1_800_000_000_000));
+        assert_eq!(journal.tombstones.len(), 1);
+        assert_eq!(std::fs::read(&path).unwrap(), durable.as_bytes());
+
+        write_private(&path, format!("{durable}garbage\n").as_bytes());
+        assert!(RevocationJournal::open(&path).is_err());
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }
