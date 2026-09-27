@@ -56,7 +56,9 @@
   "status": {
     "passwordResetRequired": "Yêu cầu đặt lại mật khẩu",
     "added": "Đã thêm {{date}}",
-    "lastAdminError": "Quản trị viên hoạt động cuối cùng không thể bị hạ cấp hoặc tạm ngưng."
+    "lastAdminError": "Quản trị viên hoạt động cuối cùng không thể bị hạ cấp hoặc tạm ngưng.",
+    "roleUpdated": "Đã cập nhật vai trò",
+    "statusUpdated": "Đã cập nhật trạng thái"
   },
   "errors": {
     "loadFailed": "Không thể tải danh sách thành viên",

@@ -27,7 +27,9 @@
     "activeAgentsHelper": "Các agent đã ghi danh đang hoạt động cho không gian làm việc này.",
     "activeMembersHelper": "Quản trị viên, vận hành viên và người xem đang hoạt động.",
     "infoTitle": "Đã bật thanh toán agent",
-    "infoBody": "Phần vượt mức x402 được quyết toán trước khi phát hành và dùng sổ cái USDC riêng thay vì thay đổi bản ghi thanh toán định kỳ."
+    "infoBody": "Phần vượt mức x402 được quyết toán trước khi phát hành và dùng sổ cái USDC riêng thay vì thay đổi bản ghi thanh toán định kỳ.",
+    "exchangeRequests": "Yêu cầu trao đổi",
+    "exchangeRequestsHelper": "Số yêu cầu trao đổi miễn phí mỗi tháng được phép cho không gian làm việc này."
   },
   "x402": {
     "sectionLabel": "Hạn mức x402",
