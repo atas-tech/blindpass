@@ -3,7 +3,7 @@
 use blindpass_controller::{
     app::build_app,
     config::Config,
-    store::{OperationApprovalDraft, OperationCreateOutcome, OperationRecord, Store},
+    store::{AuditDraft, OperationApprovalDraft, OperationCreateOutcome, OperationRecord, Store},
 };
 use blindpass_core::canon::parse_json;
 use blindpass_core::custody::{RecipientKeyPair, sha256};
@@ -1962,6 +1962,14 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             approver_ids_json: r#"["fleet-reviewer"]"#.to_owned(),
             group_scope_hash: format!("pagination-fixture-scope-{suffix}"),
         };
+        let audit = AuditDraft::operator(
+            &admin_operator.id,
+            "fleet.operation_requested",
+            "operation",
+            &record.id,
+            &record.status,
+            json!({}),
+        );
         let created = store
             .create_operation(
                 &record,
@@ -1969,6 +1977,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
                 "blindpass-test",
                 60,
                 Some(&draft),
+                &audit,
             )
             .await
             .unwrap();

@@ -19,6 +19,7 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+mod audit;
 mod authorization;
 mod exchanges;
 mod fleet;
@@ -28,6 +29,7 @@ mod node_channel;
 mod operation_approvals;
 mod operators;
 mod workload_authority;
+pub use audit::AuditDraft;
 pub use authorization::{
     FleetPolicyRecord, OperationApprovalDraft, OperationApprovalRecord, OperationCreateOutcome,
     OperationDecisionOutcome, OperationRecord, WorkloadRecord,

@@ -5,7 +5,7 @@
 use crate::app::AppState;
 use crate::routes::admin_session::{authenticated_session, valid_origin, valid_session_csrf};
 use crate::store::{
-    ENROLLMENT_EXPIRED, ENROLLMENT_KEY_REUSED, EnrollmentRecord, LocalSession,
+    AuditDraft, ENROLLMENT_EXPIRED, ENROLLMENT_KEY_REUSED, EnrollmentRecord, LocalSession,
     NodeGrantRevocationDraft, NodeKeyRotationDraft, NodeRecord, StoreError,
 };
 use axum::extract::{Path, Query, State};
@@ -112,6 +112,15 @@ async fn create_enrollment(
     let Some(token_hash) = token_hash(&token) else {
         return unavailable();
     };
+    // The token and its hash never enter audit metadata.
+    let audit = operator_audit(
+        &operator,
+        "fleet.enrollment_created",
+        "enrollment",
+        &id,
+        "created",
+        json!({"node_id": node_id, "name": name}),
+    );
     match store
         .create_enrollment(
             &id,
@@ -120,31 +129,20 @@ async fn create_enrollment(
             &token_hash,
             &operator.operator.id,
             ENROLLMENT_TTL_SECONDS,
+            &audit,
         )
         .await
     {
-        Ok(expires_at_ms) => {
-            audit_operator_action(
-                store,
-                &operator,
-                "fleet.enrollment_created",
-                "enrollment",
-                &id,
-                "created",
-                json!({"node_id": node_id, "name": name}),
-            )
-            .await;
-            (
-                StatusCode::CREATED,
-                Json(json!({
-                    "id": id,
-                    "node_id": node_id,
-                    "token": token,
-                    "expires_at": expires_at_ms
-                })),
-            )
-                .into_response()
-        }
+        Ok(expires_at_ms) => (
+            StatusCode::CREATED,
+            Json(json!({
+                "id": id,
+                "node_id": node_id,
+                "token": token,
+                "expires_at": expires_at_ms
+            })),
+        )
+            .into_response(),
         Err(_) => unavailable(),
     }
 }
@@ -358,21 +356,25 @@ async fn approve_enrollment(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
+    // The store adds the approved node id inside the transaction.
+    let audit = operator_audit(
+        &operator,
+        "fleet.enrollment_approved",
+        "enrollment",
+        &id,
+        "approved",
+        json!({"fingerprint": body.expected_fingerprint}),
+    );
     match store
-        .approve_enrollment(&id, body.expected_version, &body.expected_fingerprint)
+        .approve_enrollment(
+            &id,
+            body.expected_version,
+            &body.expected_fingerprint,
+            &audit,
+        )
         .await
     {
         Ok(Some(node)) => {
-            audit_operator_action(
-                store,
-                &operator,
-                "fleet.enrollment_approved",
-                "enrollment",
-                &id,
-                "approved",
-                json!({"node_id": node.id, "fingerprint": body.expected_fingerprint}),
-            )
-            .await;
             let now = match store.database_now_ms().await {
                 Ok(now) => now,
                 Err(_) => return unavailable(),
@@ -421,31 +423,30 @@ async fn reject_enrollment(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
+    let audit = operator_audit(
+        &operator,
+        "fleet.enrollment_rejected",
+        "enrollment",
+        &id,
+        "rejected",
+        json!({"fingerprint": body.expected_fingerprint}),
+    );
     match store
-        .reject_enrollment(&id, body.expected_version, &body.expected_fingerprint)
+        .reject_enrollment(
+            &id,
+            body.expected_version,
+            &body.expected_fingerprint,
+            &audit,
+        )
         .await
     {
-        Ok(true) => {
-            audit_operator_action(
-                store,
-                &operator,
-                "fleet.enrollment_rejected",
-                "enrollment",
-                &id,
-                "rejected",
-                json!({"fingerprint": body.expected_fingerprint}),
-            )
-            .await;
-            match store.enrollment_by_id(&id).await {
-                Ok(Some(record)) => match store.database_now_ms().await {
-                    Ok(now) => {
-                        (StatusCode::OK, Json(enrollment_body(&record, now))).into_response()
-                    }
-                    Err(_) => unavailable(),
-                },
-                Ok(None) | Err(_) => unavailable(),
-            }
-        }
+        Ok(true) => match store.enrollment_by_id(&id).await {
+            Ok(Some(record)) => match store.database_now_ms().await {
+                Ok(now) => (StatusCode::OK, Json(enrollment_body(&record, now))).into_response(),
+                Err(_) => unavailable(),
+            },
+            Ok(None) | Err(_) => unavailable(),
+        },
         Ok(false) => api_error(
             StatusCode::CONFLICT,
             "enrollment_changed",
@@ -684,30 +685,31 @@ async fn revoke_node(
         Some(value) => value,
         None => return unavailable(),
     };
+    let grant_ids = revocations
+        .iter()
+        .map(|draft| draft.grant_id.clone())
+        .collect::<Vec<_>>();
+    // Written only when this call revokes the node; a replay against an
+    // already revoked node changes nothing and records nothing.
+    let audit = operator_audit(
+        &operator,
+        "fleet.node_revoked",
+        "node",
+        &id,
+        "revoked",
+        json!({"grant_ids": grant_ids}),
+    );
     match store
         .revoke_node(
             &id,
             &revocations,
             &node_revocation_json,
             &operator.operator.id,
+            &audit,
         )
         .await
     {
         Ok(true) => {
-            let grant_ids = revocations
-                .iter()
-                .map(|draft| draft.grant_id.clone())
-                .collect::<Vec<_>>();
-            audit_operator_action(
-                store,
-                &operator,
-                "fleet.node_revoked",
-                "node",
-                &id,
-                "revoked",
-                json!({"grant_ids": grant_ids}),
-            )
-            .await;
             let node = match store.node_by_id(&id).await {
                 Ok(Some(node)) => node,
                 Ok(None) | Err(_) => return unavailable(),
@@ -910,32 +912,28 @@ async fn rotate_node_key(
         grant_revocations,
         rotation_document_json,
     };
+    let audit = operator_audit(
+        &operator,
+        "fleet.node_key_rotation_staged",
+        "node",
+        &id,
+        "staged",
+        json!({"expected_key_version": body.expected_key_version}),
+    );
     match store
-        .stage_node_key_rotation(&id, body.expected_key_version, &draft)
+        .stage_node_key_rotation(&id, body.expected_key_version, &draft, &audit)
         .await
     {
-        Ok(true) => {
-            audit_operator_action(
-                store,
-                &operator,
-                "fleet.node_key_rotation_staged",
-                "node",
-                &id,
-                "staged",
-                json!({"expected_key_version": body.expected_key_version}),
-            )
-            .await;
-            match store.node_by_id(&id).await {
-                Ok(Some(node)) => match store.database_now_ms().await {
-                    Ok(now) => match node_body(&node, now) {
-                        Some(body) => (StatusCode::ACCEPTED, Json(body)).into_response(),
-                        None => unavailable(),
-                    },
-                    Err(_) => unavailable(),
+        Ok(true) => match store.node_by_id(&id).await {
+            Ok(Some(node)) => match store.database_now_ms().await {
+                Ok(now) => match node_body(&node, now) {
+                    Some(body) => (StatusCode::ACCEPTED, Json(body)).into_response(),
+                    None => unavailable(),
                 },
-                Ok(None) | Err(_) => unavailable(),
-            }
-        }
+                Err(_) => unavailable(),
+            },
+            Ok(None) | Err(_) => unavailable(),
+        },
         Ok(false) => api_error(
             StatusCode::CONFLICT,
             "node_key_changed",
@@ -950,39 +948,27 @@ async fn rotate_node_key(
     }
 }
 
-#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
-/// Record an operator's fleet action in the audit log. Metadata holds the
-/// target type, outcome and identifiers only, never secrets or tokens. The
-/// write follows the committed action; a failed write is logged.
-pub(crate) async fn audit_operator_action(
-    store: &crate::store::Store,
+/// Build the audit row for an operator's fleet action. The store writes it
+/// in the same transaction as the state change, so a failed audit insert
+/// fails the action (503) and commits nothing. Metadata holds the target
+/// type, outcome and identifiers only, never tokens, keys, signatures,
+/// signed documents or plaintext.
+pub(crate) fn operator_audit(
     operator: &LocalSession,
     action: &str,
     target_type: &str,
     target_id: &str,
     outcome: &str,
     details: Value,
-) {
-    let mut metadata = json!({"target_type": target_type, "outcome": outcome});
-    if let (Some(fields), Some(extra)) = (metadata.as_object_mut(), details.as_object()) {
-        for (name, value) in extra {
-            fields.insert(name.clone(), value.clone());
-        }
-    }
-    if store
-        .append_audit(
-            action,
-            "operator",
-            Some(&operator.operator.id),
-            target_type,
-            Some(target_id),
-            &metadata,
-        )
-        .await
-        .is_err()
-    {
-        tracing::warn!(action, "fleet operator audit write failed");
-    }
+) -> AuditDraft {
+    AuditDraft::operator(
+        &operator.operator.id,
+        action,
+        target_type,
+        target_id,
+        outcome,
+        details,
+    )
 }
 
 #[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.

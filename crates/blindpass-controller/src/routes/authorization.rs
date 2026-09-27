@@ -3,12 +3,12 @@
 //! Administrator-controlled workload registrations and fleet policy.
 
 use crate::app::AppState;
-use crate::routes::fleet::{api_error, audit_operator_action, require_operator, unavailable};
+use crate::routes::fleet::{api_error, operator_audit, require_operator, unavailable};
 use crate::store::{
-    ApprovalDecisionOutcome, ApprovalRecord, FleetPolicyRecord, GrantIssueDraft, GrantIssueOutcome,
-    GrantRecord, GrantRevocationOutcome, OperationApprovalDraft, OperationApprovalRecord,
-    OperationCancelOutcome, OperationCreateOutcome, OperationDecision, OperationDecisionOutcome,
-    OperationRecord, StoreError, WORKLOAD_UNIT_CONFLICT, WorkloadRecord,
+    ApprovalDecisionOutcome, ApprovalRecord, AuditDraft, FleetPolicyRecord, GrantIssueDraft,
+    GrantIssueOutcome, GrantRecord, GrantRevocationOutcome, OperationApprovalDraft,
+    OperationApprovalRecord, OperationCancelOutcome, OperationCreateOutcome, OperationDecision,
+    OperationDecisionOutcome, OperationRecord, StoreError, WORKLOAD_UNIT_CONFLICT, WorkloadRecord,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -304,27 +304,19 @@ async fn create_workload(
     else {
         return unavailable();
     };
+    let audit = workload_audit(&operator, "fleet.workload_created", "created", &record);
     match store
         .create_workload(
             &record,
             &operator.operator.id,
             &registration_envelope_json,
             &policy_envelope_json,
+            &audit,
         )
         .await
     {
         Ok(true) => match store.workload_by_id(&record.id).await {
-            Ok(Some(saved)) => {
-                audit_workload(
-                    store,
-                    &operator,
-                    "fleet.workload_created",
-                    "created",
-                    &saved,
-                )
-                .await;
-                (StatusCode::CREATED, Json(workload_body(&saved))).into_response()
-            }
+            Ok(Some(saved)) => (StatusCode::CREATED, Json(workload_body(&saved))).into_response(),
             _ => unavailable(),
         },
         Ok(false) => api_error(
@@ -442,6 +434,7 @@ async fn update_workload(
     else {
         return unavailable();
     };
+    let audit = workload_audit(&operator, "fleet.workload_updated", "updated", &updated);
     match store
         .update_workload(
             &id,
@@ -454,21 +447,12 @@ async fn update_workload(
             &envelope_json,
             &policy_envelope_json,
             &operator.operator.id,
+            &audit,
         )
         .await
     {
         Ok(true) => match store.workload_by_id(&id).await {
-            Ok(Some(record)) => {
-                audit_workload(
-                    store,
-                    &operator,
-                    "fleet.workload_updated",
-                    "updated",
-                    &record,
-                )
-                .await;
-                Json(workload_body(&record)).into_response()
-            }
+            Ok(Some(record)) => Json(workload_body(&record)).into_response(),
             _ => unavailable(),
         },
         Ok(false) => api_error(
@@ -536,6 +520,7 @@ async fn revoke_workload(
     else {
         return unavailable();
     };
+    let audit = workload_audit(&operator, "fleet.workload_revoked", "revoked", &revoked);
     match store
         .revoke_workload(
             &id,
@@ -544,21 +529,12 @@ async fn revoke_workload(
             &envelope_json,
             &policy_envelope_json,
             &operator.operator.id,
+            &audit,
         )
         .await
     {
         Ok(true) => match store.workload_by_id(&id).await {
-            Ok(Some(record)) => {
-                audit_workload(
-                    store,
-                    &operator,
-                    "fleet.workload_revoked",
-                    "revoked",
-                    &record,
-                )
-                .await;
-                Json(workload_body(&record)).into_response()
-            }
+            Ok(Some(record)) => Json(workload_body(&record)).into_response(),
             _ => unavailable(),
         },
         Ok(false) => api_error(
@@ -677,29 +653,26 @@ async fn update_policy(
         .into_iter()
         .map(|node_id| (node_id, policy_envelope_json.clone()))
         .collect::<Vec<_>>();
+    let audit = operator_audit(
+        &operator,
+        "fleet.policy_replaced",
+        "policy",
+        &next_version.to_string(),
+        "replaced",
+        json!({"version": next_version, "rule_count": body.rules.len()}),
+    );
     match store
         .replace_fleet_policy(
             body.expected_version,
             &document_json,
             &operator.operator.id,
             &node_documents,
+            &audit,
         )
         .await
     {
         Ok(true) => match store.fleet_policy().await {
-            Ok(policy) => {
-                audit_operator_action(
-                    store,
-                    &operator,
-                    "fleet.policy_replaced",
-                    "policy",
-                    &policy.version.to_string(),
-                    "replaced",
-                    json!({"version": policy.version, "rule_count": body.rules.len()}),
-                )
-                .await;
-                policy_body(policy)
-            }
+            Ok(policy) => policy_body(policy),
             Err(_) => unavailable(),
         },
         Ok(false) => api_error(
@@ -984,6 +957,10 @@ async fn create_operation(
         approver_ids_json,
         group_scope_hash,
     });
+    // Recorded with the operation's status at request time; the store adds
+    // the approval group id. Grant issuance for an allowed request follows
+    // the committed request and is visible on the operation and grant rows.
+    let audit = operation_audit(&operator, "fleet.operation_requested", &record);
     match store
         .create_operation(
             &record,
@@ -991,6 +968,7 @@ async fn create_operation(
             &workload.account,
             effective_ttl_i64,
             approval_draft.as_ref(),
+            &audit,
         )
         .await
     {
@@ -1012,7 +990,6 @@ async fn create_operation(
                     Err(GrantIssuanceError::Unavailable) => return unavailable(),
                 }
             }
-            audit_operation(store, &operator, "fleet.operation_requested", &operation).await;
             (StatusCode::CREATED, Json(operation_body(&operation))).into_response()
         }
         Ok(OperationCreateOutcome::Existing(mut operation)) => {
@@ -1170,12 +1147,12 @@ async fn cancel_operation(
     if operation.status == "awaiting_approval" {
         // Dismissing a pending request removes it from its approval group
         // and closes the broker request.
+        let audit = operation_audit(&operator, "fleet.operation_cancelled", &operation);
         return match store
-            .cancel_awaiting_operation(&operation.id, &operator.operator.id)
+            .cancel_awaiting_operation(&operation.id, &operator.operator.id, &audit)
             .await
         {
             Ok(OperationCancelOutcome::Cancelled(operation)) => {
-                audit_operation(store, &operator, "fleet.operation_cancelled", &operation).await;
                 Json(operation_body(&operation)).into_response()
             }
             Ok(OperationCancelOutcome::NotFound) => api_error(
@@ -1388,12 +1365,16 @@ async fn perform_grant_revocation(
             Err(_) => return unavailable(),
         }
     };
+    // The store sets the outcome to the reported status inside the
+    // revocation transaction.
+    let audit = grant_revocation_audit(operator, reason, &grant);
     match store
         .revoke_grant(
             grant_id,
             reason,
             &envelope_json,
             Some(&operator.operator.id),
+            &audit,
         )
         .await
     {
@@ -1403,7 +1384,6 @@ async fn perform_grant_revocation(
             } else {
                 "grant_revoked"
             };
-            audit_grant_revocation(store, operator, reason, &grant, status).await;
             Json(json!({
                 "status": status,
                 "grant_id": grant_id,
@@ -1414,22 +1394,12 @@ async fn perform_grant_revocation(
         Ok(GrantRevocationOutcome::Consumed {
             grant_id,
             consumer_lifetime_seconds,
-        }) => {
-            audit_grant_revocation(
-                store,
-                operator,
-                reason,
-                &grant,
-                "grant_revoked_after_consumption",
-            )
-            .await;
-            Json(json!({
-                "status":"grant_revoked_after_consumption",
-                "grant_id":grant_id,
-                "consumer_lifetime_seconds":consumer_lifetime_seconds
-            }))
-            .into_response()
-        }
+        }) => Json(json!({
+            "status":"grant_revoked_after_consumption",
+            "grant_id":grant_id,
+            "consumer_lifetime_seconds":consumer_lifetime_seconds
+        }))
+        .into_response(),
         Ok(GrantRevocationOutcome::NotFound) => api_error(
             StatusCode::NOT_FOUND,
             "grant_not_found",
@@ -1683,6 +1653,21 @@ async fn decide_unified_approval(
         let Some(key_hash) = digest_hex(idempotency_key.as_bytes()) else {
             return unavailable();
         };
+        // Applied decisions, groups that end without a decision and denied
+        // attempts (scope, self-approval) are all audited inside the
+        // decision transaction; the store sets the outcome. A failed audit
+        // insert answers 503, including for a denial, rather than drop it.
+        let audit = operator_audit(
+            &operator,
+            "fleet.approval_decided",
+            "operation_approval",
+            &id,
+            decision,
+            json!({
+                "decision": decision, "operation_ids": operation_ids,
+                "expected_version": expected_version
+            }),
+        );
         let outcome = store
             .decide_operation_approval(&OperationDecision {
                 id: &id,
@@ -1692,30 +1677,9 @@ async fn decide_unified_approval(
                 decided_by: &operator.operator.id,
                 decider_username: &operator.operator.username,
                 decision_key_hash: &key_hash,
+                audit: &audit,
             })
             .await;
-        let audited = match &outcome {
-            Ok(OperationDecisionOutcome::Applied(_)) => Some(decision),
-            Ok(OperationDecisionOutcome::ScopeDenied) => Some("approval_scope_denied"),
-            Ok(OperationDecisionOutcome::SelfApproval) => Some("self_approval_denied"),
-            Ok(OperationDecisionOutcome::StalePolicy) => Some("ended_without_decision"),
-            _ => None,
-        };
-        if let Some(audited) = audited {
-            audit_operator_action(
-                store,
-                &operator,
-                "fleet.approval_decided",
-                "operation_approval",
-                &id,
-                audited,
-                json!({
-                    "decision": decision, "operation_ids": operation_ids,
-                    "expected_version": expected_version
-                }),
-            )
-            .await;
-        }
         return match outcome {
             Ok(OperationDecisionOutcome::ScopeDenied) => api_error(
                 StatusCode::FORBIDDEN,
@@ -2139,15 +2103,15 @@ fn exchange_approval_body(record: &ApprovalRecord) -> JsonValue {
     })
 }
 
-async fn audit_workload(
-    store: &crate::store::Store,
+/// Audit row for a workload registration change, describing the
+/// registration the action writes.
+fn workload_audit(
     operator: &crate::store::LocalSession,
     action: &str,
     outcome: &str,
     record: &WorkloadRecord,
-) {
-    audit_operator_action(
-        store,
+) -> AuditDraft {
+    operator_audit(
         operator,
         action,
         "workload",
@@ -2159,17 +2123,16 @@ async fn audit_workload(
             "registration_version": record.registration_version
         }),
     )
-    .await;
 }
 
-async fn audit_operation(
-    store: &crate::store::Store,
+/// Audit row for an operation request or cancellation. The outcome starts
+/// as the operation's status before the action; the store may replace it.
+fn operation_audit(
     operator: &crate::store::LocalSession,
     action: &str,
     record: &OperationRecord,
-) {
-    audit_operator_action(
-        store,
+) -> AuditDraft {
+    operator_audit(
         operator,
         action,
         "operation",
@@ -2182,34 +2145,31 @@ async fn audit_operation(
             "broker_event_key": record.broker_event_key
         }),
     )
-    .await;
 }
 
-async fn audit_grant_revocation(
-    store: &crate::store::Store,
+/// Audit row for revoking a grant directly or by cancelling its operation.
+/// The store sets the outcome to the status the revocation reports.
+fn grant_revocation_audit(
     operator: &crate::store::LocalSession,
     reason: &str,
     grant: &GrantRecord,
-    outcome: &str,
-) {
+) -> AuditDraft {
     let action = if reason == "cancelled" {
         "fleet.operation_cancelled"
     } else {
         "fleet.grant_revoked"
     };
-    audit_operator_action(
-        store,
+    operator_audit(
         operator,
         action,
         "grant",
         &grant.id,
-        outcome,
+        "pending",
         json!({
             "operation_id": grant.operation_id, "node_id": grant.node_id,
             "workload_id": grant.workload_id, "reason": reason
         }),
     )
-    .await;
 }
 
 fn unit_conflict() -> Response {

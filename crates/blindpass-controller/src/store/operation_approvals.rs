@@ -4,7 +4,8 @@
 //! decisions, cancellation, expiry and signed operation closures.
 
 use super::{
-    Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    AuditDraft, Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    audit::{insert_audit_postgres, insert_audit_sqlite},
     authorization::{
         OPERATION_APPROVAL_COLUMNS, OPERATION_COLUMNS, OperationApprovalDraft,
         OperationDecisionOutcome, OperationRecord, enqueue_node_document_postgres,
@@ -40,6 +41,11 @@ pub struct OperationDecision<'a> {
     pub decided_by: &'a str,
     pub decider_username: &'a str,
     pub decision_key_hash: &'a str,
+    /// Written in the decision's transaction for every outcome that is
+    /// decided or denied (including scope and self-approval denials), with
+    /// `outcome` replaced by the result; replays, conflicts and missing
+    /// approvals write no row.
+    pub audit: &'a AuditDraft,
 }
 
 /// Result of cancelling an operation that awaits approval.
@@ -276,7 +282,8 @@ pub(super) async fn create_or_extend_approval_postgres(
 
 macro_rules! decide {
     ($pool:expr, $convert:expr, $now:expr, $lock:expr, $meta_lock:expr, $from_row:path,
-     $targets:ident, $closures:ident, $tenant_id:expr, $signer:expr, $input:expr) => {{
+     $targets:ident, $closures:ident, $audit:path, $tenant_id:expr, $signer:expr,
+     $input:expr) => {{
         let input: &OperationDecision<'_> = $input;
         let tenant_id: &str = $tenant_id;
         let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
@@ -332,6 +339,13 @@ macro_rules! decide {
             .iter()
             .any(|approver| approver == input.decided_by || approver == input.decider_username)
         {
+            // The denial changes no state but is recorded durably: a failed
+            // audit insert fails the request rather than dropping the row.
+            let audit = input
+                .audit
+                .clone()
+                .with_detail("outcome", "approval_scope_denied".into());
+            $audit(&mut tx, tenant_id, &audit).await?;
             tx.commit().await.map_err(StoreError::Database)?;
             return Ok(OperationDecisionOutcome::ScopeDenied);
         }
@@ -346,6 +360,11 @@ macro_rules! decide {
         .await
         .map_err(StoreError::Database)?;
         if own > 0 {
+            let audit = input
+                .audit
+                .clone()
+                .with_detail("outcome", "self_approval_denied".into());
+            $audit(&mut tx, tenant_id, &audit).await?;
             tx.commit().await.map_err(StoreError::Database)?;
             return Ok(OperationDecisionOutcome::SelfApproval);
         }
@@ -447,6 +466,11 @@ macro_rules! decide {
                 .await
                 .map_err(StoreError::Database)?;
             $closures(&mut tx, $signer, &members, closure).await?;
+            let audit = input
+                .audit
+                .clone()
+                .with_detail("outcome", "ended_without_decision".into());
+            $audit(&mut tx, tenant_id, &audit).await?;
             tx.commit().await.map_err(StoreError::Database)?;
             return Ok(OperationDecisionOutcome::StalePolicy);
         }
@@ -494,6 +518,11 @@ macro_rules! decide {
             .await
             .map_err(StoreError::Database)?;
         let updated = $from_row(&row)?;
+        let audit = input
+            .audit
+            .clone()
+            .with_detail("outcome", target_status.into());
+        $audit(&mut tx, tenant_id, &audit).await?;
         tx.commit().await.map_err(StoreError::Database)?;
         Ok(OperationDecisionOutcome::Applied(updated))
     }};
@@ -501,8 +530,8 @@ macro_rules! decide {
 
 macro_rules! cancel_awaiting_impl {
     ($pool:expr, $convert:expr, $now:expr, $lock:expr, $meta_lock:expr, $from_row:path,
-     $operation_from_row:path, $targets:ident, $closures:ident, $tenant_id:expr, $signer:expr,
-     $operation_id:expr, $cancelled_by:expr) => {{
+     $operation_from_row:path, $targets:ident, $closures:ident, $audit:path, $tenant_id:expr,
+     $signer:expr, $operation_id:expr, $cancelled_by:expr, $audit_draft:expr) => {{
         let tenant_id: &str = $tenant_id;
         let operation_id: &str = $operation_id;
         let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
@@ -597,6 +626,11 @@ macro_rules! cancel_awaiting_impl {
         .await
         .map_err(StoreError::Database)?;
         let operation = $operation_from_row(&row)?;
+        let audit: &AuditDraft = $audit_draft;
+        let audit = audit
+            .clone()
+            .with_detail("outcome", operation.status.clone().into());
+        $audit(&mut tx, tenant_id, &audit).await?;
         tx.commit().await.map_err(StoreError::Database)?;
         Ok(OperationCancelOutcome::Cancelled(Box::new(operation)))
     }};
@@ -778,6 +812,7 @@ impl Store {
                 operation_approval_from_sqlite,
                 closure_targets_sqlite,
                 enqueue_closures_sqlite,
+                insert_audit_sqlite,
                 &self.tenant_id,
                 signer,
                 input
@@ -791,6 +826,7 @@ impl Store {
                 operation_approval_from_postgres,
                 closure_targets_postgres,
                 enqueue_closures_postgres,
+                insert_audit_postgres,
                 &self.tenant_id,
                 signer,
                 input
@@ -799,11 +835,13 @@ impl Store {
     }
 
     /// Cancel (dismiss) an operation that still awaits approval, remove it
-    /// from its group and tell the broker the request is closed.
+    /// from its group and tell the broker the request is closed. `audit` is
+    /// written in the same transaction with `outcome` set to the new status.
     pub async fn cancel_awaiting_operation(
         &self,
         operation_id: &str,
         cancelled_by: &str,
+        audit: &AuditDraft,
     ) -> Result<OperationCancelOutcome, StoreError> {
         self.checkpoint_clock().await?;
         let signer = self.fleet_signer.as_ref();
@@ -818,10 +856,12 @@ impl Store {
                 operation_from_sqlite,
                 closure_targets_sqlite,
                 enqueue_closures_sqlite,
+                insert_audit_sqlite,
                 &self.tenant_id,
                 signer,
                 operation_id,
-                cancelled_by
+                cancelled_by,
+                audit
             ),
             Database::Postgres(pool) => cancel_awaiting_impl!(
                 pool,
@@ -833,10 +873,12 @@ impl Store {
                 operation_from_postgres,
                 closure_targets_postgres,
                 enqueue_closures_postgres,
+                insert_audit_postgres,
                 &self.tenant_id,
                 signer,
                 operation_id,
-                cancelled_by
+                cancelled_by,
+                audit
             ),
         }
     }

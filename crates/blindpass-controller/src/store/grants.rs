@@ -3,7 +3,8 @@
 //! Durable grant issuance and metadata queries.
 
 use super::{
-    Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    AuditDraft, Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    audit::{insert_audit_postgres, insert_audit_sqlite},
     authorization::{
         OperationRecord, enqueue_node_document_postgres, enqueue_node_document_sqlite,
     },
@@ -232,12 +233,17 @@ impl Store {
 
     /// Revoke an active grant and atomically persist its signed tombstone for
     /// node delivery. A consumed grant reports its registered consumer bound.
+    ///
+    /// `audit` is written in the same transaction when the grant is revoked
+    /// or found consumed, with `outcome` set to the reported status; a
+    /// replay of an earlier revocation changes nothing and writes no row.
     pub async fn revoke_grant(
         &self,
         grant_id: &str,
         reason: &str,
         envelope_json: &str,
         revoked_by: Option<&str>,
+        audit: &AuditDraft,
     ) -> Result<GrantRevocationOutcome, StoreError> {
         self.checkpoint_clock().await?;
         if !matches!(reason, "operator" | "cancelled") {
@@ -252,6 +258,7 @@ impl Store {
                     reason,
                     envelope_json,
                     revoked_by,
+                    audit,
                 )
                 .await
             }
@@ -263,6 +270,7 @@ impl Store {
                     reason,
                     envelope_json,
                     revoked_by,
+                    audit,
                 )
                 .await
             }
@@ -822,6 +830,7 @@ async fn revoke_grant_sqlite(
     reason: &str,
     envelope_json: &str,
     revoked_by: Option<&str>,
+    audit: &AuditDraft,
 ) -> Result<GrantRevocationOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
@@ -863,6 +872,8 @@ async fn revoke_grant_sqlite(
         last_seen_at.is_none_or(|last_seen| now.saturating_sub(last_seen) > NODE_OFFLINE_MS);
     let consumed_at: Option<i64> = row.try_get("consumed_at").map_err(StoreError::Database)?;
     if status == "consumed" || (status == "revoked" && consumed_at.is_some()) {
+        let audit = revocation_audit(audit, CONSUMED_OUTCOME);
+        insert_audit_sqlite(&mut tx, tenant_id, &audit).await?;
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(GrantRevocationOutcome::Consumed {
             grant_id: grant_id.to_owned(),
@@ -924,6 +935,8 @@ async fn revoke_grant_sqlite(
     .await
     .map_err(StoreError::Database)?;
     enqueue_node_document_sqlite(&mut tx, &node_id, envelope_json).await?;
+    let audit = revocation_audit(audit, revoked_outcome(offline));
+    insert_audit_sqlite(&mut tx, tenant_id, &audit).await?;
     tx.commit().await.map_err(StoreError::Database)?;
     Ok(GrantRevocationOutcome::Revoked {
         grant_id: grant_id.to_owned(),
@@ -938,6 +951,7 @@ async fn revoke_grant_postgres(
     reason: &str,
     envelope_json: &str,
     revoked_by: Option<&str>,
+    audit: &AuditDraft,
 ) -> Result<GrantRevocationOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
@@ -979,6 +993,8 @@ async fn revoke_grant_postgres(
         last_seen_at.is_none_or(|last_seen| now.saturating_sub(last_seen) > NODE_OFFLINE_MS);
     let consumed_at: Option<i64> = row.try_get("consumed_at").map_err(StoreError::Database)?;
     if status == "consumed" || (status == "revoked" && consumed_at.is_some()) {
+        let audit = revocation_audit(audit, CONSUMED_OUTCOME);
+        insert_audit_postgres(&mut tx, tenant_id, &audit).await?;
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(GrantRevocationOutcome::Consumed {
             grant_id: grant_id.to_owned(),
@@ -1040,11 +1056,29 @@ async fn revoke_grant_postgres(
     .await
     .map_err(StoreError::Database)?;
     enqueue_node_document_postgres(&mut tx, &node_id, envelope_json).await?;
+    let audit = revocation_audit(audit, revoked_outcome(offline));
+    insert_audit_postgres(&mut tx, tenant_id, &audit).await?;
     tx.commit().await.map_err(StoreError::Database)?;
     Ok(GrantRevocationOutcome::Revoked {
         grant_id: grant_id.to_owned(),
         offline,
     })
+}
+
+/// Response and audit status of a revocation requested after consumption.
+const CONSUMED_OUTCOME: &str = "grant_revoked_after_consumption";
+
+/// Response and audit status of a completed revocation.
+fn revoked_outcome(offline: bool) -> &'static str {
+    if offline {
+        "not_revocable_offline"
+    } else {
+        "grant_revoked"
+    }
+}
+
+fn revocation_audit(audit: &AuditDraft, outcome: &str) -> AuditDraft {
+    audit.clone().with_detail("outcome", outcome.into())
 }
 
 fn validate_revocation_envelope(

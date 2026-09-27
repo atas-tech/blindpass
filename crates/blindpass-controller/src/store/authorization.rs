@@ -10,7 +10,10 @@ use super::workload_authority::{
     WORKLOAD_UNIT_CONFLICT, retire_workload_authority_postgres, retire_workload_authority_sqlite,
     unit_conflict_error, unit_conflict_postgres, unit_conflict_sqlite,
 };
-use super::{Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError};
+use super::{
+    AuditDraft, Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    audit::{insert_audit_postgres, insert_audit_sqlite},
+};
 use sqlx::{
     Row, Transaction,
     postgres::{PgRow, Postgres},
@@ -335,6 +338,7 @@ impl Store {
         created_by: &str,
         registration_envelope_json: &str,
         policy_envelope_json: &str,
+        audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         match &self.database {
@@ -394,6 +398,7 @@ impl Store {
                         registration_envelope_json,
                     )
                     .await?;
+                    insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
                 }
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(result.rows_affected() == 1)
@@ -454,6 +459,7 @@ impl Store {
                         registration_envelope_json,
                     )
                     .await?;
+                    insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
                 }
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(result.rows_affected() == 1)
@@ -477,12 +483,13 @@ impl Store {
         registration_envelope_json: &str,
         policy_envelope_json: &str,
         updated_by: &str,
+        audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         let signer = self.fleet_signer.as_ref();
         macro_rules! update {
             ($pool:expr, $convert:expr, $lock:expr, $conflict:ident, $retire:ident,
-             $enqueue:path) => {{
+             $enqueue:path, $audit:path) => {{
                 let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
                 sqlx::query(&$convert($lock))
                     .bind(node_id)
@@ -552,6 +559,7 @@ impl Store {
                     }
                     $enqueue(&mut tx, node_id, policy_envelope_json).await?;
                     $enqueue(&mut tx, node_id, registration_envelope_json).await?;
+                    $audit(&mut tx, &self.tenant_id, audit).await?;
                 }
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(result.rows_affected() == 1)
@@ -564,7 +572,8 @@ impl Store {
                 "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'",
                 unit_conflict_sqlite,
                 retire_workload_authority_sqlite,
-                enqueue_node_document_sqlite
+                enqueue_node_document_sqlite,
+                insert_audit_sqlite
             ),
             Database::Postgres(pool) => update!(
                 pool,
@@ -572,13 +581,15 @@ impl Store {
                 "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? AND status = 'active' FOR UPDATE",
                 unit_conflict_postgres,
                 retire_workload_authority_postgres,
-                enqueue_node_document_postgres
+                enqueue_node_document_postgres,
+                insert_audit_postgres
             ),
         }
     }
 
     /// Revoke a workload registration together with the grants it issued
     /// and its operations that are not yet granted.
+    #[allow(clippy::too_many_arguments)] // Revocation binds its signed snapshots and audit row.
     pub async fn revoke_workload(
         &self,
         id: &str,
@@ -587,11 +598,13 @@ impl Store {
         registration_envelope_json: &str,
         policy_envelope_json: &str,
         revoked_by: &str,
+        audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         let signer = self.fleet_signer.as_ref();
         macro_rules! revoke {
-            ($pool:expr, $convert:expr, $now:expr, $lock:expr, $retire:ident, $enqueue:path) => {{
+            ($pool:expr, $convert:expr, $now:expr, $lock:expr, $retire:ident, $enqueue:path,
+             $audit:path) => {{
                 let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
                 sqlx::query(&$convert($lock))
                     .bind(node_id)
@@ -623,6 +636,7 @@ impl Store {
                     .await?;
                     $enqueue(&mut tx, node_id, policy_envelope_json).await?;
                     $enqueue(&mut tx, node_id, registration_envelope_json).await?;
+                    $audit(&mut tx, &self.tenant_id, audit).await?;
                 }
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(result.rows_affected() == 1)
@@ -635,7 +649,8 @@ impl Store {
                 SQLITE_NOW_MS,
                 "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ?",
                 retire_workload_authority_sqlite,
-                enqueue_node_document_sqlite
+                enqueue_node_document_sqlite,
+                insert_audit_sqlite
             ),
             Database::Postgres(pool) => revoke!(
                 pool,
@@ -643,7 +658,8 @@ impl Store {
                 POSTGRES_NOW_MS,
                 "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? FOR UPDATE",
                 retire_workload_authority_postgres,
-                enqueue_node_document_postgres
+                enqueue_node_document_postgres,
+                insert_audit_postgres
             ),
         }
     }
@@ -702,6 +718,7 @@ impl Store {
         document_json: &str,
         updated_by: &str,
         node_documents: &[(String, String)],
+        audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         if expected_version <= 0 {
@@ -743,6 +760,7 @@ impl Store {
                 for (node_id, envelope_json) in node_documents {
                     enqueue_node_document_sqlite(&mut tx, node_id, envelope_json).await?;
                 }
+                insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(true)
             }
@@ -782,6 +800,7 @@ impl Store {
                 for (node_id, envelope_json) in node_documents {
                     enqueue_node_document_postgres(&mut tx, node_id, envelope_json).await?;
                 }
+                insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(true)
             }
@@ -819,6 +838,7 @@ async fn create_operation_sqlite(
     effective_ttl_seconds: i64,
     approval: Option<&OperationApprovalDraft>,
     signer: Option<&FleetSigner>,
+    audit: &AuditDraft,
 ) -> Result<OperationCreateOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
@@ -917,6 +937,10 @@ async fn create_operation_sqlite(
         .await
         .map_err(StoreError::Database)?;
     let created = operation_from_sqlite(&row)?;
+    let audit = audit
+        .clone()
+        .with_detail("approval_id", created.approval_id.clone().into());
+    insert_audit_sqlite(&mut tx, tenant_id, &audit).await?;
     tx.commit().await.map_err(StoreError::Database)?;
     Ok(OperationCreateOutcome::Created(created))
 }
@@ -931,6 +955,7 @@ async fn create_operation_postgres(
     effective_ttl_seconds: i64,
     approval: Option<&OperationApprovalDraft>,
     signer: Option<&FleetSigner>,
+    audit: &AuditDraft,
 ) -> Result<OperationCreateOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
@@ -1030,6 +1055,10 @@ async fn create_operation_postgres(
         .await
         .map_err(StoreError::Database)?;
     let created = operation_from_postgres(&row)?;
+    let audit = audit
+        .clone()
+        .with_detail("approval_id", created.approval_id.clone().into());
+    insert_audit_postgres(&mut tx, tenant_id, &audit).await?;
     tx.commit().await.map_err(StoreError::Database)?;
     Ok(OperationCreateOutcome::Created(created))
 }
@@ -1338,6 +1367,7 @@ impl Store {
         expected_account: &str,
         effective_ttl_seconds: i64,
         approval: Option<&OperationApprovalDraft>,
+        audit: &AuditDraft,
     ) -> Result<OperationCreateOutcome, StoreError> {
         self.checkpoint_clock().await?;
         match &self.database {
@@ -1351,6 +1381,7 @@ impl Store {
                     effective_ttl_seconds,
                     approval,
                     self.fleet_signer.as_ref(),
+                    audit,
                 )
                 .await
             }
@@ -1364,6 +1395,7 @@ impl Store {
                     effective_ttl_seconds,
                     approval,
                     self.fleet_signer.as_ref(),
+                    audit,
                 )
                 .await
             }

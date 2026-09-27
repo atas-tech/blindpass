@@ -3,7 +3,8 @@
 //! Durable fleet enrollment and node identity state.
 
 use super::{
-    Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    AuditDraft, Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    audit::{insert_audit_postgres, insert_audit_sqlite},
     authorization::{enqueue_node_document_postgres, enqueue_node_document_sqlite},
     positive_milliseconds,
 };
@@ -76,6 +77,7 @@ pub struct NodeKeyRotationDraft {
 }
 
 impl Store {
+    #[allow(clippy::too_many_arguments)] // Enrollment inputs and its audit row are explicit.
     pub async fn create_enrollment(
         &self,
         id: &str,
@@ -84,11 +86,13 @@ impl Store {
         token_hash: &str,
         created_by: &str,
         ttl_seconds: u64,
+        audit: &AuditDraft,
     ) -> Result<i64, StoreError> {
         self.checkpoint_clock().await?;
         let ttl_ms = positive_milliseconds(ttl_seconds, "enrollment TTL")?;
         match &self.database {
             Database::Sqlite(pool) => {
+                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
                 let sql = format!(
                     "INSERT INTO enrollment_requests
                      (id, tenant_id, token_hash, created_by, created_at, expires_at, status,
@@ -103,20 +107,24 @@ impl Store {
                     .bind(ttl_ms)
                     .bind(node_id)
                     .bind(requested_name)
-                    .execute(pool)
+                    .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
                 let sql = format!(
                     "SELECT expires_at FROM enrollment_requests
                      WHERE id = ? AND expires_at > {SQLITE_NOW_MS}"
                 );
-                sqlx::query_scalar::<_, i64>(&sql)
+                let expires_at = sqlx::query_scalar::<_, i64>(&sql)
                     .bind(id)
-                    .fetch_one(pool)
+                    .fetch_one(&mut *tx)
                     .await
-                    .map_err(StoreError::Database)
+                    .map_err(StoreError::Database)?;
+                insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
+                tx.commit().await.map_err(StoreError::Database)?;
+                Ok(expires_at)
             }
             Database::Postgres(pool) => {
+                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
                 let sql = format!(
                     "INSERT INTO enrollment_requests
                      (id, tenant_id, token_hash, created_by, created_at, expires_at, status,
@@ -132,18 +140,21 @@ impl Store {
                     .bind(ttl_ms)
                     .bind(node_id)
                     .bind(requested_name)
-                    .execute(pool)
+                    .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
                 let sql = format!(
                     "SELECT expires_at FROM enrollment_requests
                      WHERE id = $1 AND expires_at > {POSTGRES_NOW_MS}"
                 );
-                sqlx::query_scalar::<_, i64>(&sql)
+                let expires_at = sqlx::query_scalar::<_, i64>(&sql)
                     .bind(id)
-                    .fetch_one(pool)
+                    .fetch_one(&mut *tx)
                     .await
-                    .map_err(StoreError::Database)
+                    .map_err(StoreError::Database)?;
+                insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
+                tx.commit().await.map_err(StoreError::Database)?;
+                Ok(expires_at)
             }
         }
     }
@@ -375,6 +386,7 @@ impl Store {
         id: &str,
         expected_version: i64,
         expected_fingerprint: &str,
+        audit: &AuditDraft,
     ) -> Result<Option<NodeRecord>, StoreError> {
         self.checkpoint_clock().await?;
         match &self.database {
@@ -442,6 +454,8 @@ impl Store {
                 let node =
                     insert_approved_node_sqlite(&mut transaction, &self.tenant_id, &enrollment)
                         .await?;
+                let audit = audit.clone().with_detail("node_id", node.id.clone().into());
+                insert_audit_sqlite(&mut transaction, &self.tenant_id, &audit).await?;
                 transaction.commit().await.map_err(StoreError::Database)?;
                 Ok(Some(node))
             }
@@ -508,6 +522,8 @@ impl Store {
                 let node =
                     insert_approved_node_postgres(&mut transaction, &self.tenant_id, &enrollment)
                         .await?;
+                let audit = audit.clone().with_detail("node_id", node.id.clone().into());
+                insert_audit_postgres(&mut transaction, &self.tenant_id, &audit).await?;
                 transaction.commit().await.map_err(StoreError::Database)?;
                 Ok(Some(node))
             }
@@ -519,10 +535,12 @@ impl Store {
         id: &str,
         expected_version: i64,
         expected_fingerprint: &str,
+        audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         match &self.database {
             Database::Sqlite(pool) => {
+                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
                 let sql =
                     "UPDATE enrollment_requests SET status = 'rejected', version = version + 1
                      WHERE id = ? AND tenant_id = ? AND status = 'submitted' AND version = ?
@@ -532,12 +550,19 @@ impl Store {
                     .bind(&self.tenant_id)
                     .bind(expected_version)
                     .bind(expected_fingerprint)
-                    .execute(pool)
+                    .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
+                if result.rows_affected() != 1 {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(false);
+                }
+                insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
+                tx.commit().await.map_err(StoreError::Database)?;
+                Ok(true)
             }
             Database::Postgres(pool) => {
+                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
                 let sql =
                     "UPDATE enrollment_requests SET status = 'rejected', version = version + 1
                      WHERE id = $1 AND tenant_id = $2 AND status = 'submitted' AND version = $3
@@ -547,10 +572,16 @@ impl Store {
                     .bind(&self.tenant_id)
                     .bind(expected_version)
                     .bind(expected_fingerprint)
-                    .execute(pool)
+                    .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
+                if result.rows_affected() != 1 {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(false);
+                }
+                insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
+                tx.commit().await.map_err(StoreError::Database)?;
+                Ok(true)
             }
         }
     }
@@ -596,6 +627,7 @@ impl Store {
         revocations: &[NodeGrantRevocationDraft],
         node_revocation_json: &str,
         revoked_by: &str,
+        audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         match &self.database {
@@ -785,6 +817,7 @@ impl Store {
                 .execute(&mut *tx)
                 .await
                 .map_err(StoreError::Database)?;
+                insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(true)
             }
@@ -973,6 +1006,7 @@ impl Store {
                 .execute(&mut *tx)
                 .await
                 .map_err(StoreError::Database)?;
+                insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(true)
             }
@@ -988,6 +1022,7 @@ impl Store {
         node_id: &str,
         expected_key_version: i64,
         draft: &NodeKeyRotationDraft,
+        audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
         match &self.database {
@@ -1182,6 +1217,7 @@ impl Store {
                 .map_err(StoreError::Database)?;
                 enqueue_node_document_sqlite(&mut tx, node_id, &draft.rotation_document_json)
                     .await?;
+                insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(true)
             }
@@ -1376,6 +1412,7 @@ impl Store {
                 .map_err(StoreError::Database)?;
                 enqueue_node_document_postgres(&mut tx, node_id, &draft.rotation_document_json)
                     .await?;
+                insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(true)
             }
