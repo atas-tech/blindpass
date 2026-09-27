@@ -2483,6 +2483,59 @@ mod tests {
     }
 
     #[test]
+    fn workload_requests_resolve_the_registration_from_the_pidfd_unit() {
+        let mut state = BrokerState::new(DeliveryPolicy::default());
+        let registration = |workload: &str, version: u64, status: &str| Registration {
+            node_id: "node-a".to_owned(),
+            workload_id: workload.to_owned(),
+            unit: "agent.service".to_owned(),
+            account: "uid:1001".to_owned(),
+            invocation_id: None,
+            status: status.to_owned(),
+            consumption_mode: ConsumptionMode::File,
+            registration_version: version,
+            policy_version: 1,
+            local_ceiling_seconds: 60,
+        };
+        state
+            .apply_fleet_registration(registration("workload-a", 1, "active"))
+            .unwrap();
+        let peer = workload_peer();
+        let health = |workload: &str| WorkloadRequest {
+            node_id: "node-a".to_owned(),
+            workload_id: workload.to_owned(),
+            claimed_unit: "agent.service".to_owned(),
+            claimed_invocation_id: "inv-live".to_owned(),
+            operation: "health".to_owned(),
+        };
+        assert!(state.process_workload(&peer, &health("workload-a")).is_ok());
+        assert_eq!(
+            error_code(state.process_workload(&peer, &health("workload-b"))),
+            b"ERR workload_mismatch\n"
+        );
+
+        // A second active registration for the same unit fails closed for
+        // every caller-sent workload id until one of them is revoked.
+        state
+            .apply_fleet_registration(registration("workload-b", 1, "active"))
+            .unwrap();
+        for workload in ["workload-a", "workload-b"] {
+            assert_eq!(
+                error_code(state.process_workload(&peer, &health(workload))),
+                b"ERR ambiguous_registration\n"
+            );
+        }
+        state
+            .apply_fleet_registration(registration("workload-a", 2, "revoked"))
+            .unwrap();
+        assert!(state.process_workload(&peer, &health("workload-b")).is_ok());
+        assert_eq!(
+            error_code(state.process_workload(&peer, &health("workload-a"))),
+            b"ERR workload_mismatch\n"
+        );
+    }
+
+    #[test]
     fn consume_journal_failure_is_a_denial_without_an_uncertain_result() {
         let (directory, mut state, grant) = fleet_state_with_grant("journal-failure");
         let journal = directory.join("consumed.jsonl");

@@ -9,6 +9,11 @@ pub enum IdentityError {
     PermissionDenied(&'static str),
     BindingMismatch(&'static str),
     UnknownRegistration,
+    /// The caller-sent workload id differs from the registration resolved
+    /// from the pidfd-derived unit.
+    WorkloadMismatch,
+    /// More than one active registration names the pidfd-derived unit.
+    AmbiguousRegistration,
     InvalidRequest(&'static str),
 }
 
@@ -19,6 +24,8 @@ impl fmt::Display for IdentityError {
             Self::PermissionDenied(reason) => write!(formatter, "permission_denied:{reason}"),
             Self::BindingMismatch(reason) => write!(formatter, "binding_mismatch:{reason}"),
             Self::UnknownRegistration => formatter.write_str("unknown_registration"),
+            Self::WorkloadMismatch => formatter.write_str("workload_mismatch"),
+            Self::AmbiguousRegistration => formatter.write_str("ambiguous_registration"),
             Self::InvalidRequest(reason) => write!(formatter, "invalid_request:{reason}"),
         }
     }
@@ -204,19 +211,29 @@ pub fn authorize_workload(
             "self-reported unit or invocation differs from OS identity",
         ));
     }
-    let registration = registrations
+    // At most one active registration exists per (node, unit). The broker
+    // resolves it from the pidfd-derived unit; the caller-sent workload id
+    // only has to agree with it and can never select a registration.
+    let mut candidates = registrations
         .iter()
-        .find(|candidate| {
-            candidate.node_id == request.node_id
-                && candidate.workload_id == request.workload_id
-                && candidate.unit == unit
-                && candidate.account == account
-                && candidate
-                    .invocation_id
-                    .as_deref()
-                    .is_none_or(|expected| expected == invocation_id)
-        })
+        .filter(|candidate| candidate.node_id == request.node_id && candidate.unit == unit);
+    let registration = candidates
+        .next()
         .ok_or(IdentityError::UnknownRegistration)?;
+    if candidates.next().is_some() {
+        return Err(IdentityError::AmbiguousRegistration);
+    }
+    if registration.account != account
+        || registration
+            .invocation_id
+            .as_deref()
+            .is_some_and(|expected| expected != invocation_id)
+    {
+        return Err(IdentityError::UnknownRegistration);
+    }
+    if registration.workload_id != request.workload_id {
+        return Err(IdentityError::WorkloadMismatch);
+    }
     Ok(WorkloadAuthorization {
         node_id: registration.node_id.clone(),
         workload_id: registration.workload_id.clone(),
@@ -343,6 +360,78 @@ mod tests {
     }
 
     #[test]
+    fn workload_registration_is_resolved_from_the_pidfd_unit() {
+        let peer = PeerIdentity::fixture(
+            1001,
+            1001,
+            "blindpass-agent.service",
+            "invocation-a",
+            "blindpass-agent",
+        );
+        let registration = |workload: &str, unit: &str| WorkloadRegistration {
+            node_id: "node-a".to_owned(),
+            workload_id: workload.to_owned(),
+            unit: unit.to_owned(),
+            account: "blindpass-agent".to_owned(),
+            invocation_id: None,
+        };
+        let request = |workload: &str| WorkloadRequest {
+            node_id: "node-a".to_owned(),
+            workload_id: workload.to_owned(),
+            claimed_unit: "blindpass-agent.service".to_owned(),
+            claimed_invocation_id: "invocation-a".to_owned(),
+            operation: "health".to_owned(),
+        };
+        // Another unit's registration under the same account cannot be
+        // selected by naming its workload id.
+        let registrations = [
+            registration("workload-a", "blindpass-agent.service"),
+            registration("workload-b", "other-agent.service"),
+        ];
+        assert_eq!(
+            authorize_workload(&peer, &request("workload-a"), &registrations)
+                .unwrap()
+                .workload_id,
+            "workload-a"
+        );
+        assert_eq!(
+            authorize_workload(&peer, &request("workload-b"), &registrations),
+            Err(IdentityError::WorkloadMismatch)
+        );
+        assert_eq!(
+            IdentityError::WorkloadMismatch.to_string(),
+            "workload_mismatch"
+        );
+
+        // Two active registrations for one unit are never disambiguated by
+        // the caller-sent workload id.
+        let ambiguous = [
+            registration("workload-a", "blindpass-agent.service"),
+            registration("workload-c", "blindpass-agent.service"),
+        ];
+        for workload in ["workload-a", "workload-c"] {
+            assert_eq!(
+                authorize_workload(&peer, &request(workload), &ambiguous),
+                Err(IdentityError::AmbiguousRegistration)
+            );
+        }
+        assert_eq!(
+            IdentityError::AmbiguousRegistration.to_string(),
+            "ambiguous_registration"
+        );
+
+        // No registration for the pidfd unit.
+        assert_eq!(
+            authorize_workload(
+                &peer,
+                &request("workload-b"),
+                &[registration("workload-b", "other-agent.service")]
+            ),
+            Err(IdentityError::UnknownRegistration)
+        );
+    }
+
+    #[test]
     fn workload_cannot_change_claimed_routing_or_os_identity() {
         let peer = PeerIdentity::fixture(
             1001,
@@ -366,19 +455,20 @@ mod tests {
             operation: "health".to_owned(),
         };
 
-        for (field, value) in [("node", "node-forged"), ("workload", "workload-forged")] {
-            let mut forged = request.clone();
-            if field == "node" {
-                forged.node_id = value.to_owned();
-            } else {
-                forged.workload_id = value.to_owned();
-            }
-            assert_eq!(
-                authorize_workload(&peer, &forged, std::slice::from_ref(&registration)),
-                Err(IdentityError::UnknownRegistration),
-                "forged {field} must not select another registration"
-            );
-        }
+        let mut forged_node = request.clone();
+        forged_node.node_id = "node-forged".to_owned();
+        assert_eq!(
+            authorize_workload(&peer, &forged_node, std::slice::from_ref(&registration)),
+            Err(IdentityError::UnknownRegistration),
+            "a forged node must not select another registration"
+        );
+        let mut forged_workload = request.clone();
+        forged_workload.workload_id = "workload-forged".to_owned();
+        assert_eq!(
+            authorize_workload(&peer, &forged_workload, std::slice::from_ref(&registration)),
+            Err(IdentityError::WorkloadMismatch),
+            "the registration comes from the pidfd unit; a different workload id is denied"
+        );
 
         for (field, value) in [("unit", "forged.service"), ("invocation", "invocation-old")] {
             let mut forged = request.clone();
