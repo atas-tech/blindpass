@@ -1,4 +1,4 @@
-name: P01 disposable fleet VM
+name: Disposable fleet VM (P01, P03)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: p01-fleet-vm
+  group: fleet-vm
   cancel-in-progress: true
 
 jobs:
@@ -58,3 +58,36 @@ jobs:
           path: |
             /tmp/blindpass-p01.*/serial.log
             /tmp/blindpass-p01.*/guest-result.log
+
+  p03:
+    name: P03 two-guest fleet authorization (SQLite and PostgreSQL)
+    needs: p01
+    runs-on: [self-hosted, linux, x64, blindpass-kvm]
+    timeout-minutes: 240
+    env:
+      BLINDPASS_FLEET_GUEST_IMAGE: ${{ vars.BLINDPASS_FLEET_GUEST_IMAGE }}
+      BLINDPASS_FLEET_GUEST_IMAGE_SHA256: ${{ vars.BLINDPASS_FLEET_GUEST_IMAGE_SHA256 }}
+      BLINDPASS_FLEET_GUEST_USER: ${{ vars.BLINDPASS_FLEET_GUEST_USER }}
+      BLINDPASS_FLEET_RUNNER_OWNER: ${{ vars.BLINDPASS_FLEET_RUNNER_OWNER }}
+      # A disposable PostgreSQL endpoint on the runner; the harness creates and
+      # drops an isolated schema. Failed runs do not keep artifacts, so no
+      # generated keys or state dumps are uploaded.
+      P03_TEST_POSTGRES_URL: ${{ secrets.P03_TEST_POSTGRES_URL }}
+    steps:
+      - name: Check out reviewed revision
+        uses: actions/checkout@v4
+
+      - name: Verify trusted VM runner and PostgreSQL endpoint
+        run: |
+          set -eu
+          qemu-system-x86_64 --version
+          test -r /dev/kvm
+          test -w /dev/kvm
+          test -n "$BLINDPASS_FLEET_RUNNER_OWNER"
+          test -n "$P03_TEST_POSTGRES_URL"
+
+      - name: Install Node dependencies for the harness
+        run: npm ci
+
+      - name: Run P03 two-guest VM harness on both backends
+        run: ./tests/fleet/p03-vm.sh --backend both

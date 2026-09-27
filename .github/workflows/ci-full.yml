@@ -255,6 +255,16 @@ jobs:
           P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
         run: cargo test -p blindpass-controller --test admin_session --locked
 
+      - name: Run Rust P03 fleet controller integration tests
+        env:
+          P02_TEST_BACKEND: ${{ matrix.backend }}
+          P02_TEST_POSTGRES_URL: ${{ env.DATABASE_URL }}
+        run: >-
+          cargo test -p blindpass-controller --locked
+          --test fleet_approvals --test fleet_audit --test fleet_channel
+          --test fleet_clock --test fleet_enrollment --test fleet_events
+          --test fleet_lifecycle --test fleet_registry --test fleet_roles
+
       - name: Run P02 I07 PostgreSQL outage and reconnection test
         if: matrix.backend == 'postgres'
         env:
