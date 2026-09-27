@@ -797,7 +797,24 @@ async fn create_operation(
         Ok(value) => value,
         Err(_) => return unavailable(),
     };
-    if !operation_matches_broker_event(&body, &workload, &event_body, now_ms) {
+    // The broker observed the request at `observed_at_ms`; a request older
+    // than a minute (for example one queued through a controller outage)
+    // needs a fresh request rather than approval.
+    if !event_body["observed_at_ms"]
+        .as_i64()
+        .is_some_and(|observed_at| {
+            observed_at > 0
+                && now_ms.saturating_sub(observed_at) <= 60_000
+                && observed_at <= now_ms.saturating_add(60_000)
+        })
+    {
+        return api_error(
+            StatusCode::CONFLICT,
+            "broker_evidence_stale",
+            "broker operation evidence is stale or has the wrong event kind",
+        );
+    }
+    if !operation_matches_broker_event(&body, &workload, &event_body) {
         return api_error(
             StatusCode::CONFLICT,
             "broker_evidence_mismatch",
@@ -1878,7 +1895,6 @@ fn operation_matches_broker_event(
     input: &OperationInput,
     workload: &WorkloadRecord,
     event: &JsonValue,
-    now_ms: i64,
 ) -> bool {
     let Some(fields) = event.as_object() else {
         return false;
@@ -1896,11 +1912,7 @@ fn operation_matches_broker_event(
         && event["purpose"] == input.purpose
         && event["resource_id"] == input.resource_id
         && event["ttl_seconds"].as_u64() == Some(input.ttl_seconds)
-        && event["observed_at_ms"].as_i64().is_some_and(|observed_at| {
-            observed_at > 0
-                && now_ms.saturating_sub(observed_at) <= 60_000
-                && observed_at <= now_ms.saturating_add(60_000)
-        })
+        && event.get("observed_at_ms").is_some()
 }
 
 fn operation_body(record: &OperationRecord) -> JsonValue {

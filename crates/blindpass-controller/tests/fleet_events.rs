@@ -454,3 +454,55 @@ async fn revocation_outcomes_distinguish_consumed_grants() {
         .await;
     assert_eq!(response.status, 400, "{}", response.body);
 }
+
+#[tokio::test]
+async fn stale_broker_evidence_is_reported_as_stale_not_as_a_mismatch() {
+    // A request the broker observed during a long controller outage cannot be
+    // approved afterwards. The operator must see that the evidence aged out,
+    // distinctly from forged or mismatched fields.
+    let harness = Harness::start().await;
+    let (node, workload) = fleet(&harness).await;
+    let observed_at_ms = harness.now_ms().await - 61_000;
+    let body = json!({
+        "node_id": node.id,
+        "workload_id": workload["id"],
+        "unit": workload["unit"],
+        "account": workload["account"],
+        "invocation_id": "invocation-1",
+        "action": "noop.marker",
+        "mode": workload["consumption_mode"],
+        "purpose": "queued during outage",
+        "resource_id": "marker-a",
+        "ttl_seconds": 60,
+        "observed_at_ms": observed_at_ms
+    });
+    let events = signed_event(
+        &node.id,
+        &node.keys.signing,
+        "stale-evidence-request-0001",
+        "operation_request",
+        body,
+    );
+    assert_eq!(harness.post_events(&node.bearer, &events).await.status, 200);
+    let input = json!({
+        "workload_id": workload["id"],
+        "action": "noop.marker",
+        "mode": workload["consumption_mode"],
+        "purpose": "queued during outage",
+        "resource_id": "marker-a",
+        "invocation_id": "invocation-1",
+        "ttl_seconds": 60,
+        "broker_event_key": "stale-evidence-request-0001"
+    });
+    let created = harness
+        .call(
+            &harness.admin,
+            "POST",
+            "/api/v3/operations",
+            &[("idempotency-key", "idem-stale-evidence-request-0001")],
+            Some(&input),
+        )
+        .await;
+    assert_eq!(created.status, 409, "{}", created.body);
+    assert_eq!(created.body["error"], "broker_evidence_stale");
+}
