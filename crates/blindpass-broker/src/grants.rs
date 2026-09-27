@@ -1222,6 +1222,56 @@ mod tests {
     }
 
     #[test]
+    fn a_live_grant_stops_authorizing_once_signed_time_is_older_than_its_bound() {
+        // Proposed P03-D12: consumption needs signed controller time no older
+        // than MAX_TIME_REPLY_DELAY_MS, so an outage longer than that denies a
+        // grant whose local deadline has not passed (trusted_time_unavailable).
+        let path = temporary_path();
+        let mut verifier = verifier(&path, 1_000);
+        let stamped_at = 1_800_000_000_000;
+        let reply = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: stamped_at,
+            controller_time_ms: stamped_at,
+            issuer_epoch: 1,
+        };
+        verifier
+            .accept_time_reply(&reply, "nd_node-a", 1, 2_000)
+            .unwrap();
+        let mut grant = grant();
+        grant.issued_at_ms = stamped_at;
+        grant.expires_at_ms = stamped_at + 600_000;
+        assert!(
+            verifier
+                .accept_grant(
+                    grant,
+                    b"grant",
+                    "nd_node-a",
+                    "nd_node-a-1",
+                    &policy(),
+                    &registration(),
+                    2_000,
+                )
+                .unwrap()
+        );
+        let deadline = verifier
+            .accepted
+            .values()
+            .next()
+            .unwrap()
+            .deadline_boottime_ms;
+        let bound_end = 2_000 + super::MAX_TIME_REPLY_DELAY_MS;
+        assert!(
+            deadline > bound_end + 1,
+            "the local deadline is still ahead"
+        );
+        assert!(verifier.trusted_controller_time_ms(bound_end).is_some());
+        assert!(verifier.trusted_controller_time_ms(bound_end + 1).is_none());
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
     fn persisted_time_high_water_rejects_controller_rollback_after_restart() {
         let journal_path = temporary_path();
         let time_path = journal_path.parent().unwrap().join("trusted-time");
