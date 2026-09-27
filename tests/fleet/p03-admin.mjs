@@ -264,23 +264,27 @@ async function approvalStatus(id) {
   print({ id: approval.id, status: approval.status, version: approval.version });
 }
 
-// Count audit rows across every page; fleet operator actions also write audit
+// Read audit rows across every page; fleet operator actions also write audit
 // rows, so a single page is not authoritative.
-async function auditCount(event, actorId, resourceId) {
-  if (!event) throw new Error('audit-count requires EVENT [ACTOR_ID] [RESOURCE_ID]');
+async function allAuditRows() {
   let cursor = null;
-  let count = 0;
+  const rows = [];
   for (let page = 0; page < 200; page += 1) {
     const query = new URLSearchParams({ limit: '100' });
     if (cursor) query.set('cursor', cursor);
     const audit = await api(`/api/v3/admin/audit?${query}`, { method: 'GET' });
-    const rows = audit.items ?? audit.events ?? [];
-    count += rows.filter((row) => row.event === event
-      && (!actorId || row.actor_id === actorId)
-      && (!resourceId || row.resource_id === resourceId)).length;
+    rows.push(...(audit.items ?? audit.events ?? []));
     cursor = audit.next_cursor ?? null;
-    if (!cursor) break;
+    if (!cursor) return rows;
   }
+  throw new Error('controller audit has more pages than the harness reads');
+}
+
+async function auditCount(event, actorId, resourceId) {
+  if (!event) throw new Error('audit-count requires EVENT [ACTOR_ID] [RESOURCE_ID]');
+  const count = (await allAuditRows()).filter((row) => row.event === event
+    && (!actorId || row.actor_id === actorId)
+    && (!resourceId || row.resource_id === resourceId)).length;
   print({ event, count });
 }
 
@@ -402,8 +406,7 @@ async function auditCheck(nodeId, operationId) {
       || grant.status !== 'consumed') {
     throw new Error('consumed grant is not bound to the expected operation invocation');
   }
-  const audit = await api('/api/v3/admin/audit?limit=100', { method: 'GET' });
-  const rows = audit.items ?? audit.events ?? [];
+  const rows = await allAuditRows();
   const matches = rows.filter((row) => row.actor_id === nodeId
       && row.event === 'operation_result' && row.resource_id === operationId
       && row.metadata?.operation_id === operationId && row.metadata?.grant_id === grantId
@@ -428,8 +431,7 @@ async function grantRejectionCheck(nodeId, grantId) {
   if (!nodeId || !/^gr_[A-Za-z0-9_-]{16,128}$/.test(grantId ?? '')) {
     throw new Error('grant-rejection-check requires NODE_ID GRANT_ID');
   }
-  const audit = await api('/api/v3/admin/audit?limit=100', { method: 'GET' });
-  const rows = audit.items ?? audit.events ?? [];
+  const rows = await allAuditRows();
   const matches = rows.filter((row) => row.actor_id === nodeId
       && row.event === 'grant_rejected' && row.resource_id === grantId
       && row.metadata?.action === 'grant_rejected'

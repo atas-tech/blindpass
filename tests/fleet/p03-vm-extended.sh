@@ -64,7 +64,7 @@ start_controller() {
 # receives the controller-signed closure; no grant, delivery or marker occurs.
 # The requester and the workload account cannot approve.
 scenario_e05_approval_closures() {
-    local node_a=$1 kind request pending operation_id approval_id decision_json status
+    local node_a=$1 kind request pending operation_id approval_id decision_json status expected_status
     for kind in rejected cancelled expired; do
         setup_workload a "$node_a" "$current_backend-e05-$kind" \
             "$(operation_payload "P03 E05 $kind" "P03-E05-${kind^^}" 60)"
@@ -83,7 +83,9 @@ scenario_e05_approval_closures() {
                 return 1
             }
             status=$(guest_call a unprivileged-api-attempt "$approval_id" "$operation_id" "$APPROVER_ID")
-            [[ "$status" =~ status=(401|403)$ ]] || {
+            # The workload account holds no operator session or cookie, so the
+            # operator API must refuse it as unauthenticated.
+            [[ "$status" =~ status=401$ ]] || {
                 printf 'P03-FAIL workload account reached the operator approval API (%s)\n' "$status" >&2
                 return 1
             }
@@ -105,6 +107,15 @@ scenario_e05_approval_closures() {
         status=$(admin operation-status "$operation_id")
         [[ $(json_field "$status" grant_id) == null || -z $(json_field "$status" grant_id) ]] || {
             printf 'P03-FAIL closed E05 operation %s received a grant\n' "$operation_id" >&2
+            return 1
+        }
+        # A rejected or expired approval denies the operation; a dismissed
+        # request is cancelled before any grant.
+        expected_status=denied
+        [[ "$kind" == cancelled ]] && expected_status=cancelled
+        [[ $(json_field "$status" status) == "$expected_status" ]] || {
+            printf 'P03-FAIL E05 %s operation ended %s, expected %s\n' \
+                "$kind" "$(json_field "$status" status)" "$expected_status" >&2
             return 1
         }
         printf 'P03-SCENARIO backend=%s scenario=E05-approval-%s operation_status=%s worker_status=operation_%s grant=none status=passed\n' \
@@ -219,12 +230,14 @@ scenario_e11_parallel() {
     for index in 0 1 2 3; do
         admin audit-check "${nodes[$index]}" "${operations[$index]}" "${workloads[$index]}" \
             "${invocations[$index]}" "${grants[$index]}" >/dev/null
+        guest_call "${guests[$index]}" assert-consumed-once "${grants[$index]}" >/dev/null
     done
     # Workload 1 presents workload 0's consumed grant from its own unit.
     use_unit a "${units[1]}"
     guest_call a configure-consumer "$node_a" "${workloads[1]}" "${grants[0]}" >/dev/null
     guest_call a start-workload >/dev/null
-    guest_call a assert-consume-denied "${grants[0]}" 'grant_consumed|grant_unknown|grant_identity_mismatch'
+    guest_call a assert-consume-denied "${grants[0]}" grant_consumed
+    guest_call a assert-consumed-once "${grants[0]}" >/dev/null
     printf 'P03-SCENARIO backend=%s scenario=E11-parallel-two-nodes workloads=4 completed=4 cross_identity_reuse=denied status=passed\n' \
         "$current_backend"
 }
@@ -320,10 +333,21 @@ scenario_e01_key_exposure() {
     local canary_request canary_workload=$SETUP_WORKLOAD_ID
     canary_request=$(request_event a)
     complete_operation a "$node_a" "$canary_workload" P03-E01-CANARY "$canary_request" "P03 canary $visible_canary"
-    guest_call a key-canaries >"$canary_file"
-    guest_call b key-canaries >>"$canary_file"
+    local identities_a identities_b patterns
+    : >"$canary_file"
     chmod 0600 "$canary_file"
-    [[ $(grep -c '^secret ' "$canary_file") == 12 ]] || {
+    guest_call a key-canaries >>"$canary_file"
+    identities_a=$(awk '$1 == "identities" {print $2}' "$canary_file")
+    guest_call b key-canaries >>"$canary_file"
+    identities_b=$(awk '$1 == "identities" {n = $2} END {print n}' "$canary_file")
+    # Guest a holds its live identity and the identity archived by E02.
+    [[ "$identities_a" =~ ^[0-9]+$ && "$identities_b" =~ ^[0-9]+$ ]] \
+        && ((identities_a >= 2 && identities_b >= 1)) || {
+        printf 'P03-FAIL guest key canaries are missing an identity\n' >&2
+        return 1
+    }
+    patterns=$(( (identities_a + identities_b) * 8 ))
+    [[ $(grep -c '^secret ' "$canary_file") == "$patterns" ]] || {
         printf 'P03-FAIL guest key canaries are incomplete\n' >&2
         return 1
     }
@@ -356,8 +380,8 @@ PY
         return 1
     }
     rm -f -- "$canary_file" "$dump"
-    printf 'P03-SCENARIO backend=%s scenario=E01-no-private-key-at-controller patterns=12 positive_control=found exposed=0 status=passed\n' \
-        "$current_backend"
+    printf 'P03-SCENARIO backend=%s scenario=E01-no-private-key-at-controller identities=%s patterns=%s positive_control=found exposed=0 status=passed\n' \
+        "$current_backend" "$((identities_a + identities_b))" "$patterns"
 }
 
 # P03-I05 and pilot I08: the broker aborts after the durable consume intent
@@ -381,6 +405,11 @@ scenario_i05_crash_after_intent() {
     restarts_before=${armed##*broker_restarts=}
     printf '%s\n' "$crash_grant" | guest_call a provide-grant >/dev/null
     guest_call a assert-crash-after-intent "$crash_grant" "$restarts_before"
+    # Retrying the same grant from a new invocation after the broker restart
+    # must be refused by the durable consume intent, with no marker.
+    printf '%s\n' "$crash_grant" | guest_call a provide-grant >/dev/null
+    guest_call a start-workload >/dev/null
+    guest_call a assert-consume-denied "$crash_grant" grant_consumed >/dev/null
     guest_call a wait-outbox-empty >/dev/null
     # The operation is executing until the 30-second grant deadline passes
     # without a completed result; the 30-second expiry sweep then marks it
@@ -396,7 +425,7 @@ scenario_i05_crash_after_intent() {
     }
     guest_call a disable-crash-hook >/dev/null
     wait_for_fresh_poll "$node_a" "$(now_ms)"
-    printf 'P03-SCENARIO backend=%s scenario=P03-I05-crash-after-consume-intent broker_restarted=true intent_records=1 marker_created=false operation_status=uncertain status=passed\n' \
+    printf 'P03-SCENARIO backend=%s scenario=P03-I05-crash-after-consume-intent broker_restarted=true intent_records=1 retry_denied=grant_consumed marker_created=false operation_status=uncertain status=passed\n' \
         "$current_backend"
 }
 

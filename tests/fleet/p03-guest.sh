@@ -581,6 +581,15 @@ print(latest)
     assert-consume-denied)
         assert_consume_denied "${1:-}" "${2:-}"
         ;;
+    assert-consumed-once)
+        grant_id=${1:-}
+        [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
+        journal=/var/lib/blindpass/broker/consumed.jsonl
+        [[ -f "$journal" && ! -L "$journal" ]] || fail 'consumed grant journal is unavailable'
+        [[ $(grep -F -c '"'"$grant_id"'"' "$journal") == 1 ]] \
+            || fail 'grant was not consumed exactly once'
+        printf 'P03-GUEST-CONSUMED-ONCE grant_id=%s\n' "$grant_id"
+        ;;
     stop-workload)
         systemctl stop "$unit" >/dev/null 2>&1 || true
         printf 'P03-GUEST-WORKLOAD-STOPPED\n'
@@ -707,19 +716,31 @@ print(latest)
     key-canaries)
         # Print encodings of this disposable guest's private node key material
         # so the host can prove none of it reached the controller.
+        # Include every archived revoked identity: those keys went through
+        # enrollment, rotation and revocation and must not leak either.
         identity=/var/lib/blindpass/broker/node-identity.state
         [[ -f "$identity" && ! -L "$identity" ]] || fail 'node identity state is unavailable'
-        python3 - "$identity" <<'PY'
+        identities=("$identity")
+        for archived in /var/lib/blindpass/revoked-identities/*/node-identity.state; do
+            [[ -e "$archived" ]] || continue
+            [[ -f "$archived" && ! -L "$archived" ]] || fail 'archived node identity is not a regular file'
+            identities+=("$archived")
+        done
+        python3 - "${identities[@]}" <<'PY'
 import base64
 import sys
 
-data = open(sys.argv[1], "rb").read()
-if len(data) < 72:
-    raise SystemExit("node identity state is truncated")
-for name, secret in (("signing_seed", data[8:40]), ("recipient_private", data[40:72])):
-    print(f"secret {base64.urlsafe_b64encode(secret).decode().rstrip('=')}")
-    print(f"secret {base64.b64encode(secret).decode()}")
-    print(f"secret {secret.hex()}")
+print(f"identities {len(sys.argv) - 1}")
+for path in sys.argv[1:]:
+    data = open(path, "rb").read()
+    if len(data) < 72:
+        raise SystemExit("node identity state is truncated")
+    for secret in (data[8:40], data[40:72]):
+        print(f"secret {base64.urlsafe_b64encode(secret).decode().rstrip('=')}")
+        print(f"secret {base64.b64encode(secret).decode()}")
+        print(f"secret {secret.hex()}")
+        # SQLite dumps render BLOB values as uppercase hexadecimal.
+        print(f"secret {secret.hex().upper()}")
 PY
         ;;
     enable-crash-hook)

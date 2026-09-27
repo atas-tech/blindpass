@@ -103,6 +103,10 @@ cleanup() {
             drop "$postgres_state_file" "$postgres_url_file" >/dev/null 2>&1 || true
     fi
     if [[ "${BLINDPASS_P03_KEEP_FAILED_ARTIFACTS:-0}" == 1 && "${run_status:-0}" != 0 ]]; then
+        # Retained diagnostics never keep guest private-key encodings or a
+        # full controller state dump, even from disposable guests.
+        find "$run_dir" \( -name key-canaries -o -name controller-state.txt \) \
+            -type f -delete 2>/dev/null || true
         printf 'P03-FAILED-ARTIFACTS path=%s\n' "$run_dir" >&2
     else
         rm -rf -- "$run_dir"
