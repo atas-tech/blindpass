@@ -21,7 +21,8 @@ use blindpass_core::identity::{
     IdentityError, LoaderPolicy, PeerIdentity, WorkloadRegistration, authorize_workload,
 };
 use blindpass_core::protocol::{
-    ProtocolError, error_frame, parse_loader_request, parse_workload_request, workload_ok,
+    ProtocolError, STATUS_OPERATION_PREFIX, error_frame, parse_loader_request,
+    parse_workload_request, workload_ok,
 };
 use blindpass_core::secret::SecretBytes;
 use blindpass_core::{MAX_CREDENTIAL_BYTES, MAX_FRAME_BYTES};
@@ -44,6 +45,8 @@ const DEFAULT_OPERATION_DIRECTORY: &str = "/run/blindpass/ops";
 pub(crate) const MAX_BROKER_AUDIT_EVENTS: usize = 10_000;
 const MAX_NODE_EVENT_BATCH: usize = 100;
 const MAX_DEFERRED_REVOCATION_OUTCOMES: usize = 10_000;
+/// Bound for the in-memory operation request owners and closure records.
+pub(crate) const MAX_OPERATION_RECORDS: usize = 10_000;
 const MAX_PENDING_NODE_EVENT_BYTES: usize = 64 * 1024;
 const MAX_PENDING_NODE_EVENTS_BYTES: u64 = 64 * 1024 * 1024;
 const PENDING_NODE_EVENT_FILE_MODE: u32 = 0o600;
@@ -176,6 +179,12 @@ pub struct BrokerState {
     /// persisted audit overflow flag records the gap.
     deferred_revocation_outcomes: VecDeque<PendingNodeEvent>,
     audit_overflow_pending: bool,
+    /// Which workload invocation created each of this broker's operation
+    /// requests, so only it may ask for the request's status.
+    operation_requests: BoundedRecords<OperationRequestOwner>,
+    /// Controller-signed closures keyed by request event key. Both records
+    /// are in memory only: after a restart a status query answers unknown.
+    operation_closures: BoundedRecords<String>,
     node_revoked: bool,
     node_revocation_ack_pending: bool,
     node_revocation_acknowledged: bool,
@@ -184,6 +193,55 @@ pub struct BrokerState {
     pub custody: EphemeralCustody,
     credential_expiries: BTreeMap<String, Instant>,
     credential_lifetime: Duration,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct OperationRequestOwner {
+    workload_id: String,
+    invocation_id: String,
+}
+
+/// Insertion-ordered map that evicts its oldest entry beyond a fixed bound.
+#[derive(Debug)]
+pub(crate) struct BoundedRecords<V> {
+    values: BTreeMap<String, V>,
+    order: VecDeque<String>,
+    limit: usize,
+}
+
+impl<V> BoundedRecords<V> {
+    fn new(limit: usize) -> Self {
+        Self {
+            values: BTreeMap::new(),
+            order: VecDeque::new(),
+            limit,
+        }
+    }
+
+    fn insert(&mut self, key: &str, value: V) {
+        if self.values.insert(key.to_owned(), value).is_none() {
+            self.order.push_back(key.to_owned());
+        }
+        while self.order.len() > self.limit {
+            if let Some(oldest) = self.order.pop_front() {
+                self.values.remove(&oldest);
+            }
+        }
+    }
+
+    fn get(&self, key: &str) -> Option<&V> {
+        self.values.get(key)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.values.len()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn contains_key(&self, key: &str) -> bool {
+        self.values.contains_key(key)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,6 +331,8 @@ impl BrokerState {
             pending_node_events_path: None,
             deferred_revocation_outcomes: VecDeque::new(),
             audit_overflow_pending: false,
+            operation_requests: BoundedRecords::new(MAX_OPERATION_RECORDS),
+            operation_closures: BoundedRecords::new(MAX_OPERATION_RECORDS),
             node_revoked: false,
             node_revocation_ack_pending: false,
             node_revocation_acknowledged: false,
@@ -377,6 +437,9 @@ impl BrokerState {
             return Err(BrokerError::Configuration("node_revoked"));
         }
         let authorization = authorize_workload(peer, request, &self.workloads)?;
+        if let Some(event_key) = request.operation.strip_prefix(STATUS_OPERATION_PREFIX) {
+            return self.operation_status(&authorization, event_key);
+        }
         if (request.operation.starts_with("request:") || request.operation.starts_with("consume:"))
             && self.persistence_fenced()
         {
@@ -398,6 +461,11 @@ impl BrokerState {
                 self.pending_node_events.pop_back();
                 return Err(error);
             }
+            self.remember_operation_request(
+                &event_key,
+                &authorization.workload_id,
+                &authorization.invocation_id,
+            );
             return Ok(format!("OK operation_request {event_key}\n").into_bytes());
         }
         if let Some(grant_id) = request.operation.strip_prefix("consume:") {
@@ -468,6 +536,46 @@ impl BrokerState {
             return Ok(format!("OK operation_completed {grant_id}\n").into_bytes());
         }
         Ok(workload_ok(request))
+    }
+
+    pub(crate) fn remember_operation_request(
+        &mut self,
+        event_key: &str,
+        workload_id: &str,
+        invocation_id: &str,
+    ) {
+        self.operation_requests.insert(
+            event_key,
+            OperationRequestOwner {
+                workload_id: workload_id.to_owned(),
+                invocation_id: invocation_id.to_owned(),
+            },
+        );
+    }
+
+    pub(crate) fn record_operation_closure(&mut self, event_key: &str, status: &str) {
+        self.operation_closures.insert(event_key, status.to_owned());
+    }
+
+    /// Report a controller-signed closure to the workload invocation that
+    /// created the request. The answer carries no authority.
+    fn operation_status(
+        &self,
+        authorization: &blindpass_core::identity::WorkloadAuthorization,
+        event_key: &str,
+    ) -> Result<Vec<u8>, BrokerError> {
+        let Some(owner) = self.operation_requests.get(event_key) else {
+            return Ok(b"OK operation_status unknown\n".to_vec());
+        };
+        if owner.workload_id != authorization.workload_id
+            || owner.invocation_id != authorization.invocation_id
+        {
+            return Err(BrokerError::Configuration("operation_status_denied"));
+        }
+        Ok(match self.operation_closures.get(event_key) {
+            Some(status) => format!("OK operation_status closed {status}\n").into_bytes(),
+            None => b"OK operation_status pending\n".to_vec(),
+        })
     }
 
     fn operation_request_body(

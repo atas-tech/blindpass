@@ -106,7 +106,25 @@ fn validate_operation(field: &str) -> Result<(), ProtocolError> {
     {
         return Err(ProtocolError::InvalidField);
     }
+    if let Some(event_key) = field.strip_prefix(STATUS_OPERATION_PREFIX)
+        && !is_valid_event_key(event_key)
+    {
+        return Err(ProtocolError::InvalidField);
+    }
     Ok(())
+}
+
+/// Operation prefix for a workload asking about one of its own operation
+/// requests: `status:<event_key>`.
+pub const STATUS_OPERATION_PREFIX: &str = "status:";
+
+/// Broker event keys are opaque, 16 to 128 bytes of `[A-Za-z0-9_-]`.
+#[must_use]
+pub fn is_valid_event_key(value: &str) -> bool {
+    (16..=128).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
 #[cfg(test)]
@@ -153,6 +171,36 @@ mod tests {
         );
         assert_eq!(
             parse_workload_request(oversized_payload.as_bytes()),
+            Err(ProtocolError::InvalidField)
+        );
+    }
+
+    #[test]
+    fn status_queries_name_one_broker_event_key() {
+        let request = parse_workload_request(
+            b"WORK node-a workload-a agent.service inv-a status:event_0123456789abcdef-_\n",
+        )
+        .unwrap();
+        assert_eq!(request.operation, "status:event_0123456789abcdef-_");
+        for invalid in [
+            "status:",
+            "status:short",
+            "status:event_with.dot_0123456",
+            "status:event:0123456789abcdef",
+        ] {
+            let frame = format!("WORK node-a workload-a agent.service inv-a {invalid}\n");
+            assert_eq!(
+                parse_workload_request(frame.as_bytes()),
+                Err(ProtocolError::InvalidField),
+                "{invalid}"
+            );
+        }
+        let long = format!(
+            "WORK node-a workload-a agent.service inv-a status:{}\n",
+            "a".repeat(129)
+        );
+        assert_eq!(
+            parse_workload_request(long.as_bytes()),
             Err(ProtocolError::InvalidField)
         );
     }

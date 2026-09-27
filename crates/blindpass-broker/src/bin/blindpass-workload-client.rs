@@ -116,7 +116,13 @@ fn run(args: Vec<String>) -> Result<(), String> {
                     Ok(response) if response.starts_with(b"OK ") => {
                         println!("{}", operation_output(&operation, &response)?);
                         if let Some(grant_file) = grant_file.as_ref() {
-                            let grant_id = wait_for_grant(grant_file)?;
+                            let event_key = request_event_key(&response)?;
+                            let status_frame = format!(
+                                "WORK {node} {workload} {unit} {invocation} status:{event_key}\n"
+                            );
+                            let grant_id = wait_for_grant(grant_file, || {
+                                query_operation_status(&socket, &status_frame)
+                            })?;
                             let consume = format!("consume:{grant_id}");
                             let consume_frame =
                                 format!("WORK {node} {workload} {unit} {invocation} {consume}\n");
@@ -184,17 +190,58 @@ fn permanent_workload_error(response: &[u8]) -> Option<&'static str> {
     }
 }
 
-fn wait_for_grant(path: &std::path::Path) -> Result<String, String> {
-    for _attempt in 0..6_000 {
+fn request_event_key(response: &[u8]) -> Result<String, String> {
+    std::str::from_utf8(response)
+        .ok()
+        .and_then(|response| response.strip_prefix("OK operation_request "))
+        .and_then(|response| response.strip_suffix('\n'))
+        .filter(|key| valid_opaque_id(key))
+        .map(str::to_owned)
+        .ok_or_else(|| "broker did not accept the operation request".to_owned())
+}
+
+/// Poll for the grant file for at most 600 s. About once per second ask the
+/// broker whether the controller closed the request without a grant; a
+/// closure ends the wait with `operation_<status>`.
+fn wait_for_grant(
+    path: &std::path::Path,
+    mut closed_status: impl FnMut() -> Option<String>,
+) -> Result<String, String> {
+    for attempt in 0..6_000 {
         match read_grant_id(path) {
             Ok(grant_id) => return Ok(grant_id),
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if attempt % 10 == 9
+                    && let Some(status) = closed_status()
+                {
+                    return Err(format!("operation_{status}"));
+                }
                 std::thread::sleep(Duration::from_millis(100));
             }
             Err(_) => return Err("grant file is unsafe or unreadable".to_owned()),
         }
     }
     Err("timed out waiting for an approved grant".to_owned())
+}
+
+/// One status query; any transport error or other answer means "keep
+/// waiting" so the overall bound still applies.
+fn query_operation_status(socket: &std::path::Path, frame: &str) -> Option<String> {
+    let mut stream = UnixStream::connect(socket).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+    stream.write_all(frame.as_bytes()).ok()?;
+    stream.shutdown(std::net::Shutdown::Write).ok()?;
+    let mut response = Vec::new();
+    stream.read_to_end(&mut response).ok()?;
+    closed_operation_status(&response)
+}
+
+fn closed_operation_status(response: &[u8]) -> Option<String> {
+    let status = std::str::from_utf8(response)
+        .ok()?
+        .strip_prefix("OK operation_status closed ")?
+        .strip_suffix('\n')?;
+    matches!(status, "rejected" | "expired" | "cancelled" | "denied").then(|| status.to_owned())
 }
 
 fn read_grant_id(path: &std::path::Path) -> Result<String, std::io::Error> {
@@ -326,7 +373,56 @@ fn next(args: &[String], index: &mut usize) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{CONSUME_DENIAL_CODES, consume_denial, operation_output, permanent_workload_error};
+    use super::{
+        CONSUME_DENIAL_CODES, closed_operation_status, consume_denial, operation_output,
+        permanent_workload_error, request_event_key, wait_for_grant,
+    };
+
+    #[test]
+    fn only_a_signed_closure_status_ends_the_grant_wait() {
+        for status in ["rejected", "expired", "cancelled", "denied"] {
+            assert_eq!(
+                closed_operation_status(
+                    format!("OK operation_status closed {status}\n").as_bytes()
+                ),
+                Some(status.to_owned())
+            );
+        }
+        for other in [
+            &b"OK operation_status pending\n"[..],
+            b"OK operation_status unknown\n",
+            b"OK operation_status closed other\n",
+            b"ERR operation_status_denied\n",
+        ] {
+            assert_eq!(closed_operation_status(other), None);
+        }
+        assert_eq!(
+            request_event_key(b"OK operation_request event_0123456789abcdef\n").unwrap(),
+            "event_0123456789abcdef"
+        );
+        assert!(request_event_key(b"OK operation_request bad!\n").is_err());
+    }
+
+    #[test]
+    fn grant_wait_queries_status_about_once_per_second_and_stops_on_closure() {
+        let mut queries = 0;
+        let started = std::time::Instant::now();
+        let result = wait_for_grant(
+            std::path::Path::new("/nonexistent-blindpass-test/grant"),
+            || {
+                queries += 1;
+                (queries == 2).then(|| "rejected".to_owned())
+            },
+        );
+        assert_eq!(result, Err("operation_rejected".to_owned()));
+        assert_eq!(queries, 2);
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed >= std::time::Duration::from_millis(1_800),
+            "{elapsed:?}"
+        );
+        assert!(elapsed < std::time::Duration::from_secs(5), "{elapsed:?}");
+    }
 
     #[test]
     fn consume_denials_are_permanent_and_report_only_the_code() {

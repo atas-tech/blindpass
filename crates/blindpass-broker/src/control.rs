@@ -9,8 +9,8 @@ use crate::os_identity::require_control_peer;
 use crate::os_identity::require_root_peer;
 use blindpass_core::canon::{Value, canonicalize_value};
 use blindpass_core::fleet::{
-    ApplicationAck, DocumentKind, Grant, NodeKeyRotation, NodeRevocation, PolicySnapshot,
-    Registration, Revocation, SignedEnvelope, TimeReply,
+    ApplicationAck, DocumentKind, Grant, NodeKeyRotation, NodeRevocation, OperationClosed,
+    PolicySnapshot, Registration, Revocation, SignedEnvelope, TimeReply,
 };
 use blindpass_core::secret::wipe;
 use std::io::{self, Read, Write};
@@ -421,6 +421,17 @@ fn apply_controller_document_to_state(
                 )?;
             }
         }
+        DocumentKind::OperationClosed => {
+            let closed = OperationClosed::from_value(envelope.body()).map_err(|_| {
+                BrokerError::Configuration("controller operation closure is malformed")
+            })?;
+            if closed.node_id != pin.node_id || closed.issuer_epoch != envelope.epoch() {
+                return Err(BrokerError::Configuration(
+                    "controller operation closure is bound to another node or epoch",
+                ));
+            }
+            state.record_operation_closure(&closed.request_event_key, &closed.status);
+        }
         DocumentKind::NodeKeyRotation => {
             let rotation = NodeKeyRotation::from_value(envelope.body()).map_err(|_| {
                 BrokerError::Configuration("controller node key rotation is malformed")
@@ -447,6 +458,7 @@ fn apply_controller_document_to_state(
         "node_key_rotation" => Ok("node_key_rotation"),
         "time_reply" => Ok("time_reply"),
         "application_ack" => Ok("application_ack"),
+        "operation_closed" => Ok("operation_closed"),
         _ => Err(BrokerError::Configuration(
             "controller document kind is unsupported",
         )),
@@ -656,8 +668,8 @@ mod tests {
     use blindpass_core::canon::{Value, canonicalize_value, parse_json};
     use blindpass_core::delivery::DeliveryPolicy;
     use blindpass_core::fleet::{
-        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeRevocation, PolicySnapshot,
-        Registration, Revocation, SignedEnvelope, TimeReply, node_event_message,
+        ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeRevocation, OperationClosed,
+        PolicySnapshot, Registration, Revocation, SignedEnvelope, TimeReply, node_event_message,
     };
     use blindpass_core::identity::{PeerIdentity, WorkloadRequest};
     use blindpass_core::signing::base64_url_encode;
@@ -2235,6 +2247,127 @@ mod tests {
         );
         drop(state);
         assert_eq!(denial(fleet.consume(&grant.id)), "grant_revoked");
+    }
+
+    fn status(
+        fleet: &Fleet,
+        peer: &PeerIdentity,
+        event_key: &str,
+    ) -> Result<Vec<u8>, crate::BrokerError> {
+        let mut request = Fleet::request(format!("status:{event_key}"));
+        request.claimed_invocation_id = peer.invocation_id.clone().unwrap();
+        fleet.state.lock().unwrap().process_workload(peer, &request)
+    }
+
+    fn closure(fleet: &Fleet, node_id: &str, event_key: &str, status: &str, epoch: u64) -> Vec<u8> {
+        let closed = OperationClosed {
+            node_id: node_id.to_owned(),
+            operation_id: "op_0123456789abcdef0123456789abcdef".to_owned(),
+            request_event_key: event_key.to_owned(),
+            status: status.to_owned(),
+            closed_at_ms: fleet.now_ms,
+            issuer_epoch: epoch,
+        };
+        fleet.sign(
+            DocumentKind::OperationClosed,
+            closed.to_value().unwrap(),
+            epoch,
+        )
+    }
+
+    #[test]
+    fn requesting_workload_learns_a_signed_operation_closure() {
+        let fleet = Fleet::new(59);
+        let requested = operation_request(&fleet).unwrap();
+        let event_key = std::str::from_utf8(&requested)
+            .unwrap()
+            .strip_prefix("OK operation_request ")
+            .unwrap()
+            .strip_suffix('\n')
+            .unwrap()
+            .to_owned();
+        let peer = Fleet::peer();
+        assert_eq!(
+            status(&fleet, &peer, &event_key).unwrap(),
+            b"OK operation_status pending\n"
+        );
+
+        // Only the requesting workload invocation may ask.
+        let other_invocation = PeerIdentity::fixture(
+            1000,
+            current_gid(),
+            "worker.service",
+            "invocation-b",
+            "worker",
+        );
+        assert_eq!(
+            denial(status(&fleet, &other_invocation, &event_key)),
+            "operation_status_denied"
+        );
+
+        // A closure bound to another node is rejected and changes nothing.
+        assert_eq!(
+            fleet.relay(&closure(&fleet, "nd_node-b", &event_key, "rejected", 1)),
+            b"ERR invalid_controller_document\n"
+        );
+        assert_eq!(
+            status(&fleet, &peer, &event_key).unwrap(),
+            b"OK operation_status pending\n"
+        );
+
+        assert_eq!(
+            fleet.relay(&closure(&fleet, "nd_node-a", &event_key, "rejected", 1)),
+            b"OK document_applied operation_closed\n"
+        );
+        assert_eq!(
+            status(&fleet, &peer, &event_key).unwrap(),
+            b"OK operation_status closed rejected\n"
+        );
+        assert_eq!(
+            denial(status(&fleet, &other_invocation, &event_key)),
+            "operation_status_denied"
+        );
+
+        // Keys the broker did not issue, or no longer remembers, are unknown.
+        assert_eq!(
+            status(&fleet, &peer, "event_not_issued_by_this_broker").unwrap(),
+            b"OK operation_status unknown\n"
+        );
+        // After a restart the in-memory request and closure records are gone.
+        let mut restarted = BrokerState::new(DeliveryPolicy::default());
+        restarted.configure_grant_storage(&fleet.identity).unwrap();
+        restore_controller_documents(&mut restarted, &fleet.identity).unwrap();
+        *fleet.state.lock().unwrap() = restarted;
+        assert_eq!(
+            status(&fleet, &peer, &event_key).unwrap(),
+            b"OK operation_status unknown\n"
+        );
+    }
+
+    #[test]
+    fn operation_request_and_closure_records_are_bounded() {
+        let mut state = BrokerState::new(DeliveryPolicy::default());
+        for index in 0..crate::MAX_OPERATION_RECORDS + 3 {
+            let key = format!("event_bounded_{index:08}");
+            state.remember_operation_request(&key, "wl_worker-a", "invocation-a");
+            state.record_operation_closure(&key, "expired");
+        }
+        assert_eq!(state.operation_requests.len(), crate::MAX_OPERATION_RECORDS);
+        assert_eq!(state.operation_closures.len(), crate::MAX_OPERATION_RECORDS);
+        assert!(
+            !state
+                .operation_requests
+                .contains_key("event_bounded_00000000")
+        );
+        assert!(
+            !state
+                .operation_closures
+                .contains_key("event_bounded_00000002")
+        );
+        assert!(state.operation_closures.contains_key(&format!(
+            "event_bounded_{:08}",
+            crate::MAX_OPERATION_RECORDS + 2
+        )));
     }
 
     fn relay_signed_document(
