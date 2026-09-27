@@ -506,3 +506,84 @@ async fn stale_broker_evidence_is_reported_as_stale_not_as_a_mismatch() {
     assert_eq!(created.status, 409, "{}", created.body);
     assert_eq!(created.body["error"], "broker_evidence_stale");
 }
+
+#[tokio::test]
+async fn a_retried_node_revocation_acknowledgement_still_finalizes_the_revocation() {
+    let harness = Harness::start().await;
+    let node = harness.online_node("finalize-node", 71).await;
+    let revoked = harness
+        .call(
+            &harness.admin,
+            "DELETE",
+            &format!("/api/v3/nodes/{}", node.id),
+            &[],
+            None,
+        )
+        .await;
+    assert_eq!(revoked.status, 200, "{}", revoked.body);
+
+    // An earlier attempt committed its audit row, then failed before the
+    // revocation was finalized. The broker retries the same signed event.
+    let observed_at_ms = harness.now_ms().await;
+    let event_key = "node-revocation-ack-retry-0001";
+    let canonical_body = format!(
+        r#"{{"action":"node_revocation_applied","node_id":"{}","observed_at_ms":{observed_at_ms}}}"#,
+        node.id
+    );
+    harness
+        .execute(
+            "INSERT INTO audit_events
+               (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+             VALUES (?, (SELECT tenant_id FROM nodes WHERE id = ?), 'node', ?, 'node_revocation_applied', 'node', ?, ?, ?)",
+            vec![
+                format!("aud_{}_{event_key}", node.id).into(),
+                node.id.as_str().into(),
+                node.id.as_str().into(),
+                node.id.as_str().into(),
+                canonical_body.into(),
+                observed_at_ms.into(),
+            ],
+        )
+        .await;
+    let response = harness
+        .post_events(
+            &node.bearer,
+            &signed_event(
+                &node.id,
+                &node.keys.signing,
+                event_key,
+                "audit",
+                json!({
+                    "action":"node_revocation_applied",
+                    "node_id":node.id,
+                    "observed_at_ms":observed_at_ms
+                }),
+            ),
+        )
+        .await;
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert_eq!(
+        harness
+            .scalar_i64(
+                "SELECT COUNT(*) FROM node_revocation_queue WHERE node_id = ?",
+                vec![node.id.as_str().into()],
+            )
+            .await,
+        0,
+        "the retried acknowledgement must finalize the revocation"
+    );
+    assert_eq!(
+        harness
+            .scalar_i64(
+                "SELECT COUNT(*) FROM node_sessions WHERE node_id = ? AND revoked_at IS NULL",
+                vec![node.id.as_str().into()],
+            )
+            .await,
+        0,
+        "the revoked node's channel sessions must close"
+    );
+    let detail = harness
+        .get(&harness.admin, &format!("/api/v3/nodes/{}", node.id))
+        .await;
+    assert_eq!(detail.body["revocation_pending"], false, "{}", detail.body);
+}

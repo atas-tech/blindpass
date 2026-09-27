@@ -439,11 +439,16 @@ impl Store {
             .node_audit_metadata(&format!("aud_{node_id}_{idempotency_key}"))
             .await?
         {
-            return if applied == body_json {
-                Ok(())
-            } else {
-                Err(StoreError::InvalidInput("node audit event replay"))
-            };
+            if applied != body_json {
+                return Err(StoreError::InvalidInput("node audit event replay"));
+            }
+            // The audit row and the revocation finalization commit separately.
+            // A retry after a failed finalization must still close the
+            // revoked node's channel; finalization is idempotent.
+            if body.get("action").and_then(Value::as_str) == Some("node_revocation_applied") {
+                self.finalize_node_revocation(node_id).await?;
+            }
+            return Ok(());
         }
         let fields = body
             .as_object()
