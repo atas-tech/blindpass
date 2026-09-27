@@ -402,12 +402,12 @@ impl BrokerState {
                 .fleet_policy
                 .as_ref()
                 .map(|policy| policy.policy_version)
-                .ok_or(BrokerError::Configuration("fleet policy is unavailable"))?;
+                .ok_or(BrokerError::Configuration("fleet_policy_unavailable"))?;
             let now = grants::boottime_ms().map_err(BrokerError::Configuration)?;
             let preview = self
                 .grant_verifier
                 .preview_consumption(grant_id, &authorization, policy_version, now)
-                .map_err(BrokerError::Configuration)?;
+                .map_err(|denial| BrokerError::Configuration(denial.code()))?;
             self.queue_operation_result(
                 &preview,
                 "uncertain",
@@ -2033,7 +2033,7 @@ mod tests {
     use blindpass_core::canon::Value;
     use blindpass_core::custody::RecipientKeyPair;
     use blindpass_core::delivery::{CredentialFormat, DeliveryPolicy};
-    use blindpass_core::fleet::{ConsumptionMode, PolicySnapshot, Registration, TimeReply};
+    use blindpass_core::fleet::{ConsumptionMode, Grant, PolicySnapshot, Registration, TimeReply};
     use blindpass_core::identity::{PeerIdentity, WorkloadRegistration, WorkloadRequest};
     use std::fs;
     use std::io::Write;
@@ -2327,6 +2327,168 @@ mod tests {
             fs::read_dir(&directory).unwrap().count(),
             1,
             "failed atomic commit must remove its temporary file"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// A broker with durable grant state, a fleet registration and policy,
+    /// fresh signed controller time and one accepted, unconsumed grant.
+    fn fleet_state_with_grant(label: &str) -> (std::path::PathBuf, BrokerState, Grant) {
+        let directory = unique_test_path(label);
+        fs::create_dir(&directory).unwrap();
+        fs::set_permissions(&directory, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut state = BrokerState::new(DeliveryPolicy::default());
+        state.grant_verifier = super::grants::GrantVerifier::with_state_files(
+            &directory.join("consumed.jsonl"),
+            &directory.join("trusted-time"),
+            &directory.join("revoked-grants.jsonl"),
+        )
+        .unwrap();
+        state.pending_node_events_path = Some(directory.join("pending-node-events.jsonl"));
+        state.operation_directory = directory.join("ops");
+        state.workloads.push(WorkloadRegistration {
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            unit: "agent.service".to_owned(),
+            account: "uid:1001".to_owned(),
+            invocation_id: None,
+        });
+        let registration = Registration {
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            unit: "agent.service".to_owned(),
+            account: "uid:1001".to_owned(),
+            invocation_id: None,
+            status: "active".to_owned(),
+            consumption_mode: ConsumptionMode::File,
+            registration_version: 1,
+            policy_version: 1,
+            local_ceiling_seconds: 60,
+        };
+        let policy = PolicySnapshot {
+            policy_version: 1,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        };
+        state
+            .fleet_registrations
+            .insert("workload-a".to_owned(), registration.clone());
+        state.fleet_policy = Some(policy.clone());
+        let challenge = state.grant_verifier.begin_time_challenge().unwrap();
+        let received_at_ms = super::grants::boottime_ms().unwrap();
+        state
+            .grant_verifier
+            .accept_time_reply(
+                &TimeReply {
+                    node_id: "node-a".to_owned(),
+                    challenge,
+                    challenge_received_at_ms: 1_800_000_000_000,
+                    controller_time_ms: 1_800_000_000_000,
+                    issuer_epoch: 1,
+                },
+                "node-a",
+                1,
+                received_at_ms,
+            )
+            .unwrap();
+        let grant = Grant {
+            id: "gr_0123456789abcdef0123456789abcdef".to_owned(),
+            operation_id: "op_0123456789abcdef0123456789abcdef".to_owned(),
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            invocation_id: "inv-live".to_owned(),
+            unit: "agent.service".to_owned(),
+            account: "uid:1001".to_owned(),
+            resource_id: "marker-a".to_owned(),
+            recipient_key_id: "node-a-1".to_owned(),
+            policy_version: 1,
+            approval_reference: None,
+            action: "noop.marker".to_owned(),
+            mode: ConsumptionMode::File,
+            audience: "blindpass-node".to_owned(),
+            issuer_epoch: 1,
+            issued_at_ms: 1_800_000_000_000,
+            expires_at_ms: 1_800_000_060_000,
+            local_ceiling_seconds: 60,
+        };
+        state
+            .grant_verifier
+            .accept_grant(
+                grant.clone(),
+                b"signed-grant",
+                "node-a",
+                "node-a-1",
+                &policy,
+                &registration,
+                super::grants::boottime_ms().unwrap(),
+            )
+            .unwrap();
+        (directory, state, grant)
+    }
+
+    fn workload_peer() -> PeerIdentity {
+        PeerIdentity::fixture(1001, 1001, "agent.service", "inv-live", "uid:1001")
+    }
+
+    fn consume_request(grant_id: &str) -> WorkloadRequest {
+        WorkloadRequest {
+            node_id: "node-a".to_owned(),
+            workload_id: "workload-a".to_owned(),
+            claimed_unit: "agent.service".to_owned(),
+            claimed_invocation_id: "inv-live".to_owned(),
+            operation: format!("consume:{grant_id}"),
+        }
+    }
+
+    fn error_code(result: Result<Vec<u8>, BrokerError>) -> Vec<u8> {
+        let error = result.expect_err("request must be denied");
+        let (mut server, mut client) = UnixStream::pair().unwrap();
+        super::write_error(&mut server, &error);
+        drop(server);
+        let mut response = Vec::new();
+        std::io::Read::read_to_end(&mut client, &mut response).unwrap();
+        response
+    }
+
+    #[test]
+    fn workload_socket_reports_stable_consume_denial_codes() {
+        let (directory, mut state, grant) = fleet_state_with_grant("consume-codes");
+        let peer = workload_peer();
+        assert_eq!(
+            error_code(state.process_workload(
+                &peer,
+                &consume_request("gr_1123456789abcdef0123456789abcdef")
+            )),
+            b"ERR grant_unknown\n"
+        );
+        let mut other_invocation = consume_request(&grant.id);
+        other_invocation.claimed_invocation_id = "inv-other".to_owned();
+        let other_peer =
+            PeerIdentity::fixture(1001, 1001, "agent.service", "inv-other", "uid:1001");
+        assert_eq!(
+            error_code(state.process_workload(&other_peer, &other_invocation)),
+            b"ERR grant_identity_mismatch\n"
+        );
+        assert_eq!(
+            state
+                .process_workload(&peer, &consume_request(&grant.id))
+                .unwrap(),
+            format!("OK operation_completed {}\n", grant.id).as_bytes()
+        );
+        assert_eq!(
+            error_code(state.process_workload(&peer, &consume_request(&grant.id))),
+            b"ERR grant_consumed\n"
+        );
+        state.fleet_policy = None;
+        assert_eq!(
+            error_code(state.process_workload(&peer, &consume_request(&grant.id))),
+            b"ERR fleet_policy_unavailable\n"
+        );
+        state.grant_verifier = super::grants::GrantVerifier::default();
+        assert_eq!(
+            error_code(state.process_workload(&peer, &consume_request(&grant.id))),
+            b"ERR trusted_time_unavailable\n"
         );
         fs::remove_dir_all(directory).unwrap();
     }

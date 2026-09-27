@@ -120,7 +120,8 @@ fn run(args: Vec<String>) -> Result<(), String> {
                             let consume = format!("consume:{grant_id}");
                             let consume_frame =
                                 format!("WORK {node} {workload} {unit} {invocation} {consume}\n");
-                            let response = send_work_frame(&socket, &consume_frame)?;
+                            let response =
+                                send_work_frame(&socket, &consume_frame, consume_denial)?;
                             println!("{}", operation_output(&consume, &response)?);
                         }
                         if hold_seconds > 0 {
@@ -240,7 +241,37 @@ fn read_grant_id(path: &std::path::Path) -> Result<String, std::io::Error> {
     Ok(grant_id.to_owned())
 }
 
-fn send_work_frame(socket: &std::path::Path, frame: &str) -> Result<Vec<u8>, String> {
+/// Consume denials name broker state that retrying cannot change, so the
+/// client stops at the first one and prints the stable reason code.
+const CONSUME_DENIAL_CODES: [&str; 11] = [
+    "grant_expired",
+    "grant_revoked",
+    "grant_consumed",
+    "grant_unknown",
+    "grant_identity_mismatch",
+    "grant_policy_stale",
+    "grant_registration_changed",
+    "grant_epoch_stale",
+    "consumption_unavailable",
+    "trusted_time_unavailable",
+    "audit_backpressure",
+];
+
+fn consume_denial(response: &[u8]) -> Option<String> {
+    let code = std::str::from_utf8(response)
+        .ok()?
+        .strip_prefix("ERR ")?
+        .strip_suffix('\n')?;
+    CONSUME_DENIAL_CODES
+        .contains(&code)
+        .then(|| format!("consume denied: {code}"))
+}
+
+fn send_work_frame(
+    socket: &std::path::Path,
+    frame: &str,
+    permanent: fn(&[u8]) -> Option<String>,
+) -> Result<Vec<u8>, String> {
     let mut last_error = None;
     for _attempt in 0..600 {
         match UnixStream::connect(socket) {
@@ -261,6 +292,9 @@ fn send_work_frame(socket: &std::path::Path, frame: &str) -> Result<Vec<u8>, Str
                 match response {
                     Ok(response) if response.starts_with(b"OK ") => return Ok(response),
                     Ok(response) => {
+                        if let Some(reason) = permanent(&response) {
+                            return Err(reason);
+                        }
                         last_error = Some(String::from_utf8_lossy(&response).trim().to_owned());
                     }
                     Err(error) => last_error = Some(error),
@@ -292,7 +326,21 @@ fn next(args: &[String], index: &mut usize) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{operation_output, permanent_workload_error};
+    use super::{CONSUME_DENIAL_CODES, consume_denial, operation_output, permanent_workload_error};
+
+    #[test]
+    fn consume_denials_are_permanent_and_report_only_the_code() {
+        for code in CONSUME_DENIAL_CODES {
+            assert_eq!(
+                consume_denial(format!("ERR {code}\n").as_bytes()),
+                Some(format!("consume denied: {code}"))
+            );
+        }
+        assert_eq!(consume_denial(b"ERR broker_busy\n"), None);
+        assert_eq!(consume_denial(b"ERR grant_expired"), None);
+        assert_eq!(consume_denial(b"ERR grant_expired extra\n"), None);
+        assert_eq!(consume_denial(b"OK operation_completed gr_x\n"), None);
+    }
 
     #[test]
     fn permanent_policy_and_revocation_errors_do_not_need_retrying() {

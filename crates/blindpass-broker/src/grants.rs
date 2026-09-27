@@ -8,7 +8,7 @@ use blindpass_core::fleet::{
 };
 use blindpass_core::identity::WorkloadAuthorization;
 use blindpass_core::signing::base64_url_encode;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
@@ -21,6 +21,7 @@ const CLOCK_ROLLBACK_TOLERANCE_MS: u64 = 2_000;
 const GRANT_JOURNAL_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const GRANT_JOURNAL_MAX_RECORDS: usize = 1_000_000;
 const GRANT_REPLAY_RETENTION_MS: u64 = 24 * 60 * 60 * 1_000;
+const MAX_RETIRED_GRANTS: usize = 10_000;
 const PRIVATE_FILE_MODE: u32 = 0o600;
 const NO_FOLLOW: i32 = 0x20000;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
@@ -58,6 +59,8 @@ pub(crate) struct GrantVerifier {
     highest_controller_time_ms: Option<u64>,
     trusted_time_path: Option<PathBuf>,
     accepted: BTreeMap<String, AcceptedGrant>,
+    retired: BTreeMap<String, ConsumeDenial>,
+    retired_order: VecDeque<String>,
     journal: Option<GrantJournal>,
     revocations: Option<RevocationJournal>,
 }
@@ -283,28 +286,23 @@ impl GrantVerifier {
         authorization: &WorkloadAuthorization,
         current_policy_version: u64,
         now_boottime_ms: u64,
-    ) -> Result<Grant, &'static str> {
-        self.validate_consumption(
+    ) -> Result<Grant, ConsumeDenial> {
+        let accepted_grant = self.validate_consumption(
             grant_id,
             authorization,
             current_policy_version,
             now_boottime_ms,
         )?;
-        let accepted_grant = self
-            .accepted
-            .get(grant_id)
-            .ok_or("grant is unknown or requires fresh reconciliation")?;
         let grant_id = accepted_grant.grant.id.clone();
         let expires_at_ms = accepted_grant.grant.expires_at_ms;
-        let journal = self
-            .journal
-            .as_mut()
-            .ok_or("durable grant journal is unavailable")?;
-        journal.record_consumption(&grant_id, expires_at_ms)?;
+        let journal = self.journal.as_mut().ok_or(ConsumeDenial::Unavailable)?;
+        journal
+            .record_consumption(&grant_id, expires_at_ms)
+            .map_err(|_| ConsumeDenial::Unavailable)?;
         let accepted = self
             .accepted
             .remove(&grant_id)
-            .ok_or("grant was consumed concurrently")?;
+            .ok_or(ConsumeDenial::Consumed)?;
         Ok(accepted.grant)
     }
 
@@ -314,48 +312,100 @@ impl GrantVerifier {
         authorization: &WorkloadAuthorization,
         current_policy_version: u64,
         now_boottime_ms: u64,
-    ) -> Result<Grant, &'static str> {
+    ) -> Result<Grant, ConsumeDenial> {
         self.validate_consumption(
             grant_id,
             authorization,
             current_policy_version,
             now_boottime_ms,
-        )?;
-        self.accepted
-            .get(grant_id)
-            .map(|accepted| accepted.grant.clone())
-            .ok_or("grant is unknown or requires fresh reconciliation")
+        )
+        .map(|accepted| accepted.grant.clone())
     }
 
+    /// Check a consumption request and name the one reason it is denied.
+    /// Identity is checked before lifetime so that another workload cannot
+    /// learn the state of a grant bound to someone else.
     fn validate_consumption(
         &self,
         grant_id: &str,
         authorization: &WorkloadAuthorization,
         current_policy_version: u64,
         now_boottime_ms: u64,
-    ) -> Result<(), &'static str> {
-        let accepted = self
-            .accepted
-            .get(grant_id)
-            .ok_or("grant is unknown or requires fresh reconciliation")?;
+    ) -> Result<&AcceptedGrant, ConsumeDenial> {
+        let Some(accepted) = self.accepted.get(grant_id) else {
+            return Err(self.missing_grant_denial(grant_id));
+        };
         let grant = &accepted.grant;
-        if now_boottime_ms >= accepted.deadline_boottime_ms
-            || authorization.node_id != grant.node_id
+        if authorization.node_id != grant.node_id
             || authorization.workload_id != grant.workload_id
             || authorization.unit != grant.unit
             || authorization.invocation_id != grant.invocation_id
             || authorization.operation != format!("consume:{grant_id}")
-            || grant.policy_version != current_policy_version
             || grant.audience != "blindpass-node"
         {
-            return Err("live workload identity does not match the grant");
+            return Err(ConsumeDenial::IdentityMismatch);
         }
-        Ok(())
+        if grant.policy_version != current_policy_version {
+            return Err(ConsumeDenial::PolicyStale);
+        }
+        if now_boottime_ms >= accepted.deadline_boottime_ms {
+            return Err(ConsumeDenial::Expired);
+        }
+        Ok(accepted)
+    }
+
+    fn missing_grant_denial(&self, grant_id: &str) -> ConsumeDenial {
+        if self
+            .journal
+            .as_ref()
+            .is_some_and(|journal| journal.consumed.contains_key(grant_id))
+        {
+            return ConsumeDenial::Consumed;
+        }
+        if self
+            .revocations
+            .as_ref()
+            .is_some_and(|journal| journal.tombstones.contains_key(grant_id))
+        {
+            return ConsumeDenial::Revoked;
+        }
+        self.retired
+            .get(grant_id)
+            .copied()
+            .unwrap_or(ConsumeDenial::Unknown)
+    }
+
+    /// Remember, within a fixed bound, why an accepted grant was dropped so
+    /// that a later consumption attempt reports the actual reason. After a
+    /// restart the record is gone and the grant reports `grant_unknown`.
+    fn retire(&mut self, grant_id: String, reason: ConsumeDenial) {
+        if self.retired.insert(grant_id.clone(), reason).is_none() {
+            self.retired_order.push_back(grant_id);
+        }
+        while self.retired_order.len() > MAX_RETIRED_GRANTS {
+            if let Some(oldest) = self.retired_order.pop_front() {
+                self.retired.remove(&oldest);
+            }
+        }
+    }
+
+    fn retire_where(&mut self, reason: ConsumeDenial, retire: impl Fn(&Grant) -> bool) {
+        let ids = self
+            .accepted
+            .iter()
+            .filter(|(_, accepted)| retire(&accepted.grant))
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for id in ids {
+            self.accepted.remove(&id);
+            self.retire(id, reason);
+        }
     }
 
     pub(crate) fn revoke_workload(&mut self, workload_id: &str) {
-        self.accepted
-            .retain(|_, accepted| accepted.grant.workload_id != workload_id);
+        self.retire_where(ConsumeDenial::RegistrationChanged, |grant| {
+            grant.workload_id == workload_id
+        });
     }
 
     pub(crate) fn revoke(&mut self, revocation: &Revocation) -> Result<(), &'static str> {
@@ -363,13 +413,66 @@ impl GrantVerifier {
             .as_mut()
             .ok_or("durable grant revocation journal is unavailable")?
             .record(&revocation.grant_id, revocation.retain_until_ms)?;
-        self.accepted.remove(&revocation.grant_id);
+        if self.accepted.remove(&revocation.grant_id).is_some() {
+            self.retire(revocation.grant_id.clone(), ConsumeDenial::Revoked);
+        }
         Ok(())
     }
 
     pub(crate) fn revoke_stale_policy(&mut self, policy_version: u64) {
-        self.accepted
-            .retain(|_, accepted| accepted.grant.policy_version == policy_version);
+        self.retire_where(ConsumeDenial::PolicyStale, |grant| {
+            grant.policy_version != policy_version
+        });
+    }
+}
+
+/// Stable reason codes for a denied grant consumption. They name broker
+/// state only and never carry secret values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConsumeDenial {
+    /// The suspend-aware local deadline has passed.
+    Expired,
+    /// A signed revocation tombstone exists for the grant.
+    Revoked,
+    /// The durable consumed journal already contains the grant.
+    Consumed,
+    /// The grant was never accepted or needs fresh reconciliation, for
+    /// example after a broker restart or host reboot.
+    Unknown,
+    /// Node, workload, unit, invocation or operation differ from the grant.
+    IdentityMismatch,
+    /// The fleet policy version changed after the grant was issued.
+    PolicyStale,
+    /// The workload registration changed or was revoked after issue.
+    RegistrationChanged,
+    /// The durable consumption intent could not be recorded.
+    Unavailable,
+}
+
+impl ConsumeDenial {
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 8] = [
+        Self::Expired,
+        Self::Revoked,
+        Self::Consumed,
+        Self::Unknown,
+        Self::IdentityMismatch,
+        Self::PolicyStale,
+        Self::RegistrationChanged,
+        Self::Unavailable,
+    ];
+
+    pub(crate) const fn code(self) -> &'static str {
+        match self {
+            Self::Expired => "grant_expired",
+            Self::Revoked => "grant_revoked",
+            Self::Consumed => "grant_consumed",
+            Self::Unknown => "grant_unknown",
+            Self::IdentityMismatch => "grant_identity_mismatch",
+            Self::PolicyStale => "grant_policy_stale",
+            Self::RegistrationChanged => "grant_registration_changed",
+            Self::Unavailable => "consumption_unavailable",
+        }
     }
 }
 
@@ -1432,6 +1535,234 @@ mod tests {
         );
         assert_eq!(verifier.accepted[&original.id].grant, original);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    fn stateful_verifier_with_fresh_time(path: &std::path::Path) -> GrantVerifier {
+        let directory = path.parent().unwrap();
+        let mut verifier = GrantVerifier::with_state_files(
+            path,
+            &directory.join("trusted-time"),
+            &directory.join("revoked-grants.jsonl"),
+        )
+        .unwrap();
+        verifier.pending_time = Some(super::TimeChallenge {
+            value: "challenge-a".to_owned(),
+            sent_at_boottime_ms: 1_000,
+        });
+        verifier
+            .accept_time_reply(
+                &TimeReply {
+                    node_id: "nd_node-a".to_owned(),
+                    challenge: "challenge-a".to_owned(),
+                    challenge_received_at_ms: 1_799_999_999_000,
+                    controller_time_ms: 1_800_000_000_000,
+                    issuer_epoch: 1,
+                },
+                "nd_node-a",
+                1,
+                2_000,
+            )
+            .unwrap();
+        verifier
+    }
+
+    fn numbered_grant(index: u8) -> Grant {
+        let mut grant = grant();
+        grant.id = format!("gr_{index:02}23456789abcdef0123456789abcdef");
+        grant.operation_id = format!("op_{index:02}23456789abcdef0123456789abcdef");
+        grant
+    }
+
+    fn accept(verifier: &mut GrantVerifier, grant: &Grant) {
+        verifier
+            .accept_grant(
+                grant.clone(),
+                grant.id.as_bytes(),
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy(),
+                &registration(),
+                2_000,
+            )
+            .unwrap();
+    }
+
+    fn authorization_for(grant: &Grant) -> WorkloadAuthorization {
+        WorkloadAuthorization {
+            node_id: grant.node_id.clone(),
+            workload_id: grant.workload_id.clone(),
+            unit: grant.unit.clone(),
+            invocation_id: grant.invocation_id.clone(),
+            operation: format!("consume:{}", grant.id),
+        }
+    }
+
+    #[test]
+    fn consume_denials_name_one_stable_reason_each() {
+        use super::ConsumeDenial;
+        let path = temporary_path();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+
+        let unknown = numbered_grant(1);
+        assert_eq!(
+            verifier.consume(&unknown.id, &authorization_for(&unknown), 4, 2_100),
+            Err(ConsumeDenial::Unknown)
+        );
+
+        let mismatched = numbered_grant(2);
+        accept(&mut verifier, &mismatched);
+        for mutate in [
+            (|value: &mut WorkloadAuthorization| value.node_id = "nd_node-b".to_owned())
+                as fn(&mut WorkloadAuthorization),
+            |value| value.workload_id = "wl_worker-b".to_owned(),
+            |value| value.unit = "other.service".to_owned(),
+            |value| value.invocation_id = "invocation-b".to_owned(),
+            |value| value.operation = "consume:gr_other".to_owned(),
+        ] {
+            let mut authorization = authorization_for(&mismatched);
+            mutate(&mut authorization);
+            assert_eq!(
+                verifier.consume(&mismatched.id, &authorization, 4, 2_100),
+                Err(ConsumeDenial::IdentityMismatch)
+            );
+        }
+        // Identity is checked first, so an expired grant bound to another
+        // workload still reports only the identity mismatch.
+        let mut other = authorization_for(&mismatched);
+        other.workload_id = "wl_worker-b".to_owned();
+        assert_eq!(
+            verifier.consume(&mismatched.id, &other, 4, 999_999),
+            Err(ConsumeDenial::IdentityMismatch)
+        );
+
+        let expired = numbered_grant(3);
+        accept(&mut verifier, &expired);
+        let deadline = verifier.accepted[&expired.id].deadline_boottime_ms;
+        assert_eq!(
+            verifier.consume(&expired.id, &authorization_for(&expired), 4, deadline),
+            Err(ConsumeDenial::Expired)
+        );
+
+        let stale_policy = numbered_grant(4);
+        accept(&mut verifier, &stale_policy);
+        assert_eq!(
+            verifier.consume(
+                &stale_policy.id,
+                &authorization_for(&stale_policy),
+                5,
+                2_100
+            ),
+            Err(ConsumeDenial::PolicyStale)
+        );
+        verifier.revoke_stale_policy(5);
+        assert_eq!(
+            verifier.consume(
+                &stale_policy.id,
+                &authorization_for(&stale_policy),
+                5,
+                2_100
+            ),
+            Err(ConsumeDenial::PolicyStale)
+        );
+
+        let consumed = numbered_grant(5);
+        accept(&mut verifier, &consumed);
+        verifier
+            .consume(&consumed.id, &authorization_for(&consumed), 4, 2_100)
+            .unwrap();
+        assert_eq!(
+            verifier.consume(&consumed.id, &authorization_for(&consumed), 4, 2_100),
+            Err(ConsumeDenial::Consumed)
+        );
+
+        let revoked = numbered_grant(6);
+        accept(&mut verifier, &revoked);
+        verifier
+            .revoke(&blindpass_core::fleet::Revocation {
+                grant_id: revoked.id.clone(),
+                node_id: "nd_node-a".to_owned(),
+                reason: "operator".to_owned(),
+                revoked_at_ms: 1_800_000_000_000,
+                retain_until_ms: 1_800_604_800_000,
+                issuer_epoch: 1,
+            })
+            .unwrap();
+        assert_eq!(
+            verifier.consume(&revoked.id, &authorization_for(&revoked), 4, 2_100),
+            Err(ConsumeDenial::Revoked)
+        );
+
+        let reregistered = numbered_grant(7);
+        accept(&mut verifier, &reregistered);
+        verifier.revoke_workload(&reregistered.workload_id);
+        assert_eq!(
+            verifier.consume(
+                &reregistered.id,
+                &authorization_for(&reregistered),
+                4,
+                2_100
+            ),
+            Err(ConsumeDenial::RegistrationChanged)
+        );
+
+        // A restart forgets in-memory acceptance: the grant needs fresh
+        // reconciliation and reports unknown, while durable state survives.
+        drop(verifier);
+        let restarted = stateful_verifier_with_fresh_time(&path);
+        let mut restarted = restarted;
+        assert_eq!(
+            restarted.consume(&expired.id, &authorization_for(&expired), 4, 2_100),
+            Err(ConsumeDenial::Unknown)
+        );
+        assert_eq!(
+            restarted.consume(&consumed.id, &authorization_for(&consumed), 4, 2_100),
+            Err(ConsumeDenial::Consumed)
+        );
+        assert_eq!(
+            restarted.consume(&revoked.id, &authorization_for(&revoked), 4, 2_100),
+            Err(ConsumeDenial::Revoked)
+        );
+
+        let codes = ConsumeDenial::ALL
+            .iter()
+            .map(|denial| denial.code())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            codes,
+            [
+                "grant_expired",
+                "grant_revoked",
+                "grant_consumed",
+                "grant_unknown",
+                "grant_identity_mismatch",
+                "grant_policy_stale",
+                "grant_registration_changed",
+                "consumption_unavailable",
+            ]
+        );
+        for code in codes {
+            assert!(
+                code.bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
+            );
+        }
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn retired_grant_reasons_are_bounded() {
+        let mut verifier = GrantVerifier::default();
+        for index in 0..super::MAX_RETIRED_GRANTS + 5 {
+            verifier.retire(format!("gr_{index}"), super::ConsumeDenial::PolicyStale);
+        }
+        assert_eq!(verifier.retired.len(), super::MAX_RETIRED_GRANTS);
+        assert_eq!(verifier.retired_order.len(), super::MAX_RETIRED_GRANTS);
+        assert!(!verifier.retired.contains_key("gr_0"));
+        assert!(
+            verifier
+                .retired
+                .contains_key(&format!("gr_{}", super::MAX_RETIRED_GRANTS + 4))
+        );
     }
 
     #[test]
