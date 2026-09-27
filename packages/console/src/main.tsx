@@ -6,6 +6,7 @@ import "./styles/base.css";
 import "./styles/components.css";
 import "./styles/shell.css";
 import "./styles/pages.css";
+import "./styles/daily.css";
 import { App } from "./app.js";
 import { initI18n } from "./i18n/index.js";
 import { SessionProvider } from "./session/session.js";

@@ -112,8 +112,10 @@ export const unifiedApprovals = {
         { idempotencyKey, ifMatch: approval.version }
       );
     }
+    // The unified route treats an exchange approval as version 1 and
+    // refuses the decision without the matching If-Match.
     const reference = (approval as ExchangeApproval).reference;
-    return api.post<unknown>(`/api/v3/approvals/${seg(reference)}/${verb}`, { expected_status: "pending" }, { idempotencyKey });
+    return api.post<unknown>(`/api/v3/approvals/${seg(reference)}/${verb}`, { expected_status: "pending", expected_version: 1 }, { idempotencyKey, ifMatch: 1 });
   }
 };
 

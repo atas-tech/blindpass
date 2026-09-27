@@ -38,7 +38,10 @@ export function Dialog({ open, title, description, onClose, children, footer, di
       opener.current = document.activeElement;
       dialog.showModal();
       if (initialFocus === "first") {
-        const target = dialog.querySelector<HTMLElement>("[data-autofocus], input:not([type=hidden]):not([disabled]), textarea, select, button:not([disabled])");
+        const target =
+          dialog.querySelector<HTMLElement>("[data-autofocus]:not([disabled])") ??
+          dialog.querySelector<HTMLElement>(".dialog-body input:not([type=hidden]):not([disabled]), .dialog-body textarea:not([disabled]), .dialog-body select:not([disabled]), .dialog-body button:not([disabled])") ??
+          dialog.querySelector<HTMLElement>("button:not([disabled])");
         target?.focus();
       } else {
         dialog.querySelector<HTMLElement>(".dialog-title")?.focus();

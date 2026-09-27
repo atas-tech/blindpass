@@ -1,4 +1,224 @@
 {
+  "approvals": {
+    "eyebrow": "Quyết định",
+    "title": "Phê duyệt với đầy đủ bối cảnh.",
+    "description": "Kiểm tra ai đang yêu cầu và yêu cầu gì trước mỗi quyết định. Bộ điều khiển kiểm tra lại quyền của bạn khi bạn quyết định.",
+    "queue": {
+      "label": "Hàng đợi phê duyệt",
+      "order": "Cũ nhất trước",
+      "statusLabel": "Lọc theo trạng thái",
+      "operations_one": "{{count}} thao tác",
+      "operations_other": "{{count}} thao tác",
+      "open": "Mở {{name}}"
+    },
+    "status": {
+      "pending": "Đang chờ",
+      "approved": "Đã phê duyệt",
+      "rejected": "Đã từ chối",
+      "expired": "Đã hết hạn"
+    },
+    "kind": {
+      "exchange": "Trao đổi bí mật",
+      "operation": "Thao tác đội máy"
+    },
+    "empty": {
+      "pendingTitle": "Không có yêu cầu chờ duyệt",
+      "pendingBody": "Yêu cầu mới sẽ xuất hiện ở đây trong vài giây.",
+      "otherTitle": "Không có mục nào ở trạng thái này",
+      "otherBody": "Không có phê duyệt nào ở trạng thái này."
+    },
+    "select": {
+      "title": "Chọn một phê duyệt",
+      "body": "Chọn một yêu cầu trong hàng đợi để xem những gì bộ điều khiển đã xác minh."
+    },
+    "detail": {
+      "back": "Quay lại hàng đợi",
+      "exchangeTitle": "{{requester}} yêu cầu {{secret}}",
+      "operationTitle": "{{action}} cho {{unit}}",
+      "requested": "Yêu cầu",
+      "windowCloses": "Thời hạn quyết định",
+      "refresh": "Làm mới",
+      "notFoundTitle": "Phê duyệt này không tồn tại",
+      "notFoundBody": "Bộ điều khiển không trả về mã tham chiếu này. Có thể nó bị nhập sai, hoặc là phê duyệt trao đổi đã hết thời hạn quyết định; nhật ký kiểm tra vẫn giữ lịch sử."
+    },
+    "verified": {
+      "title": "Được bộ điều khiển xác minh",
+      "exchangeNote": "Người yêu cầu là tác tử có thông tin xác thực đã gửi yêu cầu này. Mục đích bên dưới là nội dung do chính tác tử đó viết.",
+      "operationNote": "Nút, khối lượng công việc, unit và tài khoản lấy từ đăng ký đã được phê duyệt, không lấy từ nội dung yêu cầu."
+    },
+    "fields": {
+      "requester": "Người yêu cầu",
+      "secret": "Tên bí mật",
+      "reference": "Mã tham chiếu",
+      "requested": "Thời điểm yêu cầu",
+      "status": "Trạng thái",
+      "node": "Nút",
+      "workload": "Khối lượng công việc",
+      "unit": "Service unit",
+      "account": "Chạy với tài khoản",
+      "action": "Hành động",
+      "mode": "Hình thức nhận",
+      "rule": "Quy tắc khớp",
+      "policyVersion": "Phiên bản chính sách",
+      "approvers": "Người phê duyệt được chỉ định",
+      "decidedBy": "Người quyết định",
+      "decidedAt": "Thời điểm quyết định",
+      "approval": "Mã phê duyệt",
+      "version": "Phiên bản"
+    },
+    "mode": {
+      "file": "Tệp",
+      "socket": "Socket"
+    },
+    "purpose": {
+      "label": "Mục đích do người yêu cầu cung cấp"
+    },
+    "members": {
+      "title": "Các thao tác trong nhóm này",
+      "body": "Phê duyệt sẽ quyết định tất cả cùng lúc. Mỗi thao tác giữ người yêu cầu và bằng chứng broker riêng.",
+      "requestedBy": "Người yêu cầu",
+      "invocation": "Lần gọi",
+      "resource": "Tài nguyên",
+      "evidence": "Bằng chứng broker",
+      "evidenceMissing": "Chưa ghi nhận",
+      "purpose": "Mục đích của thao tác này",
+      "unavailable": "Danh sách thao tác chỉ hiển thị khi đọc chi tiết."
+    },
+    "boundary": {
+      "exchange": "Phê duyệt cho phép lần trao đổi này. Nó không giới hạn việc người nhận làm gì với bí mật sau khi được giao.",
+      "operation": "Phê duyệt chỉ cho phép các thao tác này cho khối lượng công việc đã xác minh. Quyền cấp được gửi tới broker của nút đó."
+    },
+    "actions": {
+      "approve": "Phê duyệt",
+      "reject": "Từ chối"
+    },
+    "confirm": {
+      "approveExchange": "Phê duyệt lần trao đổi này?",
+      "approveOperation_one": "Phê duyệt {{count}} thao tác?",
+      "approveOperation_other": "Phê duyệt {{count}} thao tác?",
+      "reject": "Từ chối yêu cầu này?",
+      "recipient": "Người nhận",
+      "scope": "Phạm vi",
+      "exchangeRecipient": "Tác tử {{requester}}",
+      "exchangeScope": "Một lần giao {{secret}}",
+      "operationRecipient": "Broker trên {{node}}",
+      "operationScope": "{{action}} cho {{unit}} với tài khoản {{account}} ({{mode}})",
+      "rejectBody": "Người yêu cầu sẽ được báo yêu cầu bị từ chối. Quyết định không thể hoàn tác.",
+      "approveBody": "Bộ điều khiển kiểm tra trạng thái mới nhất trước khi ghi nhận quyết định. Quyết định không thể hoàn tác.",
+      "cancel": "Hủy",
+      "checking": "Đang kiểm tra trạng thái mới nhất…",
+      "sending": "Đang ghi nhận quyết định…"
+    },
+    "outcome": {
+      "approvedTitle": "Đã phê duyệt",
+      "approvedExchange": "Quyết định của bạn đã được ghi nhận. Chưa có gì được giao: người yêu cầu vẫn phải hoàn tất trao đổi.",
+      "approvedOperation": "Quyết định của bạn đã được ghi nhận và bộ điều khiển đã cấp quyền. Theo dõi thao tác để biết broker đã nhận và sử dụng hay chưa.",
+      "rejectedTitle": "Đã từ chối",
+      "rejectedBody": "Quyết định của bạn đã được ghi nhận.",
+      "viewOperation": "Xem thao tác"
+    },
+    "blocked": {
+      "not_pending": "Phê duyệt này đã đóng. Không thể quyết định.",
+      "not_named": "Bạn không phải người phê duyệt được chỉ định cho quy tắc này. Bộ điều khiển sẽ từ chối quyết định của bạn.",
+      "self": "Bạn đã yêu cầu một trong các thao tác này. Một người phê duyệt khác phải quyết định.",
+      "viewer": "Vai trò của bạn chỉ được xem, không được quyết định."
+    },
+    "errors": {
+      "staleTitle": "Phê duyệt này đã thay đổi",
+      "staleBody": "Nó đã được quyết định, hết hạn hoặc thay đổi sau khi bạn mở. Trạng thái mới nhất hiển thị bên dưới. Quyết định của bạn chưa được ghi nhận.",
+      "changedBeforeSend": "Nó đã thay đổi trong lúc bạn xác nhận nên chưa có gì được gửi. Hãy xem chi tiết mới nhất trước khi quyết định.",
+      "scopeTitle": "Bạn không phải người phê duyệt yêu cầu này",
+      "scopeBody": "Chính sách chỉ định người vận hành khác. Hãy nhờ một trong số họ quyết định.",
+      "selfTitle": "Bạn không thể tự quyết định yêu cầu của mình",
+      "selfBody": "Một người phê duyệt được chỉ định khác phải quyết định nhóm này.",
+      "grantTitle": "Đã phê duyệt nhưng chưa cấp quyền",
+      "grantBody": "Bộ điều khiển đã ghi nhận phê duyệt nhưng chính sách hoặc trạng thái khối lượng công việc hiện tại không cho phép cấp quyền. Kiểm tra chính sách và khối lượng công việc trước khi người yêu cầu thử lại.",
+      "unknownTitle": "Không xác nhận được quyết định",
+      "unknownBody": "Bộ điều khiển có thể đã hoặc chưa ghi nhận. Hãy kiểm tra trạng thái hiện tại trước khi làm gì khác.",
+      "checkStatus": "Kiểm tra trạng thái",
+      "stillPendingTitle": "Vẫn đang chờ",
+      "stillPendingBody": "Bộ điều khiển chưa có quyết định. Gửi lại sẽ dùng cùng khóa yêu cầu nên quyết định không thể bị ghi hai lần.",
+      "sendAgain": "Gửi lại cùng quyết định",
+      "resolvedTitle": "Bộ điều khiển đã có quyết định",
+      "resolvedBody": "Trạng thái bên dưới là trạng thái chính thức.",
+      "goneTitle": "Phê duyệt này không còn khả dụng",
+      "goneBody": "Bộ điều khiển không còn trả về phê duyệt này: thời hạn quyết định đã hết hoặc nó đã bị xóa. Quyết định của bạn chưa được ghi nhận. Nhật ký kiểm tra vẫn giữ lịch sử.",
+      "failedTitle": "Quyết định chưa được ghi nhận",
+      "failedBody": "Bộ điều khiển đã từ chối ({{code}}). Không có gì thay đổi."
+    },
+    "countUnavailable": "Không lấy được số lượng đang chờ",
+    "pendingCount_one": "{{count}} yêu cầu chờ duyệt",
+    "pendingCount_other": "{{count}} yêu cầu chờ duyệt"
+  },
+  "overview": {
+    "review": "Xem các phê duyệt",
+    "unavailable": "Không khả dụng",
+    "stats": {
+      "pending": "Phê duyệt đang chờ",
+      "pendingFleet": "Trao đổi bí mật và thao tác đội máy",
+      "pendingExchange": "Yêu cầu trao đổi bí mật",
+      "nodes": "Nút",
+      "nodesEmpty": "Chưa có nút nào được đăng ký",
+      "nodesHint": "Trạng thái dựa trên lần liên lạc gần nhất của mỗi nút với bộ điều khiển.",
+      "agents": "Tác tử đang hoạt động",
+      "agentsOf": "trên {{total}} đã đăng ký",
+      "agentsHint": "Đang hoạt động nghĩa là đã đăng ký và chưa bị thu hồi, không có nghĩa là tác tử đang trực tuyến."
+    },
+    "node": {
+      "online": "trực tuyến",
+      "stale": "chậm phản hồi",
+      "offline": "ngoại tuyến",
+      "revoked": "đã thu hồi"
+    },
+    "queue": {
+      "title": "Cần quyết định",
+      "openAll": "Mở phê duyệt",
+      "more_one": "Còn {{count}} yêu cầu",
+      "more_other": "Còn {{count}} yêu cầu",
+      "review": "Xem"
+    },
+    "activity": {
+      "title": "Hoạt động gần đây",
+      "viewAll": "Xem nhật ký kiểm tra",
+      "emptyTitle": "Chưa có sự kiện kiểm tra",
+      "emptyBody": "Quyết định và thao tác quản trị sẽ xuất hiện ở đây.",
+      "by": "bởi {{actor}}"
+    },
+    "eyebrow": "Bộ điều khiển của bạn, tóm tắt",
+    "greeting": "Chào mừng trở lại, {{name}}",
+    "description": "Các quyết định đang chờ trước, sau đó là trạng thái đội máy và hoạt động gần đây."
+  },
+  "events": {
+    "exchange_requested": "Yêu cầu trao đổi",
+    "exchange_approval_requested": "Đã yêu cầu phê duyệt",
+    "exchange_pending_approval": "Trao đổi đang chờ phê duyệt",
+    "exchange_approved": "Trao đổi được phê duyệt",
+    "exchange_rejected": "Trao đổi bị từ chối",
+    "exchange_denied": "Trao đổi bị chính sách từ chối",
+    "exchange_reserved": "Bên cung cấp đã nhận trao đổi",
+    "exchange_submitted": "Đã gửi bí mật đã mã hóa",
+    "exchange_retrieved": "Đã nhận bí mật đã mã hóa",
+    "exchange_revoked": "Trao đổi bị thu hồi",
+    "agent_token_minted": "Đã cấp token tác tử",
+    "agent_rate_limited": "Tác tử bị giới hạn tần suất",
+    "agent_changed": "Tác tử thay đổi",
+    "policy_changed": "Chính sách trao đổi thay đổi",
+    "fleet": {
+      "approval_decided": "Đã quyết định phê duyệt thao tác",
+      "enrollment_created": "Đã tạo đăng ký nút",
+      "enrollment_approved": "Đăng ký nút được phê duyệt",
+      "enrollment_rejected": "Đăng ký nút bị từ chối",
+      "node_revoked": "Nút bị thu hồi",
+      "node_key_rotation_staged": "Đã chuẩn bị xoay khóa nút",
+      "workload_created": "Đã đăng ký khối lượng công việc",
+      "workload_updated": "Khối lượng công việc được cập nhật",
+      "workload_revoked": "Khối lượng công việc bị thu hồi",
+      "operation_requested": "Yêu cầu thao tác",
+      "operation_cancelled": "Thao tác bị hủy",
+      "grant_revoked": "Quyền cấp bị thu hồi",
+      "policy_replaced": "Chính sách đội máy được thay thế"
+    }
+  },
   "common": {
     "close": "Đóng",
     "retry": "Thử lại",
@@ -305,15 +525,5 @@
       "idle": "Giới hạn không hoạt động",
       "idleValue": "12 giờ không có yêu cầu"
     }
-  },
-  "overview": {
-    "eyebrow": "Bộ điều khiển của bạn, tóm tắt",
-    "greeting": "Chào mừng trở lại, {{name}}",
-    "description": "Các quyết định đang chờ trước, sau đó là trạng thái đội máy và hoạt động gần đây."
-  },
-  "approvals": {
-    "countUnavailable": "Không lấy được số lượng đang chờ",
-    "pendingCount_one": "{{count}} yêu cầu chờ duyệt",
-    "pendingCount_other": "{{count}} yêu cầu chờ duyệt"
   }
 }

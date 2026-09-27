@@ -249,8 +249,12 @@ export class Stack {
       headers: { authorization: `Bearer ${agentAccessToken}`, "content-type": "application/json" },
       body: JSON.stringify({ public_key: "ZTJlLXB1YmxpYy1rZXk=", secret_name: secretName, purpose, fulfiller_hint: AGENT_IDS.fulfiller })
     });
-    if (response.status !== 201) throw new Error(`exchange request failed: ${response.status} ${await response.text()}`);
-    return (await response.json()) as { exchange_id: string; policy: { approval_reference: string | null; mode: string } };
+    // An approval-gated request answers 403 with the pending approval
+    // reference; an allowed one answers 201 with the exchange.
+    const body = (await response.json()) as { exchange_id?: string; approval_status?: string; policy: { approval_reference: string | null; mode: string } };
+    const pending = response.status === 403 && body.approval_status === "pending" && body.policy?.approval_reference;
+    if (response.status !== 201 && !pending) throw new Error(`exchange request failed: ${response.status}`);
+    return body;
   }
 }
 

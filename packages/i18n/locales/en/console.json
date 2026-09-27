@@ -1,4 +1,224 @@
 {
+  "approvals": {
+    "eyebrow": "Decisions",
+    "title": "Approve with context.",
+    "description": "Check who is asking and for what before each decision. The controller re-checks your permission when you decide.",
+    "queue": {
+      "label": "Approval queue",
+      "order": "Oldest first",
+      "statusLabel": "Filter by status",
+      "operations_one": "{{count}} operation",
+      "operations_other": "{{count}} operations",
+      "open": "Open {{name}}"
+    },
+    "status": {
+      "pending": "Pending",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "expired": "Expired"
+    },
+    "kind": {
+      "exchange": "Secret exchange",
+      "operation": "Fleet operation"
+    },
+    "empty": {
+      "pendingTitle": "No pending approvals",
+      "pendingBody": "New requests appear here within a few seconds.",
+      "otherTitle": "Nothing with this status",
+      "otherBody": "No approvals on this page have this status."
+    },
+    "select": {
+      "title": "Select an approval",
+      "body": "Choose a request from the queue to see what the controller verified."
+    },
+    "detail": {
+      "back": "Back to queue",
+      "exchangeTitle": "{{requester}} asks for {{secret}}",
+      "operationTitle": "{{action}} for {{unit}}",
+      "requested": "Requested",
+      "windowCloses": "Decision window",
+      "refresh": "Refresh",
+      "notFoundTitle": "This approval doesn't exist",
+      "notFoundBody": "The controller doesn't return this reference. It may be mistyped, or an exchange approval whose decision window has closed; the audit log keeps its history."
+    },
+    "verified": {
+      "title": "Verified by the controller",
+      "exchangeNote": "The requester is the agent whose credential made this request. The purpose below is that agent's own text.",
+      "operationNote": "Node, workload, unit and account come from the approved enrollment and registration, not from the request text."
+    },
+    "fields": {
+      "requester": "Requester",
+      "secret": "Secret name",
+      "reference": "Reference",
+      "requested": "Requested",
+      "status": "Status",
+      "node": "Node",
+      "workload": "Workload",
+      "unit": "Service unit",
+      "account": "Runs as",
+      "action": "Action",
+      "mode": "Delivery",
+      "rule": "Matched rule",
+      "policyVersion": "Policy version",
+      "approvers": "Named approvers",
+      "decidedBy": "Decided by",
+      "decidedAt": "Decided",
+      "approval": "Approval ID",
+      "version": "Version"
+    },
+    "mode": {
+      "file": "File",
+      "socket": "Socket"
+    },
+    "purpose": {
+      "label": "Requester-provided purpose"
+    },
+    "members": {
+      "title": "Operations in this group",
+      "body": "Approving decides all of them together. Each one keeps its own requester and broker evidence.",
+      "requestedBy": "Requested by",
+      "invocation": "Invocation",
+      "resource": "Resource",
+      "evidence": "Broker evidence",
+      "evidenceMissing": "None recorded",
+      "purpose": "Purpose for this operation",
+      "unavailable": "The member list is shown on the detail read only."
+    },
+    "boundary": {
+      "exchange": "Approving authorizes this exchange. It doesn't limit what the recipient does with the secret once delivered.",
+      "operation": "Approving authorizes these operations for the verified workload only. The grant goes to that node's broker."
+    },
+    "actions": {
+      "approve": "Approve",
+      "reject": "Reject"
+    },
+    "confirm": {
+      "approveExchange": "Approve this exchange?",
+      "approveOperation_one": "Approve {{count}} operation?",
+      "approveOperation_other": "Approve {{count}} operations?",
+      "reject": "Reject this request?",
+      "recipient": "Recipient",
+      "scope": "Scope",
+      "exchangeRecipient": "Agent {{requester}}",
+      "exchangeScope": "One delivery of {{secret}}",
+      "operationRecipient": "Broker on {{node}}",
+      "operationScope": "{{action}} for {{unit}} as {{account}} ({{mode}})",
+      "rejectBody": "The requester is told the request was rejected. A decision can't be undone.",
+      "approveBody": "The controller checks the latest state before recording your decision. A decision can't be undone.",
+      "cancel": "Cancel",
+      "checking": "Checking the latest state…",
+      "sending": "Recording decision…"
+    },
+    "outcome": {
+      "approvedTitle": "Approved",
+      "approvedExchange": "Your decision is recorded. Nothing has been delivered yet: the requester still has to complete the exchange.",
+      "approvedOperation": "Your decision is recorded and the controller issued the grant. Follow the operation to see whether the broker received and used it.",
+      "rejectedTitle": "Rejected",
+      "rejectedBody": "Your decision is recorded.",
+      "viewOperation": "View operation"
+    },
+    "blocked": {
+      "not_pending": "This approval is closed. No decision is available.",
+      "not_named": "You aren't a named approver for this rule. The controller would refuse your decision.",
+      "self": "You requested one of these operations. Another named approver must decide.",
+      "viewer": "Your role can read approvals but not decide them."
+    },
+    "errors": {
+      "staleTitle": "This approval changed",
+      "staleBody": "It was decided, expired or changed after you opened it. The latest state is shown below. Your decision was not recorded.",
+      "changedBeforeSend": "It changed while you were confirming, so nothing was sent. Review the latest details before deciding.",
+      "scopeTitle": "You aren't an approver for this request",
+      "scopeBody": "The policy names other operators for it. Ask one of them to decide.",
+      "selfTitle": "You can't decide your own request",
+      "selfBody": "Another named approver must decide this group.",
+      "grantTitle": "Approved, but no grant was issued",
+      "grantBody": "The controller recorded the approval, but current policy or workload state prevents issuing the grant. Check the policy and workload before the requester tries again.",
+      "unknownTitle": "We couldn't confirm the decision",
+      "unknownBody": "The controller may or may not have recorded it. Check the current status before doing anything else.",
+      "checkStatus": "Check status",
+      "stillPendingTitle": "Still pending",
+      "stillPendingBody": "The controller shows no decision yet. Sending again reuses the same request key, so the decision can't be recorded twice.",
+      "sendAgain": "Send the same decision again",
+      "resolvedTitle": "The controller has a decision",
+      "resolvedBody": "The status below is authoritative.",
+      "goneTitle": "This approval is no longer available",
+      "goneBody": "The controller no longer returns it: its decision window closed or it was removed. Your decision was not recorded. The audit log keeps its history.",
+      "failedTitle": "The decision wasn't recorded",
+      "failedBody": "The controller refused it ({{code}}). Nothing changed."
+    },
+    "countUnavailable": "Pending count unavailable",
+    "pendingCount_one": "{{count}} pending approval",
+    "pendingCount_other": "{{count}} pending approvals"
+  },
+  "overview": {
+    "review": "Review approvals",
+    "unavailable": "Unavailable",
+    "stats": {
+      "pending": "Pending approvals",
+      "pendingFleet": "Secret exchanges and fleet operations",
+      "pendingExchange": "Secret exchange requests",
+      "nodes": "Nodes",
+      "nodesEmpty": "No nodes enrolled",
+      "nodesHint": "Status comes from each node's last contact with the controller.",
+      "agents": "Active agents",
+      "agentsOf": "of {{total}} enrolled",
+      "agentsHint": "Active means enrolled and not revoked, not that the agent is online."
+    },
+    "node": {
+      "online": "online",
+      "stale": "stale",
+      "offline": "offline",
+      "revoked": "revoked"
+    },
+    "queue": {
+      "title": "Needs a decision",
+      "openAll": "Open approvals",
+      "more_one": "{{count}} more waiting",
+      "more_other": "{{count}} more waiting",
+      "review": "Review"
+    },
+    "activity": {
+      "title": "Recent activity",
+      "viewAll": "View audit log",
+      "emptyTitle": "No audit events yet",
+      "emptyBody": "Decisions and administration appear here as they happen.",
+      "by": "by {{actor}}"
+    },
+    "eyebrow": "Your controller, at a glance",
+    "greeting": "Welcome back, {{name}}",
+    "description": "Pending decisions first, then fleet state and recent activity."
+  },
+  "events": {
+    "exchange_requested": "Exchange requested",
+    "exchange_approval_requested": "Approval requested",
+    "exchange_pending_approval": "Exchange held for approval",
+    "exchange_approved": "Exchange approved",
+    "exchange_rejected": "Exchange rejected",
+    "exchange_denied": "Exchange denied by policy",
+    "exchange_reserved": "Exchange reserved by fulfiller",
+    "exchange_submitted": "Encrypted secret submitted",
+    "exchange_retrieved": "Encrypted secret retrieved",
+    "exchange_revoked": "Exchange revoked",
+    "agent_token_minted": "Agent token issued",
+    "agent_rate_limited": "Agent rate limited",
+    "agent_changed": "Agent changed",
+    "policy_changed": "Exchange policy changed",
+    "fleet": {
+      "approval_decided": "Operation approval decided",
+      "enrollment_created": "Enrollment created",
+      "enrollment_approved": "Enrollment approved",
+      "enrollment_rejected": "Enrollment rejected",
+      "node_revoked": "Node revoked",
+      "node_key_rotation_staged": "Node key rotation staged",
+      "workload_created": "Workload registered",
+      "workload_updated": "Workload updated",
+      "workload_revoked": "Workload revoked",
+      "operation_requested": "Operation requested",
+      "operation_cancelled": "Operation cancelled",
+      "grant_revoked": "Grant revoked",
+      "policy_replaced": "Fleet policy replaced"
+    }
+  },
   "common": {
     "close": "Close",
     "retry": "Try again",
@@ -305,15 +525,5 @@
       "idle": "Inactivity limit",
       "idleValue": "12 hours without a request"
     }
-  },
-  "overview": {
-    "eyebrow": "Your controller, at a glance",
-    "greeting": "Welcome back, {{name}}",
-    "description": "Pending decisions first, then fleet state and recent activity."
-  },
-  "approvals": {
-    "countUnavailable": "Pending count unavailable",
-    "pendingCount_one": "{{count}} pending approval",
-    "pendingCount_other": "{{count}} pending approvals"
   }
 }

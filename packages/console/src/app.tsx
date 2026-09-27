@@ -15,6 +15,8 @@ const LoginPage = lazy(() => import("./pages/auth/login.js"));
 const ChangePasswordPage = lazy(() => import("./pages/auth/change-password.js"));
 const OverviewPage = lazy(() => import("./pages/overview.js"));
 const SettingsPage = lazy(() => import("./pages/settings/settings.js"));
+const ApprovalsPage = lazy(() => import("./pages/approvals/approvals.js"));
+const ApprovalDetail = lazy(() => import("./pages/approvals/detail.js"));
 
 /** Hosted-product paths that the local controller does not provide. */
 export const REMOVED_ROUTES = ["/billing", "/analytics", "/public-offers", "/public/*", "/register", "/signup", "/verify", "/forgot-password", "/reset-password", "/members"];
@@ -122,6 +124,11 @@ export const routes = [
             element: <ShellLayout />,
             children: [
               { path: "/", element: <Lazy><OverviewPage /></Lazy> },
+              {
+                path: "/approvals",
+                element: <RequirePermission permission="approvals.read"><Lazy><ApprovalsPage /></Lazy></RequirePermission>,
+                children: [{ path: ":kind/:id", element: <Lazy><ApprovalDetail /></Lazy> }]
+              },
               { path: "/settings", element: <Lazy><SettingsPage /></Lazy> },
               { path: "*", element: <NotFoundPage /> }
             ]

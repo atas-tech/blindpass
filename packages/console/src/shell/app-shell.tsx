@@ -49,14 +49,14 @@ function ApprovalPill() {
   const { count, error } = useApprovalCount();
   if (error) {
     return (
-      <span className="count-pill is-unknown" title={t("approvals.countUnavailable")}>
+      <span className="count-pill is-unknown" data-testid="approval-pill" title={t("approvals.countUnavailable")}>
         ?<span className="sr-only">{t("approvals.countUnavailable")}</span>
       </span>
     );
   }
   if (count === null || count === 0) return null;
   return (
-    <span className="count-pill">
+    <span className="count-pill" data-testid="approval-pill">
       {count}
       <span className="sr-only">{t("approvals.pendingCount", { count })}</span>
     </span>
