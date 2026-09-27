@@ -6,7 +6,7 @@ use blindpass_controller::{
     config::Config,
     observability,
     seed::{SeedRequest, seed_fixture},
-    store::Store,
+    store::{FleetSigner, Store},
 };
 use std::future::IntoFuture;
 use std::io::Read;
@@ -110,7 +110,14 @@ async fn serve() -> Result<(), String> {
     let store = Store::connect_with_tolerance(config.database_url(), config.clock_tolerance_ms())
         .await
         .map_err(|_| "controller database initialization failed".to_owned())?;
-    let sweep_store = store.clone();
+    // Fleet expiry signs OperationClosed documents, so the maintenance store
+    // carries the same issuer as the HTTP application.
+    let sweep_store = match config.issuer_keypair() {
+        Some(keypair) => store
+            .clone()
+            .with_fleet_signer(FleetSigner::new(std::sync::Arc::clone(keypair))),
+        None => store.clone(),
+    };
     let clock_task = store.spawn_clock_monitor();
     let audit_retention_days = config.audit_retention_days();
     let sweep_task = tokio::spawn(async move {
@@ -133,6 +140,26 @@ async fn serve() -> Result<(), String> {
                 }
                 Ok(_) => {}
                 Err(_) => tracing::warn!("controller audit retention sweep failed"),
+            }
+            match sweep_store.expire_fleet_state().await {
+                Ok(summary)
+                    if summary.expired_approvals
+                        + summary.expired_operations
+                        + summary.expired_grants
+                        > 0 =>
+                {
+                    tracing::info!(
+                        approvals = summary.expired_approvals,
+                        operations = summary.expired_operations,
+                        grants = summary.expired_grants,
+                        "expired fleet authorization records"
+                    );
+                }
+                Ok(_) => {}
+                Err(_) => tracing::warn!("fleet expiry sweep failed"),
+            }
+            if sweep_store.prune_fleet_state().await.is_err() {
+                tracing::warn!("fleet retention sweep failed");
             }
         }
     });

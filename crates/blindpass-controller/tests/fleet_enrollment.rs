@@ -476,6 +476,28 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         "fleet-reviewer-test-password-long",
     )
     .await;
+    // A second named approver races the first one on a purpose approval;
+    // the requesting administrator may not decide its own requests.
+    let tertiary_operator = request(
+        address,
+        "POST",
+        "/api/v3/admin/operators",
+        &write_headers,
+        Some(&json!({
+            "username":"fleet-reviewer-b",
+            "display_name":"Fleet Reviewer B",
+            "role":"operator",
+            "password":"fleet-reviewer-b-test-password-long"
+        })),
+    )
+    .await;
+    assert_eq!(tertiary_operator.status, 201, "{}", tertiary_operator.body);
+    let (tertiary_cookies, tertiary_csrf) = login_operator(
+        address,
+        "fleet-reviewer-b",
+        "fleet-reviewer-b-test-password-long",
+    )
+    .await;
 
     let unauthenticated_workload_edit = request(
         address,
@@ -928,7 +950,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
                 "mode": "file",
                 "decision": "pending_approval",
                 "approval_required": true,
-                "max_ttl_seconds": 120
+                "max_ttl_seconds": 120,
+                "approver_ids": ["fleet-reviewer", "fleet-reviewer-b"]
             }]
         })),
     )
@@ -1193,16 +1216,31 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             .len(),
         2
     );
+    // The group scope is stable; per-operation invocation evidence is in
+    // the approval detail (P03 review C9).
     assert_eq!(
-        operation_approval["verified_identity"]["invocation_id"],
-        "invocation-123"
+        operation_approval["verified_identity"]["unit"],
+        "blindpass-test.service"
     );
     let approval_id = operation_approval["id"].as_str().unwrap();
+    let approval_detail = request(
+        address,
+        "GET",
+        &format!("/api/v3/approvals/{approval_id}"),
+        &[("cookie", &admin_cookies)],
+        None,
+    )
+    .await;
+    assert_eq!(
+        approval_detail.body["operations"][0]["invocation_id"],
+        "invocation-123"
+    );
     let approval_version = operation_approval["version"].as_i64().unwrap();
+    // The requester (fleet-admin) cannot decide; the named reviewer does.
     let approve_headers = [
         ("origin", ORIGIN),
-        ("cookie", admin_cookies.as_str()),
-        ("x-csrf-token", csrf),
+        ("cookie", secondary_cookies.as_str()),
+        ("x-csrf-token", secondary_csrf.as_str()),
         ("content-type", "application/json"),
         ("idempotency-key", "operation-approve-idem-0001"),
         ("if-match", "\"2\""),
@@ -1363,8 +1401,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     let purpose_if_match = format!("\"{purpose_approval_version}\"");
     let approve_race_headers = [
         ("origin", ORIGIN),
-        ("cookie", admin_cookies.as_str()),
-        ("x-csrf-token", csrf),
+        ("cookie", tertiary_cookies.as_str()),
+        ("x-csrf-token", tertiary_csrf.as_str()),
         ("content-type", "application/json"),
         ("idempotency-key", "purpose-approve-race-00001"),
         ("if-match", purpose_if_match.as_str()),
@@ -1414,14 +1452,10 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         .await
         .unwrap()
         .unwrap();
-    let primary_operator = store
-        .operator_by_username("fleet-admin")
-        .await
-        .unwrap()
-        .unwrap();
+    let tertiary_operator_id = tertiary_operator.body["id"].as_str().unwrap();
     let secondary_operator_id = secondary_operator.body["id"].as_str().unwrap();
     assert!(
-        purpose_decision.decided_by.as_deref() == Some(primary_operator.id.as_str())
+        purpose_decision.decided_by.as_deref() == Some(tertiary_operator_id)
             || purpose_decision.decided_by == Some(secondary_operator_id.to_owned()),
         "a recorded decision must belong to one of the two authenticated operators"
     );
@@ -1466,10 +1500,32 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     assert_eq!(third_operation.status, 201);
     let third_approval_id = third_operation.body["approval_id"].as_str().unwrap();
 
+    // Approval groups share one stable scope (P03 review C9); a request for
+    // a different unit forms its own group.
+    let paging_workload = request(
+        address,
+        "POST",
+        "/api/v3/workloads",
+        &write_headers,
+        Some(&json!({
+            "node_id": first_node_id,
+            "name": "page-worker",
+            "unit": "blindpass-page.service",
+            "account": "blindpass-test",
+            "consumption_mode": "file",
+            "local_ceiling_seconds": 120
+        })),
+    )
+    .await;
+    assert_eq!(paging_workload.status, 201, "{}", paging_workload.body);
+    let paging_workload_id = paging_workload.body["id"].as_str().unwrap().to_owned();
     let paging_event_key = "operation-event-key-page-01";
     let mut paging_event_body = operation_event_body.clone();
     paging_event_body["purpose"] = json!("queue pagination");
     paging_event_body["resource_id"] = json!("marker-page");
+    paging_event_body["workload_id"] = json!(paging_workload_id);
+    paging_event_body["unit"] = json!("blindpass-page.service");
+    paging_event_body["observed_at_ms"] = json!(store.database_now_ms().await.unwrap());
     let paging_event = signed_node_event(
         &first_node_id,
         paging_event_key,
@@ -1492,6 +1548,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     let mut paging_operation_input = first_operation_input.clone();
     paging_operation_input["purpose"] = json!("queue pagination");
     paging_operation_input["resource_id"] = json!("marker-page");
+    paging_operation_input["workload_id"] = json!(paging_workload_id);
     paging_operation_input["broker_event_key"] = json!(paging_event_key);
     let paging_operation_headers = [
         ("origin", ORIGIN),
@@ -1567,8 +1624,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     let paging_approval_version = paging_approval_detail.body["version"].as_i64().unwrap();
     let overlap_decision_headers = [
         ("origin", ORIGIN),
-        ("cookie", admin_cookies.as_str()),
-        ("x-csrf-token", csrf),
+        ("cookie", secondary_cookies.as_str()),
+        ("x-csrf-token", secondary_csrf.as_str()),
         ("content-type", "application/json"),
         ("idempotency-key", "operation-reject-overlap-01"),
         (
@@ -1599,8 +1656,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         &format!("/api/v3/approvals/{paging_approval_id}/reject"),
         &[
             ("origin", ORIGIN),
-            ("cookie", admin_cookies.as_str()),
-            ("x-csrf-token", csrf),
+            ("cookie", secondary_cookies.as_str()),
+            ("x-csrf-token", secondary_csrf.as_str()),
             ("content-type", "application/json"),
             ("idempotency-key", "operation-reject-page-01"),
             (
@@ -1663,8 +1720,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     assert_eq!(changed_policy.status, 200);
     let stale_approval_headers = [
         ("origin", ORIGIN),
-        ("cookie", admin_cookies.as_str()),
-        ("x-csrf-token", csrf),
+        ("cookie", secondary_cookies.as_str()),
+        ("x-csrf-token", secondary_csrf.as_str()),
         ("content-type", "application/json"),
         ("idempotency-key", "operation-approve-stale-0001"),
         ("if-match", "\"1\""),
@@ -1916,6 +1973,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             verified_identity_json: identity.to_string(),
             rule_id: "pagination-fixture".to_owned(),
             expires_at_ms: pagination_now_ms + 600_000,
+            approver_ids_json: r#"["fleet-reviewer"]"#.to_owned(),
+            group_scope_hash: format!("pagination-fixture-scope-{suffix}"),
         };
         let created = store
             .create_operation(
@@ -1987,8 +2046,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         &format!("/api/v3/approvals/{page_one_decision_id}/reject"),
         &[
             ("origin", ORIGIN),
-            ("cookie", admin_cookies.as_str()),
-            ("x-csrf-token", csrf),
+            ("cookie", secondary_cookies.as_str()),
+            ("x-csrf-token", secondary_csrf.as_str()),
             ("content-type", "application/json"),
             ("idempotency-key", "p03-page-concurrent-reject-001"),
             ("if-match", page_decision_if_match.as_str()),

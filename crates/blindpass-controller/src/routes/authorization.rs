@@ -7,7 +7,8 @@ use crate::routes::fleet::{api_error, require_operator, unavailable};
 use crate::store::{
     ApprovalDecisionOutcome, ApprovalRecord, FleetPolicyRecord, GrantIssueDraft, GrantIssueOutcome,
     GrantRecord, GrantRevocationOutcome, OperationApprovalDraft, OperationApprovalRecord,
-    OperationCreateOutcome, OperationDecisionOutcome, OperationRecord, WorkloadRecord,
+    OperationCancelOutcome, OperationCreateOutcome, OperationDecision, OperationDecisionOutcome,
+    OperationRecord, WorkloadRecord,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -98,6 +99,11 @@ struct FleetRuleInput {
     decision: String,
     approval_required: bool,
     max_ttl_seconds: u64,
+    /// Operator ids or usernames allowed to decide approvals this rule
+    /// creates. Required and non-empty for `pending_approval`; empty
+    /// otherwise.
+    #[serde(default)]
+    approver_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -575,17 +581,22 @@ async fn update_policy(
             )
             || rule.approval_required != (rule.decision == "pending_approval")
             || !(1..=3600).contains(&rule.max_ttl_seconds)
+            || !valid_approver_ids(&rule.approver_ids, rule.decision == "pending_approval")
         {
             return api_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_policy_rule",
-                "policy rule is invalid or contradictory",
+                "policy rule is invalid or contradictory; pending_approval rules must name approver_ids",
             );
         }
-        canonical_rules.push(json!({
+        let mut canonical = json!({
             "id":rule.id,"action":rule.action,"mode":rule.mode,"decision":rule.decision,
             "approval_required":rule.approval_required,"max_ttl_seconds":rule.max_ttl_seconds
-        }));
+        });
+        if !rule.approver_ids.is_empty() {
+            canonical["approver_ids"] = json!(rule.approver_ids);
+        }
+        canonical_rules.push(canonical);
     }
     let document = json!({"rules":canonical_rules});
     let document_json = match canonicalize_json(&document.to_string())
@@ -813,7 +824,9 @@ async fn create_operation(
     };
     let decision = decision.to_owned();
     let expires_in_seconds = if decision == "pending_approval" {
-        600_i64
+        // Production default 600 s; test mode may shorten it via
+        // BLINDPASS_TEST_APPROVAL_TTL_SECONDS.
+        i64::try_from(state.approval_ttl_seconds).unwrap_or(600)
     } else {
         effective_ttl_i64
     };
@@ -827,13 +840,19 @@ async fn create_operation(
         "resource_id":body.resource_id,
         "purpose":purpose
     });
+    // The stable authority scope shared by every member of an approval
+    // group. Per-operation evidence (invocation, broker event, requester,
+    // resource, purpose) stays on each operation and is shown per member.
     let verified_identity = json!({
+        "tenant_id":store.tenant_id(),
         "node_id":workload.node_id,
         "workload_id":workload.id,
         "unit":workload.unit,
         "account":workload.account,
-        "invocation_id":body.invocation_id,
-        "observed_at":event_body["observed_at_ms"]
+        "action":body.action,
+        "mode":body.mode,
+        "rule_id":rule.map(|rule| rule.id.as_str()),
+        "policy_version":policy.version
     });
     let requester_summary_json = match canonical_json_string(&requester_summary) {
         Some(value) => value,
@@ -892,6 +911,21 @@ async fn create_operation(
         completed_at_ms: None,
         version: 1,
     };
+    let Some(group_scope_hash) = digest_hex(verified_identity_json.as_bytes()) else {
+        return unavailable();
+    };
+    let approver_ids = rule.map_or_else(Vec::new, |rule| rule.approver_ids.clone());
+    if decision == "pending_approval" && approver_ids.is_empty() {
+        // A rule stored before approvers were required cannot be decided.
+        return api_error(
+            StatusCode::CONFLICT,
+            "approval_rule_without_approvers",
+            "the pending_approval rule names no approvers; update the policy",
+        );
+    }
+    let Ok(approver_ids_json) = serde_json::to_string(&approver_ids) else {
+        return unavailable();
+    };
     let approval_draft = (decision == "pending_approval").then(|| OperationApprovalDraft {
         id: random_id("oa_"),
         idempotency_key: format!("oa-for-{}", operation_id),
@@ -899,6 +933,8 @@ async fn create_operation(
         verified_identity_json,
         rule_id: rule.map_or_else(String::new, |rule| rule.id.clone()),
         expires_at_ms,
+        approver_ids_json,
+        group_scope_hash,
     });
     match store
         .create_operation(
@@ -1014,6 +1050,10 @@ async fn list_operations(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
+    // Converge expired approvals, operations and grants before reading.
+    if store.expire_fleet_state().await.is_err() {
+        return unavailable();
+    }
     let mut records = match store
         .list_operations(query.status.as_deref(), cursor, limit + 1)
         .await
@@ -1078,6 +1118,29 @@ async fn cancel_operation(
         }
         Err(_) => return unavailable(),
     };
+    if operation.status == "awaiting_approval" {
+        // Dismissing a pending request removes it from its approval group
+        // and closes the broker request.
+        return match store
+            .cancel_awaiting_operation(&operation.id, &operator.operator.id)
+            .await
+        {
+            Ok(OperationCancelOutcome::Cancelled(operation)) => {
+                Json(operation_body(&operation)).into_response()
+            }
+            Ok(OperationCancelOutcome::NotFound) => api_error(
+                StatusCode::NOT_FOUND,
+                "operation_not_found",
+                "operation was not found",
+            ),
+            Ok(OperationCancelOutcome::Conflict) => api_error(
+                StatusCode::CONFLICT,
+                "operation_not_cancellable",
+                "operation is no longer awaiting approval",
+            ),
+            Err(_) => unavailable(),
+        };
+    }
     let Some(grant_id) = operation.grant_id else {
         return api_error(
             StatusCode::CONFLICT,
@@ -1137,6 +1200,10 @@ async fn list_grants(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
+    // Converge expired approvals, operations and grants before reading.
+    if store.expire_fleet_state().await.is_err() {
+        return unavailable();
+    }
     let mut records = match store
         .list_grants(
             query.node_id.as_deref(),
@@ -1356,6 +1423,10 @@ async fn list_unified_approvals(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
+    // Converge expired approvals, operations and grants before reading.
+    if store.expire_fleet_state().await.is_err() {
+        return unavailable();
+    }
     let exchange_cursor = cursor
         .as_ref()
         .and_then(|cursor| source_cursor(cursor, "exchange"));
@@ -1419,6 +1490,9 @@ async fn count_unified_approvals(State(state): State<AppState>, headers: HeaderM
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
+    if store.expire_fleet_state().await.is_err() {
+        return unavailable();
+    }
     let exchange_count = match store.count_pending_approvals().await {
         Ok(count) => count,
         Err(_) => return unavailable(),
@@ -1445,8 +1519,12 @@ async fn get_unified_approval(
         return unavailable();
     };
     if id.starts_with("oa_") {
+        if store.expire_fleet_state().await.is_err() {
+            return unavailable();
+        }
         return match store.operation_approval_by_id(&id).await {
-            Ok(Some(record)) => operation_approval_body(&record)
+            Ok(Some(record)) => operation_approval_detail(store, &record)
+                .await
                 .map(Json)
                 .map(IntoResponse::into_response)
                 .unwrap_or_else(unavailable),
@@ -1540,16 +1618,27 @@ async fn decide_unified_approval(
             return unavailable();
         };
         return match store
-            .decide_operation_approval(
-                &id,
+            .decide_operation_approval(&OperationDecision {
+                id: &id,
                 expected_version,
-                &operation_ids,
+                expected_operation_ids: &operation_ids,
                 decision,
-                &operator.operator.id,
-                &key_hash,
-            )
+                decided_by: &operator.operator.id,
+                decider_username: &operator.operator.username,
+                decision_key_hash: &key_hash,
+            })
             .await
         {
+            Ok(OperationDecisionOutcome::ScopeDenied) => api_error(
+                StatusCode::FORBIDDEN,
+                "approval_scope_denied",
+                "the policy rule does not name this operator as an approver",
+            ),
+            Ok(OperationDecisionOutcome::SelfApproval) => api_error(
+                StatusCode::FORBIDDEN,
+                "self_approval_denied",
+                "an operator cannot decide a group containing its own request",
+            ),
             Ok(
                 OperationDecisionOutcome::Applied(record)
                 | OperationDecisionOutcome::Replayed(record),
@@ -1925,8 +2014,33 @@ fn operation_approval_body(record: &OperationApprovalRecord) -> Option<JsonValue
         "status":record.status,
         "requester_summary":serde_json::from_str::<JsonValue>(&record.requester_summary_json).ok()?,
         "verified_identity":serde_json::from_str::<JsonValue>(&record.verified_identity_json).ok()?,
-        "rule_id":record.rule_id,"expires_at":record.expires_at_ms,"version":record.version
+        "approver_ids":serde_json::from_str::<Vec<String>>(&record.approver_ids_json).ok()?,
+        "rule_id":record.rule_id,"expires_at":record.expires_at_ms,"version":record.version,
+        "created_at":record.created_at_ms,"decided_by":record.decided_by,
+        "decided_at":record.decided_at_ms
     }))
+}
+
+/// Approval body plus each member operation's own requester and broker
+/// evidence, so an approver sees every identity the group would authorize.
+async fn operation_approval_detail(
+    store: &crate::store::Store,
+    record: &OperationApprovalRecord,
+) -> Option<JsonValue> {
+    let mut body = operation_approval_body(record)?;
+    let ids = serde_json::from_str::<Vec<String>>(&record.operation_ids_json).ok()?;
+    let mut operations = Vec::with_capacity(ids.len());
+    for id in ids {
+        let operation = store.operation_by_id(&id).await.ok()??;
+        operations.push(json!({
+            "id":operation.id,"requested_by":operation.requested_by,
+            "invocation_id":operation.invocation_id,"resource_id":operation.resource_id,
+            "purpose":operation.purpose,"broker_event_key":operation.broker_event_key,
+            "status":operation.status,"created_at":operation.created_at_ms
+        }));
+    }
+    body["operations"] = JsonValue::Array(operations);
+    Some(body)
 }
 
 fn exchange_approval_body(record: &ApprovalRecord) -> JsonValue {
@@ -2110,12 +2224,82 @@ fn canonical_json_string(value: &JsonValue) -> Option<String> {
     String::from_utf8(canonical).ok()
 }
 
+/// Approver entries are operator ids or usernames: 1 to 32 distinct entries
+/// of 1 to 128 safe characters when required, none otherwise.
+fn valid_approver_ids(approver_ids: &[String], required: bool) -> bool {
+    if !required {
+        return approver_ids.is_empty();
+    }
+    let mut seen = std::collections::HashSet::new();
+    (1..=32).contains(&approver_ids.len())
+        && approver_ids.iter().all(|approver| {
+            (1..=128).contains(&approver.len())
+                && approver.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b'@')
+                })
+                && seen.insert(approver.as_str())
+        })
+}
+
+/// Display-safe purpose text: removes terminal escape sequences (ESC and
+/// C1 CSI/OSC with their parameters), control characters, and invisible or
+/// bidirectional formatting characters that could disguise the text an
+/// approver reads.
 fn sanitize_purpose(value: &str) -> String {
-    value
-        .chars()
-        .filter(|ch| !ch.is_control())
-        .take(512)
-        .collect()
+    let mut output = String::with_capacity(value.len().min(512));
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        let introducer = match ch {
+            '\u{1b}' => chars.next_if(|next| matches!(next, '[' | ']' | 'P' | '^' | '_' | 'X')),
+            '\u{9b}' => Some('['),
+            '\u{9d}' => Some(']'),
+            '\u{90}' | '\u{98}' | '\u{9e}' | '\u{9f}' => Some('P'),
+            _ => None,
+        };
+        match (ch, introducer) {
+            (_, Some('[')) => {
+                // CSI: parameter and intermediate bytes, then one final byte.
+                while let Some(next) = chars.next() {
+                    if ('\u{40}'..='\u{7e}').contains(&next)
+                        || !('\u{20}'..='\u{3f}').contains(&next)
+                    {
+                        break;
+                    }
+                }
+            }
+            (_, Some(_)) => {
+                // OSC, DCS, SOS, PM and APC run until BEL or string terminator.
+                while let Some(next) = chars.next() {
+                    if next == '\u{7}' || next == '\u{9c}' {
+                        break;
+                    }
+                    if next == '\u{1b}' {
+                        chars.next_if_eq(&'\\');
+                        break;
+                    }
+                }
+            }
+            ('\u{1b}', None) => {
+                // Two-character escape: drop the escape and its final byte.
+                chars.next();
+            }
+            _ if ch.is_control() || invisible_format_character(ch) => {}
+            _ => output.push(ch),
+        }
+    }
+    output.chars().take(512).collect()
+}
+
+fn invisible_format_character(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{200b}'..='\u{200f}'
+            | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2069}'
+            | '\u{feff}'
+            | '\u{2028}'
+            | '\u{2029}'
+    )
 }
 
 fn valid_id(value: &str) -> bool {

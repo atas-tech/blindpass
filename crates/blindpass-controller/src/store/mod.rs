@@ -25,6 +25,7 @@ mod fleet;
 mod fleet_lifecycle;
 mod grants;
 mod node_channel;
+mod operation_approvals;
 mod operators;
 pub use authorization::{
     FleetPolicyRecord, OperationApprovalDraft, OperationApprovalRecord, OperationCreateOutcome,
@@ -40,6 +41,7 @@ pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord, GrantRevocatio
 pub use node_channel::{
     InboxDocument, NodeEventInsert, NodeEventRecord, NodeSessionContext, NodeSessionDraft,
 };
+pub use operation_approvals::{OperationCancelOutcome, OperationDecision};
 pub use operators::{LocalOperator, LocalSession};
 
 const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";

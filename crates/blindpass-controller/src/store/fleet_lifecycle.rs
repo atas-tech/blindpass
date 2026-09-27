@@ -192,3 +192,84 @@ impl Store {
         }
     }
 }
+
+/// Rows removed per retention category by one maintenance pass.
+const PRUNE_BATCH: i64 = 1_000;
+/// Acknowledged inbox rows are kept this long for diagnosis.
+const ACKED_INBOX_RETENTION_MS: i64 = 60 * 60 * 1_000;
+/// Broker events are kept this long for idempotent replay and audit joins.
+const NODE_EVENT_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
+/// Expired node sessions are kept this long after expiry.
+const NODE_SESSION_RETENTION_MS: i64 = 60 * 60 * 1_000;
+
+/// Bounded retention statements. Each keeps the rows a live channel still
+/// needs: the highest inbox sequence per node (sequence allocation) and the
+/// newest session per node (delivered high-water mark inheritance).
+const PRUNE_STATEMENTS: [&str; 5] = [
+    "DELETE FROM node_inbox WHERE (node_id, seq) IN (
+       SELECT i.node_id, i.seq FROM node_inbox i JOIN nodes n ON n.id = i.node_id
+       WHERE n.tenant_id = ? AND i.acked_at IS NOT NULL AND i.acked_at < {now} - ?
+         AND i.seq < (SELECT MAX(m.seq) FROM node_inbox m WHERE m.node_id = i.node_id)
+       LIMIT ?)",
+    "DELETE FROM node_events WHERE id IN (
+       SELECT e.id FROM node_events e JOIN nodes n ON n.id = e.node_id
+       WHERE n.tenant_id = ? AND e.received_at < {now} - ? LIMIT ?)",
+    "DELETE FROM node_sessions WHERE id IN (
+       SELECT s.id FROM node_sessions s JOIN nodes n ON n.id = s.node_id
+       WHERE n.tenant_id = ? AND s.expires_at < {now} - ?
+         AND s.created_at < (SELECT MAX(l.created_at) FROM node_sessions l WHERE l.node_id = s.node_id)
+       LIMIT ?)",
+    "DELETE FROM node_challenges WHERE id IN (
+       SELECT id FROM node_challenges WHERE tenant_id = ? AND expires_at < {now} + ? LIMIT ?)",
+    "DELETE FROM grant_tombstones WHERE grant_id IN (
+       SELECT t.grant_id FROM grant_tombstones t JOIN nodes n ON n.id = t.node_id
+       WHERE n.tenant_id = ? AND t.retain_until < {now} - ? LIMIT ?)",
+];
+
+impl Store {
+    /// Remove bounded batches of retention rows: acknowledged inbox rows,
+    /// old broker events, expired sessions, unused legacy challenges and
+    /// tombstones past their retention. Runs from the periodic maintenance
+    /// task and is directly callable.
+    pub async fn prune_fleet_state(&self) -> Result<FleetPruneSummary, StoreError> {
+        self.checkpoint_clock().await?;
+        // Legacy challenge rows are no longer written; remove all of them.
+        let retention = [
+            ACKED_INBOX_RETENTION_MS,
+            NODE_EVENT_RETENTION_MS,
+            NODE_SESSION_RETENTION_MS,
+            i64::MAX / 4,
+            0,
+        ];
+        let mut counts = [0_u64; 5];
+        for (index, statement) in PRUNE_STATEMENTS.iter().enumerate() {
+            counts[index] = match &self.database {
+                Database::Sqlite(pool) => sqlx::query(&statement.replace("{now}", SQLITE_NOW_MS))
+                    .bind(&self.tenant_id)
+                    .bind(retention[index])
+                    .bind(PRUNE_BATCH)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected(),
+                Database::Postgres(pool) => {
+                    sqlx::query(&super::pg(&statement.replace("{now}", POSTGRES_NOW_MS)))
+                        .bind(&self.tenant_id)
+                        .bind(retention[index])
+                        .bind(PRUNE_BATCH)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected()
+                }
+            };
+        }
+        Ok(FleetPruneSummary {
+            acknowledged_inbox_rows: counts[0],
+            node_events: counts[1],
+            node_sessions: counts[2],
+            node_challenges: counts[3],
+            grant_tombstones: counts[4],
+        })
+    }
+}

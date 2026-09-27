@@ -2,7 +2,11 @@
 
 //! Workload, policy, operation and operation-approval persistence.
 
-use super::{Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError};
+use super::operation_approvals::{
+    closure_targets_postgres, closure_targets_sqlite, create_or_extend_approval_postgres,
+    create_or_extend_approval_sqlite, enqueue_closures_postgres, enqueue_closures_sqlite,
+};
+use super::{Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError};
 use sqlx::{
     Row, Transaction,
     postgres::{PgRow, Postgres},
@@ -150,6 +154,9 @@ pub struct OperationApprovalRecord {
     pub decision_key_hash: Option<String>,
     pub version: i64,
     pub created_at_ms: i64,
+    /// JSON array of operator ids or usernames the rule names as approvers.
+    pub approver_ids_json: String,
+    pub group_scope_hash: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +167,8 @@ pub struct OperationApprovalDraft {
     pub verified_identity_json: String,
     pub rule_id: String,
     pub expires_at_ms: i64,
+    pub approver_ids_json: String,
+    pub group_scope_hash: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -177,18 +186,23 @@ pub enum OperationDecisionOutcome {
     Conflict,
     NotFound,
     StalePolicy,
+    /// The decider is not named by the rule that created the group.
+    ScopeDenied,
+    /// The decider requested at least one operation in the group.
+    SelfApproval,
 }
 
 const WORKLOAD_COLUMNS: &str = "id, node_id, name, unit, account, consumption_mode,
     local_ceiling_seconds, registration_version, status, created_at, revoked_at, version";
-const OPERATION_COLUMNS: &str = "id, workload_id, node_id, invocation_id, action, mode,
+pub(super) const OPERATION_COLUMNS: &str = "id, workload_id, node_id, invocation_id, action, mode,
     resource_id, requested_ttl_seconds, broker_event_key,
     requested_by, purpose, policy_version, decision, decision_hash, status, approval_id,
     grant_id, idempotency_key, request_hash, result_json, created_at, expires_at,
     completed_at, version";
-const OPERATION_APPROVAL_COLUMNS: &str = "id, operation_ids_json, requester_summary_json,
+pub(super) const OPERATION_APPROVAL_COLUMNS: &str =
+    "id, operation_ids_json, requester_summary_json,
     verified_identity_json, rule_id, status, decided_by, decided_at, expires_at,
-    idempotency_key, decision_key_hash, version, created_at";
+    idempotency_key, decision_key_hash, version, created_at, approver_ids_json, group_scope_hash";
 
 impl Store {
     pub async fn list_workloads(
@@ -734,6 +748,7 @@ async fn create_operation_sqlite(
     expected_account: &str,
     effective_ttl_seconds: i64,
     approval: Option<&OperationApprovalDraft>,
+    signer: Option<&FleetSigner>,
 ) -> Result<OperationCreateOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
@@ -819,6 +834,11 @@ async fn create_operation_sqlite(
         None
     };
     insert_operation_sqlite(&mut tx, tenant_id, record, approval_id.as_deref()).await?;
+    if record.status == "denied" {
+        // A policy denial at request time closes the broker request.
+        let targets = closure_targets_sqlite(&mut tx, tenant_id, "o.id = ?", &[&record.id]).await?;
+        enqueue_closures_sqlite(&mut tx, signer, &targets, "denied").await?;
+    }
     let sql = format!("SELECT {OPERATION_COLUMNS} FROM operations WHERE id = ? AND tenant_id = ?");
     let row = sqlx::query(&sql)
         .bind(&record.id)
@@ -839,6 +859,7 @@ async fn create_operation_postgres(
     expected_account: &str,
     effective_ttl_seconds: i64,
     approval: Option<&OperationApprovalDraft>,
+    signer: Option<&FleetSigner>,
 ) -> Result<OperationCreateOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
@@ -923,6 +944,12 @@ async fn create_operation_postgres(
         None
     };
     insert_operation_postgres(&mut tx, tenant_id, record, approval_id.as_deref()).await?;
+    if record.status == "denied" {
+        // A policy denial at request time closes the broker request.
+        let targets =
+            closure_targets_postgres(&mut tx, tenant_id, "o.id = ?", &[&record.id]).await?;
+        enqueue_closures_postgres(&mut tx, signer, &targets, "denied").await?;
+    }
     let sql =
         format!("SELECT {OPERATION_COLUMNS} FROM operations WHERE id = $1 AND tenant_id = $2");
     let row = sqlx::query(&sql)
@@ -934,407 +961,6 @@ async fn create_operation_postgres(
     let created = operation_from_postgres(&row)?;
     tx.commit().await.map_err(StoreError::Database)?;
     Ok(OperationCreateOutcome::Created(created))
-}
-
-async fn create_or_extend_approval_sqlite(
-    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
-    tenant_id: &str,
-    operation_id: &str,
-    draft: &OperationApprovalDraft,
-) -> Result<String, StoreError> {
-    let sql = format!(
-        "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals
-        WHERE tenant_id = ? AND status = 'pending' AND rule_id = ?
-          AND requester_summary_json = ? AND verified_identity_json = ?
-          AND expires_at > {SQLITE_NOW_MS} ORDER BY created_at DESC, id DESC LIMIT 50"
-    );
-    let candidates = sqlx::query(&sql)
-        .bind(tenant_id)
-        .bind(&draft.rule_id)
-        .bind(&draft.requester_summary_json)
-        .bind(&draft.verified_identity_json)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(StoreError::Database)?;
-    for row in candidates {
-        let candidate = operation_approval_from_sqlite(&row)?;
-        let mut operation_ids: Vec<String> = serde_json::from_str(&candidate.operation_ids_json)
-            .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-        if operation_ids.len() >= 10 || operation_ids.contains(&operation_id.to_owned()) {
-            continue;
-        }
-        operation_ids.push(operation_id.to_owned());
-        let encoded = serde_json::to_string(&operation_ids)
-            .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-        let changed = sqlx::query(
-            "UPDATE operation_approvals SET operation_ids_json = ?, version = version + 1
-            WHERE id = ? AND tenant_id = ? AND status = 'pending' AND version = ?",
-        )
-        .bind(encoded)
-        .bind(&candidate.id)
-        .bind(tenant_id)
-        .bind(candidate.version)
-        .execute(&mut **tx)
-        .await
-        .map_err(StoreError::Database)?;
-        if changed.rows_affected() == 1 {
-            return Ok(candidate.id);
-        }
-    }
-    let operation_ids = serde_json::to_string(&vec![operation_id])
-        .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-    let expires_at = draft.expires_at_ms;
-    let sql = format!("INSERT INTO operation_approvals (id, tenant_id, operation_ids_json,
-        requester_summary_json, verified_identity_json, rule_id, status, expires_at,
-        idempotency_key, version, created_at) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, 1, {SQLITE_NOW_MS})");
-    sqlx::query(&sql)
-        .bind(&draft.id)
-        .bind(tenant_id)
-        .bind(operation_ids)
-        .bind(&draft.requester_summary_json)
-        .bind(&draft.verified_identity_json)
-        .bind(&draft.rule_id)
-        .bind(expires_at)
-        .bind(&draft.idempotency_key)
-        .execute(&mut **tx)
-        .await
-        .map_err(StoreError::Database)?;
-    Ok(draft.id.clone())
-}
-
-async fn create_or_extend_approval_postgres(
-    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    tenant_id: &str,
-    operation_id: &str,
-    draft: &OperationApprovalDraft,
-) -> Result<String, StoreError> {
-    let sql = format!(
-        "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals
-        WHERE tenant_id = $1 AND status = 'pending' AND rule_id = $2
-          AND requester_summary_json = $3 AND verified_identity_json = $4
-          AND expires_at > {POSTGRES_NOW_MS} ORDER BY created_at DESC, id DESC LIMIT 50 FOR UPDATE"
-    );
-    let candidates = sqlx::query(&sql)
-        .bind(tenant_id)
-        .bind(&draft.rule_id)
-        .bind(&draft.requester_summary_json)
-        .bind(&draft.verified_identity_json)
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(StoreError::Database)?;
-    for row in candidates {
-        let candidate = operation_approval_from_postgres(&row)?;
-        let mut operation_ids: Vec<String> = serde_json::from_str(&candidate.operation_ids_json)
-            .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-        if operation_ids.len() >= 10 || operation_ids.contains(&operation_id.to_owned()) {
-            continue;
-        }
-        operation_ids.push(operation_id.to_owned());
-        let encoded = serde_json::to_string(&operation_ids)
-            .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-        let changed = sqlx::query(
-            "UPDATE operation_approvals SET operation_ids_json = $1, version = version + 1
-            WHERE id = $2 AND tenant_id = $3 AND status = 'pending' AND version = $4",
-        )
-        .bind(encoded)
-        .bind(&candidate.id)
-        .bind(tenant_id)
-        .bind(candidate.version)
-        .execute(&mut **tx)
-        .await
-        .map_err(StoreError::Database)?;
-        if changed.rows_affected() == 1 {
-            return Ok(candidate.id);
-        }
-    }
-    let operation_ids = serde_json::to_string(&vec![operation_id])
-        .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-    let sql = format!("INSERT INTO operation_approvals (id, tenant_id, operation_ids_json,
-        requester_summary_json, verified_identity_json, rule_id, status, expires_at,
-        idempotency_key, version, created_at) VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, 1, {POSTGRES_NOW_MS})");
-    sqlx::query(&sql)
-        .bind(&draft.id)
-        .bind(tenant_id)
-        .bind(operation_ids)
-        .bind(&draft.requester_summary_json)
-        .bind(&draft.verified_identity_json)
-        .bind(&draft.rule_id)
-        .bind(draft.expires_at_ms)
-        .bind(&draft.idempotency_key)
-        .execute(&mut **tx)
-        .await
-        .map_err(StoreError::Database)?;
-    Ok(draft.id.clone())
-}
-
-#[allow(clippy::too_many_arguments)] // Decision persistence names every CAS and audit binding.
-async fn decide_operation_approval_sqlite(
-    pool: &sqlx::SqlitePool,
-    tenant_id: &str,
-    id: &str,
-    expected_version: i64,
-    expected_operation_ids: &[String],
-    decision: &str,
-    decided_by: &str,
-    decision_key_hash: &str,
-) -> Result<OperationDecisionOutcome, StoreError> {
-    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-    sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
-        .execute(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?;
-    let sql = format!(
-        "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals WHERE id = ? AND tenant_id = ?"
-    );
-    let Some(row) = sqlx::query(&sql)
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?
-    else {
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::NotFound);
-    };
-    let approval = operation_approval_from_sqlite(&row)?;
-    let target_status = if decision == "approved" {
-        "approved"
-    } else {
-        "rejected"
-    };
-    let stored_ids: Vec<String> = serde_json::from_str(&approval.operation_ids_json)
-        .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-    if approval.status == target_status
-        && approval.version == expected_version.saturating_add(1)
-        && approval.decided_by.as_deref() == Some(decided_by)
-        && approval.decision_key_hash.as_deref() == Some(decision_key_hash)
-        && stored_ids == expected_operation_ids
-    {
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::Replayed(approval));
-    }
-    if !matches!(decision, "approved" | "rejected")
-        || approval.status != "pending"
-        || approval.version != expected_version
-        || stored_ids != expected_operation_ids
-        || stored_ids.is_empty()
-        || stored_ids.len() > 10
-    {
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::Conflict);
-    }
-    let now: i64 = sqlx::query_scalar(&format!("SELECT {SQLITE_NOW_MS}"))
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?;
-    if approval.expires_at_ms <= now {
-        sqlx::query("UPDATE operation_approvals SET status = 'expired', version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'pending'")
-            .bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        sqlx::query("UPDATE operations SET status = 'denied', version = version + 1 WHERE approval_id = ? AND tenant_id = ? AND status = 'awaiting_approval'")
-            .bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::StalePolicy);
-    }
-    let policy_version: Option<i64> =
-        sqlx::query_scalar("SELECT version FROM fleet_policies WHERE tenant_id = ?")
-            .bind(tenant_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(StoreError::Database)?;
-    let current_policy = policy_version.unwrap_or(1);
-    let mut stale = false;
-    for operation_id in &stored_ids {
-        let row = sqlx::query("SELECT o.policy_version, o.status, o.expires_at, w.status AS workload_status, n.status AS node_status
-            FROM operations o JOIN workloads w ON w.id = o.workload_id JOIN nodes n ON n.id = o.node_id
-            WHERE o.id = ? AND o.tenant_id = ? AND o.approval_id = ?")
-            .bind(operation_id).bind(tenant_id).bind(id).fetch_optional(&mut *tx).await.map_err(StoreError::Database)?;
-        let Some(row) = row else {
-            stale = true;
-            break;
-        };
-        let operation_policy: i64 = row
-            .try_get("policy_version")
-            .map_err(StoreError::Database)?;
-        let operation_status: String = row.try_get("status").map_err(StoreError::Database)?;
-        let operation_expiry: i64 = row.try_get("expires_at").map_err(StoreError::Database)?;
-        let workload_status: String = row
-            .try_get("workload_status")
-            .map_err(StoreError::Database)?;
-        let node_status: String = row.try_get("node_status").map_err(StoreError::Database)?;
-        if operation_policy != current_policy
-            || operation_status != "awaiting_approval"
-            || operation_expiry <= now
-            || workload_status != "active"
-            || node_status != "active"
-        {
-            stale = true;
-            break;
-        }
-    }
-    if stale {
-        sqlx::query(&format!("UPDATE operation_approvals SET status = 'expired', decided_by = ?, decided_at = {SQLITE_NOW_MS}, decision_key_hash = ?, version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'pending'"))
-            .bind(decided_by).bind(decision_key_hash).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        sqlx::query("UPDATE operations SET status = 'denied', version = version + 1 WHERE approval_id = ? AND tenant_id = ? AND status = 'awaiting_approval'")
-            .bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::StalePolicy);
-    }
-    let operation_status = if decision == "approved" {
-        "requested"
-    } else {
-        "denied"
-    };
-    sqlx::query(&format!("UPDATE operation_approvals SET status = ?, decided_by = ?, decided_at = {SQLITE_NOW_MS}, decision_key_hash = ?, version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'pending' AND version = ?"))
-        .bind(target_status).bind(decided_by).bind(decision_key_hash).bind(id).bind(tenant_id).bind(expected_version)
-        .execute(&mut *tx).await.map_err(StoreError::Database)?;
-    sqlx::query(&format!("UPDATE operations SET status = ?,
-        expires_at = CASE WHEN ? = 'requested' THEN {SQLITE_NOW_MS} + requested_ttl_seconds * 1000 ELSE expires_at END,
-        version = version + 1 WHERE approval_id = ? AND tenant_id = ? AND status = 'awaiting_approval'"))
-        .bind(operation_status).bind(operation_status).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-    let row = sqlx::query(&sql)
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?;
-    let updated = operation_approval_from_sqlite(&row)?;
-    tx.commit().await.map_err(StoreError::Database)?;
-    Ok(OperationDecisionOutcome::Applied(updated))
-}
-
-#[allow(clippy::too_many_arguments)] // Decision persistence names every CAS and audit binding.
-async fn decide_operation_approval_postgres(
-    pool: &sqlx::PgPool,
-    tenant_id: &str,
-    id: &str,
-    expected_version: i64,
-    expected_operation_ids: &[String],
-    decision: &str,
-    decided_by: &str,
-    decision_key_hash: &str,
-) -> Result<OperationDecisionOutcome, StoreError> {
-    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?;
-    let sql = format!(
-        "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals WHERE id = $1 AND tenant_id = $2 FOR UPDATE"
-    );
-    let Some(row) = sqlx::query(&sql)
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?
-    else {
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::NotFound);
-    };
-    let approval = operation_approval_from_postgres(&row)?;
-    let target_status = if decision == "approved" {
-        "approved"
-    } else {
-        "rejected"
-    };
-    let stored_ids: Vec<String> = serde_json::from_str(&approval.operation_ids_json)
-        .map_err(|_| StoreError::InvalidInput("approval operation ids"))?;
-    if approval.status == target_status
-        && approval.version == expected_version.saturating_add(1)
-        && approval.decided_by.as_deref() == Some(decided_by)
-        && approval.decision_key_hash.as_deref() == Some(decision_key_hash)
-        && stored_ids == expected_operation_ids
-    {
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::Replayed(approval));
-    }
-    if !matches!(decision, "approved" | "rejected")
-        || approval.status != "pending"
-        || approval.version != expected_version
-        || stored_ids != expected_operation_ids
-        || stored_ids.is_empty()
-        || stored_ids.len() > 10
-    {
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::Conflict);
-    }
-    let now: i64 = sqlx::query_scalar(&format!("SELECT {POSTGRES_NOW_MS}"))
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?;
-    if approval.expires_at_ms <= now {
-        sqlx::query("UPDATE operation_approvals SET status = 'expired', version = version + 1 WHERE id = $1 AND tenant_id = $2 AND status = 'pending'")
-            .bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        sqlx::query("UPDATE operations SET status = 'denied', version = version + 1 WHERE approval_id = $1 AND tenant_id = $2 AND status = 'awaiting_approval'")
-            .bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::StalePolicy);
-    }
-    let policy_version: Option<i64> =
-        sqlx::query_scalar("SELECT version FROM fleet_policies WHERE tenant_id = $1")
-            .bind(tenant_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(StoreError::Database)?;
-    let current_policy = policy_version.unwrap_or(1);
-    let mut stale = false;
-    for operation_id in &stored_ids {
-        let row = sqlx::query("SELECT o.policy_version, o.status, o.expires_at, w.status AS workload_status, n.status AS node_status
-            FROM operations o JOIN workloads w ON w.id = o.workload_id JOIN nodes n ON n.id = o.node_id
-            WHERE o.id = $1 AND o.tenant_id = $2 AND o.approval_id = $3 FOR UPDATE")
-            .bind(operation_id).bind(tenant_id).bind(id).fetch_optional(&mut *tx).await.map_err(StoreError::Database)?;
-        let Some(row) = row else {
-            stale = true;
-            break;
-        };
-        let operation_policy: i64 = row
-            .try_get("policy_version")
-            .map_err(StoreError::Database)?;
-        let operation_status: String = row.try_get("status").map_err(StoreError::Database)?;
-        let operation_expiry: i64 = row.try_get("expires_at").map_err(StoreError::Database)?;
-        let workload_status: String = row
-            .try_get("workload_status")
-            .map_err(StoreError::Database)?;
-        let node_status: String = row.try_get("node_status").map_err(StoreError::Database)?;
-        if operation_policy != current_policy
-            || operation_status != "awaiting_approval"
-            || operation_expiry <= now
-            || workload_status != "active"
-            || node_status != "active"
-        {
-            stale = true;
-            break;
-        }
-    }
-    if stale {
-        sqlx::query(&format!("UPDATE operation_approvals SET status = 'expired', decided_by = $1, decided_at = {POSTGRES_NOW_MS}, decision_key_hash = $2, version = version + 1 WHERE id = $3 AND tenant_id = $4 AND status = 'pending'"))
-            .bind(decided_by).bind(decision_key_hash).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        sqlx::query("UPDATE operations SET status = 'denied', version = version + 1 WHERE approval_id = $1 AND tenant_id = $2 AND status = 'awaiting_approval'")
-            .bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-        tx.commit().await.map_err(StoreError::Database)?;
-        return Ok(OperationDecisionOutcome::StalePolicy);
-    }
-    let operation_status = if decision == "approved" {
-        "requested"
-    } else {
-        "denied"
-    };
-    sqlx::query(&format!("UPDATE operation_approvals SET status = $1, decided_by = $2, decided_at = {POSTGRES_NOW_MS}, decision_key_hash = $3, version = version + 1 WHERE id = $4 AND tenant_id = $5 AND status = 'pending' AND version = $6"))
-        .bind(target_status).bind(decided_by).bind(decision_key_hash).bind(id).bind(tenant_id).bind(expected_version)
-        .execute(&mut *tx).await.map_err(StoreError::Database)?;
-    sqlx::query(&format!("UPDATE operations SET status = $1,
-        expires_at = CASE WHEN $2 = 'requested' THEN {POSTGRES_NOW_MS} + requested_ttl_seconds * 1000 ELSE expires_at END,
-        version = version + 1 WHERE approval_id = $3 AND tenant_id = $4 AND status = 'awaiting_approval'"))
-        .bind(operation_status).bind(operation_status).bind(id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
-    let row = sqlx::query(&sql)
-        .bind(id)
-        .bind(tenant_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(StoreError::Database)?;
-    let updated = operation_approval_from_postgres(&row)?;
-    tx.commit().await.map_err(StoreError::Database)?;
-    Ok(OperationDecisionOutcome::Applied(updated))
 }
 
 async fn insert_operation_sqlite(
@@ -1497,7 +1123,9 @@ pub(super) fn operation_from_postgres(row: &PgRow) -> Result<OperationRecord, St
     })
 }
 
-fn operation_approval_from_sqlite(row: &SqliteRow) -> Result<OperationApprovalRecord, StoreError> {
+pub(super) fn operation_approval_from_sqlite(
+    row: &SqliteRow,
+) -> Result<OperationApprovalRecord, StoreError> {
     Ok(OperationApprovalRecord {
         id: row.try_get("id").map_err(StoreError::Database)?,
         operation_ids_json: row
@@ -1522,10 +1150,18 @@ fn operation_approval_from_sqlite(row: &SqliteRow) -> Result<OperationApprovalRe
             .map_err(StoreError::Database)?,
         version: row.try_get("version").map_err(StoreError::Database)?,
         created_at_ms: row.try_get("created_at").map_err(StoreError::Database)?,
+        approver_ids_json: row
+            .try_get("approver_ids_json")
+            .map_err(StoreError::Database)?,
+        group_scope_hash: row
+            .try_get("group_scope_hash")
+            .map_err(StoreError::Database)?,
     })
 }
 
-fn operation_approval_from_postgres(row: &PgRow) -> Result<OperationApprovalRecord, StoreError> {
+pub(super) fn operation_approval_from_postgres(
+    row: &PgRow,
+) -> Result<OperationApprovalRecord, StoreError> {
     Ok(OperationApprovalRecord {
         id: row.try_get("id").map_err(StoreError::Database)?,
         operation_ids_json: row
@@ -1550,6 +1186,12 @@ fn operation_approval_from_postgres(row: &PgRow) -> Result<OperationApprovalReco
             .map_err(StoreError::Database)?,
         version: row.try_get("version").map_err(StoreError::Database)?,
         created_at_ms: row.try_get("created_at").map_err(StoreError::Database)?,
+        approver_ids_json: row
+            .try_get("approver_ids_json")
+            .map_err(StoreError::Database)?,
+        group_scope_hash: row
+            .try_get("group_scope_hash")
+            .map_err(StoreError::Database)?,
     })
 }
 
@@ -1637,6 +1279,7 @@ impl Store {
                     expected_account,
                     effective_ttl_seconds,
                     approval,
+                    self.fleet_signer.as_ref(),
                 )
                 .await
             }
@@ -1649,6 +1292,7 @@ impl Store {
                     expected_account,
                     effective_ttl_seconds,
                     approval,
+                    self.fleet_signer.as_ref(),
                 )
                 .await
             }
@@ -1846,46 +1490,6 @@ impl Store {
                     .fetch_one(pool)
                     .await
                     .map_err(StoreError::Database)
-            }
-        }
-    }
-
-    pub async fn decide_operation_approval(
-        &self,
-        id: &str,
-        expected_version: i64,
-        expected_operation_ids: &[String],
-        decision: &str,
-        decided_by: &str,
-        decision_key_hash: &str,
-    ) -> Result<OperationDecisionOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                decide_operation_approval_sqlite(
-                    pool,
-                    &self.tenant_id,
-                    id,
-                    expected_version,
-                    expected_operation_ids,
-                    decision,
-                    decided_by,
-                    decision_key_hash,
-                )
-                .await
-            }
-            Database::Postgres(pool) => {
-                decide_operation_approval_postgres(
-                    pool,
-                    &self.tenant_id,
-                    id,
-                    expected_version,
-                    expected_operation_ids,
-                    decision,
-                    decided_by,
-                    decision_key_hash,
-                )
-                .await
             }
         }
     }
