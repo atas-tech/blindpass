@@ -1,0 +1,104 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# P04-D3 storage helper for the BlindPass approval app.
+#
+#   blindpass-session-store read      print the stored session record
+#   blindpass-session-store write     replace it with stdin (at most 4 KiB)
+#   blindpass-session-store delete    remove it
+#   blindpass-session-store summary   replace the widget summary with stdin
+#
+# Files live in $XDG_RUNTIME_DIR/blindpass (tmpfs, cleared when the login
+# session ends). The directory is 0700 and the files 0600, both owned by the
+# caller; anything else, including a symlink, is refused rather than
+# repaired. Writes go to a temporary file in the same directory and are
+# renamed into place, so a reader never sees a partial record. The record
+# arrives on stdin, never in argv or the environment.
+#
+# A 0600 file does not protect the token from other code running as the same
+# user; see desktop/approval-app/README.md.
+
+set -eu
+umask 077
+
+fail() {
+  echo "blindpass-session-store: $1" >&2
+  exit "${2:-1}"
+}
+
+runtime="${XDG_RUNTIME_DIR:-}"
+[ -n "$runtime" ] || fail "XDG_RUNTIME_DIR is not set" 2
+case "$runtime" in /*) ;; *) fail "XDG_RUNTIME_DIR must be absolute" 2 ;; esac
+uid="$(id -u)"
+
+owned_mode() {
+  # prints "<uid> <octal mode>" without following a symlink
+  stat -c '%u %a' -- "$1"
+}
+
+check_runtime() {
+  [ -d "$runtime" ] && [ ! -L "$runtime" ] || fail "runtime directory is missing" 2
+  set -- $(owned_mode "$runtime")
+  [ "$1" = "$uid" ] || fail "runtime directory is not owned by this user" 2
+  [ "$2" = "700" ] || fail "runtime directory is not 0700" 2
+}
+
+dir="$runtime/blindpass"
+
+ensure_dir() {
+  check_runtime
+  if [ ! -e "$dir" ] && [ ! -L "$dir" ]; then
+    mkdir -m 700 -- "$dir"
+  fi
+  [ -d "$dir" ] && [ ! -L "$dir" ] || fail "$dir is not a directory" 3
+  set -- $(owned_mode "$dir")
+  [ "$1" = "$uid" ] || fail "$dir is not owned by this user" 3
+  [ "$2" = "700" ] || fail "$dir is not 0700" 3
+}
+
+check_file() {
+  [ ! -L "$1" ] || fail "$1 is a symlink" 3
+  [ -f "$1" ] || return 1
+  set -- $(owned_mode "$1") "$1"
+  [ "$1" = "$uid" ] || fail "$3 is not owned by this user" 3
+  [ "$2" = "600" ] || fail "$3 is not 0600" 3
+  return 0
+}
+
+replace() {
+  target="$1"
+  ensure_dir
+  [ ! -L "$target" ] || fail "$target is a symlink" 3
+  tmp="$(mktemp -- "$dir/.write.XXXXXXXX")"
+  trap 'rm -f -- "$tmp"' EXIT HUP INT TERM
+  head -c 4097 > "$tmp"
+  size="$(wc -c < "$tmp")"
+  [ "$size" -gt 0 ] || fail "empty record" 4
+  [ "$size" -le 4096 ] || fail "record larger than 4 KiB" 4
+  chmod 600 -- "$tmp"
+  mv -f -- "$tmp" "$target"
+  trap - EXIT HUP INT TERM
+}
+
+case "${1:-}" in
+  read)
+    [ -d "$dir" ] || exit 5
+    ensure_dir
+    check_file "$dir/session" || exit 5
+    cat -- "$dir/session"
+    ;;
+  write)
+    replace "$dir/session"
+    ;;
+  delete)
+    [ -d "$dir" ] || exit 0
+    ensure_dir
+    rm -f -- "$dir/session"
+    ;;
+  summary)
+    replace "$dir/summary.json"
+    ;;
+  *)
+    fail "usage: blindpass-session-store read|write|delete|summary" 64
+    ;;
+esac

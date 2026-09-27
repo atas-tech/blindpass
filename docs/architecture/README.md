@@ -9,6 +9,8 @@
 | SPS | [Fastify bootstrap](../../packages/sps-server/src/index.ts), route authentication, policy/approval services and persistence |
 | Browser input | [Request context](../../packages/browser-ui/src/request-context.js), configured API origin and [HPKE encryption](../../packages/browser-ui/src/crypto.js) |
 | Dashboard | [Authentication context](../../packages/dashboard/src/auth/AuthContext.tsx), [API client](../../packages/dashboard/src/api/client.ts), workspace administration pages |
+| Operator console | [React console](../../packages/console) for the Rust controller: cookie session with session-bound CSRF, approvals, fleet, policy, audit and operator screens |
+| Desktop approval app | [Quickshell QML app](../../desktop/approval-app/README.md), a separate process: desktop bearer session (access token in memory, refresh token in a 0600 runtime file), controller calls through curl without redirects, approval list, detail and decisions |
 | Agent runtime | [Runtime](../../packages/agent-skill/src/index.ts), [key manager](../../packages/agent-skill/src/key-manager.ts) and [secret store](../../packages/agent-skill/src/secret-store.ts) |
 | Gateway | [Interception](../../packages/gateway/src/interceptor.ts), [identity](../../packages/gateway/src/identity.ts) and text URL filtering |
 | OpenClaw integration | [Core](../../packages/openclaw-plugin/blindpass-core.mjs), SOPS backend and exec resolver; see [integration contract](../plugins/openclaw-capability-extension.md) |

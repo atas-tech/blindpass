@@ -25,6 +25,7 @@
     "dev:e2e": "node scripts/dev-e2e.mjs",
     "test": "node scripts/tests/run-workspace-tests.mjs",
     "test:landing": "node --check landing/dist/script.js && node --check landing/dist/reel.js && node --test landing/tests/workflow.test.mjs landing/tests/reel.test.mjs landing/tests/assets.test.mjs && npm run test:ui-assets",
+    "test:desktop": "sh scripts/test-desktop.sh",
     "test:ui-assets": "node scripts/sync-ui-assets.mjs --check && node --test assets/ui/tests/tokens.test.mjs",
     "sync:ui-assets": "node scripts/sync-ui-assets.mjs",
     "test:e2e": "npm run test:e2e --workspace=packages/dashboard",

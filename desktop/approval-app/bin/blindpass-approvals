@@ -1,0 +1,13 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Open the BlindPass approval app, or bring its window forward when it is
+# already running. The Omarchy widget calls this; it passes no arguments and
+# learns nothing back.
+set -eu
+self="$(readlink -f -- "$0")"
+app="$(dirname -- "$(dirname -- "$self")")/shell.qml"
+if quickshell ipc -p "$app" call blindpass-approvals show >/dev/null 2>&1; then
+  exit 0
+fi
+exec quickshell -n -d -p "$app"

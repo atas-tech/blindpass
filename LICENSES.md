@@ -7,7 +7,9 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | Package | License | Notes |
 | :--- | :--- | :--- |
 | `packages/sps-server` | `AGPL-3.0-only` | Secret Provisioning Service / trust anchor |
-| `packages/dashboard` | `AGPL-3.0-only` | Hosted control plane UI |
+| `packages/dashboard` | `AGPL-3.0-only` | Hosted control plane UI (retained until P04 slice 13 marks it removable) |
+| `packages/console` | `AGPL-3.0-only` | P04 operator console for the Rust controller; declared in package metadata |
+| `desktop/approval-app` | `AGPL-3.0-only` | P04 Quickshell approval app; SPDX headers, no package manifest |
 | `packages/i18n` | `AGPL-3.0-only` | Declared in package metadata; no standalone package LICENSE file currently present |
 | `packages/agent-skill` | `MIT` | Agent-side SDK / skill logic |
 | `packages/browser-ui` | `MIT` | Client-side encryption sandbox |

@@ -27,6 +27,42 @@ pub struct LocalSession {
 
 const SESSION_IDLE_MS: i64 = 12 * 60 * 60 * 1_000;
 
+/// Which transport a local session belongs to. Browser sessions are the
+/// cookie pair; desktop sessions are the approval app's bearer and refresh
+/// token (P04-D3). A credential of one kind never resolves as the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SessionKind {
+    Browser,
+    Desktop,
+}
+
+impl SessionKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Browser => "browser",
+            Self::Desktop => "desktop",
+        }
+    }
+
+    /// Extra terms bounding a desktop access token to
+    /// [`DESKTOP_ACCESS_MS`] after its rotation: the additional `MIN`/`LEAST`
+    /// argument and the `WHERE` condition. Browser sessions have neither.
+    fn access_bound(self, alias: &str, now: &str) -> (String, String) {
+        match self {
+            Self::Browser => (String::new(), String::new()),
+            Self::Desktop => (
+                format!(", {alias}created_at + {DESKTOP_ACCESS_MS}"),
+                format!(" AND {alias}created_at + {DESKTOP_ACCESS_MS} > {now}"),
+            ),
+        }
+    }
+}
+
+/// A desktop access token (the session id) stops working this long after
+/// the refresh that created it, whether or not it is used. The approval app
+/// rotates every 15 minutes, so a copied bearer is useful for at most 20.
+const DESKTOP_ACCESS_MS: i64 = 20 * 60 * 1_000;
+
 impl Store {
     pub async fn has_active_admin(&self) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
@@ -302,7 +338,64 @@ impl Store {
         refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
+        self.create_session(
+            SessionKind::Browser,
+            operator_id,
+            verified_password_hash,
+            refresh_hash,
+            ttl_seconds,
+        )
+        .await
+    }
+
+    pub async fn browser_session_by_id(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<LocalSession>, StoreError> {
+        self.session_by_id(SessionKind::Browser, session_id).await
+    }
+
+    pub async fn browser_session_for_refresh_hash(
+        &self,
+        refresh_hash: &str,
+    ) -> Result<Option<LocalSession>, StoreError> {
+        self.session_for_refresh_hash(SessionKind::Browser, refresh_hash)
+            .await
+    }
+
+    pub async fn rotate_browser_session(
+        &self,
+        old_refresh_hash: &str,
+        new_refresh_hash: &str,
+        ttl_seconds: u64,
+    ) -> Result<Option<LocalSession>, StoreError> {
+        self.rotate_session(
+            SessionKind::Browser,
+            old_refresh_hash,
+            new_refresh_hash,
+            ttl_seconds,
+        )
+        .await
+    }
+
+    pub async fn touch_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
+        self.touch_session(SessionKind::Browser, session_id).await
+    }
+
+    pub async fn revoke_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
+        self.revoke_session(SessionKind::Browser, session_id).await
+    }
+
+    pub async fn create_session(
+        &self,
+        session_kind: SessionKind,
+        operator_id: &str,
+        verified_password_hash: &str,
+        refresh_hash: &str,
+        ttl_seconds: u64,
+    ) -> Result<Option<LocalSession>, StoreError> {
         self.checkpoint_clock().await?;
+        let kind = session_kind.as_str();
         if refresh_hash.is_empty() {
             return Err(StoreError::InvalidInput("refresh hash"));
         }
@@ -314,7 +407,7 @@ impl Store {
                 let insert = format!("INSERT INTO operator_sessions
                     (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
                      rotated_from, family_id, last_seen_at)
-                    SELECT ?, id, ?, ?, 'browser', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, NULL, ?, {SQLITE_NOW_MS}
+                    SELECT ?, id, ?, ?, '{kind}', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, NULL, ?, {SQLITE_NOW_MS}
                     FROM operators WHERE id = ? AND disabled_at IS NULL AND password_hash = ?");
                 sqlx::query(&insert)
                     .bind(&session_id)
@@ -336,7 +429,7 @@ impl Store {
                 let insert = format!("INSERT INTO operator_sessions
                     (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
                      rotated_from, family_id, last_seen_at)
-                    SELECT $1, id, $2, $3, 'browser', {POSTGRES_NOW_MS}, {POSTGRES_NOW_MS} + $4::BIGINT, NULL, $5, {POSTGRES_NOW_MS}
+                    SELECT $1, id, $2, $3, '{kind}', {POSTGRES_NOW_MS}, {POSTGRES_NOW_MS} + $4::BIGINT, NULL, $5, {POSTGRES_NOW_MS}
                     FROM operators WHERE id = $6 AND disabled_at IS NULL AND password_hash = $7
                     FOR SHARE");
                 sqlx::query(&insert)
@@ -356,24 +449,28 @@ impl Store {
         if created != 1 {
             return Ok(None);
         }
-        self.browser_session_by_id(&session_id).await
+        self.session_by_id(session_kind, &session_id).await
     }
 
-    pub async fn browser_session_by_id(
+    pub async fn session_by_id(
         &self,
+        session_kind: SessionKind,
         session_id: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
         self.checkpoint_clock().await?;
+        let kind = session_kind.as_str();
+        let (sqlite_end, sqlite_live) = session_kind.access_bound("s.", SQLITE_NOW_MS);
+        let (postgres_end, postgres_live) = session_kind.access_bound("s.", POSTGRES_NOW_MS);
         match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!(
-                    "SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
+                    "SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}{sqlite_end}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
-                    WHERE s.id = ? AND s.kind = 'browser' AND s.revoked_at IS NULL
+                    WHERE s.id = ? AND s.kind = '{kind}' AND s.revoked_at IS NULL
                     AND s.expires_at > {SQLITE_NOW_MS}
-                    AND s.last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}
+                    AND s.last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}{sqlite_live}
                     AND o.disabled_at IS NULL"
                 );
                 let row = sqlx::query(&query)
@@ -385,13 +482,13 @@ impl Store {
             }
             Database::Postgres(pool) => {
                 let query = format!(
-                    "SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
+                    "SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}{postgres_end}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
-                    WHERE s.id = $1 AND s.kind = 'browser' AND s.revoked_at IS NULL
+                    WHERE s.id = $1 AND s.kind = '{kind}' AND s.revoked_at IS NULL
                     AND s.expires_at > {POSTGRES_NOW_MS}
-                    AND s.last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}
+                    AND s.last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}{postgres_live}
                     AND o.disabled_at IS NULL"
                 );
                 let row = sqlx::query(&query)
@@ -449,18 +546,20 @@ impl Store {
         }
     }
 
-    pub async fn browser_session_for_refresh_hash(
+    pub async fn session_for_refresh_hash(
         &self,
+        session_kind: SessionKind,
         refresh_hash: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
         self.checkpoint_clock().await?;
+        let kind = session_kind.as_str();
         match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!("SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
-                    WHERE s.refresh_hash = ? AND s.kind = 'browser'");
+                    WHERE s.refresh_hash = ? AND s.kind = '{kind}'");
                 let row = sqlx::query(&query)
                     .bind(refresh_hash)
                     .fetch_optional(pool)
@@ -473,7 +572,7 @@ impl Store {
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
-                    WHERE s.refresh_hash = $1 AND s.kind = 'browser'");
+                    WHERE s.refresh_hash = $1 AND s.kind = '{kind}'");
                 let row = sqlx::query(&query)
                     .bind(refresh_hash)
                     .fetch_optional(pool)
@@ -484,13 +583,15 @@ impl Store {
         }
     }
 
-    pub async fn rotate_browser_session(
+    pub async fn rotate_session(
         &self,
+        session_kind: SessionKind,
         old_refresh_hash: &str,
         new_refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
         self.checkpoint_clock().await?;
+        let kind = session_kind.as_str();
         if new_refresh_hash.is_empty() {
             return Err(StoreError::InvalidInput("refresh hash"));
         }
@@ -510,7 +611,7 @@ impl Store {
                     "SELECT id, operator_id, family_id, csrf_secret, revoked_at,
                     expires_at > {SQLITE_NOW_MS},
                     last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}
-                    FROM operator_sessions WHERE refresh_hash = ? AND kind = 'browser'"
+                    FROM operator_sessions WHERE refresh_hash = ? AND kind = '{kind}'"
                 );
                 let row = sqlx::query(&query)
                     .bind(old_refresh_hash)
@@ -554,7 +655,7 @@ impl Store {
                 let insert = format!("INSERT INTO operator_sessions
                     (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
                      rotated_from, family_id, last_seen_at)
-                    SELECT ?, ?, ?, ?, 'browser', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, ?, ?, {SQLITE_NOW_MS}
+                    SELECT ?, ?, ?, ?, '{kind}', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, ?, ?, {SQLITE_NOW_MS}
                     WHERE EXISTS (SELECT 1 FROM operators WHERE id = ? AND disabled_at IS NULL)");
                 let inserted = sqlx::query(&insert)
                     .bind(&new_session_id)
@@ -581,9 +682,9 @@ impl Store {
                 // password change, reset or removal takes them. A refresh
                 // that committed while such a change waited on the session
                 // row would insert a successor the change cannot see.
-                let locked_operator: Option<String> = sqlx::query_scalar(
-                    "SELECT operator_id FROM operator_sessions WHERE refresh_hash = $1 AND kind = 'browser'",
-                )
+                let locked_operator: Option<String> = sqlx::query_scalar(&format!(
+                    "SELECT operator_id FROM operator_sessions WHERE refresh_hash = $1 AND kind = '{kind}'"
+                ))
                 .bind(old_refresh_hash)
                 .fetch_optional(&mut *transaction)
                 .await
@@ -601,7 +702,7 @@ impl Store {
                     "SELECT id, operator_id, family_id, csrf_secret, revoked_at,
                     expires_at > {POSTGRES_NOW_MS},
                     last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}
-                    FROM operator_sessions WHERE refresh_hash = $1 AND kind = 'browser' FOR UPDATE"
+                    FROM operator_sessions WHERE refresh_hash = $1 AND kind = '{kind}' FOR UPDATE"
                 );
                 let row = sqlx::query(&query)
                     .bind(old_refresh_hash)
@@ -645,7 +746,7 @@ impl Store {
                 let insert = format!("INSERT INTO operator_sessions
                     (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
                      rotated_from, family_id, last_seen_at)
-                    SELECT $1, $2, $3, $4, 'browser', {POSTGRES_NOW_MS}, {POSTGRES_NOW_MS} + $5::BIGINT, $6, $7, {POSTGRES_NOW_MS}
+                    SELECT $1, $2, $3, $4, '{kind}', {POSTGRES_NOW_MS}, {POSTGRES_NOW_MS} + $5::BIGINT, $6, $7, {POSTGRES_NOW_MS}
                     WHERE EXISTS (SELECT 1 FROM operators WHERE id = $8 AND disabled_at IS NULL)");
                 let inserted = sqlx::query(&insert)
                     .bind(&new_session_id)
@@ -667,17 +768,24 @@ impl Store {
                 transaction.commit().await.map_err(StoreError::Database)?;
             }
         }
-        self.browser_session_by_id(&new_session_id).await
+        self.session_by_id(session_kind, &new_session_id).await
     }
 
-    pub async fn touch_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
+    pub async fn touch_session(
+        &self,
+        session_kind: SessionKind,
+        session_id: &str,
+    ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
+        let kind = session_kind.as_str();
+        let (_, sqlite_live) = session_kind.access_bound("", SQLITE_NOW_MS);
+        let (_, postgres_live) = session_kind.access_bound("operator_sessions.", POSTGRES_NOW_MS);
         let updated = match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!("UPDATE operator_sessions SET last_seen_at = {SQLITE_NOW_MS}
-                    WHERE id = ? AND kind = 'browser' AND revoked_at IS NULL
+                    WHERE id = ? AND kind = '{kind}' AND revoked_at IS NULL
                     AND expires_at > {SQLITE_NOW_MS}
-                    AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}
+                    AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}{sqlite_live}
                     AND EXISTS (SELECT 1 FROM operators o WHERE o.id = operator_id AND o.disabled_at IS NULL)");
                 sqlx::query(&query)
                     .bind(session_id)
@@ -688,9 +796,9 @@ impl Store {
             }
             Database::Postgres(pool) => {
                 let query = format!("UPDATE operator_sessions SET last_seen_at = {POSTGRES_NOW_MS}
-                    WHERE id = $1 AND kind = 'browser' AND revoked_at IS NULL
+                    WHERE id = $1 AND kind = '{kind}' AND revoked_at IS NULL
                     AND expires_at > {POSTGRES_NOW_MS}
-                    AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}
+                    AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}{postgres_live}
                     AND EXISTS (SELECT 1 FROM operators o WHERE o.id = operator_sessions.operator_id AND o.disabled_at IS NULL)");
                 sqlx::query(&query)
                     .bind(session_id)
@@ -703,13 +811,18 @@ impl Store {
         Ok(updated == 1)
     }
 
-    pub async fn revoke_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
+    pub async fn revoke_session(
+        &self,
+        session_kind: SessionKind,
+        session_id: &str,
+    ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
+        let kind = session_kind.as_str();
         let updated = match &self.database {
             Database::Sqlite(pool) => {
                 let query = format!(
                     "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
-                    WHERE id = ? AND kind = 'browser' AND revoked_at IS NULL
+                    WHERE id = ? AND kind = '{kind}' AND revoked_at IS NULL
                       AND {SQLITE_NOW_MS} IS NOT NULL"
                 );
                 sqlx::query(&query)
@@ -722,7 +835,7 @@ impl Store {
             Database::Postgres(pool) => {
                 let query = format!(
                     "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
-                    WHERE id = $1 AND kind = 'browser' AND revoked_at IS NULL
+                    WHERE id = $1 AND kind = '{kind}' AND revoked_at IS NULL
                       AND {POSTGRES_NOW_MS} IS NOT NULL"
                 );
                 sqlx::query(&query)

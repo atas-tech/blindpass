@@ -3,6 +3,7 @@
 //! Administrator-controlled workload registrations and fleet policy.
 
 use crate::app::AppState;
+use crate::routes::admin_session::{desktop_session, presents_desktop_bearer};
 use crate::routes::fleet::{api_error, operator_audit, require_operator, unavailable};
 use crate::store::{
     ApprovalDecisionOutcome, ApprovalRecord, AuditDraft, FleetPolicyRecord, GrantIssueDraft,
@@ -1436,7 +1437,7 @@ async fn list_unified_approvals(
     headers: HeaderMap,
     Query(query): Query<ApprovalQuery>,
 ) -> Response {
-    if let Err(response) = require_fleet_operator(&state, &headers, false).await {
+    if let Err(response) = require_approval_operator(&state, &headers, false).await {
         return response;
     }
     if query
@@ -1537,7 +1538,7 @@ async fn list_unified_approvals(
 }
 
 async fn count_unified_approvals(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Err(response) = require_fleet_operator(&state, &headers, false).await {
+    if let Err(response) = require_approval_operator(&state, &headers, false).await {
         return response;
     }
     let Some(store) = state.store.as_ref() else {
@@ -1565,7 +1566,7 @@ async fn get_unified_approval(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = require_fleet_operator(&state, &headers, false).await {
+    if let Err(response) = require_approval_operator(&state, &headers, false).await {
         return response;
     }
     let Some(store) = state.store.as_ref() else {
@@ -1625,7 +1626,7 @@ async fn decide_unified_approval(
     body: OperationDecisionInput,
     decision: &str,
 ) -> Response {
-    let operator = match require_fleet_operator(&state, &headers, true).await {
+    let operator = match require_approval_operator(&state, &headers, true).await {
         Ok(operator) => operator,
         Err(response) => return response,
     };
@@ -2317,6 +2318,51 @@ fn validate_workload_fields(
         return Err("local ceiling must be between 1 and 3600 seconds");
     }
     Ok(())
+}
+
+/// The approval routes also accept the desktop approval app's bearer
+/// session (P04-D3). It carries no ambient credential, so it needs no Origin
+/// or CSRF check; every other fleet route stays cookie-only.
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
+async fn require_approval_operator(
+    state: &AppState,
+    headers: &HeaderMap,
+    unsafe_method: bool,
+) -> Result<crate::store::LocalSession, Response> {
+    if !presents_desktop_bearer(headers) {
+        return require_fleet_operator(state, headers, unsafe_method).await;
+    }
+    let session = match desktop_session(state.store.as_ref(), headers).await {
+        Ok(session) => session,
+        Err(response) => {
+            if response.status() == StatusCode::UNAUTHORIZED
+                && let Some(store) = state.store.as_ref()
+                && store.clock_is_fenced().await
+            {
+                return Err(api_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "controller_clock_fenced",
+                    "the controller clock is fenced; an administrator must reconcile it",
+                ));
+            }
+            return Err(response);
+        }
+    };
+    if session.operator.must_change_password {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "password_change_required",
+            "change the temporary password before deciding approvals",
+        ));
+    }
+    if !matches!(session.operator.role.as_str(), "admin" | "operator") {
+        return Err(api_error(
+            StatusCode::FORBIDDEN,
+            "role_denied",
+            "administrator or operator role is required",
+        ));
+    }
+    Ok(session)
 }
 
 #[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.

@@ -512,6 +512,25 @@ export interface components {
     "LoginInput": {
       "username": string;
       "password": string;
+      "kind"?: "browser" | "desktop";
+    };
+    "DesktopRefreshInput": {
+      "kind": "desktop";
+      "refresh_token": string;
+    };
+    "DesktopSessionResponse": {
+      "kind": "desktop";
+      "operator": components["schemas"]["Operator"];
+      "access_token": string;
+      "refresh_token": string;
+      "expires_at": number;
+      "must_change_password": false;
+    };
+    "DesktopSession": {
+      "kind": "desktop";
+      "operator": components["schemas"]["Operator"];
+      "expires_at": number;
+      "must_change_password": boolean;
     };
     "AdminSession": {
       "operator": components["schemas"]["Operator"];
@@ -1246,8 +1265,8 @@ export interface operations {
     path: never;
     query: never;
     header: {
-      "Origin": string;
-      "X-CSRF-Token": string;
+      "Origin"?: string;
+      "X-CSRF-Token"?: string;
     };
     cookie: never;
   };
@@ -1260,7 +1279,12 @@ export interface operations {
   responses: {
     "200": {
       content: {
-        "application/json": components["schemas"]["AdminSessionResponse"];
+        "application/json": components["schemas"]["AdminSessionResponse"] | components["schemas"]["DesktopSessionResponse"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
       };
     };
     "401": {
@@ -1281,8 +1305,8 @@ export interface operations {
     path: never;
     query: never;
     header: {
-      "X-CSRF-Token": string;
-      "Origin": string;
+      "X-CSRF-Token"?: string;
+      "Origin"?: string;
     };
     cookie: never;
   };
@@ -1300,23 +1324,28 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"] | readonly ["desktopBearer"]>;
   };
   "refreshAdministratorSession": {
   parameters: {
     path: never;
     query: never;
     header: {
-      "X-CSRF-Token": string;
-      "Origin": string;
+      "X-CSRF-Token"?: string;
+      "Origin"?: string;
     };
     cookie: never;
   };
-  requestBody: never;
+  requestBody: {
+    required: false;
+    content: {
+    "application/json": components["schemas"]["DesktopRefreshInput"];
+    };
+  };
   responses: {
     "200": {
       content: {
-        "application/json": components["schemas"]["AdminSessionResponse"];
+        "application/json": components["schemas"]["AdminSessionResponse"] | components["schemas"]["DesktopSessionResponse"];
       };
     };
     "401": {
@@ -1330,7 +1359,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminRefresh", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminRefresh", "csrfCookie"] | readonly []>;
   };
   "getAdministratorSession": {
   parameters: {
@@ -1343,7 +1372,7 @@ export interface operations {
   responses: {
     "200": {
       content: {
-        "application/json": components["schemas"]["AdminSession"];
+        "application/json": components["schemas"]["AdminSession"] | components["schemas"]["DesktopSession"];
       };
     };
     "401": {
@@ -1352,7 +1381,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession"]>;
+  security: ReadonlyArray<readonly ["adminSession"] | readonly ["desktopBearer"]>;
   };
   "changeAdministratorPassword": {
   parameters: {
@@ -2815,7 +2844,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession"]>;
+  security: ReadonlyArray<readonly ["adminSession"] | readonly ["desktopBearer"]>;
   };
   "countFleetApprovals": {
   parameters: {
@@ -2847,7 +2876,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession"]>;
+  security: ReadonlyArray<readonly ["adminSession"] | readonly ["desktopBearer"]>;
   };
   "getFleetApproval": {
   parameters: {
@@ -2886,7 +2915,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession"]>;
+  security: ReadonlyArray<readonly ["adminSession"] | readonly ["desktopBearer"]>;
   };
   "approveFleetOperations": {
   parameters: {
@@ -2895,8 +2924,8 @@ export interface operations {
     };
     query: never;
     header: {
-      "X-CSRF-Token": string;
-      "Origin": string;
+      "X-CSRF-Token"?: string;
+      "Origin"?: string;
       "Idempotency-Key": string;
       "If-Match": string;
     };
@@ -2935,7 +2964,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"] | readonly ["desktopBearer"]>;
   };
   "rejectFleetOperations": {
   parameters: {
@@ -2944,8 +2973,8 @@ export interface operations {
     };
     query: never;
     header: {
-      "X-CSRF-Token": string;
-      "Origin": string;
+      "X-CSRF-Token"?: string;
+      "Origin"?: string;
       "Idempotency-Key": string;
       "If-Match": string;
     };
@@ -2984,7 +3013,7 @@ export interface operations {
       };
     };
   };
-  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"] | readonly ["desktopBearer"]>;
   };
   "listFleetGrants": {
   parameters: {

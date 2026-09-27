@@ -2,7 +2,7 @@
 
 use crate::app::AppState;
 use crate::routes::auth::{constant_equal, hash_api_key, hash_refresh_token, verify_api_key};
-use crate::store::{LocalOperator, LocalSession, Store};
+use crate::store::{LocalOperator, LocalSession, SessionKind, Store};
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
@@ -38,6 +38,17 @@ pub(crate) fn routes() -> Router<AppState> {
 struct LoginInput {
     username: String,
     password: String,
+    /// `desktop` selects the approval app's bearer transport (P04-D3);
+    /// absent or `browser` keeps the cookie session.
+    #[serde(default)]
+    kind: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DesktopRefreshInput {
+    kind: String,
+    refresh_token: String,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +63,17 @@ async fn login(
     headers: HeaderMap,
     Json(body): Json<LoginInput>,
 ) -> Response {
+    match body.kind.as_deref() {
+        None | Some("browser") => {}
+        Some("desktop") => return desktop_login(&state, &headers, &body).await,
+        Some(_) => {
+            return admin_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_session_kind",
+                "kind must be browser or desktop",
+            );
+        }
+    }
     if !valid_origin(&state, &headers) || !valid_pre_session_csrf(&headers) {
         return admin_error(
             StatusCode::FORBIDDEN,
@@ -62,31 +84,10 @@ async fn login(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
-    if body.username.trim().is_empty() || body.password.is_empty() {
-        return admin_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_credentials",
-            "invalid username or password",
-        );
-    }
-    let operator = match store.operator_by_username(body.username.trim()).await {
-        Ok(Some(operator)) if operator.disabled_at_ms.is_none() => operator,
-        Ok(_) => {
-            return admin_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_credentials",
-                "invalid username or password",
-            );
-        }
-        Err(_) => return unavailable(),
+    let operator = match verified_operator(store, &body).await {
+        Ok(operator) => operator,
+        Err(response) => return *response,
     };
-    if !verify_api_key(&body.password, &operator.password_hash) {
-        return admin_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_credentials",
-            "invalid username or password",
-        );
-    }
     let refresh_token = random_token();
     let Some(refresh_hash) = hash_refresh_token(&refresh_token) else {
         return unavailable();
@@ -113,7 +114,235 @@ async fn login(
     session_response(StatusCode::OK, &state, session, Some(&refresh_token))
 }
 
+async fn verified_operator(
+    store: &Store,
+    body: &LoginInput,
+) -> Result<LocalOperator, Box<Response>> {
+    let invalid = || {
+        Box::new(admin_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_credentials",
+            "invalid username or password",
+        ))
+    };
+    if body.username.trim().is_empty() || body.password.is_empty() {
+        return Err(invalid());
+    }
+    let operator = match store.operator_by_username(body.username.trim()).await {
+        Ok(Some(operator)) if operator.disabled_at_ms.is_none() => operator,
+        Ok(_) => return Err(invalid()),
+        Err(_) => return Err(Box::new(unavailable())),
+    };
+    if !verify_api_key(&body.password, &operator.password_hash) {
+        return Err(invalid());
+    }
+    Ok(operator)
+}
+
+/// P04-D3 desktop login. The approval app is not a browser: it sends no
+/// `Origin`, and a request that carries one is refused so page script can
+/// never hold these tokens. Nothing is set as a cookie, so there is no
+/// ambient credential and no CSRF value. A temporary password is refused
+/// without creating a session; it is changed in the console.
+async fn desktop_login(state: &AppState, headers: &HeaderMap, body: &LoginInput) -> Response {
+    if headers.contains_key(header::ORIGIN) {
+        return desktop_origin_denied();
+    }
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    let operator = match verified_operator(store, body).await {
+        Ok(operator) => operator,
+        Err(response) => return *response,
+    };
+    if operator.must_change_password {
+        return admin_error(
+            StatusCode::FORBIDDEN,
+            "password_change_required",
+            "change the temporary password in the console before signing in here",
+        );
+    }
+    let refresh_token = random_token();
+    let Some(refresh_hash) = hash_refresh_token(&refresh_token) else {
+        return unavailable();
+    };
+    match store
+        .create_session(
+            SessionKind::Desktop,
+            &operator.id,
+            &operator.password_hash,
+            &refresh_hash,
+            state.refresh_token_ttl_seconds,
+        )
+        .await
+    {
+        Ok(Some(session)) => desktop_session_response(&session, &refresh_token),
+        Ok(None) => admin_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_credentials",
+            "invalid username or password",
+        ),
+        Err(_) => unavailable(),
+    }
+}
+
+fn desktop_session_response(session: &LocalSession, refresh_token: &str) -> Response {
+    let mut response = (
+        StatusCode::OK,
+        Json(json!({
+            "kind": "desktop",
+            "operator": operator_body(&session.operator),
+            "access_token": session.session_id,
+            "refresh_token": refresh_token,
+            "expires_at": session.expires_at_ms,
+            "must_change_password": session.operator.must_change_password
+        })),
+    )
+        .into_response();
+    response
+        .headers_mut()
+        .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
+fn desktop_origin_denied() -> Response {
+    admin_error(
+        StatusCode::FORBIDDEN,
+        "desktop_origin_denied",
+        "desktop session credentials are not accepted from a browser origin",
+    )
+}
+
+fn bearer_token(headers: &HeaderMap) -> Option<&str> {
+    headers
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+}
+
+/// Whether a request takes the desktop transport: a bearer and no
+/// `Origin`. A browser request always carries `Origin` on these routes, so
+/// page script presenting a desktop token falls through to the cookie path
+/// and is refused there.
+pub(crate) fn presents_desktop_bearer(headers: &HeaderMap) -> bool {
+    headers.contains_key(header::AUTHORIZATION) && !headers.contains_key(header::ORIGIN)
+}
+
+/// Resolve a desktop bearer. The caller has already chosen the desktop
+/// transport; a request with an `Origin` is refused, and a browser session id
+/// presented as a bearer does not resolve because sessions are kind-scoped.
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
+pub(crate) async fn desktop_session(
+    store: Option<&Store>,
+    headers: &HeaderMap,
+) -> Result<LocalSession, Response> {
+    if headers.contains_key(header::ORIGIN) {
+        return Err(desktop_origin_denied());
+    }
+    let expired = || {
+        admin_error(
+            StatusCode::UNAUTHORIZED,
+            "session_expired",
+            "the desktop session is expired or revoked",
+        )
+    };
+    let Some(store) = store else {
+        return Err(unavailable());
+    };
+    let Some(token) = bearer_token(headers) else {
+        return Err(admin_error(
+            StatusCode::UNAUTHORIZED,
+            "session_required",
+            "an active desktop session is required",
+        ));
+    };
+    match store.touch_session(SessionKind::Desktop, token).await {
+        Ok(true) => {}
+        Ok(false) => return Err(expired()),
+        Err(_) => return Err(unavailable()),
+    }
+    match store.session_by_id(SessionKind::Desktop, token).await {
+        Ok(Some(session)) => Ok(session),
+        Ok(None) => Err(expired()),
+        Err(_) => Err(unavailable()),
+    }
+}
+
+fn desktop_session_body(session: &LocalSession) -> Value {
+    json!({
+        "kind": "desktop",
+        "operator": operator_body(&session.operator),
+        "expires_at": session.expires_at_ms,
+        "must_change_password": session.operator.must_change_password
+    })
+}
+
+async fn desktop_refresh(state: &AppState, body: &[u8]) -> Response {
+    let Ok(input) = serde_json::from_slice::<DesktopRefreshInput>(body) else {
+        return admin_error(
+            StatusCode::FORBIDDEN,
+            "origin_denied",
+            "origin is not allowed",
+        );
+    };
+    if input.kind != "desktop" || input.refresh_token.is_empty() {
+        return admin_error(
+            StatusCode::FORBIDDEN,
+            "origin_denied",
+            "origin is not allowed",
+        );
+    }
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    let Some(refresh_hash) = hash_refresh_token(&input.refresh_token) else {
+        return unavailable();
+    };
+    let next_refresh = random_token();
+    let Some(next_hash) = hash_refresh_token(&next_refresh) else {
+        return unavailable();
+    };
+    match store
+        .rotate_session(
+            SessionKind::Desktop,
+            &refresh_hash,
+            &next_hash,
+            state.refresh_token_ttl_seconds,
+        )
+        .await
+    {
+        Ok(Some(next)) if !next.operator.must_change_password => {
+            desktop_session_response(&next, &next_refresh)
+        }
+        Ok(Some(next)) => {
+            let _ = store
+                .revoke_session(SessionKind::Desktop, &next.session_id)
+                .await;
+            admin_error(
+                StatusCode::FORBIDDEN,
+                "password_change_required",
+                "change the temporary password in the console before signing in here",
+            )
+        }
+        Ok(None) => admin_error(
+            StatusCode::UNAUTHORIZED,
+            "refresh_invalid",
+            "the refresh credential is expired, revoked, or replayed",
+        ),
+        Err(_) => unavailable(),
+    }
+}
+
 async fn current_session(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if presents_desktop_bearer(&headers) {
+        return match desktop_session(state.store.as_ref(), &headers).await {
+            Ok(session) => (StatusCode::OK, Json(desktop_session_body(&session))).into_response(),
+            Err(response) => response,
+        };
+    }
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
@@ -147,6 +376,22 @@ async fn current_session(State(state): State<AppState>, headers: HeaderMap) -> R
 }
 
 async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
+    if presents_desktop_bearer(&headers) {
+        let session = match desktop_session(state.store.as_ref(), &headers).await {
+            Ok(session) => session,
+            Err(response) => return response,
+        };
+        let Some(store) = state.store.as_ref() else {
+            return unavailable();
+        };
+        return match store
+            .revoke_session(SessionKind::Desktop, &session.session_id)
+            .await
+        {
+            Ok(_) => StatusCode::NO_CONTENT.into_response(),
+            Err(_) => unavailable(),
+        };
+    }
     if !valid_origin(&state, &headers) {
         return admin_error(
             StatusCode::FORBIDDEN,
@@ -183,7 +428,16 @@ async fn logout(State(state): State<AppState>, headers: HeaderMap) -> Response {
     response
 }
 
-async fn refresh(State(state): State<AppState>, headers: HeaderMap) -> Response {
+async fn refresh(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    // Browsers always send Origin on this POST; the desktop app never does
+    // and presents its refresh token in the body instead of a cookie.
+    if !headers.contains_key(header::ORIGIN) {
+        return desktop_refresh(&state, &body).await;
+    }
     if !valid_origin(&state, &headers) {
         return admin_error(
             StatusCode::FORBIDDEN,

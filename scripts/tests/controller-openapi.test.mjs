@@ -393,3 +393,35 @@ test("admin session scheme documents the forced password change gate", async () 
   assert.match(scheme.description, /password_change_required/);
   assert.match(scheme.description, /403/);
 });
+
+test("P04-D3 desktop bearer is limited to the session and unified approval routes", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const scheme = schema.components.securitySchemes.desktopBearer;
+  assert.equal(scheme.type, "http");
+  assert.equal(scheme.scheme, "bearer");
+  assert.match(scheme.description, /without Origin/);
+  const allowed = [
+    "GET /api/v3/admin/session",
+    "POST /api/v3/admin/session/logout",
+    "GET /api/v3/approvals",
+    "GET /api/v3/approvals/count",
+    "GET /api/v3/approvals/{id}",
+    "POST /api/v3/approvals/{id}/approve",
+    "POST /api/v3/approvals/{id}/reject"
+  ];
+  const declared = [];
+  for (const [route, item] of Object.entries(schema.paths)) {
+    for (const [method, operation] of Object.entries(item)) {
+      if (operation.security?.some((requirement) => "desktopBearer" in requirement)) declared.push(`${method.toUpperCase()} ${route}`);
+    }
+  }
+  assert.deepEqual(declared.sort(), [...allowed].sort());
+  const login = schema.components.schemas.LoginInput;
+  assert.deepEqual(login.properties.kind.enum, ["browser", "desktop"]);
+  assert.deepEqual(login.required, ["username", "password"]);
+  const desktop = schema.components.schemas.DesktopSessionResponse;
+  assert.ok(!("csrf_token" in desktop.properties));
+  assert.deepEqual(schema.components.schemas.DesktopRefreshInput.required, ["kind", "refresh_token"]);
+  const refresh = schema.paths["/api/v3/admin/session/refresh"].post;
+  assert.equal(refresh.requestBody.required, false);
+});

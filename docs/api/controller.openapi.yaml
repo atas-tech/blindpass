@@ -308,11 +308,12 @@
         "operationId": "loginAdministrator",
         "tags": ["Local administration"],
         "summary": "Authenticate a local operator",
-        "description": "Validates Origin and pre-session CSRF. Successful sessions use an HttpOnly Secure SameSite=Strict cookie scoped to /.",
-        "parameters": [{ "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/CsrfHeader" }],
+        "description": "Browser (kind absent or browser): validates Origin and pre-session CSRF; successful sessions use an HttpOnly Secure SameSite=Strict cookie scoped to /. Desktop (kind desktop, P04-D3): the request must carry no Origin (403 desktop_origin_denied) and no CSRF; the response is DesktopSessionResponse with Cache-Control no-store and sets no cookie; a temporary password answers 403 password_change_required without creating a session.",
+        "parameters": [{ "$ref": "#/components/parameters/OriginUnlessDesktop" }, { "$ref": "#/components/parameters/CsrfHeaderUnlessDesktop" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginInput" } } } },
         "responses": {
-          "200": { "description": "Local session established", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionResponse" } } } },
+          "200": { "description": "Local session established", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/AdminSessionResponse" }, { "$ref": "#/components/schemas/DesktopSessionResponse" }] } } } },
+          "400": { "$ref": "#/components/responses/AdminError" },
           "401": { "$ref": "#/components/responses/AdminError" },
           "403": { "$ref": "#/components/responses/AdminError" }
         }
@@ -323,9 +324,10 @@
         "operationId": "logoutAdministrator",
         "tags": ["Local administration"],
         "summary": "Revoke the current local session",
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
-        "responses": { "204": { "description": "Session revoked and cookies cleared" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "description": "A desktop bearer without Origin revokes that desktop session on the server; no cookie is cleared.",
+        "security": [{ "adminSession": [], "csrfCookie": [] }, { "desktopBearer": [] }],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeaderUnlessDesktop" }, { "$ref": "#/components/parameters/OriginUnlessDesktop" }],
+        "responses": { "204": { "description": "Session revoked (browser cookies cleared)" }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/admin/session/refresh": {
@@ -333,10 +335,11 @@
         "operationId": "refreshAdministratorSession",
         "tags": ["Local administration"],
         "summary": "Rotate the local refresh session",
-        "description": "The server revokes the whole rotation family when replay or recovery is detected.",
-        "security": [{ "adminRefresh": [], "csrfCookie": [] }],
-        "parameters": [{ "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }],
-        "responses": { "200": { "description": "Session rotated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionResponse" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "description": "The server revokes the whole rotation family when replay or recovery is detected. A request without Origin is a desktop refresh: its body is DesktopRefreshInput, the response is DesktopSessionResponse and the previous access and refresh tokens stop working. A request with Origin reads only the bp_refresh cookie.",
+        "security": [{ "adminRefresh": [], "csrfCookie": [] }, {}],
+        "parameters": [{ "$ref": "#/components/parameters/CsrfHeaderUnlessDesktop" }, { "$ref": "#/components/parameters/OriginUnlessDesktop" }],
+        "requestBody": { "required": false, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DesktopRefreshInput" } } } },
+        "responses": { "200": { "description": "Session rotated", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/AdminSessionResponse" }, { "$ref": "#/components/schemas/DesktopSessionResponse" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/admin/session": {
@@ -344,8 +347,8 @@
         "operationId": "getAdministratorSession",
         "tags": ["Local administration"],
         "summary": "Read the current local session and CSRF value",
-        "security": [{ "adminSession": [] }],
-        "responses": { "200": { "description": "Current session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSession" } } } }, "401": { "$ref": "#/components/responses/AdminError" } }
+        "security": [{ "adminSession": [] }, { "desktopBearer": [] }],
+        "responses": { "200": { "description": "Current session; a desktop bearer reads DesktopSession, which has no CSRF value", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/AdminSession" }, { "$ref": "#/components/schemas/DesktopSession" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/admin/session/change-password": {
@@ -710,7 +713,7 @@
       "get": {
         "operationId": "listFleetApprovals",
         "tags": ["Fleet administration"],
-        "security": [{ "adminSession": [] }],
+        "security": [{ "adminSession": [] }, { "desktopBearer": [] }],
         "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string", "enum": ["pending", "approved", "rejected", "expired"] } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Unified page with typed approval identities and authoritative pending count", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnifiedApprovalList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
@@ -719,7 +722,7 @@
       "get": {
         "operationId": "countFleetApprovals",
         "tags": ["Fleet administration"],
-        "security": [{ "adminSession": [] }],
+        "security": [{ "adminSession": [] }, { "desktopBearer": [] }],
         "parameters": [],
         "responses": { "200": { "description": "Authoritative pending count across approval types", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalCount" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
@@ -728,7 +731,7 @@
       "get": {
         "operationId": "getFleetApproval",
         "tags": ["Fleet administration"],
-        "security": [{ "adminSession": [] }],
+        "security": [{ "adminSession": [] }, { "desktopBearer": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Typed exchange or operation approval", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/Approval" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
@@ -738,8 +741,8 @@
         "operationId": "approveFleetOperations",
         "description": "Operation approvals may be decided only by an operator named in the rule's approver_ids (403 approval_scope_denied) other than a requester of any member operation (403 self_approval_denied).",
         "tags": ["Fleet administration"],
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
+        "security": [{ "adminSession": [], "csrfCookie": [] }, { "desktopBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeaderUnlessDesktop" }, { "$ref": "#/components/parameters/OriginUnlessDesktop" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationDecisionInput" }, { "$ref": "#/components/schemas/ApprovalDecisionInput" }] } } } },
         "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
@@ -749,8 +752,8 @@
         "operationId": "rejectFleetOperations",
         "description": "Operation approvals may be decided only by an operator named in the rule's approver_ids (403 approval_scope_denied) other than a requester of any member operation (403 self_approval_denied).",
         "tags": ["Fleet administration"],
-        "security": [{ "adminSession": [], "csrfCookie": [] }],
-        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeader" }, { "$ref": "#/components/parameters/Origin" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
+        "security": [{ "adminSession": [], "csrfCookie": [] }, { "desktopBearer": [] }],
+        "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }, { "$ref": "#/components/parameters/CsrfHeaderUnlessDesktop" }, { "$ref": "#/components/parameters/OriginUnlessDesktop" }, { "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationDecisionInput" }, { "$ref": "#/components/schemas/ApprovalDecisionInput" }] } } } },
         "responses": { "200": { "description": "Exchange or exact grouped operation decision recorded", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/UnifiedExchangeDecision" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
@@ -872,10 +875,13 @@
       "adminSession": { "type": "apiKey", "in": "cookie", "name": "bp_session", "description": "Local operator session cookie. While the operator must change a temporary password (bootstrap, local reset or test fixture), every administrative route other than session read, refresh, logout and change-password answers 403 with error password_change_required." },
       "adminRefresh": { "type": "apiKey", "in": "cookie", "name": "bp_refresh" },
       "csrfCookie": { "type": "apiKey", "in": "cookie", "name": "bp_csrf" },
+      "desktopBearer": { "type": "http", "scheme": "bearer", "description": "P04-D3 desktop approval-app access token from a kind desktop login or refresh, sent without Origin. Accepted only by session read, refresh and logout and the /api/v3/approvals routes; every other route answers 401. It expires 20 minutes after the login or refresh that issued it, as well as on logout, idle timeout, password change, reset, removal and family revocation. Unsafe methods need no CSRF value because nothing is ambient." },
       "seedToken": { "type": "apiKey", "in": "header", "name": "x-blindpass-seed-token" }
     },
     "parameters": {
       "Origin": { "name": "Origin", "in": "header", "required": true, "schema": { "type": "string", "format": "uri" } },
+      "OriginUnlessDesktop": { "name": "Origin", "in": "header", "required": false, "schema": { "type": "string", "format": "uri" }, "description": "Required and validated for browser sessions. Absent for the desktop transport, which it selects." },
+      "CsrfHeaderUnlessDesktop": { "name": "X-CSRF-Token", "in": "header", "required": false, "schema": { "type": "string" }, "description": "Required for browser sessions as for CsrfHeader; not used by the desktop transport." },
       "CsrfHeader": { "name": "X-CSRF-Token", "in": "header", "required": true, "schema": { "type": "string" }, "description": "Must match the authenticated session's server-side CSRF value and bp_csrf cookie." },
       "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 16, "maxLength": 128 } },
       "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^\\\"[1-9][0-9]*\\\"$" }, "description": "Expected resource version; stale updates return 409 without side effects." }
@@ -956,7 +962,10 @@
       "NodeEventsInput": { "type": "object", "properties": { "events": { "type": "array", "items": { "$ref": "#/components/schemas/NodeEvent" }, "maxItems": 100 } }, "required": ["events"], "additionalProperties": false },
       "NodeEventsResponse": { "type": "object", "properties": { "accepted": { "type": "integer", "minimum": 0 }, "duplicates": { "type": "integer", "minimum": 0 }, "ack": { "oneOf": [{ "$ref": "#/components/schemas/ApplicationAck" }, { "type": "null" }] }, "discarded": { "description": "Correctly signed events that can never apply. Each is audited and included in the acknowledgement.", "type": "array", "items": { "type": "object", "properties": { "idempotency_key": { "type": "string" }, "error": { "type": "string", "enum": ["invalid_node_event", "event_idempotency_conflict"] } }, "required": ["idempotency_key", "error"], "additionalProperties": false } }, "rejected": { "description": "The first event that was not applied or discarded; later events in the batch were not processed.", "oneOf": [{ "type": "object", "properties": { "idempotency_key": { "type": "string" }, "error": { "type": "string" } }, "required": ["idempotency_key", "error"], "additionalProperties": false }, { "type": "null" }] } }, "required": ["accepted", "duplicates", "ack", "rejected"], "additionalProperties": false },
       "BootstrapInput": { "type": "object", "properties": { "username": { "type": "string", "minLength": 3, "maxLength": 128 }, "password": { "type": "string", "minLength": 12, "maxLength": 1024 }, "display_name": { "type": "string", "minLength": 1, "maxLength": 160 } }, "required": ["username", "password", "display_name"], "additionalProperties": false },
-      "LoginInput": { "type": "object", "properties": { "username": { "type": "string" }, "password": { "type": "string" } }, "required": ["username", "password"], "additionalProperties": false },
+      "LoginInput": { "type": "object", "properties": { "username": { "type": "string" }, "password": { "type": "string" }, "kind": { "type": "string", "enum": ["browser", "desktop"], "description": "Absent means browser." } }, "required": ["username", "password"], "additionalProperties": false },
+      "DesktopRefreshInput": { "type": "object", "properties": { "kind": { "type": "string", "const": "desktop" }, "refresh_token": { "type": "string", "minLength": 1 } }, "required": ["kind", "refresh_token"], "additionalProperties": false },
+      "DesktopSessionResponse": { "type": "object", "description": "Desktop credentials. The approval app keeps refresh_token only in $XDG_RUNTIME_DIR/blindpass/session (0600) and access_token only in memory.", "properties": { "kind": { "type": "string", "const": "desktop" }, "operator": { "$ref": "#/components/schemas/Operator" }, "access_token": { "type": "string" }, "refresh_token": { "type": "string" }, "expires_at": { "type": "integer", "description": "When access_token stops working, in Unix milliseconds" }, "must_change_password": { "type": "boolean", "const": false } }, "required": ["kind", "operator", "access_token", "refresh_token", "expires_at", "must_change_password"], "additionalProperties": false },
+      "DesktopSession": { "type": "object", "properties": { "kind": { "type": "string", "const": "desktop" }, "operator": { "$ref": "#/components/schemas/Operator" }, "expires_at": { "type": "integer" }, "must_change_password": { "type": "boolean" } }, "required": ["kind", "operator", "expires_at", "must_change_password"], "additionalProperties": false },
       "AdminSession": { "type": "object", "properties": { "operator": { "$ref": "#/components/schemas/Operator" }, "csrf_token": { "type": "string" }, "expires_at": { "type": "integer" }, "must_change_password": { "type": "boolean" } }, "required": ["operator", "csrf_token", "expires_at", "must_change_password"], "additionalProperties": false },
       "AdminSessionResponse": { "type": "object", "properties": { "operator": { "$ref": "#/components/schemas/Operator" }, "csrf_token": { "type": "string" }, "expires_at": { "type": "integer" }, "must_change_password": { "type": "boolean" } }, "required": ["operator", "csrf_token", "expires_at", "must_change_password"], "additionalProperties": false },
       "ChangePasswordInput": { "type": "object", "properties": { "current_password": { "type": "string" }, "new_password": { "type": "string", "minLength": 12, "maxLength": 1024 } }, "required": ["current_password", "new_password"], "additionalProperties": false },

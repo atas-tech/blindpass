@@ -48,7 +48,7 @@ pub use node_channel::{
     InboxDocument, NodeEventInsert, NodeEventRecord, NodeSessionContext, NodeSessionDraft,
 };
 pub use operation_approvals::{OperationCancelOutcome, OperationDecision};
-pub use operators::{LocalOperator, LocalSession};
+pub use operators::{LocalOperator, LocalSession, SessionKind};
 pub use workload_authority::WORKLOAD_UNIT_CONFLICT;
 
 const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
