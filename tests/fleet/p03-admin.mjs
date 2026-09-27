@@ -81,17 +81,25 @@ async function createEnrollment(name, tokenPath) {
   print({ id: enrollment.id, node_id: enrollment.node_id, expires_at: enrollment.expires_at });
 }
 
-async function approveEnrollment(id) {
-  if (!id) throw new Error('approve-enrollment requires ENROLLMENT_ID');
+// The operator compares the fingerprint the node printed, which the node
+// derived from the broker's own identity, with the controller's record. The
+// value approved is the node's, never the controller's display alone.
+async function approveEnrollment(id, nodeFingerprint) {
+  if (!id || !/^[a-f0-9]{64}$/.test(nodeFingerprint ?? '')) {
+    throw new Error('approve-enrollment requires ENROLLMENT_ID NODE_FINGERPRINT');
+  }
   const enrollment = await api(`/api/v3/enrollments/${encodeURIComponent(id)}`, { method: 'GET' });
   if (enrollment.status !== 'submitted' || typeof enrollment.fingerprint !== 'string') {
     throw new Error(`enrollment is ${enrollment.status}, expected submitted`);
+  }
+  if (enrollment.fingerprint !== nodeFingerprint) {
+    throw new Error('controller enrollment fingerprint does not match the node-printed fingerprint');
   }
   const approved = await api(`/api/v3/enrollments/${encodeURIComponent(id)}/approve`, {
     method: 'POST',
     headers: writeHeaders({ 'if-match': `"${enrollment.version}"` }),
     body: JSON.stringify({
-      expected_fingerprint: enrollment.fingerprint,
+      expected_fingerprint: nodeFingerprint,
       expected_version: enrollment.version,
     }),
   });

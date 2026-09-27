@@ -426,10 +426,18 @@ create_enrollment() {
         printf 'P03-FAIL controller returned malformed enrollment identifiers\n' >&2
         return 1
     }
-    guest_ssh "$guest" sudo /usr/local/sbin/blindpass-p03-guest enroll \
-        https://p03-controller:8443 "$issuer_fingerprint" <"$token_file" >&2
+    local enroll_output node_fingerprint
+    enroll_output=$(guest_ssh "$guest" sudo /usr/local/sbin/blindpass-p03-guest enroll \
+        https://p03-controller:8443 "$issuer_fingerprint" <"$token_file")
     rm -f -- "$token_file"
-    admin approve-enrollment "$enrollment_id" >/dev/null
+    printf '%s\n' "$enroll_output" >&2
+    node_fingerprint=$(sed -n 's/^enrollment_id=.* fingerprint=\([a-f0-9]\{64\}\) status=submitted$/\1/p' \
+        <<<"$enroll_output" | tail -n 1)
+    [[ "$node_fingerprint" =~ ^[a-f0-9]{64}$ ]] || {
+        printf 'P03-FAIL node enrollment did not print its key fingerprint\n' >&2
+        return 1
+    }
+    admin approve-enrollment "$enrollment_id" "$node_fingerprint" >/dev/null
     printf '%s\n' "$node_id"
 }
 
