@@ -614,9 +614,16 @@ impl GrantJournal {
         if length.saturating_add(line.len() as u64) > GRANT_JOURNAL_MAX_BYTES {
             return Err("grant journal is full; new grant consumption is denied");
         }
-        file.write_all(line.as_bytes())
+        if file
+            .write_all(line.as_bytes())
             .and_then(|()| file.sync_all())
-            .map_err(|_| "grant consumption intent could not be flushed")?;
+            .is_err()
+        {
+            // Cut a partial record so the next append starts on a record
+            // boundary; startup repairs the tail if this also fails.
+            let _ = file.set_len(length).and_then(|()| file.sync_all());
+            return Err("grant consumption intent could not be flushed");
+        }
         self.consumed.insert(grant_id.to_owned(), expires_at_ms);
         if !existed {
             let parent = path
@@ -783,9 +790,14 @@ impl RevocationJournal {
         if length.saturating_add(line.len() as u64) > GRANT_JOURNAL_MAX_BYTES {
             return Err("grant revocation journal is full; tombstone is not durable");
         }
-        file.write_all(line.as_bytes())
+        if file
+            .write_all(line.as_bytes())
             .and_then(|()| file.sync_all())
-            .map_err(|_| "grant revocation tombstone could not be flushed")?;
+            .is_err()
+        {
+            let _ = file.set_len(length).and_then(|()| file.sync_all());
+            return Err("grant revocation tombstone could not be flushed");
+        }
         if !existed {
             let parent = path
                 .parent()

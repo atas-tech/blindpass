@@ -435,8 +435,14 @@ impl BrokerState {
                     .consume(grant_id, &authorization, policy_version, now)
                 {
                     Ok(grant) if grant == preview => grant,
-                    Ok(_) | Err(_) => {
+                    Ok(_) => {
                         return Ok(format!("OK operation_uncertain {}\n", preview.id).into_bytes());
+                    }
+                    Err(denial) => {
+                        // No durable intent was recorded, so nothing was
+                        // consumed: withdraw the provisional result.
+                        self.withdraw_pending_events(&event_keys);
+                        return Err(BrokerError::Configuration(denial.code()));
                     }
                 };
             match grant.action.as_str() {
@@ -625,6 +631,15 @@ impl BrokerState {
             return Err(error);
         }
         Ok(())
+    }
+
+    fn withdraw_pending_events(&mut self, event_keys: &[String]) {
+        self.pending_node_events
+            .retain(|event| !event_keys.contains(&event.idempotency_key));
+        if let Err(error) = self.persist_pending_node_events() {
+            // The next successful commit drops the withdrawn events.
+            eprintln!("withdrawn operation result could not be committed: {error}");
+        }
     }
 
     fn update_operation_result(
@@ -2456,6 +2471,35 @@ mod tests {
             fs::metadata(&queue).unwrap().ino(),
             first,
             "an unchanged overflow flag must not rewrite up to 10,000 events"
+        );
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn consume_journal_failure_is_a_denial_without_an_uncertain_result() {
+        let (directory, mut state, grant) = fleet_state_with_grant("journal-failure");
+        let journal = directory.join("consumed.jsonl");
+        fs::create_dir(&journal).unwrap();
+        let peer = workload_peer();
+        assert_eq!(
+            error_code(state.process_workload(&peer, &consume_request(&grant.id))),
+            b"ERR consumption_unavailable\n"
+        );
+        assert!(
+            state.pending_node_events.is_empty(),
+            "nothing was consumed, so no uncertain result may be reported"
+        );
+        assert!(!fs::exists(directory.join("pending-node-events.jsonl")).unwrap());
+        assert!(!fs::exists(directory.join("ops").join(format!("{}.marker", grant.id))).unwrap());
+
+        // The grant was never consumed and remains usable once the journal
+        // can be written.
+        fs::remove_dir(&journal).unwrap();
+        assert_eq!(
+            state
+                .process_workload(&peer, &consume_request(&grant.id))
+                .unwrap(),
+            format!("OK operation_completed {}\n", grant.id).as_bytes()
         );
         fs::remove_dir_all(directory).unwrap();
     }
