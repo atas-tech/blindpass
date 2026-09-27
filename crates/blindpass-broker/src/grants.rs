@@ -255,8 +255,15 @@ impl GrantVerifier {
             }
             return Err("grant id was reused with different signed content");
         }
+        // The broker enforces every local ceiling itself, even for a signed
+        // grant whose ceiling passed the comparisons above.
+        let local_ceiling_ms = grant
+            .local_ceiling_seconds
+            .min(policy.local_ceiling_seconds)
+            .min(registration.local_ceiling_seconds)
+            .saturating_mul(1_000);
         let deadline_boottime_ms = now_boottime_ms
-            .checked_add(remaining_ms.min(registration.local_ceiling_seconds * 1_000))
+            .checked_add(remaining_ms.min(local_ceiling_ms))
             .filter(|deadline| *deadline > now_boottime_ms)
             .ok_or("grant has no safe local lifetime remaining")?;
         self.accepted.insert(
@@ -1246,6 +1253,184 @@ mod tests {
             ),
             Err("grant is stale or exceeds the broker lifetime maximum")
         );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// A verifier with fresh signed time where controller time equals
+    /// `1_800_000_000_000` at boottime 2_000 and the grant fixtures are fresh.
+    fn verifier_with_fresh_time(path: &std::path::Path) -> GrantVerifier {
+        let mut verifier = verifier(path, 1_000);
+        let reply = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: 1_799_999_999_000,
+            controller_time_ms: 1_800_000_000_000,
+            issuer_epoch: 1,
+        };
+        verifier
+            .accept_time_reply(&reply, "nd_node-a", 1, 2_000)
+            .unwrap();
+        verifier
+    }
+
+    #[test]
+    fn grant_deadline_is_clamped_by_the_smallest_local_ceiling() {
+        let path = temporary_path();
+        let mut verifier = verifier_with_fresh_time(&path);
+        // 10 minutes of signed lifetime remain; every ceiling is shorter.
+        let mut grant = grant();
+        grant.expires_at_ms = grant.issued_at_ms + 600_000;
+        grant.local_ceiling_seconds = 20;
+        let mut policy = policy();
+        policy.local_ceiling_seconds = 30;
+        let mut registration = registration();
+        registration.local_ceiling_seconds = 45;
+        assert!(
+            verifier
+                .accept_grant(
+                    grant.clone(),
+                    b"clamped-by-grant",
+                    "nd_node-a",
+                    "nd_node-a-1",
+                    &policy,
+                    &registration,
+                    2_000,
+                )
+                .unwrap()
+        );
+        assert_eq!(verifier.accepted[&grant.id].deadline_boottime_ms, 22_000);
+
+        // The policy and registration ceilings also bound the deadline on
+        // their own; the grant ceiling can never exceed either of them.
+        let mut second = grant.clone();
+        second.id = "gr_1123456789abcdef0123456789abcdef".to_owned();
+        second.local_ceiling_seconds = 30;
+        policy.local_ceiling_seconds = 30;
+        registration.local_ceiling_seconds = 30;
+        verifier
+            .accept_grant(
+                second.clone(),
+                b"clamped-by-all",
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy,
+                &registration,
+                2_000,
+            )
+            .unwrap();
+        assert_eq!(verifier.accepted[&second.id].deadline_boottime_ms, 32_000);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn grant_acceptance_rejects_ceiling_lifetime_and_binding_violations() {
+        let path = temporary_path();
+        let mut verifier = verifier_with_fresh_time(&path);
+        let policy = policy();
+        let registration = registration();
+        type Mutation = fn(&mut super::Grant, &mut PolicySnapshot, &mut Registration);
+        let cases: [(&str, Mutation); 9] = [
+            ("grant ceiling above policy ceiling", |grant, policy, _| {
+                policy.local_ceiling_seconds = 30;
+                grant.local_ceiling_seconds = 31;
+            }),
+            (
+                "grant ceiling above registration ceiling",
+                |grant, _, registration| {
+                    registration.local_ceiling_seconds = 30;
+                    grant.local_ceiling_seconds = 31;
+                },
+            ),
+            (
+                "lifetime above one hour with fresh issue time",
+                |grant, _, _| {
+                    grant.expires_at_ms = grant.issued_at_ms + 3_600_001;
+                },
+            ),
+            ("grant bound to another node", |grant, _, registration| {
+                grant.node_id = "nd_node-b".to_owned();
+                registration.node_id = "nd_node-b".to_owned();
+            }),
+            ("recipient key mismatch", |grant, _, _| {
+                grant.recipient_key_id = "nd_node-a-2".to_owned();
+            }),
+            ("action not in policy", |_, policy, _| {
+                policy.allowed_actions = vec!["other.action".to_owned()];
+            }),
+            ("mode not in policy", |_, policy, _| {
+                policy.allowed_modes = vec![ConsumptionMode::Socket];
+            }),
+            ("issued in the future", |grant, _, _| {
+                grant.issued_at_ms = 1_800_000_005_000;
+                grant.expires_at_ms = 1_800_000_065_000;
+            }),
+            ("policy version mismatch", |grant, _, _| {
+                grant.policy_version = 5;
+            }),
+        ];
+        for (label, mutate) in cases {
+            let mut grant = grant();
+            let mut policy = policy.clone();
+            let mut registration = registration.clone();
+            mutate(&mut grant, &mut policy, &mut registration);
+            assert!(
+                verifier
+                    .accept_grant(
+                        grant.clone(),
+                        label.as_bytes(),
+                        "nd_node-a",
+                        "nd_node-a-1",
+                        &policy,
+                        &registration,
+                        2_000,
+                    )
+                    .is_err(),
+                "{label} must be rejected"
+            );
+            assert!(verifier.accepted.is_empty(), "{label} must not be accepted");
+        }
+
+        // The same grant id with different signed content is rejected, and
+        // the first accepted binding is kept.
+        let original = grant();
+        verifier
+            .accept_grant(
+                original.clone(),
+                b"original",
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy,
+                &registration,
+                2_000,
+            )
+            .unwrap();
+        let mut changed = original.clone();
+        changed.resource_id = "marker-other".to_owned();
+        assert_eq!(
+            verifier.accept_grant(
+                changed,
+                b"changed",
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy,
+                &registration,
+                2_000,
+            ),
+            Err("grant id was reused with different signed content")
+        );
+        assert_eq!(
+            verifier.accept_grant(
+                original.clone(),
+                b"same-body-different-bytes",
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy,
+                &registration,
+                2_000,
+            ),
+            Err("grant id was reused with different signed content")
+        );
+        assert_eq!(verifier.accepted[&original.id].grant, original);
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
