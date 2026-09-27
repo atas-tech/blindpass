@@ -1,0 +1,133 @@
+/*
+ * BlindPass design tokens — the single source for the landing site, the
+ * secret-input page and the operator console. MIT licensed; see ASSETS.md.
+ *
+ * Contrast is part of the contract: tests/tokens.test.mjs parses this file
+ * and fails when a text, status or control-boundary pairing drops below
+ * WCAG 2.2 AA. Change a value here, then rerun `npm run test:ui-assets`.
+ *
+ * The product ships a dark appearance only; a light theme is out of scope
+ * for the P04 redesign.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Surfaces, darkest to lightest. */
+  --bp-color-sunken: #080b0a;
+  --bp-color-bg: #0b0e0d;
+  --bp-color-panel: #101512;
+  --bp-color-raised: #151b17;
+  --bp-color-overlay: #161c18;
+  --bp-color-scrim: rgb(5 7 6 / 72%);
+
+  /* Text. Muted and dim are for secondary copy, never for sole meaning. */
+  --bp-color-ink: #f0f3ed;
+  --bp-color-ink-soft: #c3cbc4;
+  --bp-color-muted: #9ca59d;
+  --bp-color-dim: #818c83;
+
+  /* Lines. The divider is decorative only; bordered controls use the
+   * control boundary, which clears 3:1 on every surface. */
+  --bp-color-line: #27302a;
+  --bp-color-line-strong: #36412f;
+  --bp-color-control: #5a6a60;
+  --bp-color-control-hover: #7a8a7f;
+
+  /* Brand lime: primary action, selection and focus. */
+  --bp-color-lime: #c5f277;
+  --bp-color-lime-strong: #d6ff92;
+  --bp-color-lime-ink: #16210b;
+  --bp-color-lime-soft: #202b19;
+  --bp-color-lime-line: #647545;
+
+  /* Status. Every status also carries a text label and an icon. */
+  --bp-color-ok: #c5f277;
+  --bp-color-ok-soft: #1c2716;
+  --bp-color-warn: #ebc17c;
+  --bp-color-warn-soft: #2c2419;
+  --bp-color-warn-line: #6b5733;
+  --bp-color-danger: #f2a8a0;
+  --bp-color-danger-soft: #2a1d1b;
+  --bp-color-danger-line: #74443e;
+  --bp-color-danger-strong: #ffb9b1;
+  --bp-color-info: #a9cdf0;
+  --bp-color-info-soft: #16202a;
+  --bp-color-info-line: #3e5670;
+  --bp-color-neutral: #b9c2ba;
+  --bp-color-neutral-soft: #1a201c;
+
+  /* Type. Inter is self-hosted; no runtime font CDN. */
+  --bp-font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  --bp-font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", "JetBrains Mono", Consolas, "Liberation Mono", monospace;
+  --bp-text-2xs: 0.6875rem;  /* 11px — labels in dense tables only */
+  --bp-text-xs: 0.75rem;     /* 12px */
+  --bp-text-sm: 0.8125rem;   /* 13px */
+  --bp-text-md: 0.875rem;    /* 14px — console body */
+  --bp-text-base: 1rem;      /* 16px */
+  --bp-text-lg: 1.25rem;     /* 20px */
+  --bp-text-xl: 1.5625rem;   /* 25px */
+  --bp-text-2xl: 2rem;       /* 32px */
+  --bp-text-3xl: 2.75rem;    /* 44px */
+  --bp-leading-tight: 1.15;
+  --bp-leading-snug: 1.35;
+  --bp-leading-body: 1.6;
+  --bp-tracking-display: -0.045em;
+  --bp-tracking-heading: -0.025em;
+  --bp-tracking-label: 0.08em;
+  --bp-weight-regular: 420;
+  --bp-weight-medium: 520;
+  --bp-weight-strong: 600;
+
+  /* Space on a 4px grid. */
+  --bp-space-1: 0.25rem;
+  --bp-space-2: 0.5rem;
+  --bp-space-3: 0.75rem;
+  --bp-space-4: 1rem;
+  --bp-space-5: 1.25rem;
+  --bp-space-6: 1.5rem;
+  --bp-space-8: 2rem;
+  --bp-space-10: 2.5rem;
+  --bp-space-12: 3rem;
+  --bp-space-16: 4rem;
+
+  /* Geometry. */
+  --bp-radius-xs: 3px;
+  --bp-radius-sm: 4px;
+  --bp-radius-md: 6px;
+  --bp-radius-lg: 9px;
+  --bp-radius-pill: 999px;
+  --bp-border: 1px;
+  --bp-focus-ring: 0 0 0 2px var(--bp-color-bg), 0 0 0 4px var(--bp-color-lime);
+  --bp-focus-width: 2px;
+  --bp-focus-offset: 3px;
+  --bp-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 70%), 0 0 0 1px var(--bp-color-line-strong);
+
+  /* Targets. 44px is the product minimum under a coarse pointer. */
+  --bp-target-fine: 2.25rem;
+  --bp-target-coarse: 2.75rem;
+  --bp-row-height: 3.25rem;
+
+  /* Motion. Collapsed to zero under prefers-reduced-motion below. */
+  --bp-duration-fast: 120ms;
+  --bp-duration-base: 180ms;
+  --bp-duration-slow: 280ms;
+  --bp-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --bp-ease-exit: cubic-bezier(0.3, 0, 1, 1);
+
+  /* Layout. */
+  --bp-sidebar-width: 15.5rem;
+  --bp-content-max: 90rem;
+  --bp-reading-max: 42rem;
+  --bp-z-sticky: 10;
+  --bp-z-drawer: 40;
+  --bp-z-dialog: 50;
+  --bp-z-toast: 60;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --bp-duration-fast: 0ms;
+    --bp-duration-base: 0ms;
+    --bp-duration-slow: 0ms;
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "@blindpass/ui-assets",
+  "private": true,
+  "license": "MIT",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Shared BlindPass design tokens, self-hosted Inter and interface icons. Not an npm workspace; consumers import files by relative path."
+}

@@ -1,0 +1,12 @@
+/*
+ * Self-hosted Inter 4.1 variable (wght 100–900, opsz 14–32), subset to
+ * Latin, Latin Extended-A and Vietnamese. SIL Open Font License 1.1; see
+ * fonts/OFL.txt and ASSETS.md for provenance and the subsetting command.
+ */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("./fonts/InterVariable.woff2") format("woff2");
+}

@@ -3,6 +3,8 @@ import { sealBase64 } from "./crypto.js";
 import { enforceTopLevelWindow } from "./frame-guard.js";
 import { initI18n, t } from "./i18n.js";
 import { createPreviewMetadata, getBootstrapMode, parseContext } from "./request-context.js";
+import "../../../assets/ui/fonts.css";
+import "../../../assets/ui/tokens.css";
 import "./style.css";
 
 const AUTO_HIDE_MS = 20000;

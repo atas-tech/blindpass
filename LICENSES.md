@@ -14,6 +14,7 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `packages/gateway` | `MIT` | Interception / delivery middleware |
 | `packages/openclaw-plugin` | `MIT` | Runtime integration plugin |
 | `packages/contract-tests` | `AGPL-3.0-only` | Black-box compatibility and acceptance harness; private test package |
+| `assets/ui` | `MIT` (Inter font: `OFL-1.1`) | Shared design tokens, icons and self-hosted font consumed by landing, input page and console; no application code or translated strings. See `assets/ui/ASSETS.md` |
 | `crates/blindpass-core` | `AGPL-3.0-only` | Shared identity, delivery, custody, signing, policy and protocol primitives |
 | `crates/blindpass-broker` | `AGPL-3.0-only` | Root host broker and native consumer probes |
 | `crates/blindpass-controller` | `AGPL-3.0-only` | Rust controller (P02; implemented, not yet accepted) |
