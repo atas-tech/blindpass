@@ -53,6 +53,8 @@ const PENDING_NODE_EVENT_FILE_MODE: u32 = 0o600;
 const O_NOFOLLOW: i32 = 0x20000;
 static PENDING_EVENT_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub const DEFAULT_CUSTODY_KEY_LIFETIME: Duration = Duration::from_secs(30);
+/// Root-owned flag file that arms the VM harness crash hook in test mode.
+pub const CONSUME_CRASH_FLAG: &str = "/run/blindpass/test/crash-after-consume-intent";
 pub const DEFAULT_CREDENTIAL_LIFETIME: Duration = Duration::from_secs(60 * 60);
 
 #[derive(Debug)]
@@ -193,6 +195,9 @@ pub struct BrokerState {
     pub custody: EphemeralCustody,
     credential_expiries: BTreeMap<String, Instant>,
     credential_lifetime: Duration,
+    /// Test-mode only: abort after a consume intent is durable and before
+    /// the operation effect while this root-owned flag file exists.
+    consume_crash_flag: Option<PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -341,7 +346,14 @@ impl BrokerState {
             custody: EphemeralCustody::new(custody_key_lifetime),
             credential_expiries: BTreeMap::new(),
             credential_lifetime,
+            consume_crash_flag: None,
         }
+    }
+
+    /// Arm the crash-after-consume-intent hook used by the disposable VM
+    /// harness. The binary calls this only when `BLINDPASS_P01_TEST_MODE=1`.
+    pub fn enable_consume_crash_hook(&mut self, flag: PathBuf) {
+        self.consume_crash_flag = Some(flag);
     }
 
     pub fn provision_key(&mut self, unit: &str, credential: &str) -> Result<Vec<u8>, BrokerError> {
@@ -513,6 +525,14 @@ impl BrokerState {
                         return Err(BrokerError::Configuration(denial.code()));
                     }
                 };
+            if let Some(flag) = self.consume_crash_flag.as_deref()
+                && consume_crash_flag_armed(flag, 0)
+            {
+                // One-shot: disarm first so the restarted broker keeps running.
+                let _ = fs::remove_file(flag);
+                eprintln!("test crash hook: aborting after the durable consume intent");
+                std::process::abort();
+            }
             match grant.action.as_str() {
                 "noop.marker" => {
                     if ops::noop_marker::create_in(&self.operation_directory, &grant.id).is_err() {
@@ -1345,6 +1365,12 @@ impl BrokerState {
         self.fleet_policy = Some(policy);
         Ok(true)
     }
+}
+
+/// The flag must be a regular file (not a symlink) owned by `owner_uid`.
+fn consume_crash_flag_armed(path: &Path, owner_uid: u32) -> bool {
+    fs::symlink_metadata(path)
+        .is_ok_and(|metadata| metadata.file_type().is_file() && metadata.uid() == owner_uid)
 }
 
 pub fn provision_aad(unit: &str, credential: &str) -> String {
@@ -2753,6 +2779,49 @@ mod tests {
             format!("OK operation_completed {}\n", grant.id).as_bytes()
         );
         assert_eq!(state.pending_node_events.len(), MAX_BROKER_AUDIT_EVENTS);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn consume_crash_hook_is_off_by_default_and_needs_an_owned_regular_flag_file() {
+        assert!(
+            BrokerState::new(DeliveryPolicy::default())
+                .consume_crash_flag
+                .is_none()
+        );
+        let directory = unique_test_path("crash-flag");
+        fs::create_dir(&directory).unwrap();
+        let flag = directory.join("crash-after-consume-intent");
+        let uid = fs::metadata(&directory).unwrap().uid();
+        assert!(!super::consume_crash_flag_armed(&flag, uid), "missing flag");
+        fs::write(&flag, b"").unwrap();
+        assert!(super::consume_crash_flag_armed(&flag, uid));
+        assert!(
+            !super::consume_crash_flag_armed(&flag, uid.wrapping_add(1)),
+            "a flag owned by anyone else, e.g. a non-root user, is ignored"
+        );
+        let link = directory.join("linked-flag");
+        std::os::unix::fs::symlink(&flag, &link).unwrap();
+        assert!(
+            !super::consume_crash_flag_armed(&link, uid),
+            "symlinks are ignored"
+        );
+        fs::remove_file(&flag).unwrap();
+        fs::create_dir(&flag).unwrap();
+        assert!(
+            !super::consume_crash_flag_armed(&flag, uid),
+            "directories are ignored"
+        );
+
+        // Without the hook armed in state, an existing flag changes nothing.
+        let (grant_directory, mut state, grant) = fleet_state_with_grant("crash-flag-off");
+        assert_eq!(
+            state
+                .process_workload(&workload_peer(), &consume_request(&grant.id))
+                .unwrap(),
+            format!("OK operation_completed {}\n", grant.id).as_bytes()
+        );
+        fs::remove_dir_all(grant_directory).unwrap();
         fs::remove_dir_all(directory).unwrap();
     }
 

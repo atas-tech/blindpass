@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use blindpass_broker::{
-    BrokerConfig, BrokerState, DEFAULT_CREDENTIAL_LIFETIME, DEFAULT_CUSTODY_KEY_LIFETIME,
-    DeliveryFault, run,
+    BrokerConfig, BrokerState, CONSUME_CRASH_FLAG, DEFAULT_CREDENTIAL_LIFETIME,
+    DEFAULT_CUSTODY_KEY_LIFETIME, DeliveryFault, run,
 };
 use blindpass_core::delivery::{CredentialFormat, DeliveryPolicy};
 use blindpass_core::identity::WorkloadRegistration;
@@ -39,6 +39,11 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
         key_lifetime,
         credential_lifetime,
     );
+    if let Some(flag) =
+        consume_crash_hook(std::env::var("BLINDPASS_P01_TEST_MODE").as_deref() == Ok("1"))
+    {
+        state.enable_consume_crash_hook(flag);
+    }
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -113,6 +118,12 @@ fn parse_workload_registration(value: &str) -> Result<WorkloadRegistration, Stri
     })
 }
 
+/// The crash-after-consume-intent hook exists only in test mode; the
+/// production unit never sets `BLINDPASS_P01_TEST_MODE`.
+fn consume_crash_hook(test_mode: bool) -> Option<PathBuf> {
+    test_mode.then(|| PathBuf::from(CONSUME_CRASH_FLAG))
+}
+
 fn configured_delivery_fault() -> Result<Option<DeliveryFault>, String> {
     let Some(value) = std::env::var_os("BLINDPASS_P01_DELIVERY_FAULT") else {
         return Ok(None);
@@ -181,7 +192,18 @@ fn print_help() {
 
 #[cfg(test)]
 mod tests {
-    use super::{configured_test_lifetime_value, parse_workload_registration};
+    use super::{configured_test_lifetime_value, consume_crash_hook, parse_workload_registration};
+
+    #[test]
+    fn consume_crash_hook_is_armed_only_in_test_mode() {
+        assert_eq!(consume_crash_hook(false), None);
+        assert_eq!(
+            consume_crash_hook(true),
+            Some(std::path::PathBuf::from(
+                "/run/blindpass/test/crash-after-consume-intent"
+            ))
+        );
+    }
     use std::time::Duration;
 
     #[test]
