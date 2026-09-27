@@ -58,7 +58,8 @@
     "tooLarge": "Giá trị này có kích thước {{size}}; giới hạn là {{limit}}. Chưa có gì được gửi.",
     "rejected": "Bộ điều khiển đã từ chối dữ liệu mã hóa nên không có gì được lưu. Hãy kiểm tra giá trị và thử lại.",
     "rateLimited": "Quá nhiều lần thử. Hãy chờ một phút rồi gửi lại.",
-    "encryption": "Trình duyệt không mã hóa được giá trị này. Chưa có gì được gửi."
+    "encryption": "Trình duyệt không mã hóa được giá trị này. Chưa có gì được gửi.",
+    "notReceived": "Kiểm tra trạng thái cho thấy bộ điều khiển chưa nhận được nên chưa có gì được lưu. Hãy nhập lại bí mật để gửi."
   },
   "badge": {
     "loading": "Đang kiểm tra",
@@ -70,7 +71,8 @@
     "invalid": "Không khả dụng",
     "auth": "Cần đăng nhập",
     "error": "Chưa tải được",
-    "unknown": "Chưa rõ trạng thái"
+    "unknown": "Chưa rõ trạng thái",
+    "checking": "Đang kiểm tra trạng thái"
   },
   "state": {
     "loading": {
@@ -86,6 +88,7 @@
     "submitted": {
       "title": "Bạn đã hoàn tất.",
       "body": "Bí mật mã hóa đã được gửi. Bạn có thể đóng thẻ này và quay lại công việc.",
+      "bodyConfirmed": "Kết nối bị gián đoạn, nhưng kiểm tra trạng thái xác nhận bộ điều khiển đã nhận bí mật mã hóa. Bạn có thể đóng thẻ này.",
       "note": "Đã gửi không có nghĩa là đã nhận. Người nhận vẫn cần lấy và giải mã trước khi hết hạn."
     },
     "used": {
@@ -120,7 +123,12 @@
     "unknown": {
       "title": "Chưa xác nhận việc gửi.",
       "body": "Kết nối bị gián đoạn trước khi bộ điều khiển phản hồi. Bí mật có thể đã được gửi.",
-      "note": "Đừng gửi lại cho đến khi biết kết quả. Hãy hỏi người yêu cầu xem đã nhận được chưa."
+      "note": "Đừng gửi lại cho đến khi biết kết quả. Hãy hỏi người yêu cầu xem đã nhận được chưa.",
+      "bodyChecking": "Kết nối bị gián đoạn trước khi bộ điều khiển phản hồi. Đang kiểm tra xem bí mật đã được nhận chưa…",
+      "bodyUnavailable": "Việc kiểm tra trạng thái cũng không nhận được phản hồi. Bí mật có thể đã được gửi.",
+      "bodyGone": "Liên kết không còn khả dụng nên không thể kiểm tra trạng thái. Bí mật có thể đã hoặc chưa được gửi.",
+      "noteGone": "Hãy xác nhận với người yêu cầu xem đã nhận được chưa. Đừng mặc định là thất bại, và đừng gửi bằng cách khác khi chưa hỏi.",
+      "action": "Kiểm tra lại"
     },
     "close": "Đóng thẻ này",
     "closeRefused": "Trình duyệt vẫn giữ thẻ này. Bạn có thể tự đóng."

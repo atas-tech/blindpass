@@ -41,3 +41,23 @@ export function submitOutcome(status) {
       return { state: "unknown" };
   }
 }
+
+/**
+ * CT19: the metadata signature buys a status-only signature. It can't
+ * submit or retrieve; 410 means the source link is gone.
+ */
+export function capabilityOutcome(status, body) {
+  if (status === 200 && typeof body?.status_sig === "string" && body.status_sig) return { sig: body.status_sig };
+  if (status === 410) return { gone: true };
+  return { unavailable: true };
+}
+
+/**
+ * CT19 browser status. 410 conflates consumed, expired and invalid, so it
+ * is "gone", never "failed"; anything but pending/submitted is unavailable.
+ */
+export function statusOutcome(status, body) {
+  if (status === 200 && (body?.status === "pending" || body?.status === "submitted")) return body.status;
+  if (status === 410) return "gone";
+  return "unavailable";
+}

@@ -31,3 +31,22 @@ test("only ready accepts entry and every terminal state clears it", () => {
   for (const state of ["submitted", "used", "expired", "invalid", "auth", "unknown"]) assert.equal(TERMINAL_STATES.has(state), true, state);
   for (const state of ["loading", "ready", "submitting", "error"]) assert.equal(TERMINAL_STATES.has(state), false, state);
 });
+
+import { capabilityOutcome, statusOutcome } from "../src/lifecycle.js";
+
+test("CT19 capability answers: a status-only signature, gone, or unavailable", () => {
+  assert.deepEqual(capabilityOutcome(200, { status_sig: "1790000000.abcdefghijklmnop" }), { sig: "1790000000.abcdefghijklmnop" });
+  assert.deepEqual(capabilityOutcome(200, { status_sig: "" }), { unavailable: true });
+  assert.deepEqual(capabilityOutcome(200, {}), { unavailable: true });
+  assert.deepEqual(capabilityOutcome(410, { status: "expired" }), { gone: true });
+  for (const status of [0, 403, 429, 500]) assert.deepEqual(capabilityOutcome(status, null), { unavailable: true }, String(status));
+});
+
+test("CT19 status answers: only pending or submitted are trusted; 410 never means failure", () => {
+  assert.equal(statusOutcome(200, { status: "submitted" }), "submitted");
+  assert.equal(statusOutcome(200, { status: "pending" }), "pending");
+  assert.equal(statusOutcome(200, { status: "retrieved" }), "unavailable");
+  assert.equal(statusOutcome(200, null), "unavailable");
+  assert.equal(statusOutcome(410, { status: "expired" }), "gone");
+  for (const status of [0, 401, 403, 500, 503]) assert.equal(statusOutcome(status, null), "unavailable", String(status));
+});

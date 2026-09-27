@@ -234,17 +234,34 @@ test.describe("secret input against the controller", () => {
     await page.getByTestId("submit-btn").click();
     await expect(badge(page)).toHaveText("Submitted");
 
-    // The same link opened again reads as ready (metadata stays readable) and the controller refuses a second payload.
+    // The same link opened again: the CT19 status read says submitted before any entry.
     await page.goto(request.secretUrl);
-    await ready(page);
-    await page.getByTestId("secret-input").fill("second-copy");
-    await page.getByTestId("submit-btn").click();
     await expect(page.getByTestId("outcome-title")).toHaveText("Already submitted.");
     await expect(page.getByTestId("outcome-note")).toContainText("This doesn't confirm retrieval.");
+    await expect(page.getByTestId("secret-input")).toBeHidden();
     expect(await fieldValues(page)).toEqual([]);
     const retrieved = await input.retrieve(request.requestId);
     expect(Buffer.from(await request.open(retrieved.body!)).toString("utf8")).toBe("kept-after-429");
     await context.close();
+  });
+
+  test("SI-E05: a second tab that submits after another tab already did gets 'already submitted', not success", async ({ browser }) => {
+    const request = await input.createRequest("Two tabs canary");
+    const first = await open(browser, request.secretUrl);
+    const second = await open(browser, request.secretUrl);
+    await ready(first.page);
+    await ready(second.page);
+    await first.page.getByTestId("secret-input").fill("from-the-first-tab");
+    await first.page.getByTestId("submit-btn").click();
+    await expect(badge(first.page)).toHaveText("Submitted");
+    await second.page.getByTestId("secret-input").fill("from-the-second-tab");
+    await second.page.getByTestId("submit-btn").click();
+    await expect(second.page.getByTestId("outcome-title")).toHaveText("Already submitted.");
+    expect(await fieldValues(second.page)).toEqual([]);
+    const retrieved = await input.retrieve(request.requestId);
+    expect(Buffer.from(await request.open(retrieved.body!)).toString("utf8")).toBe("from-the-first-tab");
+    await first.context.close();
+    await second.context.close();
   });
 
   test("SI-E05: an encryption failure sends nothing and keeps the value", async ({ browser }) => {
@@ -269,7 +286,7 @@ test.describe("secret input against the controller", () => {
     await context.close();
   });
 
-  test("SI-E05: a lost reply after the controller accepted is 'not confirmed', clears the field and is never resent", async ({ browser }) => {
+  test("SI-I02: a reply lost after the controller accepted is confirmed through the browser status contract and never resent", async ({ browser }) => {
     const request = await input.createRequest("Lost reply canary");
     const { context, page, requests } = await open(browser, request.secretUrl);
     await ready(page);
@@ -279,26 +296,102 @@ test.describe("secret input against the controller", () => {
     });
     await page.getByTestId("secret-input").fill("accepted-but-unconfirmed");
     await page.getByTestId("submit-btn").click();
-    await expect(page.getByTestId("outcome-title")).toHaveText("Submission not confirmed.");
+    await expect(page.getByTestId("outcome-title")).toHaveText("Your part is done.");
+    await expect(page.getByTestId("outcome-body")).toHaveText("The connection dropped, but a status check confirms the controller received the encrypted secret. You can close this tab.");
     await expect(page.getByTestId("outcome-title")).toBeFocused();
-    await expect(badge(page)).toHaveText("Status unknown");
-    await expect(page.getByTestId("outcome-note")).toHaveText("Don't send it again until the outcome is known. Ask the requester whether it arrived.");
     expect(await fieldValues(page)).toEqual([]);
-    await page.waitForTimeout(1500);
     expect(submits(requests)).toHaveLength(1);
-    // The controller did accept it: "not confirmed" was the truthful answer.
+
+    // Only the CT19 browser routes are used: the metadata signature buys a separate status-only signature.
+    const url = new URL(request.secretUrl);
+    const capability = requests.filter((entry) => entry.url().includes("/browser-status/") && entry.url().includes("/capability"));
+    const status = requests.filter((entry) => entry.url().includes("/browser-status/") && !entry.url().includes("/capability"));
+    expect(capability.length).toBeGreaterThanOrEqual(1);
+    for (const entry of capability) expect(new URL(entry.url()).searchParams.get("sig")).toBe(url.searchParams.get("metadata_sig"));
+    expect(status.length).toBeGreaterThanOrEqual(2);
+    for (const entry of status) expect([url.searchParams.get("metadata_sig"), url.searchParams.get("submit_sig")]).not.toContain(new URL(entry.url()).searchParams.get("sig"));
+    expect(requests.some((entry) => /\/api\/v2\/secret\/(status|retrieve)\//.test(entry.url()) || entry.headers()["authorization"])).toBe(false);
+
     const retrieved = await input.retrieve(request.requestId);
     expect(Buffer.from(await request.open(retrieved.body!)).toString("utf8")).toBe("accepted-but-unconfirmed");
-
-    const failing = await input.createRequest("5xx canary");
-    await page.unroute("**/api/v2/secret/submit/**");
-    await page.route("**/api/v2/secret/submit/**", (route) => route.fulfill({ status: 503, body: "" }));
-    await page.goto(failing.secretUrl);
-    await ready(page);
-    await page.getByTestId("secret-input").fill("maybe-stored");
-    await page.getByTestId("submit-btn").click();
-    await expect(page.getByTestId("outcome-title")).toHaveText("Submission not confirmed.");
     await context.close();
+  });
+
+  test("SI-I02: a submission that never arrived reads as pending; entry returns empty and the human sends it once", async ({ browser }) => {
+    for (const [name, failure] of [
+      ["dropped before the controller", (route: import("@playwright/test").Route) => route.abort("connectionreset")],
+      ["5xx from a proxy", (route: import("@playwright/test").Route) => route.fulfill({ status: 503, body: "" })]
+    ] as const) {
+      const request = await input.createRequest(`Never arrived: ${name}`);
+      const { context, page, requests } = await open(browser, request.secretUrl);
+      await ready(page);
+      await page.route("**/api/v2/secret/submit/**", failure, { times: 1 });
+      await page.getByTestId("secret-input").fill("first-attempt");
+      await page.getByTestId("submit-btn").click();
+      await expect(page.getByTestId("input-error"), name).toHaveText("A status check shows the controller didn't receive it, so nothing was stored. Enter the secret again to send it.");
+      await expect(page.getByTestId("secret-input"), name).toHaveValue("");
+      await expect(page.getByTestId("secret-input"), name).toBeFocused();
+      await page.waitForTimeout(500);
+      expect(submits(requests), name).toHaveLength(1);
+      await page.getByTestId("secret-input").fill("second-attempt");
+      await page.getByTestId("submit-btn").click();
+      await expect(badge(page), name).toHaveText("Submitted");
+      const retrieved = await input.retrieve(request.requestId);
+      expect(Buffer.from(await request.open(retrieved.body!)).toString("utf8"), name).toBe("second-attempt");
+      await context.close();
+    }
+  });
+
+  test("SI-I02: when the status check can't answer either, the outcome stays unknown until a manual check", async ({ browser }) => {
+    const request = await input.createRequest("Status outage canary");
+    const { context, page, requests } = await open(browser, request.secretUrl);
+    await ready(page);
+    await page.route("**/api/v2/secret/submit/**", async (route) => {
+      await route.fetch();
+      await route.abort("connectionreset");
+    });
+    await page.route("**/api/v2/secret/browser-status/**", (route) => route.abort("internetdisconnected"));
+    await page.getByTestId("secret-input").fill("maybe-arrived");
+    await page.getByTestId("submit-btn").click();
+    await expect(page.getByTestId("outcome-body")).toHaveText("The status check didn't get an answer either. Your secret may already have been submitted.");
+    await expect(page.getByTestId("outcome-title")).toHaveText("Submission not confirmed.");
+    await expect(page.getByTestId("outcome-note")).toHaveText("Don't send it again until the outcome is known. Ask the requester whether it arrived.");
+    await expect(badge(page)).toHaveText("Status unknown");
+    await page.unroute("**/api/v2/secret/browser-status/**");
+    await page.getByTestId("outcome-action").click();
+    await expect(page.getByTestId("outcome-title")).toHaveText("Your part is done.");
+    expect(submits(requests)).toHaveLength(1);
+    await context.close();
+  });
+
+  test("P04-I03: the status capability is minimal and bound to its request and scope", async () => {
+    const one = await input.createRequest("Scope canary one");
+    const two = await input.createRequest("Scope canary two");
+    const base = input.stack.controllerUrl;
+    const sigs = (request: SecretRequest) => {
+      const url = new URL(request.secretUrl);
+      return { metadata: url.searchParams.get("metadata_sig")!, submit: url.searchParams.get("submit_sig")! };
+    };
+    const capability = (request: SecretRequest, sig: string) => fetch(`${base}/api/v2/secret/browser-status/${request.requestId}/capability?sig=${encodeURIComponent(sig)}`, { method: "POST" });
+    const status = (request: SecretRequest, sig: string) => fetch(`${base}/api/v2/secret/browser-status/${request.requestId}?sig=${encodeURIComponent(sig)}`);
+
+    const issued = await capability(one, sigs(one).metadata);
+    expect(issued.status).toBe(200);
+    const body = (await issued.json()) as Record<string, string>;
+    expect(Object.keys(body)).toEqual(["status_sig"]);
+    const read = await status(one, body.status_sig!);
+    expect(read.status).toBe(200);
+    expect(await read.json()).toEqual({ status: "pending" });
+
+    // Wrong scope, foreign request and missing credentials all read as gone, never as a status.
+    expect((await capability(one, sigs(one).submit)).status).toBe(410);
+    expect((await capability(two, sigs(one).metadata)).status).toBe(410);
+    expect((await status(one, sigs(one).metadata)).status).toBe(410);
+    expect((await status(one, sigs(one).submit)).status).toBe(410);
+    expect((await status(two, body.status_sig!)).status).toBe(410);
+    expect((await fetch(`${base}/api/v2/secret/browser-status/${one.requestId}`)).status).toBe(410);
+    // The agent-authenticated status route stays closed to browser credentials.
+    expect((await fetch(`${base}/api/v2/secret/status/${one.requestId}?sig=${encodeURIComponent(body.status_sig!)}`)).status).toBe(401);
   });
 
   test("SI-I03: a canary never reaches URLs, storage, logs, request bodies or the DOM; no referrer or third-party request; framing is refused", async ({ browser }) => {
@@ -422,9 +515,6 @@ test.describe("secret input against the controller", () => {
     await page.getByTestId("submit-btn").click();
     await expect(badge(page)).toHaveText("Submitted");
     await page.goto(used.secretUrl);
-    await ready(page);
-    await page.getByTestId("secret-input").fill("second");
-    await page.getByTestId("submit-btn").click();
     await expect(badge(page)).toHaveText("Already submitted");
     await check("used");
 
@@ -457,6 +547,7 @@ test.describe("secret input against the controller", () => {
     await fresh("Unknown canary");
     await ready(page);
     await page.route("**/api/v2/secret/submit/**", (route) => route.abort("connectionreset"));
+    await page.route("**/api/v2/secret/browser-status/**", (route) => route.abort("internetdisconnected"));
     await page.getByTestId("secret-input").fill("unknown-canary");
     await page.getByTestId("submit-btn").click();
     await expect(badge(page)).toHaveText("Status unknown");
@@ -521,6 +612,41 @@ test.describe("secret input deadlines", () => {
     await context.close();
   });
 
+  test("P04-I03: a 410 from the status contract after a lost reply never reads as failure and never resubmits", async ({ browser }) => {
+    const request = await input.createRequest("Gone after lost reply");
+    const created = Date.now();
+    const { context, page, requests } = await open(browser, request.secretUrl);
+    await ready(page);
+    await page.route("**/api/v2/secret/submit/**", (route) => route.abort("connectionreset"));
+    // Hold the status read until the link has expired, so the controller answers 410.
+    await page.route("**/api/v2/secret/browser-status/**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, Math.max(0, created + 7_000 - Date.now())));
+      await route.continue();
+    });
+    await page.getByTestId("secret-input").fill("fate-unknown");
+    await page.getByTestId("submit-btn").click();
+    await expect(badge(page)).toHaveText("Checking status");
+    await expect(page.getByTestId("outcome-body")).toHaveText("This link is no longer available, so its status can't be checked. Your secret may or may not have been submitted.", { timeout: 10_000 });
+    await expect(page.getByTestId("outcome-note")).toContainText("Don't assume it failed");
+    await expect(page.getByTestId("outcome-action")).toBeHidden();
+    await page.waitForTimeout(500);
+    expect(submits(requests)).toHaveLength(1);
+    await context.close();
+  });
+
+  test("P04-I03: expired credentials get 410 from both CT19 routes", async () => {
+    const request = await input.createRequest("Expired capability");
+    const url = new URL(request.secretUrl);
+    const base = input.stack.controllerUrl;
+    const issued = await fetch(`${base}/api/v2/secret/browser-status/${request.requestId}/capability?sig=${encodeURIComponent(url.searchParams.get("metadata_sig")!)}`, { method: "POST" });
+    const { status_sig } = (await issued.json()) as { status_sig: string };
+    await new Promise((resolve) => setTimeout(resolve, 6_500));
+    expect((await fetch(`${base}/api/v2/secret/browser-status/${request.requestId}/capability?sig=${encodeURIComponent(url.searchParams.get("metadata_sig")!)}`, { method: "POST" })).status).toBe(410);
+    const read = await fetch(`${base}/api/v2/secret/browser-status/${request.requestId}?sig=${encodeURIComponent(status_sig)}`);
+    expect(read.status).toBe(410);
+    expect(await read.json()).toEqual({ status: "expired" });
+  });
+
   test("SI-E05: a suspended tab rechecks the deadline on return instead of trusting stalled timers", async ({ browser }) => {
     const request = await input.createRequest("Suspended tab");
     const context = await browser.newContext();
@@ -530,12 +656,13 @@ test.describe("secret input deadlines", () => {
     await ready(page);
     await page.getByTestId("secret-input").fill("left-in-a-background-tab");
     // Freeze timers, hide the tab, move the wall clock past the deadline, then return.
-    await page.clock.pauseAt(new Date(Date.now()));
+    const pageNow = await page.evaluate(() => Date.now());
+    await page.clock.pauseAt(new Date(pageNow + 100));
     await page.evaluate(() => {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    await page.clock.setSystemTime(new Date(Date.now() + 60_000));
+    await page.clock.setSystemTime(new Date(pageNow + 60_000));
     await page.evaluate(() => {
       Object.defineProperty(document, "hidden", { configurable: true, get: () => false });
       document.dispatchEvent(new Event("visibilitychange"));

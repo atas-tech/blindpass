@@ -58,7 +58,8 @@
     "tooLarge": "This value is {{size}}; the limit is {{limit}}. Nothing was sent.",
     "rejected": "The controller rejected the encrypted payload, so nothing was stored. Check the value and try again.",
     "rateLimited": "Too many attempts. Wait a minute, then submit again.",
-    "encryption": "Your browser couldn't encrypt this value. Nothing was sent."
+    "encryption": "Your browser couldn't encrypt this value. Nothing was sent.",
+    "notReceived": "A status check shows the controller didn't receive it, so nothing was stored. Enter the secret again to send it."
   },
   "badge": {
     "loading": "Checking request",
@@ -70,7 +71,8 @@
     "invalid": "Unavailable",
     "auth": "Sign-in required",
     "error": "Not loaded",
-    "unknown": "Status unknown"
+    "unknown": "Status unknown",
+    "checking": "Checking status"
   },
   "state": {
     "loading": {
@@ -86,6 +88,7 @@
     "submitted": {
       "title": "Your part is done.",
       "body": "The encrypted secret was submitted. You can close this tab and return to your task.",
+      "bodyConfirmed": "The connection dropped, but a status check confirms the controller received the encrypted secret. You can close this tab.",
       "note": "Submitted doesn't mean retrieved. The recipient still needs to collect and decrypt it before it expires."
     },
     "used": {
@@ -120,7 +123,12 @@
     "unknown": {
       "title": "Submission not confirmed.",
       "body": "The connection was interrupted before the controller answered. Your secret may already have been submitted.",
-      "note": "Don't send it again until the outcome is known. Ask the requester whether it arrived."
+      "note": "Don't send it again until the outcome is known. Ask the requester whether it arrived.",
+      "bodyChecking": "The connection was interrupted before the controller answered. Checking whether it received your secret…",
+      "bodyUnavailable": "The status check didn't get an answer either. Your secret may already have been submitted.",
+      "bodyGone": "This link is no longer available, so its status can't be checked. Your secret may or may not have been submitted.",
+      "noteGone": "Confirm with the requester whether it arrived. Don't assume it failed, and don't send it another way without asking.",
+      "action": "Check again"
     },
     "close": "Close this tab",
     "closeRefused": "Your browser kept this tab open. You can close it yourself."

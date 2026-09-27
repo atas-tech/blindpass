@@ -5,7 +5,7 @@ import { createDeadline, formatRemaining } from "./clock.js";
 import { sealBase64 } from "./crypto.js";
 import { enforceTopLevelWindow } from "./frame-guard.js";
 import { applyTranslations, currentLocale, initI18n, setLocale, t } from "./i18n.js";
-import { TERMINAL_STATES, metadataOutcome, submitOutcome } from "./lifecycle.js";
+import { TERMINAL_STATES, capabilityOutcome, metadataOutcome, statusOutcome, submitOutcome } from "./lifecycle.js";
 import { isValidRequestContext, parseContext } from "./request-context.js";
 import { MAX_SECRET_BYTES, formatBytes, hasLineBreak, secretBytes } from "./secret-value.js";
 import "./style.css";
@@ -56,6 +56,10 @@ async function call(path, init = {}) {
     body = null;
   }
   return { status: response.status, body, date: response.headers.get("date"), sentAt, receivedAt, perfAt };
+}
+
+function badgeKey(state, reason) {
+  return state === "unknown" && reason === "checking" ? "checking" : state;
 }
 
 function validMetadata(body) {
@@ -110,9 +114,29 @@ function init() {
   for (const element of document.querySelectorAll("[data-icon]")) element.replaceChildren(icon(element.dataset.icon, 18));
 
   const ctx = parseContext(window.location.search);
-  const page = { state: "loading", reason: null, metadata: null, deadline: null, busy: false, error: null, revealTimer: null, tick: null, urgentAnnounced: false, hiddenAt: null };
+  // statusSig is the CT19 status-only capability: memory only, never stored.
+  const page = { state: "loading", reason: null, metadata: null, deadline: null, statusSig: null, busy: false, error: null, revealTimer: null, tick: null, urgentAnnounced: false, hiddenAt: null };
   const metadataPath = () => `/api/v2/secret/metadata/${encodeURIComponent(ctx.requestId)}?sig=${encodeURIComponent(ctx.metadataSig)}`;
   const submitPath = () => `/api/v2/secret/submit/${encodeURIComponent(ctx.requestId)}?sig=${encodeURIComponent(ctx.submitSig)}`;
+  const capabilityPath = () => `/api/v2/secret/browser-status/${encodeURIComponent(ctx.requestId)}/capability?sig=${encodeURIComponent(ctx.metadataSig)}`;
+  const statusPath = (sig) => `/api/v2/secret/browser-status/${encodeURIComponent(ctx.requestId)}?sig=${encodeURIComponent(sig)}`;
+
+  /**
+   * Read the request's status through the CT19 browser contract: the
+   * metadata signature buys a status-only signature, which reads pending or
+   * submitted and nothing else. Returns submitted, pending, gone or unavailable.
+   */
+  async function checkStatus() {
+    if (!page.statusSig) {
+      const issued = await call(capabilityPath(), { method: "POST" });
+      const capability = capabilityOutcome(issued.status, issued.body);
+      if (capability.gone) return "gone";
+      if (capability.unavailable) return "unavailable";
+      page.statusSig = capability.sig;
+    }
+    const read = await call(statusPath(page.statusSig));
+    return statusOutcome(read.status, read.body);
+  }
 
   const activeInput = () => (ui.multiline.checked ? ui.multi : ui.single);
   const currentValue = () => activeInput().value;
@@ -238,17 +262,25 @@ function init() {
   function outcomeCopy(state, reason) {
     const base = `state.${state}`;
     let body = t(`${base}.body`);
+    let note = t(`${base}.note`);
+    if (state === "submitted" && reason === "confirmed") body = t("state.submitted.bodyConfirmed");
+    if (state === "unknown" && reason === "checking") body = t("state.unknown.bodyChecking");
+    if (state === "unknown" && reason === "unavailable") body = t("state.unknown.bodyUnavailable");
+    if (state === "unknown" && reason === "gone") {
+      body = t("state.unknown.bodyGone");
+      note = t("state.unknown.noteGone");
+    }
     if (state === "expired" && reason === "whileOpen") body = t("state.expired.bodyWhileOpen");
     if (state === "expired" && reason === "submit") body = t("state.expired.bodyOnSubmit");
     if (state === "invalid" && reason === "submit") body = t("state.invalid.bodySubmit");
-    return { title: t(`${base}.title`), body, note: t(`${base}.note`) };
+    return { title: t(`${base}.title`), body, note };
   }
 
   function renderState() {
     const { state, reason } = page;
     const entry = state === "ready";
     ui.card.dataset.state = state;
-    ui.badge.textContent = t(`badge.${state}`);
+    ui.badge.textContent = t(`badge.${badgeKey(state, reason)}`);
     ui.badge.dataset.tone = TONES[state];
     ui.entry.hidden = !entry;
     ui.outcome.hidden = entry;
@@ -261,8 +293,9 @@ function init() {
       ui.title.textContent = copy.title;
       ui.body.textContent = copy.body;
       ui.note.textContent = copy.note;
-      ui.action.hidden = state !== "error" && state !== "submitted";
-      ui.action.textContent = state === "error" ? t("state.error.action") : t("state.close");
+      const unknownAction = state === "unknown" && reason === "unavailable";
+      ui.action.hidden = state !== "error" && state !== "submitted" && !unknownAction;
+      ui.action.textContent = state === "error" ? t("state.error.action") : unknownAction ? t("state.unknown.action") : t("state.close");
       if (state !== "submitted") ui.followup.hidden = true;
     }
     renderMode();
@@ -278,7 +311,7 @@ function init() {
       stopTicking();
     }
     renderState();
-    announce(t(`badge.${state}`));
+    announce(t(`badge.${badgeKey(state, reason)}`));
     if (options.focus) (state === "ready" ? activeInput() : ui.title).focus();
   }
 
@@ -307,6 +340,16 @@ function init() {
       setState("expired", "whileOpen", { focus });
       return;
     }
+    // Metadata stays readable after submission; the status read tells the two apart.
+    const status = await checkStatus();
+    if (status === "submitted") {
+      setState("used", "load", { focus });
+      return;
+    }
+    if (status === "gone") {
+      setState("expired", "load", { focus });
+      return;
+    }
     setState("ready", null, { focus });
     startTicking();
   }
@@ -325,6 +368,8 @@ function init() {
       page.deadline = createDeadline({ expirySeconds: result.body.expiry, dateHeader: result.date, sentAt: result.sentAt, receivedAt: result.receivedAt, perfAt: result.perfAt }) ?? page.deadline;
       renderExpiry();
       startTicking();
+      // Another tab may have submitted in the meantime.
+      if ((await checkStatus()) === "submitted" && page.state === "ready" && !page.busy) setState("used", "load", { focus: true });
     } else if (outcome.state === "expired") {
       setState("expired", "whileOpen", { focus: true });
     } else if (outcome.state === "invalid" || outcome.state === "auth") {
@@ -374,7 +419,35 @@ function init() {
       if (page.deadline?.serverClock) startTicking();
       return;
     }
+    if (outcome.state === "unknown") {
+      void reconcile();
+      return;
+    }
     setState(outcome.state, outcome.reason, { focus: true });
+  }
+
+  /**
+   * After a lost or failed reply, ask the controller what happened (P04-I03).
+   * Only a status of submitted reports success, pending returns to entry
+   * with an empty field, and nothing is ever resubmitted automatically.
+   */
+  async function reconcile() {
+    setState("unknown", "checking", { focus: true });
+    const status = await checkStatus();
+    if (page.state !== "unknown") return;
+    if (status === "submitted") {
+      setState("submitted", "confirmed", { focus: true });
+    } else if (status === "pending" && page.deadline?.expired(now())) {
+      // Known not received, but the link can no longer accept it.
+      setState("expired", "submit", { focus: true });
+    } else if (status === "pending") {
+      setState("ready");
+      showError("notReceived", undefined, "info");
+      activeInput().focus();
+      startTicking();
+    } else {
+      setState("unknown", status, { focus: true });
+    }
   }
 
   ui.form.addEventListener("submit", (event) => {
@@ -423,6 +496,10 @@ function init() {
   ui.single.addEventListener("drop", (event) => keepLineBreaks(event, event.dataTransfer?.getData("text/plain") ?? ""));
 
   ui.action.addEventListener("click", () => {
+    if (page.state === "unknown" && page.reason === "unavailable") {
+      void reconcile();
+      return;
+    }
     if (page.state === "error") {
       void load();
       return;
