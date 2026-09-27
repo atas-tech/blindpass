@@ -276,3 +276,66 @@ async fn retention_is_bounded_and_keeps_live_channel_state() {
     let again = harness.store.prune_fleet_state().await.unwrap();
     assert_eq!(again.grant_tombstones + again.node_sessions, 0);
 }
+
+#[tokio::test]
+async fn unconfirmed_execution_becomes_uncertain_after_its_grant_deadline() {
+    // The broker reports `uncertain` before it consumes a grant and replaces
+    // it with `completed` after the effect. A crash in between leaves the
+    // operation executing; once the grant deadline passes the broker can no
+    // longer confirm it, so the controller must surface `uncertain`.
+    let harness = Harness::start().await;
+    let (node, workload) = fleet(&harness, 74).await;
+    let executing = granted(&harness, &node, &workload, "unconfirmed-operation-0001").await;
+    let running = granted(&harness, &node, &workload, "unconfirmed-operation-0002").await;
+    for operation in [&executing, &running] {
+        harness
+            .execute(
+                "UPDATE grants SET status = 'consumed' WHERE id = ?",
+                vec![operation["grant_id"].as_str().unwrap().into()],
+            )
+            .await;
+        harness
+            .execute(
+                "UPDATE operations SET status = 'executing' WHERE id = ?",
+                vec![operation["id"].as_str().unwrap().into()],
+            )
+            .await;
+    }
+    let past = harness.now_ms().await - 1;
+    harness
+        .execute(
+            "UPDATE grants SET expires_at = ? WHERE id = ?",
+            vec![past.into(), executing["grant_id"].as_str().unwrap().into()],
+        )
+        .await;
+
+    let summary = harness.store.expire_fleet_state().await.unwrap();
+    assert_eq!(summary.unconfirmed_operations, 1);
+    let unconfirmed = harness
+        .get(
+            &harness.admin,
+            &format!("/api/v3/operations/{}", executing["id"].as_str().unwrap()),
+        )
+        .await;
+    assert_eq!(
+        unconfirmed.body["status"], "uncertain",
+        "{}",
+        unconfirmed.body
+    );
+    assert_eq!(
+        unconfirmed.body["result"]["reason"],
+        "completion_unconfirmed"
+    );
+    let still_running = harness
+        .get(
+            &harness.admin,
+            &format!("/api/v3/operations/{}", running["id"].as_str().unwrap()),
+        )
+        .await;
+    assert_eq!(
+        still_running.body["status"], "executing",
+        "a live grant may still complete"
+    );
+    let summary = harness.store.expire_fleet_state().await.unwrap();
+    assert_eq!(summary.unconfirmed_operations, 0, "expiry is idempotent");
+}

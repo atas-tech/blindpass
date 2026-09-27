@@ -781,6 +781,26 @@ macro_rules! expire {
             .await
             .map_err(StoreError::Database)?;
         }
+        // The broker reports `uncertain` before consuming and `completed`
+        // after the effect. Past the grant deadline it can no longer confirm
+        // an execution, so an operation still executing is uncertain.
+        summary.unconfirmed_operations = sqlx::query(&$convert(&format!(
+            "UPDATE operations SET status = 'uncertain', result_json = ?,
+               completed_at = {now}, version = version + 1
+             WHERE tenant_id = ? AND status = 'executing' AND id IN (
+               SELECT o.id FROM operations o JOIN grants g ON g.id = o.grant_id
+               WHERE o.tenant_id = ? AND o.status = 'executing' AND g.expires_at <= {now}
+               ORDER BY g.expires_at, o.id LIMIT ?)",
+            now = $now
+        )))
+        .bind(r#"{"reason":"completion_unconfirmed"}"#)
+        .bind(tenant_id)
+        .bind(tenant_id)
+        .bind(EXPIRY_BATCH)
+        .execute(&mut *tx)
+        .await
+        .map_err(StoreError::Database)?
+        .rows_affected();
         if let Some(signer) = $signer {
             summary.signed_tombstones = $sign(&mut tx, signer, tenant_id).await?;
         }

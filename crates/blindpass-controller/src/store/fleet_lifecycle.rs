@@ -20,6 +20,9 @@ pub struct FleetExpirySummary {
     pub expired_approvals: u64,
     pub expired_operations: u64,
     pub expired_grants: u64,
+    /// Executing operations whose grant deadline passed without a completed
+    /// broker result; they become `uncertain`.
+    pub unconfirmed_operations: u64,
     /// Clock-fence tombstones given a signed revocation this pass.
     pub signed_tombstones: u64,
 }
