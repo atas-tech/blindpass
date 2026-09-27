@@ -314,6 +314,38 @@ mod tests {
     }
 
     #[test]
+    fn matches_rfc_8032_test_vectors_two_and_three() {
+        // RFC 8032 section 7.1, TEST 2 and TEST 3: the non-empty message path.
+        for (seed, public, message, signature) in [
+            (
+                "4ccd089b28ff96da9db6c346ec114e0f5b8a319f35aba624da8cf6ed4fb8a6fb",
+                "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+                &[0x72_u8][..],
+                "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da\
+                085ac1e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00",
+            ),
+            (
+                "c5aa8df43f9f837bedb7442f31dcb7b166d38535076f094b85ce3a2e0b4458f7",
+                "fc51cd8e6218a1a38da47ed00230f0580816ed13ba3303ac5deb911548908025",
+                &[0xaf_u8, 0x82][..],
+                "6291d657deec24024827e69c3abe01a30ce548a284743a445e3680d7db5ac3ac\
+                18ff9b538d16f290ae67f760984dc6594a7c15e9716ed28dc027beceea1ec40a",
+            ),
+        ] {
+            let expected_public = hex::<32>(public);
+            let expected_signature = hex::<64>(signature);
+            let key_pair = Ed25519KeyPair::from_seed(&hex::<32>(seed)).unwrap();
+            assert_eq!(key_pair.public_key(), &expected_public);
+            let produced = key_pair.sign(message).unwrap();
+            assert_eq!(produced, expected_signature);
+            assert!(verify(&expected_public, message, &produced).unwrap());
+            let mut tampered = produced;
+            tampered[10] ^= 1;
+            assert!(!verify(&expected_public, message, &tampered).unwrap());
+        }
+    }
+
+    #[test]
     fn signatures_reject_changed_messages_and_malformed_lengths() {
         let seed = [7; 32];
         let key_pair = Ed25519KeyPair::from_seed(&seed).unwrap();
