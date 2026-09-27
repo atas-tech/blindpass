@@ -181,13 +181,10 @@ async fn fenced_clock_refuses_fleet_authority_issuance() {
             Some(&input),
         )
         .await;
-    // Operator routes refuse at session authentication (the fenced store
-    // cannot confirm the session) or at the fenced store call.
-    assert!(
-        matches!(grant_issue.status, 401 | 503),
-        "{}",
-        grant_issue.body
-    );
+    // Operator routes report the fenced clock as an outage, not as a
+    // missing session, so operators are not sent into a login loop.
+    assert_eq!(grant_issue.status, 503, "{}", grant_issue.body);
+    assert_eq!(grant_issue.body["error"], "controller_clock_fenced");
     let version = approval["version"].as_i64().unwrap();
     let if_match = format!("\"{version}\"");
     let decision = harness
@@ -208,7 +205,8 @@ async fn fenced_clock_refuses_fleet_authority_issuance() {
             ),
         )
         .await;
-    assert!(matches!(decision.status, 401 | 503), "{}", decision.body);
+    assert_eq!(decision.status, 503, "{}", decision.body);
+    assert_eq!(decision.body["error"], "controller_clock_fenced");
     let enrollment_approval = harness
         .call(
             &harness.admin,
@@ -221,11 +219,14 @@ async fn fenced_clock_refuses_fleet_authority_issuance() {
             ),
         )
         .await;
-    assert!(
-        matches!(enrollment_approval.status, 401 | 503),
+    assert_eq!(
+        enrollment_approval.status, 503,
         "{}",
         enrollment_approval.body
     );
+    assert_eq!(enrollment_approval.body["error"], "controller_clock_fenced");
+    let node_list = harness.get(&harness.admin, "/api/v3/nodes").await;
+    assert_eq!(node_list.status, 503, "{}", node_list.body);
     let session = harness.session_challenge(&state.node.id, 1).await;
     assert_eq!(session.status, 503, "{}", session.body);
     let poll = harness

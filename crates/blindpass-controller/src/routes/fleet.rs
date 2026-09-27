@@ -978,15 +978,24 @@ pub(crate) async fn require_operator(
     unsafe_method: bool,
     administrator_only: bool,
 ) -> Result<LocalSession, Response> {
-    let session = authenticated_session(state.store.as_ref(), headers)
-        .await
-        .ok_or_else(|| {
-            api_error(
-                StatusCode::UNAUTHORIZED,
-                "session_required",
-                "an active local session is required",
-            )
-        })?;
+    let Some(session) = authenticated_session(state.store.as_ref(), headers).await else {
+        // A fenced clock makes every session unconfirmable. Report the
+        // outage rather than a missing session.
+        if let Some(store) = state.store.as_ref()
+            && store.clock_is_fenced().await
+        {
+            return Err(api_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "controller_clock_fenced",
+                "the controller clock is fenced; an administrator must reconcile it",
+            ));
+        }
+        return Err(api_error(
+            StatusCode::UNAUTHORIZED,
+            "session_required",
+            "an active local session is required",
+        ));
+    };
     if session.operator.must_change_password {
         return Err(api_error(
             StatusCode::FORBIDDEN,

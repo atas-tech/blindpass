@@ -798,6 +798,14 @@ impl Store {
         Ok(())
     }
 
+    /// True when the durable controller clock fence is set. An unreadable
+    /// anchor also counts as fenced, so callers report an outage.
+    pub async fn clock_is_fenced(&self) -> bool {
+        read_clock_anchor(&self.database)
+            .await
+            .map_or(true, |anchor| anchor.fenced_at.is_some())
+    }
+
     pub async fn is_ready(&self) -> bool {
         if self.checkpoint_clock().await.is_err() {
             return false;

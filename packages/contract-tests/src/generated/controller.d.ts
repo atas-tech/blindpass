@@ -2104,6 +2104,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession"]>;
   };
@@ -2184,6 +2189,11 @@ export interface operations {
       };
     };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2317,6 +2327,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession"]>;
   };
@@ -2347,6 +2362,11 @@ export interface operations {
       };
     };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2486,6 +2506,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession"]>;
   };
@@ -2566,6 +2591,11 @@ export interface operations {
       };
     };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2692,6 +2722,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession"]>;
   };
@@ -2774,6 +2809,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession"]>;
   };
@@ -2797,6 +2837,11 @@ export interface operations {
       };
     };
     "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2831,6 +2876,11 @@ export interface operations {
       };
     };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -2965,6 +3015,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["adminSession"]>;
   };
@@ -2995,6 +3050,11 @@ export interface operations {
       };
     };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -3073,6 +3133,11 @@ export interface operations {
       };
     };
     "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -3158,6 +3223,11 @@ export interface operations {
       };
     };
     "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };

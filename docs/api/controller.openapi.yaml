@@ -569,7 +569,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
-        "responses": { "200": { "description": "Enrollment page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Enrollment page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/EnrollmentList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "post": {
         "operationId": "createFleetEnrollment",
@@ -586,7 +586,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Enrollment metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Enrollment" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Enrollment metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Enrollment" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/enrollments/{id}/approve": {
@@ -616,7 +616,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
-        "responses": { "200": { "description": "Node page with derived liveness", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NodeList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Node page with derived liveness", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NodeList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/nodes/{id}": {
@@ -625,7 +625,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Node metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Node metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "delete": {
         "operationId": "revokeFleetNode",
@@ -651,7 +651,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "query", "name": "node_id", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
-        "responses": { "200": { "description": "Workload page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkloadList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Workload page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WorkloadList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "post": {
         "operationId": "registerFleetWorkload",
@@ -669,7 +669,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Workload registration", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Workload registration", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Workload" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "patch": {
         "operationId": "updateFleetWorkload",
@@ -695,7 +695,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [],
-        "responses": { "200": { "description": "Versioned fleet policy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FleetPolicy" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Versioned fleet policy", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FleetPolicy" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "put": {
         "operationId": "updateFleetPolicy",
@@ -712,7 +712,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string", "enum": ["pending", "approved", "rejected", "expired"] } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
-        "responses": { "200": { "description": "Unified page with typed approval identities and authoritative pending count", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnifiedApprovalList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Unified page with typed approval identities and authoritative pending count", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UnifiedApprovalList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/approvals/count": {
@@ -721,7 +721,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [],
-        "responses": { "200": { "description": "Authoritative pending count across approval types", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalCount" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Authoritative pending count across approval types", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ApprovalCount" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/approvals/{id}": {
@@ -730,7 +730,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Typed exchange or operation approval", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/Approval" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Typed exchange or operation approval", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/Approval" }] } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/approvals/{id}/approve": {
@@ -761,7 +761,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "query", "name": "node_id", "schema": { "type": "string" } }, { "in": "query", "name": "status", "schema": { "type": "string", "enum": ["issued", "delivered", "consumed", "revoked", "expired"] } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
-        "responses": { "200": { "description": "Grant metadata page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Grant metadata page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/GrantList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/grants/{id}": {
@@ -770,7 +770,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Grant metadata without signature material or plaintext", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Grant" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Grant metadata without signature material or plaintext", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Grant" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "delete": {
         "operationId": "revokeFleetGrant",
@@ -786,7 +786,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
-        "responses": { "200": { "description": "Operation page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Operation page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "post": {
         "operationId": "requestFleetOperation",
@@ -804,7 +804,7 @@
         "tags": ["Fleet administration"],
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
-        "responses": { "200": { "description": "Operation metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operation" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "Operation metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operation" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       },
       "delete": {
         "operationId": "cancelFleetOperation",
