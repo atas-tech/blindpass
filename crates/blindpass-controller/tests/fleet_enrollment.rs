@@ -608,22 +608,8 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     assert_eq!(detail.status, 200);
     assert_eq!(detail.body["status"], "submitted");
     let version = detail.body["version"].as_i64().unwrap();
-    match &backend_pool {
-        Some(pool) => {
-            sqlx::query("UPDATE enrollment_requests SET expires_at = 1 WHERE id = ?")
-                .bind(&first_id)
-                .execute(pool)
-                .await
-                .expect("expire the already submitted SQLite token");
-        }
-        None => {
-            sqlx::query("UPDATE enrollment_requests SET expires_at = 1 WHERE id = $1")
-                .bind(&first_id)
-                .execute(pg_test_pool.as_ref().unwrap())
-                .await
-                .expect("expire the already submitted PostgreSQL token");
-        }
-    }
+    // Approval of an enrollment whose token expired after submission is
+    // refused with 410 (P03 review C13; see tests/fleet_registry.rs).
     let wrong_fingerprint = request(
         address,
         "POST",

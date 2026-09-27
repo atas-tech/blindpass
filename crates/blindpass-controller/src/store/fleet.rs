@@ -14,6 +14,13 @@ use sqlx::{
     sqlite::{Sqlite, SqliteRow},
 };
 
+/// `StoreError::InvalidInput` message: the enrollment token expired before
+/// approval; routes answer 410 `enrollment_expired`.
+pub const ENROLLMENT_EXPIRED: &str = "enrollment expired";
+/// `StoreError::InvalidInput` message: submitted keys belonged to an
+/// earlier node; routes answer 409 `enrollment_key_reused`.
+pub const ENROLLMENT_KEY_REUSED: &str = "enrollment key reused";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EnrollmentRecord {
     pub id: String,
@@ -395,8 +402,33 @@ impl Store {
                     return Ok(None);
                 };
                 let enrollment = enrollment_from_sqlite(&row)?;
+                let now: i64 = sqlx::query_scalar(&format!("SELECT {SQLITE_NOW_MS}"))
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                if enrollment.expires_at_ms <= now {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput(ENROLLMENT_EXPIRED));
+                }
+                let reused: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM node_key_history h JOIN nodes n ON n.id = h.node_id
+                     WHERE n.tenant_id = ? AND (h.signing_pub = ? OR h.recipient_pub = ?))",
+                )
+                .bind(&self.tenant_id)
+                .bind(enrollment.signing_pub.as_deref().unwrap_or_default())
+                .bind(enrollment.recipient_pub.as_deref().unwrap_or_default())
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                if reused {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput(ENROLLMENT_KEY_REUSED));
+                }
+                // Only active nodes hold their name; a revoked node's name
+                // may be enrolled again with new keys.
                 let name_exists: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM nodes WHERE tenant_id = ? AND name = ?)",
+                    "SELECT EXISTS(SELECT 1 FROM nodes WHERE tenant_id = ? AND name = ?
+                     AND status = 'active')",
                 )
                 .bind(&self.tenant_id)
                 .bind(&enrollment.requested_name)
@@ -438,8 +470,31 @@ impl Store {
                     return Ok(None);
                 };
                 let enrollment = enrollment_from_postgres(&row)?;
+                let now: i64 = sqlx::query_scalar(&format!("SELECT {POSTGRES_NOW_MS}"))
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                if enrollment.expires_at_ms <= now {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput(ENROLLMENT_EXPIRED));
+                }
+                let reused: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM node_key_history h JOIN nodes n ON n.id = h.node_id
+                     WHERE n.tenant_id = $1 AND (h.signing_pub = $2 OR h.recipient_pub = $3))",
+                )
+                .bind(&self.tenant_id)
+                .bind(enrollment.signing_pub.as_deref().unwrap_or_default())
+                .bind(enrollment.recipient_pub.as_deref().unwrap_or_default())
+                .fetch_one(&mut *transaction)
+                .await
+                .map_err(StoreError::Database)?;
+                if reused {
+                    transaction.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput(ENROLLMENT_KEY_REUSED));
+                }
                 let name_exists: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM nodes WHERE tenant_id = $1 AND name = $2)",
+                    "SELECT EXISTS(SELECT 1 FROM nodes WHERE tenant_id = $1 AND name = $2
+                     AND status = 'active')",
                 )
                 .bind(&self.tenant_id)
                 .bind(&enrollment.requested_name)

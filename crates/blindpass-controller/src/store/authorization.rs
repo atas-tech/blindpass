@@ -6,6 +6,10 @@ use super::operation_approvals::{
     closure_targets_postgres, closure_targets_sqlite, create_or_extend_approval_postgres,
     create_or_extend_approval_sqlite, enqueue_closures_postgres, enqueue_closures_sqlite,
 };
+use super::workload_authority::{
+    WORKLOAD_UNIT_CONFLICT, retire_workload_authority_postgres, retire_workload_authority_sqlite,
+    unit_conflict_error, unit_conflict_postgres, unit_conflict_sqlite,
+};
 use super::{Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError};
 use sqlx::{
     Row, Transaction,
@@ -348,6 +352,18 @@ impl Store {
                     tx.commit().await.map_err(StoreError::Database)?;
                     return Ok(false);
                 }
+                if unit_conflict_sqlite(
+                    &mut tx,
+                    &self.tenant_id,
+                    &record.node_id,
+                    &record.unit,
+                    &record.id,
+                )
+                .await?
+                {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
+                }
                 let sql = format!(
                     "INSERT INTO workloads (id, tenant_id, node_id, name, unit, account,
                      consumption_mode, local_ceiling_seconds, registration_version, status,
@@ -368,7 +384,7 @@ impl Store {
                     .bind(&self.tenant_id)
                     .execute(&mut *tx)
                     .await
-                    .map_err(StoreError::Database)?;
+                    .map_err(unit_conflict_error)?;
                 if result.rows_affected() == 1 {
                     enqueue_node_document_sqlite(&mut tx, &record.node_id, policy_envelope_json)
                         .await?;
@@ -396,6 +412,18 @@ impl Store {
                     tx.commit().await.map_err(StoreError::Database)?;
                     return Ok(false);
                 }
+                if unit_conflict_postgres(
+                    &mut tx,
+                    &self.tenant_id,
+                    &record.node_id,
+                    &record.unit,
+                    &record.id,
+                )
+                .await?
+                {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
+                }
                 let sql = format!(
                     "INSERT INTO workloads (id, tenant_id, node_id, name, unit, account,
                      consumption_mode, local_ceiling_seconds, registration_version, status,
@@ -416,7 +444,7 @@ impl Store {
                     .bind(&record.node_id)
                     .execute(&mut *tx)
                     .await
-                    .map_err(StoreError::Database)?;
+                    .map_err(unit_conflict_error)?;
                 if result.rows_affected() == 1 {
                     enqueue_node_document_postgres(&mut tx, &record.node_id, policy_envelope_json)
                         .await?;
@@ -433,6 +461,9 @@ impl Store {
         }
     }
 
+    /// Update a workload registration. A change of unit, account or
+    /// consumption mode retires the authority issued under the old identity:
+    /// open grants are revoked and pending operations cancelled.
     #[allow(clippy::too_many_arguments)] // Update inputs and their signed snapshots are explicit.
     pub async fn update_workload(
         &self,
@@ -445,71 +476,109 @@ impl Store {
         node_id: &str,
         registration_envelope_json: &str,
         policy_envelope_json: &str,
+        updated_by: &str,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'")
-                    .bind(node_id).bind(&self.tenant_id).execute(&mut *tx).await
+        let signer = self.fleet_signer.as_ref();
+        macro_rules! update {
+            ($pool:expr, $convert:expr, $lock:expr, $conflict:ident, $retire:ident,
+             $enqueue:path) => {{
+                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                sqlx::query(&$convert($lock))
+                    .bind(node_id)
+                    .bind(&self.tenant_id)
+                    .execute(&mut *tx)
+                    .await
                     .map_err(StoreError::Database)?;
-                let sql = "UPDATE workloads SET unit = ?, account = ?, consumption_mode = ?,
+                let Some(previous) = sqlx::query(&$convert(
+                    "SELECT unit, account, consumption_mode FROM workloads
+                     WHERE id = ? AND tenant_id = ? AND status = 'active' AND version = ?",
+                ))
+                .bind(id)
+                .bind(&self.tenant_id)
+                .bind(expected_version)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(StoreError::Database)?
+                else {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Ok(false);
+                };
+                let previous_unit: String =
+                    previous.try_get("unit").map_err(StoreError::Database)?;
+                let previous_account: String =
+                    previous.try_get("account").map_err(StoreError::Database)?;
+                let previous_mode: String = previous
+                    .try_get("consumption_mode")
+                    .map_err(StoreError::Database)?;
+                if previous_unit != unit
+                    && $conflict(&mut tx, &self.tenant_id, node_id, unit, id).await?
+                {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
+                }
+                let result = sqlx::query(&$convert(
+                    "UPDATE workloads SET unit = ?, account = ?, consumption_mode = ?,
                      local_ceiling_seconds = ?, registration_version = registration_version + 1,
                      version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'active'
                      AND version = ? AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = node_id
-                     AND n.tenant_id = ? AND n.status = 'active')";
-                let result = sqlx::query(sql)
-                    .bind(unit)
-                    .bind(account)
-                    .bind(consumption_mode)
-                    .bind(local_ceiling_seconds)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .bind(expected_version)
-                    .bind(&self.tenant_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
+                     AND n.tenant_id = ? AND n.status = 'active')",
+                ))
+                .bind(unit)
+                .bind(account)
+                .bind(consumption_mode)
+                .bind(local_ceiling_seconds)
+                .bind(id)
+                .bind(&self.tenant_id)
+                .bind(expected_version)
+                .bind(&self.tenant_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(unit_conflict_error)?;
                 if result.rows_affected() == 1 {
-                    enqueue_node_document_sqlite(&mut tx, node_id, policy_envelope_json).await?;
-                    enqueue_node_document_sqlite(&mut tx, node_id, registration_envelope_json)
+                    if previous_unit != unit
+                        || previous_account != account
+                        || previous_mode != consumption_mode
+                    {
+                        $retire(
+                            &mut tx,
+                            signer,
+                            &self.tenant_id,
+                            id,
+                            "workload_changed",
+                            updated_by,
+                        )
                         .await?;
+                    }
+                    $enqueue(&mut tx, node_id, policy_envelope_json).await?;
+                    $enqueue(&mut tx, node_id, registration_envelope_json).await?;
                 }
                 tx.commit().await.map_err(StoreError::Database)?;
                 Ok(result.rows_affected() == 1)
-            }
-            Database::Postgres(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM nodes WHERE id = $1 AND tenant_id = $2 AND status = 'active' FOR UPDATE")
-                    .bind(node_id).bind(&self.tenant_id).fetch_optional(&mut *tx).await
-                    .map_err(StoreError::Database)?;
-                let sql = "UPDATE workloads SET unit = $1, account = $2, consumption_mode = $3,
-                     local_ceiling_seconds = $4, registration_version = registration_version + 1,
-                     version = version + 1 WHERE id = $5 AND tenant_id = $6 AND status = 'active'
-                     AND version = $7 AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = node_id
-                     AND n.tenant_id = $6 AND n.status = 'active')";
-                let result = sqlx::query(sql)
-                    .bind(unit)
-                    .bind(account)
-                    .bind(consumption_mode)
-                    .bind(local_ceiling_seconds)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .bind(expected_version)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if result.rows_affected() == 1 {
-                    enqueue_node_document_postgres(&mut tx, node_id, policy_envelope_json).await?;
-                    enqueue_node_document_postgres(&mut tx, node_id, registration_envelope_json)
-                        .await?;
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
-            }
+            }};
+        }
+        match &self.database {
+            Database::Sqlite(pool) => update!(
+                pool,
+                |sql: &str| sql.to_owned(),
+                "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'",
+                unit_conflict_sqlite,
+                retire_workload_authority_sqlite,
+                enqueue_node_document_sqlite
+            ),
+            Database::Postgres(pool) => update!(
+                pool,
+                super::pg,
+                "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? AND status = 'active' FOR UPDATE",
+                unit_conflict_postgres,
+                retire_workload_authority_postgres,
+                enqueue_node_document_postgres
+            ),
         }
     }
 
+    /// Revoke a workload registration together with the grants it issued
+    /// and its operations that are not yet granted.
     pub async fn revoke_workload(
         &self,
         id: &str,
@@ -517,65 +586,65 @@ impl Store {
         expected_version: i64,
         registration_envelope_json: &str,
         policy_envelope_json: &str,
+        revoked_by: &str,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
+        let signer = self.fleet_signer.as_ref();
+        macro_rules! revoke {
+            ($pool:expr, $convert:expr, $now:expr, $lock:expr, $retire:ident, $enqueue:path) => {{
+                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                sqlx::query(&$convert($lock))
+                    .bind(node_id)
+                    .bind(&self.tenant_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                let result = sqlx::query(&$convert(&format!(
+                    "UPDATE workloads SET status = 'revoked', revoked_at = {},
+                     registration_version = registration_version + 1, version = version + 1
+                     WHERE id = ? AND tenant_id = ? AND status = 'active' AND version = ?",
+                    $now
+                )))
+                .bind(id)
+                .bind(&self.tenant_id)
+                .bind(expected_version)
+                .execute(&mut *tx)
+                .await
+                .map_err(StoreError::Database)?;
+                if result.rows_affected() == 1 {
+                    $retire(
+                        &mut tx,
+                        signer,
+                        &self.tenant_id,
+                        id,
+                        "workload_revoked",
+                        revoked_by,
+                    )
+                    .await?;
+                    $enqueue(&mut tx, node_id, policy_envelope_json).await?;
+                    $enqueue(&mut tx, node_id, registration_envelope_json).await?;
+                }
+                tx.commit().await.map_err(StoreError::Database)?;
+                Ok(result.rows_affected() == 1)
+            }};
+        }
         match &self.database {
-            Database::Sqlite(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ?")
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let sql = format!(
-                    "UPDATE workloads SET status = 'revoked', revoked_at = {SQLITE_NOW_MS},
-                     registration_version = registration_version + 1, version = version + 1
-                     WHERE id = ? AND tenant_id = ? AND status = 'active' AND version = ?"
-                );
-                let result = sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .bind(expected_version)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if result.rows_affected() == 1 {
-                    enqueue_node_document_sqlite(&mut tx, node_id, policy_envelope_json).await?;
-                    enqueue_node_document_sqlite(&mut tx, node_id, registration_envelope_json)
-                        .await?;
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
-            }
-            Database::Postgres(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM nodes WHERE id = $1 AND tenant_id = $2 FOR UPDATE")
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let sql = format!(
-                    "UPDATE workloads SET status = 'revoked', revoked_at = {POSTGRES_NOW_MS},
-                     registration_version = registration_version + 1, version = version + 1
-                     WHERE id = $1 AND tenant_id = $2 AND status = 'active' AND version = $3"
-                );
-                let result = sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .bind(expected_version)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if result.rows_affected() == 1 {
-                    enqueue_node_document_postgres(&mut tx, node_id, policy_envelope_json).await?;
-                    enqueue_node_document_postgres(&mut tx, node_id, registration_envelope_json)
-                        .await?;
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
-            }
+            Database::Sqlite(pool) => revoke!(
+                pool,
+                |sql: &str| sql.to_owned(),
+                SQLITE_NOW_MS,
+                "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ?",
+                retire_workload_authority_sqlite,
+                enqueue_node_document_sqlite
+            ),
+            Database::Postgres(pool) => revoke!(
+                pool,
+                super::pg,
+                POSTGRES_NOW_MS,
+                "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? FOR UPDATE",
+                retire_workload_authority_postgres,
+                enqueue_node_document_postgres
+            ),
         }
     }
 

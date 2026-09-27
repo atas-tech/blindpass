@@ -5,7 +5,8 @@
 use crate::app::AppState;
 use crate::routes::admin_session::{authenticated_session, valid_origin, valid_session_csrf};
 use crate::store::{
-    EnrollmentRecord, LocalSession, NodeGrantRevocationDraft, NodeKeyRotationDraft, NodeRecord,
+    ENROLLMENT_EXPIRED, ENROLLMENT_KEY_REUSED, EnrollmentRecord, LocalSession,
+    NodeGrantRevocationDraft, NodeKeyRotationDraft, NodeRecord, StoreError,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -362,6 +363,16 @@ async fn approve_enrollment(
             StatusCode::CONFLICT,
             "enrollment_changed",
             "enrollment changed, fingerprint did not match, or node name is already registered",
+        ),
+        Err(StoreError::InvalidInput(ENROLLMENT_EXPIRED)) => api_error(
+            StatusCode::GONE,
+            "enrollment_expired",
+            "the enrollment expired before approval; issue a new enrollment",
+        ),
+        Err(StoreError::InvalidInput(ENROLLMENT_KEY_REUSED)) => api_error(
+            StatusCode::CONFLICT,
+            "enrollment_key_reused",
+            "the submitted keys belonged to an earlier node; enroll with new keys",
         ),
         Err(_) => unavailable(),
     }
@@ -909,7 +920,9 @@ pub(crate) async fn require_operator(
 }
 
 fn enrollment_body(record: &EnrollmentRecord, now_ms: i64) -> Value {
-    let status = if record.status == "issued" && record.expires_at_ms <= now_ms {
+    let status = if matches!(record.status.as_str(), "issued" | "submitted")
+        && record.expires_at_ms <= now_ms
+    {
         "expired"
     } else {
         record.status.as_str()

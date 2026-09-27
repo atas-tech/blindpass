@@ -8,7 +8,7 @@ use crate::store::{
     ApprovalDecisionOutcome, ApprovalRecord, FleetPolicyRecord, GrantIssueDraft, GrantIssueOutcome,
     GrantRecord, GrantRevocationOutcome, OperationApprovalDraft, OperationApprovalRecord,
     OperationCancelOutcome, OperationCreateOutcome, OperationDecision, OperationDecisionOutcome,
-    OperationRecord, WorkloadRecord,
+    OperationRecord, StoreError, WORKLOAD_UNIT_CONFLICT, WorkloadRecord,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -322,6 +322,7 @@ async fn create_workload(
             "node_unavailable",
             "node is unavailable or workload name is already registered",
         ),
+        Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT)) => unit_conflict(),
         Err(_) => unavailable(),
     }
 }
@@ -332,9 +333,10 @@ async fn update_workload(
     headers: HeaderMap,
     Json(body): Json<WorkloadUpdateInput>,
 ) -> Response {
-    if let Err(response) = require_operator(&state, &headers, true, true).await {
-        return response;
-    }
+    let operator = match require_operator(&state, &headers, true, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     if body.expected_version <= 0
         || (body.unit.is_none()
             && body.account.is_none()
@@ -441,6 +443,7 @@ async fn update_workload(
             &current.node_id,
             &envelope_json,
             &policy_envelope_json,
+            &operator.operator.id,
         )
         .await
     {
@@ -453,6 +456,7 @@ async fn update_workload(
             "workload_changed",
             "workload changed before the update could be applied",
         ),
+        Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT)) => unit_conflict(),
         Err(_) => unavailable(),
     }
 }
@@ -462,9 +466,10 @@ async fn revoke_workload(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = require_operator(&state, &headers, true, true).await {
-        return response;
-    }
+    let operator = match require_operator(&state, &headers, true, true).await {
+        Ok(operator) => operator,
+        Err(response) => return response,
+    };
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
@@ -518,6 +523,7 @@ async fn revoke_workload(
             current.version,
             &envelope_json,
             &policy_envelope_json,
+            &operator.operator.id,
         )
         .await
     {
@@ -2049,6 +2055,14 @@ fn exchange_approval_body(record: &ApprovalRecord) -> JsonValue {
         "requester_id":record.requester_id,"secret_name":record.secret_name,
         "purpose":record.purpose,"created_at":record.created_at_ms,"timeline":[]
     })
+}
+
+fn unit_conflict() -> Response {
+    api_error(
+        StatusCode::CONFLICT,
+        "workload_unit_conflict",
+        "another active workload is already registered for this node unit",
+    )
 }
 
 fn workload_body(record: &WorkloadRecord) -> JsonValue {

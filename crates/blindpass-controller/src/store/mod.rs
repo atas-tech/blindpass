@@ -27,6 +27,7 @@ mod grants;
 mod node_channel;
 mod operation_approvals;
 mod operators;
+mod workload_authority;
 pub use authorization::{
     FleetPolicyRecord, OperationApprovalDraft, OperationApprovalRecord, OperationCreateOutcome,
     OperationDecisionOutcome, OperationRecord, WorkloadRecord,
@@ -35,7 +36,10 @@ pub use exchanges::{
     ApprovalDecisionOutcome, ApprovalRecord, AuditRecord, ExchangePolicyRecord, ExchangeRecord,
     LifecycleRecord,
 };
-pub use fleet::{EnrollmentRecord, NodeGrantRevocationDraft, NodeKeyRotationDraft, NodeRecord};
+pub use fleet::{
+    ENROLLMENT_EXPIRED, ENROLLMENT_KEY_REUSED, EnrollmentRecord, NodeGrantRevocationDraft,
+    NodeKeyRotationDraft, NodeRecord,
+};
 pub use fleet_lifecycle::{FleetExpirySummary, FleetPruneSummary};
 pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord, GrantRevocationOutcome};
 pub use node_channel::{
@@ -43,6 +47,7 @@ pub use node_channel::{
 };
 pub use operation_approvals::{OperationCancelOutcome, OperationDecision};
 pub use operators::{LocalOperator, LocalSession};
+pub use workload_authority::WORKLOAD_UNIT_CONFLICT;
 
 const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
 const POSTGRES_WALL_NOW_MS: &str = "FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT";
