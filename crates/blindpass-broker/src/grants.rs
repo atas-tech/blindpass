@@ -31,6 +31,13 @@ struct TimeChallenge {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TrustedTime {
+    /// Controller time signed into the reply; a lower bound on controller
+    /// time at receipt. Used for rollback checks, the persisted high-water
+    /// mark and journal pruning.
+    signed_controller_ms: u64,
+    /// Upper bound on controller time at receipt: the signed time plus the
+    /// part of the round trip the controller did not account for. Used for
+    /// grant deadlines and document age so relay delay cannot add lifetime.
     estimated_controller_ms: u64,
     received_at_boottime_ms: u64,
 }
@@ -120,21 +127,28 @@ impl GrantVerifier {
         {
             return Err("time reply does not match the pending broker challenge");
         }
-        let _round_trip_ms = now_boottime_ms
+        let round_trip_ms = now_boottime_ms
             .checked_sub(challenge.sent_at_boottime_ms)
             .filter(|value| *value <= MAX_TIME_REPLY_DELAY_MS)
             .ok_or("time reply delay is outside the supported bound")?;
-        // The controller stamps the signed reply after its long-poll wait.
-        // Adding the full challenge round trip would count that wait again
-        // and persist a time high-water mark in the future.
+        // The controller stamps the reply after its long-poll hold and signs
+        // both the arrival and response times. Any part of the round trip it
+        // did not hold may have elapsed after the stamp, including delay the
+        // relay added, so count it towards controller time.
         let controller_now_ms = reply.controller_time_ms;
+        let controller_hold_ms = reply
+            .controller_time_ms
+            .saturating_sub(reply.challenge_received_at_ms);
+        let estimated_controller_ms = controller_now_ms
+            .checked_add(round_trip_ms.saturating_sub(controller_hold_ms))
+            .ok_or("time reply exceeds the supported clock range")?;
         if let Some(previous) = self.trusted_time.as_ref() {
             let elapsed = now_boottime_ms.saturating_sub(previous.received_at_boottime_ms);
             let minimum_now = previous
-                .estimated_controller_ms
+                .signed_controller_ms
                 .saturating_add(elapsed)
                 .saturating_sub(CLOCK_ROLLBACK_TOLERANCE_MS);
-            if controller_now_ms < minimum_now {
+            if estimated_controller_ms < minimum_now {
                 return Err("controller time moved backwards beyond the accepted tolerance");
             }
         }
@@ -158,7 +172,8 @@ impl GrantVerifier {
         }
         self.highest_controller_time_ms = Some(highest_controller_time_ms);
         self.trusted_time = Some(TrustedTime {
-            estimated_controller_ms: controller_now_ms,
+            signed_controller_ms: controller_now_ms,
+            estimated_controller_ms,
             received_at_boottime_ms: now_boottime_ms,
         });
         Ok(())
@@ -850,6 +865,15 @@ mod tests {
         }
     }
 
+    fn policy() -> PolicySnapshot {
+        PolicySnapshot {
+            policy_version: 4,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["noop.marker".to_owned()],
+            allowed_modes: vec![ConsumptionMode::File],
+        }
+    }
+
     fn verifier(path: &std::path::Path, started_at: u64) -> GrantVerifier {
         let mut verifier = GrantVerifier {
             journal: Some(GrantJournal::open(path).unwrap()),
@@ -863,12 +887,16 @@ mod tests {
     }
 
     #[test]
-    fn signed_time_reply_does_not_project_long_poll_delay_into_the_future() {
+    fn signed_time_reply_counts_unaccounted_round_trip_as_elapsed_controller_time() {
         let path = temporary_path();
         let mut verifier = verifier(&path, 1_000);
+        // The controller held the long poll for 2,000 ms before stamping the
+        // reply; only the remaining 1,000 ms of the 3,000 ms round trip can
+        // have elapsed after the stamp.
         let reply = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: 1_799_999_998_000,
             controller_time_ms: 1_800_000_000_000,
             issuer_epoch: 1,
         };
@@ -877,11 +905,15 @@ mod tests {
             .unwrap();
         assert_eq!(
             verifier.trusted_controller_time_ms(4_000),
-            Some(reply.controller_time_ms)
+            Some(reply.controller_time_ms + 1_000)
         );
         assert_eq!(
             verifier.trusted_controller_time_ms(5_000),
-            Some(reply.controller_time_ms + 1_000)
+            Some(reply.controller_time_ms + 2_000)
+        );
+        assert_eq!(
+            verifier.highest_controller_time_ms,
+            Some(reply.controller_time_ms)
         );
         assert!(verifier.pending_time.is_none());
         assert!(
@@ -889,6 +921,45 @@ mod tests {
                 .accept_time_reply(&reply, "nd_node-a", 1, 4_100)
                 .is_err()
         );
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn relay_held_time_reply_cannot_extend_an_expired_grant() {
+        let path = temporary_path();
+        let mut verifier = verifier(&path, 1_000);
+        // The controller answered immediately; the relay then held the signed
+        // reply for 34,000 ms before handing it to the broker.
+        let stamped_at = 1_800_000_000_000;
+        let reply = TimeReply {
+            node_id: "nd_node-a".to_owned(),
+            challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: stamped_at,
+            controller_time_ms: stamped_at,
+            issuer_epoch: 1,
+        };
+        verifier
+            .accept_time_reply(&reply, "nd_node-a", 1, 35_000)
+            .unwrap();
+        assert_eq!(
+            verifier.trusted_controller_time_ms(35_000),
+            Some(stamped_at + 34_000)
+        );
+        let mut grant = grant();
+        grant.issued_at_ms = stamped_at - 1_000;
+        grant.expires_at_ms = stamped_at + 20_000;
+        let error = verifier
+            .accept_grant(
+                grant,
+                b"grant",
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy(),
+                &registration(),
+                35_000,
+            )
+            .unwrap_err();
+        assert_eq!(error, "grant expired before broker receipt");
         let _ = std::fs::remove_file(path);
     }
 
@@ -906,6 +977,7 @@ mod tests {
         let reply = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-new".to_owned(),
+            challenge_received_at_ms: 1_800_000_000_000,
             controller_time_ms: 1_800_000_000_000,
             issuer_epoch: 1,
         };
@@ -921,6 +993,7 @@ mod tests {
         });
         let rolled_back = TimeReply {
             challenge: "challenge-after-restart".to_owned(),
+            challenge_received_at_ms: 1_799_999_000_000,
             controller_time_ms: 1_799_999_000_000,
             ..reply
         };
@@ -939,6 +1012,7 @@ mod tests {
         let reply = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: 1_800_000_000_000,
             controller_time_ms: 1_800_000_000_000,
             issuer_epoch: 1,
         };
@@ -1035,9 +1109,12 @@ mod tests {
         let path = temporary_path();
         let mut verifier = verifier(&path, 1_000);
         let base_controller_time = 1_800_000_000_000;
+        // The controller held the 1,000 ms round trip for its whole length,
+        // so no unaccounted delay is added to the signed time.
         let time_reply = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: base_controller_time - 1_000,
             controller_time_ms: base_controller_time,
             issuer_epoch: 1,
         };
@@ -1097,6 +1174,7 @@ mod tests {
         let time_reply = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: issued_at_ms + 60_001,
             controller_time_ms: issued_at_ms + 60_001,
             issuer_epoch: 1,
         };
@@ -1148,6 +1226,7 @@ mod tests {
         let delayed = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: 1_800_000_000_000,
             controller_time_ms: 1_800_000_000_000,
             issuer_epoch: 1,
         };
@@ -1166,6 +1245,7 @@ mod tests {
         let time_reply = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-a".to_owned(),
+            challenge_received_at_ms: 1_800_000_000_000,
             controller_time_ms: 1_800_000_000_000,
             issuer_epoch: 1,
         };
@@ -1258,6 +1338,7 @@ mod tests {
         let first_time = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge: "challenge-before-consume".to_owned(),
+            challenge_received_at_ms: 1_800_000_000_000,
             controller_time_ms: 1_800_000_000_000,
             issuer_epoch: 1,
         };
@@ -1320,6 +1401,7 @@ mod tests {
         });
         let fresh_time = TimeReply {
             challenge: "challenge-after-crash".to_owned(),
+            challenge_received_at_ms: first_time.controller_time_ms + 100,
             controller_time_ms: first_time.controller_time_ms + 100,
             ..first_time
         };

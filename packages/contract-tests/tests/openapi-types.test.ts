@@ -86,7 +86,7 @@ it("generated operation and component types describe the controller wire shapes"
     time_reply: {
       kind: "time_reply",
       v: 1,
-      body: { node_id: "nd_node-a", challenge: "A".repeat(43), controller_time_ms: 1_800_000_000_000, issuer_epoch: 1 },
+      body: { node_id: "nd_node-a", challenge: "A".repeat(43), challenge_received_at_ms: 1_799_999_999_000, controller_time_ms: 1_800_000_000_000, issuer_epoch: 1 },
       sig: "A".repeat(86),
       kid: "issuer",
       epoch: 1

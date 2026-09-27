@@ -1037,6 +1037,11 @@ impl NodeRevocation {
 pub struct TimeReply {
     pub node_id: String,
     pub challenge: String,
+    /// Controller time when the challenge arrived. The difference to
+    /// `controller_time_ms` is the controller-measured hold, which the broker
+    /// subtracts from its round trip; the remainder may have elapsed after
+    /// the reply was stamped.
+    pub challenge_received_at_ms: u64,
     pub controller_time_ms: u64,
     pub issuer_epoch: u64,
 }
@@ -1045,12 +1050,19 @@ impl TimeReply {
     pub fn from_value(value: &Value) -> Result<Self, DocumentError> {
         expect_fields(
             value,
-            &["node_id", "challenge", "controller_time_ms", "issuer_epoch"],
+            &[
+                "node_id",
+                "challenge",
+                "challenge_received_at_ms",
+                "controller_time_ms",
+                "issuer_epoch",
+            ],
             &[],
         )?;
         let reply = Self {
             node_id: required_string(value, "node_id")?.to_owned(),
             challenge: required_string(value, "challenge")?.to_owned(),
+            challenge_received_at_ms: required_number(value, "challenge_received_at_ms")?,
             controller_time_ms: required_number(value, "controller_time_ms")?,
             issuer_epoch: required_number(value, "issuer_epoch")?,
         };
@@ -1061,13 +1073,21 @@ impl TimeReply {
     pub fn to_value(&self) -> Result<Value, DocumentError> {
         validate_token(&self.node_id, "node id")?;
         validate_token(&self.challenge, "time challenge")?;
-        if self.controller_time_ms == 0 || self.issuer_epoch == 0 {
+        if self.controller_time_ms == 0
+            || self.issuer_epoch == 0
+            || self.challenge_received_at_ms == 0
+            || self.challenge_received_at_ms > self.controller_time_ms
+        {
             return Err(DocumentError::Invalid("time reply binding"));
         }
         Ok(Value::Object(vec![
             (
                 "challenge".to_owned(),
                 Value::String(self.challenge.clone()),
+            ),
+            (
+                "challenge_received_at_ms".to_owned(),
+                Value::Unsigned(self.challenge_received_at_ms),
             ),
             (
                 "controller_time_ms".to_owned(),

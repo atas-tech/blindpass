@@ -316,6 +316,12 @@ async fn node_poll(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
+    // Signed into any time reply so the broker can subtract the long-poll
+    // hold from its measured round trip.
+    let challenge_received_at_ms = match store.database_now_ms().await {
+        Ok(value) => value,
+        Err(_) => return unavailable(),
+    };
     let deadline = Instant::now() + NODE_POLL_HOLD;
     let mut ack_seq = body.ack_seq;
     loop {
@@ -330,6 +336,7 @@ async fn node_poll(
                 store,
                 &claims.node_id,
                 body.time_challenge.as_deref(),
+                challenge_received_at_ms,
                 documents,
             )
             .await;
@@ -346,6 +353,7 @@ async fn poll_response(
     store: &crate::store::Store,
     node_id: &str,
     time_challenge: Option<&str>,
+    challenge_received_at_ms: i64,
     documents: Vec<InboxDocument>,
 ) -> Response {
     let mut output = Vec::with_capacity(documents.len());
@@ -368,15 +376,22 @@ async fn poll_response(
         ) else {
             return unavailable();
         };
-        let Ok(controller_time_ms) = u64::try_from(server_time_ms) else {
+        let (Ok(controller_time_ms), Ok(challenge_received_at_ms)) = (
+            u64::try_from(server_time_ms),
+            u64::try_from(challenge_received_at_ms),
+        ) else {
             return unavailable();
         };
+        // A database clock step between the two reads must not produce an
+        // arrival time after the stamp.
+        let challenge_received_at_ms = challenge_received_at_ms.min(controller_time_ms);
         let Ok(issuer_epoch) = store.issuer_epoch().await else {
             return unavailable();
         };
         let reply = TimeReply {
             node_id: node_id.to_owned(),
             challenge: challenge.to_owned(),
+            challenge_received_at_ms,
             controller_time_ms,
             issuer_epoch,
         };

@@ -2219,6 +2219,7 @@ mod tests {
                 &TimeReply {
                     node_id: "node-a".to_owned(),
                     challenge,
+                    challenge_received_at_ms: 1_800_000_000_000,
                     controller_time_ms: 1_800_000_000_000,
                     issuer_epoch: 1,
                 },
@@ -2288,6 +2289,7 @@ mod tests {
                 &TimeReply {
                     node_id: "node-a".to_owned(),
                     challenge,
+                    challenge_received_at_ms: 1_800_000_000_000,
                     controller_time_ms: 1_800_000_000_000,
                     issuer_epoch: 1,
                 },

@@ -940,6 +940,7 @@ mod tests {
             TimeReply {
                 node_id: "nd_node-a".to_owned(),
                 challenge,
+                challenge_received_at_ms: now_ms,
                 controller_time_ms: now_ms,
                 issuer_epoch: 1,
             }
@@ -1042,6 +1043,7 @@ mod tests {
             TimeReply {
                 node_id: "nd_node-a".to_owned(),
                 challenge,
+                challenge_received_at_ms: now_ms + 1,
                 controller_time_ms: now_ms + 1,
                 issuer_epoch: 1,
             }
@@ -1161,6 +1163,7 @@ mod tests {
         let time_reply = TimeReply {
             node_id: "nd_node-a".to_owned(),
             challenge,
+            challenge_received_at_ms: now_ms,
             controller_time_ms: now_ms,
             issuer_epoch: 1,
         };

@@ -661,6 +661,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             let body = TimeReply {
                 node_id: first_node_id.clone(),
                 challenge: format!("poll-sequence-{seq}"),
+                challenge_received_at_ms: u64::try_from(now_ms).unwrap(),
                 controller_time_ms: u64::try_from(now_ms).unwrap(),
                 issuer_epoch: 1,
             }

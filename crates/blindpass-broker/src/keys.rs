@@ -1171,6 +1171,7 @@ mod tests {
             blindpass_core::fleet::TimeReply {
                 node_id: "nd_a".to_owned(),
                 challenge: "challenge-1".to_owned(),
+                challenge_received_at_ms: 1_800_000_000_000,
                 controller_time_ms: 1_800_000_000_000,
                 issuer_epoch: 2,
             }
@@ -1194,6 +1195,7 @@ mod tests {
             blindpass_core::fleet::TimeReply {
                 node_id: "nd_a".to_owned(),
                 challenge: "challenge-2".to_owned(),
+                challenge_received_at_ms: 1_800_000_000_000,
                 controller_time_ms: 1_800_000_000_000,
                 issuer_epoch: 1,
             }
