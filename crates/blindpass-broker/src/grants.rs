@@ -3,7 +3,9 @@
 //! Freshness-bound grant deadlines and durable one-use consumption records.
 
 use blindpass_core::custody::sha256;
-use blindpass_core::fleet::{Grant, PolicySnapshot, Registration, Revocation, TimeReply};
+use blindpass_core::fleet::{
+    Grant, PolicySnapshot, Registration, Revocation, TimeReply, is_valid_opaque_id,
+};
 use blindpass_core::identity::WorkloadAuthorization;
 use blindpass_core::signing::base64_url_encode;
 use std::collections::BTreeMap;
@@ -716,12 +718,7 @@ fn parse_journal_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
     let (id, expiry) = value
         .split_once("\",\"expires_at_ms\":")
         .ok_or("grant journal record is malformed")?;
-    if id.is_empty()
-        || id.len() > 128
-        || !id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-    {
+    if !is_valid_opaque_id(id) {
         return Err("grant journal id is malformed");
     }
     let expiry = expiry
@@ -741,12 +738,7 @@ fn parse_revocation_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
     let (id, retain_until) = value
         .split_once("\",\"retain_until_ms\":")
         .ok_or("grant revocation record is malformed")?;
-    if id.is_empty()
-        || id.len() > 128
-        || !id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-    {
+    if !is_valid_opaque_id(id) {
         return Err("grant revocation id is malformed");
     }
     let retain_until = retain_until

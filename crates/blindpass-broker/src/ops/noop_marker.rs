@@ -70,11 +70,7 @@ fn validate_directory(metadata: &fs::Metadata) -> Result<(), &'static str> {
 }
 
 fn valid_opaque_id(value: &str) -> bool {
-    !value.is_empty()
-        && value.len() <= 128
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    blindpass_core::fleet::is_valid_opaque_id(value)
 }
 
 fn effective_uid() -> u32 {

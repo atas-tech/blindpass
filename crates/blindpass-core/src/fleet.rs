@@ -176,8 +176,21 @@ fn canonical_domain_message(domain: &[u8], value: &Value) -> Result<Vec<u8>, Doc
 }
 
 fn valid_identifier(value: &str) -> bool {
+    is_valid_opaque_id(value)
+}
+
+/// Maximum length of an opaque fleet identifier.
+pub const MAX_OPAQUE_ID_BYTES: usize = 128;
+
+/// Opaque identifiers name grants, operations, workloads, nodes, rotations
+/// and broker request events. The broker uses them as journal records and
+/// file-name components, so the signed document charset must match the
+/// broker storage charset exactly: `[A-Za-z0-9_-]`, 1 to 128 bytes. Unit
+/// names and accounts are not opaque identifiers and keep their own rules.
+#[must_use]
+pub fn is_valid_opaque_id(value: &str) -> bool {
     !value.is_empty()
-        && value.len() <= 128
+        && value.len() <= MAX_OPAQUE_ID_BYTES
         && value
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
@@ -507,8 +520,8 @@ impl Registration {
     }
 
     pub fn to_value(&self) -> Result<Value, DocumentError> {
-        validate_token(&self.node_id, "node id")?;
-        validate_token(&self.workload_id, "workload id")?;
+        validate_opaque_id(&self.node_id, "node id")?;
+        validate_opaque_id(&self.workload_id, "workload id")?;
         validate_unit(&self.unit)?;
         validate_account(&self.account)?;
         if let Some(invocation_id) = &self.invocation_id {
@@ -752,11 +765,11 @@ impl Grant {
             (self.operation_id.as_str(), "operation id"),
             (self.node_id.as_str(), "node id"),
             (self.workload_id.as_str(), "workload id"),
-            (self.invocation_id.as_str(), "invocation id"),
-            (self.resource_id.as_str(), "resource id"),
         ] {
-            validate_token(value, label)?;
+            validate_opaque_id(value, label)?;
         }
+        validate_token(&self.invocation_id, "invocation id")?;
+        validate_token(&self.resource_id, "resource id")?;
         validate_unit(&self.unit)?;
         validate_account(&self.account)?;
         validate_token(&self.recipient_key_id, "recipient key id")?;
@@ -871,8 +884,8 @@ impl Revocation {
     }
 
     pub fn to_value(&self) -> Result<Value, DocumentError> {
-        validate_token(&self.grant_id, "grant id")?;
-        validate_token(&self.node_id, "node id")?;
+        validate_opaque_id(&self.grant_id, "grant id")?;
+        validate_opaque_id(&self.node_id, "node id")?;
         if !matches!(
             self.reason.as_str(),
             "operator" | "policy" | "expired" | "cancelled" | "key_rotation"
@@ -944,9 +957,9 @@ impl OperationClosed {
     }
 
     pub fn to_value(&self) -> Result<Value, DocumentError> {
-        validate_token(&self.node_id, "node id")?;
-        validate_token(&self.operation_id, "operation id")?;
-        validate_token(&self.request_event_key, "request event key")?;
+        validate_opaque_id(&self.node_id, "node id")?;
+        validate_opaque_id(&self.operation_id, "operation id")?;
+        validate_opaque_id(&self.request_event_key, "request event key")?;
         if !Self::STATUSES.contains(&self.status.as_str())
             || self.closed_at_ms == 0
             || self.issuer_epoch == 0
@@ -1029,8 +1042,8 @@ impl NodeKeyRotation {
     }
 
     pub fn to_value(&self) -> Result<Value, DocumentError> {
-        validate_token(&self.node_id, "node id")?;
-        validate_token(&self.rotation_id, "rotation id")?;
+        validate_opaque_id(&self.node_id, "node id")?;
+        validate_opaque_id(&self.rotation_id, "rotation id")?;
         if self.from_key_version == 0
             || self.from_key_version.checked_add(1) != Some(self.to_key_version)
             || self.issuer_epoch == 0
@@ -1092,7 +1105,7 @@ impl NodeRevocation {
     }
 
     pub fn to_value(&self) -> Result<Value, DocumentError> {
-        validate_token(&self.node_id, "node id")?;
+        validate_opaque_id(&self.node_id, "node id")?;
         if self.revoked_at_ms == 0 || self.issuer_epoch == 0 {
             return Err(DocumentError::Invalid("node revocation binding"));
         }
@@ -1148,7 +1161,7 @@ impl TimeReply {
     }
 
     pub fn to_value(&self) -> Result<Value, DocumentError> {
-        validate_token(&self.node_id, "node id")?;
+        validate_opaque_id(&self.node_id, "node id")?;
         validate_token(&self.challenge, "time challenge")?;
         if self.controller_time_ms == 0
             || self.issuer_epoch == 0
@@ -1221,7 +1234,7 @@ impl ApplicationAck {
     }
 
     pub fn to_value(&self) -> Result<Value, DocumentError> {
-        validate_token(&self.node_id, "node id")?;
+        validate_opaque_id(&self.node_id, "node id")?;
         if self.issuer_epoch == 0
             || self.acknowledged_at_ms == 0
             || self.event_keys.is_empty()
@@ -1363,6 +1376,13 @@ fn validate_key_id(value: &str) -> Result<(), DocumentError> {
     Ok(())
 }
 
+fn validate_opaque_id(value: &str, label: &'static str) -> Result<(), DocumentError> {
+    if !is_valid_opaque_id(value) {
+        return Err(DocumentError::Invalid(label));
+    }
+    Ok(())
+}
+
 fn validate_token(value: &str, label: &'static str) -> Result<(), DocumentError> {
     if value.is_empty()
         || value.len() > 128
@@ -1466,8 +1486,9 @@ fn decode_base64_url(value: &str) -> Result<Vec<u8>, DocumentError> {
 mod tests {
     use super::{
         ApplicationAck, ConsumptionMode, DocumentKind, Grant, NodeKeyRotation, OperationClosed,
-        PolicySnapshot, Registration, SignedEnvelope, enrollment_proof_message, node_event_message,
-        node_key_fingerprint, node_session_challenge_message,
+        PolicySnapshot, Registration, Revocation, SignedEnvelope, enrollment_proof_message,
+        is_valid_opaque_id, node_event_message, node_key_fingerprint,
+        node_session_challenge_message,
     };
     use crate::canon::{Value, canonicalize_json};
     use crate::signing::ed25519::Ed25519KeyPair;
@@ -1902,5 +1923,116 @@ mod tests {
         )
         .unwrap();
         assert_eq!(signed.body_json().unwrap(), canonical);
+    }
+
+    #[test]
+    fn document_ids_use_the_broker_storage_charset() {
+        // Controller-generated identifiers must keep passing.
+        for valid in [
+            "gr_0123abcd-0123-4abc-8def-0123456789ab",
+            "op_0123abcd-0123-4abc-8def-0123456789ab",
+            "wl_0123abcd-0123-4abc-8def-0123456789ab",
+            "nd_0123abcd-0123-4abc-8def-0123456789ab",
+            "oa_0123abcd-0123-4abc-8def-0123456789ab",
+            "rot_0123abcd-0123-4abc-8def-0123456789ab",
+            "event_AbC-_0123456789abcdef",
+        ] {
+            assert!(is_valid_opaque_id(valid), "{valid}");
+        }
+        for invalid in ["", "gr_a.b", "gr_a:b", "gr/a", "gr a", &"a".repeat(129)] {
+            assert!(!is_valid_opaque_id(invalid), "{invalid:?}");
+        }
+
+        let grant = Grant {
+            id: "gr_a".to_owned(),
+            operation_id: "op_a".to_owned(),
+            node_id: "nd_a".to_owned(),
+            workload_id: "wl_a".to_owned(),
+            invocation_id: "0123456789abcdef0123456789abcdef".to_owned(),
+            unit: "backup.service".to_owned(),
+            account: "backup".to_owned(),
+            resource_id: "resource-a".to_owned(),
+            recipient_key_id: "nd_a-1".to_owned(),
+            policy_version: 2,
+            approval_reference: None,
+            action: "noop.marker".to_owned(),
+            mode: ConsumptionMode::Socket,
+            audience: "blindpass-node".to_owned(),
+            issuer_epoch: 1,
+            issued_at_ms: 100,
+            expires_at_ms: 200,
+            local_ceiling_seconds: 60,
+        };
+        assert!(grant.to_value().is_ok());
+        for (label, mutate) in [
+            (
+                "grant id",
+                (|grant: &mut Grant| grant.id = "gr_a.b".to_owned()) as fn(&mut Grant),
+            ),
+            ("operation id", |grant| {
+                grant.operation_id = "op_a:b".to_owned()
+            }),
+            ("node id", |grant| grant.node_id = "nd.a".to_owned()),
+            ("workload id", |grant| grant.workload_id = "wl:a".to_owned()),
+        ] {
+            let mut invalid = grant.clone();
+            mutate(&mut invalid);
+            assert!(invalid.to_value().is_err(), "{label}");
+        }
+
+        let registration = Registration {
+            node_id: "nd_a".to_owned(),
+            workload_id: "wl_a.b".to_owned(),
+            unit: "backup.service".to_owned(),
+            account: "backup.user".to_owned(),
+            invocation_id: None,
+            status: "active".to_owned(),
+            consumption_mode: ConsumptionMode::File,
+            registration_version: 1,
+            policy_version: 1,
+            local_ceiling_seconds: 60,
+        };
+        assert!(registration.to_value().is_err());
+        assert!(
+            Registration {
+                workload_id: "wl_a".to_owned(),
+                ..registration
+            }
+            .to_value()
+            .is_ok(),
+            "unit names and accounts keep their own '.'-permitting validators"
+        );
+
+        let revocation = Revocation {
+            grant_id: "gr_a:b".to_owned(),
+            node_id: "nd_a".to_owned(),
+            reason: "operator".to_owned(),
+            revoked_at_ms: 1,
+            retain_until_ms: 2,
+            issuer_epoch: 1,
+        };
+        assert!(revocation.to_value().is_err());
+
+        let closed = OperationClosed {
+            node_id: "nd_a".to_owned(),
+            operation_id: "op_a".to_owned(),
+            request_event_key: "event.a".to_owned(),
+            status: "rejected".to_owned(),
+            closed_at_ms: 1,
+            issuer_epoch: 1,
+        };
+        assert!(closed.to_value().is_err());
+
+        let rotation_id_with_dot = NodeKeyRotation {
+            node_id: "nd_a".to_owned(),
+            rotation_id: "rot_a.b".to_owned(),
+            from_key_version: 1,
+            to_key_version: 2,
+            signing_public: String::new(),
+            recipient_public: String::new(),
+            fingerprint: String::new(),
+            issuer_epoch: 1,
+        };
+        assert!(rotation_id_with_dot.to_value().is_err());
     }
 }
