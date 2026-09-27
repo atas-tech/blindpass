@@ -495,6 +495,10 @@ export interface components {
       "accepted": number;
       "duplicates": number;
       "ack": components["schemas"]["ApplicationAck"] | null;
+      "discarded"?: Array<{
+          "idempotency_key": string;
+          "error": "invalid_node_event" | "event_idempotency_conflict";
+        }>;
       "rejected": {
         "idempotency_key": string;
         "error": string;
@@ -3378,11 +3382,6 @@ export interface operations {
       };
     };
     "401": {
-      content: {
-        "application/json": components["schemas"]["AdminError"];
-      };
-    };
-    "409": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };

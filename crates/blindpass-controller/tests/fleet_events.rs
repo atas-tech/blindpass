@@ -89,7 +89,8 @@ async fn events_bind_to_the_authenticated_node() {
     let now_ms = harness.now_ms().await;
 
     // An operation request claiming another node is rejected at ingestion
-    // and never recorded.
+    // and never recorded. Its broker signature is valid, so it is
+    // acknowledged as discarded rather than blocking the broker queue.
     let forged = signed_event(
         &node.id,
         &node.keys.signing,
@@ -103,7 +104,11 @@ async fn events_bind_to_the_authenticated_node() {
         }),
     );
     let response = harness.post_events(&node.bearer, &forged).await;
-    assert_eq!(response.status, 400, "{}", response.body);
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert_eq!(
+        discarded_keys(&response.body),
+        vec!["forged-node-claim-0001"]
+    );
     assert_eq!(
         harness
             .scalar_i64(
@@ -126,7 +131,8 @@ async fn events_bind_to_the_authenticated_node() {
     let response = harness.post_events(&other.bearer, &signed_by_a).await;
     assert_eq!(response.status, 400, "{}", response.body);
 
-    // An operation result for another node's grant is rejected.
+    // An operation result for another node's grant is rejected, discarded
+    // and changes nothing.
     let operation = granted_operation(&harness, &node, &workload, "cross-grant-op-0001").await;
     let result = signed_event(
         &other.id,
@@ -136,8 +142,33 @@ async fn events_bind_to_the_authenticated_node() {
         result_body(&operation, "completed", now_ms),
     );
     let response = harness.post_events(&other.bearer, &result).await;
-    assert_eq!(response.status, 400, "{}", response.body);
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert_eq!(
+        discarded_keys(&response.body),
+        vec!["cross-grant-result-0001"]
+    );
     assert_eq!(operation_status(&harness, &operation).await, "granted");
+}
+
+fn discarded_keys(body: &Value) -> Vec<String> {
+    let acknowledged = body["ack"]["body"]["event_keys"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    body["discarded"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .map(|entry| {
+            let key = entry["idempotency_key"].as_str().unwrap().to_owned();
+            assert!(
+                acknowledged.iter().any(|acked| acked == &key),
+                "a discarded event must be acknowledged: {body}"
+            );
+            key
+        })
+        .collect()
 }
 
 async fn operation_status(harness: &Harness, operation: &Value) -> String {
@@ -172,20 +203,30 @@ async fn event_batches_are_applied_then_recorded_and_partially_acknowledged() {
     );
     let response = harness.post_events(&node.bearer, &batch).await;
     assert_eq!(response.status, 200, "{}", response.body);
-    assert_eq!(response.body["accepted"], 1);
+    // A correctly signed event that can never apply is audited, discarded
+    // and acknowledged, so it cannot stall the broker queue behind it.
+    assert_eq!(response.body["accepted"], 2);
     assert_eq!(
         response.body["ack"]["body"]["event_keys"],
-        json!(["batch-valid-0001"])
+        json!(["batch-valid-0001", "batch-invalid-0001", "batch-after-0001"])
     );
+    assert_eq!(discarded_keys(&response.body), vec!["batch-invalid-0001"]);
+    assert_eq!(response.body["discarded"][0]["error"], "invalid_node_event");
+    assert!(response.body["rejected"].is_null(), "{}", response.body);
     assert_eq!(
-        response.body["rejected"]["idempotency_key"],
-        "batch-invalid-0001"
+        harness
+            .scalar_i64(
+                "SELECT COUNT(*) FROM audit_events WHERE action = 'node_event_rejected'
+                 AND actor_id = ? AND target_id = ?",
+                vec![node.id.as_str().into(), "batch-invalid-0001".into()],
+            )
+            .await,
+        1
     );
-    assert_eq!(response.body["rejected"]["error"], "invalid_node_event");
     for (key, expected) in [
         ("batch-valid-0001", 1),
         ("batch-invalid-0001", 0),
-        ("batch-after-0001", 0),
+        ("batch-after-0001", 1),
     ] {
         assert_eq!(
             harness
@@ -215,7 +256,7 @@ async fn event_batches_are_applied_then_recorded_and_partially_acknowledged() {
         json!(["batch-valid-0001"])
     );
 
-    // A batch whose first event fails is a plain 400 with nothing recorded.
+    // A signed event that can never apply is discarded again on retry.
     let invalid_first = signed_event(
         &node.id,
         &node.keys.signing,
@@ -223,8 +264,36 @@ async fn event_batches_are_applied_then_recorded_and_partially_acknowledged() {
         "audit",
         json!({"action":"unknown_action","node_id":node.id,"observed_at_ms":now_ms}),
     );
-    let response = harness.post_events(&node.bearer, &invalid_first).await;
+    for _ in 0..2 {
+        let response = harness.post_events(&node.bearer, &invalid_first).await;
+        assert_eq!(response.status, 200, "{}", response.body);
+        assert_eq!(discarded_keys(&response.body), vec!["batch-invalid-0002"]);
+    }
+    assert_eq!(
+        harness
+            .scalar_i64(
+                "SELECT COUNT(*) FROM audit_events WHERE action = 'node_event_rejected'
+                 AND target_id = ?",
+                vec!["batch-invalid-0002".into()],
+            )
+            .await,
+        1
+    );
+
+    // A batch whose first event has an invalid broker signature is a plain
+    // 400 with nothing recorded or acknowledged: a relay cannot use a
+    // corrupted copy to make the controller acknowledge a genuine event.
+    let mut forged_signature = signed_event(
+        &node.id,
+        &node.keys.signing,
+        "batch-forged-0001",
+        "audit",
+        overflow.clone(),
+    );
+    forged_signature["events"][0]["body"]["observed_at_ms"] = json!(now_ms + 1);
+    let response = harness.post_events(&node.bearer, &forged_signature).await;
     assert_eq!(response.status, 400, "{}", response.body);
+    assert!(response.body.get("ack").is_none(), "{}", response.body);
 
     // Store failures are 503, not validation errors.
     harness
@@ -398,7 +467,8 @@ async fn revocation_outcomes_distinguish_consumed_grants() {
         "grant_revocation_applied_{}",
         unconsumed["grant_id"].as_str().unwrap()
     );
-    // Another node cannot report on this node's grant.
+    // Another node cannot report on this node's grant; its signed report is
+    // discarded and changes nothing.
     let mut foreign = body.clone();
     foreign["node_id"] = json!(other.id);
     let response = harness
@@ -407,7 +477,9 @@ async fn revocation_outcomes_distinguish_consumed_grants() {
             &signed_event(&other.id, &other.keys.signing, &key, "audit", foreign),
         )
         .await;
-    assert_eq!(response.status, 400, "{}", response.body);
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert_eq!(discarded_keys(&response.body), vec![key.clone()]);
+    assert!(grant(&harness, &unconsumed["grant_id"]).await["broker_revocation_outcome"].is_null());
     let response = harness
         .post_events(
             &node.bearer,
@@ -452,7 +524,13 @@ async fn revocation_outcomes_distinguish_consumed_grants() {
             ),
         )
         .await;
-    assert_eq!(response.status, 400, "{}", response.body);
+    assert_eq!(response.status, 200, "{}", response.body);
+    assert_eq!(discarded_keys(&response.body), vec![key]);
+    assert_eq!(
+        grant(&harness, &active["grant_id"]).await["status"],
+        "issued",
+        "a discarded acknowledgement never revokes a grant"
+    );
 }
 
 #[tokio::test]

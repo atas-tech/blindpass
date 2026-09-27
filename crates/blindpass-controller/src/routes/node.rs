@@ -601,12 +601,37 @@ async fn node_events(
     let mut accepted = 0_u32;
     let mut duplicates = 0_u32;
     let mut accepted_keys = Vec::with_capacity(body.events.len());
+    let mut discarded = Vec::new();
     let mut rejected = JsonValue::Null;
-    // Events apply in order. The first failure stops the batch: events
-    // before it are applied, recorded and acknowledged; it and later events
-    // are neither recorded nor acknowledged, so the broker retries them.
+    // Events apply in order. A correctly signed event that can never apply
+    // is audited, discarded and acknowledged so it cannot stall the broker
+    // queue. Any other failure stops the batch: events before it are
+    // applied, recorded and acknowledged; it and later events are neither
+    // recorded nor acknowledged, so the broker retries them.
     for event in &body.events {
-        match apply_node_event(store, &claims, &node, &public_key, event).await {
+        let outcome = match apply_node_event(store, &claims, &node, &public_key, event).await {
+            Err(failure @ (EventFailure::Rejected | EventFailure::Conflict)) => match store
+                .record_rejected_node_event(
+                    &claims.node_id,
+                    &event.idempotency_key,
+                    &event.kind,
+                    failure.code(),
+                )
+                .await
+            {
+                Ok(()) => {
+                    accepted_keys.push(event.idempotency_key.clone());
+                    discarded.push(json!({
+                        "idempotency_key": event.idempotency_key,
+                        "error": failure.code()
+                    }));
+                    continue;
+                }
+                Err(_) => Err(EventFailure::Unavailable),
+            },
+            outcome => outcome,
+        };
+        match outcome {
             Ok(true) => {
                 accepted += 1;
                 accepted_keys.push(event.idempotency_key.clone());
@@ -672,14 +697,23 @@ async fn node_events(
     let Ok(envelope_json) = serde_json::from_slice::<JsonValue>(&envelope_bytes) else {
         return unavailable();
     };
-    Json(json!({"accepted": accepted, "duplicates": duplicates, "ack": envelope_json, "rejected": rejected}))
-        .into_response()
+    Json(json!({
+        "accepted": accepted,
+        "duplicates": duplicates,
+        "ack": envelope_json,
+        "discarded": discarded,
+        "rejected": rejected
+    }))
+    .into_response()
 }
 
-/// Why a node event was not accepted. Validation failures are the broker's
-/// to fix (400/409); store failures are transient (503).
+/// Why a node event was not accepted. `Invalid` covers events whose framing
+/// or broker signature fails and is never acknowledged (400). `Rejected` and
+/// `Conflict` are correctly signed events that can never apply; they are
+/// audited and acknowledged as discarded. Store failures are transient (503).
 enum EventFailure {
     Invalid,
+    Rejected,
     Conflict,
     Unavailable,
 }
@@ -692,9 +726,17 @@ impl EventFailure {
         }
     }
 
+    /// Map a store error from applying an event whose signature verified.
+    fn from_applied(error: &StoreError) -> Self {
+        match error {
+            StoreError::InvalidInput(_) | StoreError::MissingState(_) => Self::Rejected,
+            _ => Self::Unavailable,
+        }
+    }
+
     fn code(&self) -> &'static str {
         match self {
-            Self::Invalid => "invalid_node_event",
+            Self::Invalid | Self::Rejected => "invalid_node_event",
             Self::Conflict => "event_idempotency_conflict",
             Self::Unavailable => "service_unavailable",
         }
@@ -702,7 +744,7 @@ impl EventFailure {
 
     fn response(&self) -> Response {
         match self {
-            Self::Invalid => invalid_event(),
+            Self::Invalid | Self::Rejected => invalid_event(),
             Self::Conflict => api_error(
                 StatusCode::CONFLICT,
                 "event_idempotency_conflict",
@@ -744,13 +786,17 @@ async fn apply_node_event(
     if exact_duplicate {
         return Ok(false);
     }
+    // Events signed by a key that a pending rotation is replacing are retried
+    // after the rotation completes; they are not discarded.
     if (node.rotation_pending && claims.key_version == node.key_version)
-        || (node.status == "revoked" && event.kind == "operation_request")
         || (node.rotation_pending
             && event.kind == "operation_request"
             && claims.key_version == node.pending_key_version.unwrap_or_default())
     {
         return Err(EventFailure::Invalid);
+    }
+    if node.status == "revoked" && event.kind == "operation_request" {
+        return Err(EventFailure::Rejected);
     }
     let applied = match event.kind.as_str() {
         "operation_result" => {
@@ -769,13 +815,13 @@ async fn apply_node_event(
             if event.body.get("node_id").and_then(JsonValue::as_str)
                 != Some(claims.node_id.as_str())
             {
-                return Err(EventFailure::Invalid);
+                return Err(EventFailure::Rejected);
             }
             Ok(())
         }
         _ => return Err(EventFailure::Invalid),
     };
-    applied.map_err(|error| EventFailure::from_store(&error))?;
+    applied.map_err(|error| EventFailure::from_applied(&error))?;
     match store
         .record_node_event(
             &format!("ne_{}", random_urlsafe(24)),
@@ -814,7 +860,10 @@ async fn verify_node_event(
         .map_err(|error| EventFailure::from_store(&error))?;
     let exact_duplicate = match prior {
         Some(record) if record.body_hash == body_hash => true,
-        Some(_) => return Err(EventFailure::Conflict),
+        // Only a correctly signed event can be a conflict; a relay-corrupted
+        // copy of a recorded key stays an unacknowledged signature failure.
+        Some(_) if verified => return Err(EventFailure::Conflict),
+        Some(_) => return Err(EventFailure::Invalid),
         None => false,
     };
     let verified = if !verified && exact_duplicate && node.rotation_pending {

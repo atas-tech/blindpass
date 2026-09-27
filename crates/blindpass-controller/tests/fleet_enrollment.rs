@@ -1067,8 +1067,14 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         .await;
         if field == "node_id" {
             // A node claim that differs from the authenticated session is
-            // rejected at ingestion (P03 review C18).
-            assert_eq!(accepted_forged_event.status, 400, "{field}");
+            // rejected at ingestion (P03 review C18). Its broker signature is
+            // valid, so it is audited and acknowledged as discarded, and it
+            // is never recorded as operation evidence.
+            assert_eq!(accepted_forged_event.status, 200, "{field}");
+            assert_eq!(
+                accepted_forged_event.body["discarded"][0]["idempotency_key"],
+                event_key
+            );
             continue;
         }
         assert_eq!(accepted_forged_event.status, 200, "{field}");
@@ -2188,7 +2194,16 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
         }]})),
     )
     .await;
-    assert_eq!(changed_event.status, 409);
+    // A correctly signed event that reuses a recorded key with different
+    // bytes can never apply: it is audited and acknowledged as discarded.
+    assert_eq!(changed_event.status, 200, "{}", changed_event.body);
+    assert_eq!(
+        changed_event.body["discarded"],
+        json!([{
+            "idempotency_key":"event-channel-idempotency-01",
+            "error":"event_idempotency_conflict"
+        }])
+    );
 
     match (&backend_pool, &pg_test_pool) {
         (Some(pool), _) => {
@@ -2691,10 +2706,10 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             && event["metadata"]["expires_at_ms"] == first_grant_expiry
             && event["metadata"]["reason_code"] == "expired_before_receipt"
     }));
-    for (event_key, reason_code, expected_status) in [
-        ("grant-rejection-event-0002", "binding_mismatch", 200),
-        ("grant-rejection-event-0003", "stale_at_receipt", 200),
-        ("grant-rejection-event-0004", "operator_disliked_it", 400),
+    for (event_key, reason_code, expect_discarded) in [
+        ("grant-rejection-event-0002", "binding_mismatch", false),
+        ("grant-rejection-event-0003", "stale_at_receipt", false),
+        ("grant-rejection-event-0004", "operator_disliked_it", true),
     ] {
         let event = signed_node_event(
             &first_node_id,
@@ -2720,8 +2735,10 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             Some(&event),
         )
         .await;
+        assert_eq!(response.status, 200, "{reason_code}: {}", response.body);
         assert_eq!(
-            response.status, expected_status,
+            !response.body["discarded"].as_array().unwrap().is_empty(),
+            expect_discarded,
             "{reason_code}: {}",
             response.body
         );

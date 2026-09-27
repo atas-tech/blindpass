@@ -424,6 +424,57 @@ impl Store {
         Ok(())
     }
 
+    /// Audit a correctly signed node event that can never apply. The event
+    /// is then acknowledged so it cannot stall the broker queue; the row
+    /// keeps identifiers and the stable reason only, never the event body.
+    pub async fn record_rejected_node_event(
+        &self,
+        node_id: &str,
+        idempotency_key: &str,
+        kind: &str,
+        reason_code: &str,
+    ) -> Result<(), StoreError> {
+        let id = format!("rej_{node_id}_{idempotency_key}");
+        let metadata = serde_json::json!({
+            "idempotency_key": idempotency_key,
+            "kind": kind,
+            "node_id": node_id,
+            "reason_code": reason_code,
+        })
+        .to_string();
+        match &self.database {
+            Database::Sqlite(pool) => {
+                let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+                    VALUES (?, ?, 'node', ?, 'node_event_rejected', 'node_event', ?, ?, {SQLITE_NOW_MS})
+                    ON CONFLICT(id) DO NOTHING");
+                sqlx::query(&sql)
+                    .bind(&id)
+                    .bind(&self.tenant_id)
+                    .bind(node_id)
+                    .bind(idempotency_key)
+                    .bind(&metadata)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+            }
+            Database::Postgres(pool) => {
+                let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+                    VALUES ($1, $2, 'node', $3, 'node_event_rejected', 'node_event', $4, $5, {POSTGRES_NOW_MS})
+                    ON CONFLICT(id) DO NOTHING");
+                sqlx::query(&sql)
+                    .bind(&id)
+                    .bind(&self.tenant_id)
+                    .bind(node_id)
+                    .bind(idempotency_key)
+                    .bind(&metadata)
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+            }
+        }
+        Ok(())
+    }
+
     pub async fn record_node_audit_event(
         &self,
         node_id: &str,
