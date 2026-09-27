@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "id": "blindpass.approvals",
+  "name": "BlindPass approvals",
+  "version": "0.1.0",
+  "author": "BlindPass",
+  "license": "AGPL-3.0-only",
+  "description": "Pending BlindPass approval count. Opens the separate approval app; holds no credentials and cannot approve.",
+  "kinds": ["bar-widget"],
+  "entryPoints": {
+    "barWidget": "Widget.qml"
+  },
+  "barWidget": {
+    "displayName": "BlindPass approvals",
+    "description": "Pending approval count from the BlindPass approval app. Click to open the app.",
+    "category": "Security",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "launchCommand": "blindpass-approvals",
+      "hideWhenNotRunning": false
+    },
+    "schema": [
+      { "key": "launchCommand", "type": "string", "label": "Open command", "defaultValue": "blindpass-approvals", "description": "Command that opens the approval app. The default is desktop/approval-app/bin/blindpass-approvals on your PATH." },
+      { "key": "hideWhenNotRunning", "type": "boolean", "label": "Hide when the app isn't running", "defaultValue": false }
+    ]
+  }
+}

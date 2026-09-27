@@ -1,6 +1,6 @@
 # BlindPass approval app
 
-A desktop application, separate from the Omarchy shell, where an operator signs in to a BlindPass controller and approves or rejects pending fleet operations and secret exchanges. It is Quickshell QML under [Decision 0001](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0001-dashboard-ui-stack.md) and runs as its own process; the Omarchy widget only shows a count and opens this app.
+A desktop application, separate from the Omarchy shell, where an operator signs in to a BlindPass controller and approves or rejects pending fleet operations and secret exchanges. It is Quickshell QML under [Decision 0001](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/decisions/0001-dashboard-ui-stack.md) and runs as its own process; the [Omarchy widget](../omarchy-widget/README.md) only shows a count and opens this app.
 
 The app reads approval metadata only (`/api/v3/approvals`). No secret value, ciphertext or provisioning link passes through it.
 
@@ -69,7 +69,7 @@ The only same-user IPC target is `blindpass-approvals` with `show()` and `hide()
 | `e2e.qml` | Test-only scenario runner used by the Rust E2E; it sits here because Quickshell resolves types only inside the config folder |
 
 ```bash
-npm run test:desktop                                                             # helper and QML suites
+npm run test:desktop                                                             # helper, QML suites, widget
 cargo test -p blindpass-controller --test desktop_session                        # D3 transport
 cargo test -p blindpass-controller --test desktop_app_e2e -- --ignored --nocapture   # app against a real controller
 ```
