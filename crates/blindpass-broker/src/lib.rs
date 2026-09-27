@@ -952,6 +952,9 @@ impl BrokerState {
             &identity.revoked_grant_journal_path(),
         )
         .map_err(BrokerError::Configuration)?;
+        if let Some(pin) = identity.pinned_issuer()? {
+            self.grant_verifier.observe_issuer_epoch(pin.epoch);
+        }
         let pending_path = identity.pending_node_events_path();
         let (events, overflow_pending, revocation_acknowledged) =
             read_pending_node_events(&pending_path)?;
@@ -2344,6 +2347,7 @@ mod tests {
             &directory.join("revoked-grants.jsonl"),
         )
         .unwrap();
+        state.grant_verifier.observe_issuer_epoch(1);
         state.pending_node_events_path = Some(directory.join("pending-node-events.jsonl"));
         state.operation_directory = directory.join("ops");
         state.workloads.push(WorkloadRegistration {

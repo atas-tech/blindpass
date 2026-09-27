@@ -59,6 +59,9 @@ pub(crate) struct GrantVerifier {
     highest_controller_time_ms: Option<u64>,
     trusted_time_path: Option<PathBuf>,
     accepted: BTreeMap<String, AcceptedGrant>,
+    /// The pinned controller issuer epoch. Grants of any other epoch are
+    /// neither accepted nor consumable.
+    issuer_epoch: Option<u64>,
     retired: BTreeMap<String, ConsumeDenial>,
     retired_order: VecDeque<String>,
     journal: Option<GrantJournal>,
@@ -197,6 +200,9 @@ impl GrantVerifier {
     ) -> Result<bool, &'static str> {
         if self.trusted_controller_time_ms(now_boottime_ms).is_none() {
             return Err("grant has no fresh signed controller time proof");
+        }
+        if self.issuer_epoch != Some(grant.issuer_epoch) {
+            return Err("grant issuer epoch is not the pinned issuer epoch");
         }
         if grant.node_id != node_id
             || grant.recipient_key_id != recipient_key_id
@@ -345,6 +351,9 @@ impl GrantVerifier {
         {
             return Err(ConsumeDenial::IdentityMismatch);
         }
+        if self.issuer_epoch != Some(grant.issuer_epoch) {
+            return Err(ConsumeDenial::EpochStale);
+        }
         if grant.policy_version != current_policy_version {
             return Err(ConsumeDenial::PolicyStale);
         }
@@ -402,6 +411,18 @@ impl GrantVerifier {
         }
     }
 
+    /// Record the pinned issuer epoch. When it advances, every accepted
+    /// grant of a lower epoch loses its authority immediately.
+    pub(crate) fn observe_issuer_epoch(&mut self, epoch: u64) {
+        if self.issuer_epoch.is_some_and(|current| epoch <= current) {
+            return;
+        }
+        self.retire_where(ConsumeDenial::EpochStale, |grant| {
+            grant.issuer_epoch < epoch
+        });
+        self.issuer_epoch = Some(epoch);
+    }
+
     pub(crate) fn revoke_workload(&mut self, workload_id: &str) {
         self.retire_where(ConsumeDenial::RegistrationChanged, |grant| {
             grant.workload_id == workload_id
@@ -445,13 +466,15 @@ pub(crate) enum ConsumeDenial {
     PolicyStale,
     /// The workload registration changed or was revoked after issue.
     RegistrationChanged,
+    /// The pinned issuer epoch advanced past the grant's epoch.
+    EpochStale,
     /// The durable consumption intent could not be recorded.
     Unavailable,
 }
 
 impl ConsumeDenial {
     #[cfg(test)]
-    pub(crate) const ALL: [Self; 8] = [
+    pub(crate) const ALL: [Self; 9] = [
         Self::Expired,
         Self::Revoked,
         Self::Consumed,
@@ -459,6 +482,7 @@ impl ConsumeDenial {
         Self::IdentityMismatch,
         Self::PolicyStale,
         Self::RegistrationChanged,
+        Self::EpochStale,
         Self::Unavailable,
     ];
 
@@ -471,6 +495,7 @@ impl ConsumeDenial {
             Self::IdentityMismatch => "grant_identity_mismatch",
             Self::PolicyStale => "grant_policy_stale",
             Self::RegistrationChanged => "grant_registration_changed",
+            Self::EpochStale => "grant_epoch_stale",
             Self::Unavailable => "consumption_unavailable",
         }
     }
@@ -1017,6 +1042,7 @@ mod tests {
     fn verifier(path: &std::path::Path, started_at: u64) -> GrantVerifier {
         let mut verifier = GrantVerifier {
             journal: Some(GrantJournal::open(path).unwrap()),
+            issuer_epoch: Some(1),
             ..GrantVerifier::default()
         };
         verifier.pending_time = Some(super::TimeChallenge {
@@ -1545,6 +1571,7 @@ mod tests {
             &directory.join("revoked-grants.jsonl"),
         )
         .unwrap();
+        verifier.observe_issuer_epoch(1);
         verifier.pending_time = Some(super::TimeChallenge {
             value: "challenge-a".to_owned(),
             sent_at_boottime_ms: 1_000,
@@ -1737,6 +1764,7 @@ mod tests {
                 "grant_identity_mismatch",
                 "grant_policy_stale",
                 "grant_registration_changed",
+                "grant_epoch_stale",
                 "consumption_unavailable",
             ]
         );
@@ -1746,6 +1774,65 @@ mod tests {
                     .all(|byte| byte.is_ascii_lowercase() || byte == b'_')
             );
         }
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn issuer_epoch_advance_purges_old_grants_and_consume_requires_the_pinned_epoch() {
+        use super::ConsumeDenial;
+        let path = temporary_path();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        let old_epoch = numbered_grant(1);
+        accept(&mut verifier, &old_epoch);
+        let bypassed = numbered_grant(2);
+        accept(&mut verifier, &bypassed);
+
+        verifier.observe_issuer_epoch(2);
+        assert!(!verifier.accepted.contains_key(&old_epoch.id));
+        assert_eq!(
+            verifier.consume(&old_epoch.id, &authorization_for(&old_epoch), 4, 2_100),
+            Err(ConsumeDenial::EpochStale)
+        );
+        // Lower or equal epochs never move the pin back.
+        verifier.observe_issuer_epoch(1);
+        assert_eq!(verifier.issuer_epoch, Some(2));
+
+        // Even if an old-epoch grant were still held, consumption checks the
+        // pinned epoch itself.
+        verifier.accepted.insert(
+            bypassed.id.clone(),
+            super::AcceptedGrant {
+                grant: bypassed.clone(),
+                deadline_boottime_ms: 60_000,
+                document_hash: [0; 32],
+            },
+        );
+        assert_eq!(
+            verifier.consume(&bypassed.id, &authorization_for(&bypassed), 4, 2_100),
+            Err(ConsumeDenial::EpochStale)
+        );
+
+        // A grant of the old epoch is no longer accepted.
+        let late = numbered_grant(3);
+        assert!(
+            verifier
+                .accept_grant(
+                    late.clone(),
+                    late.id.as_bytes(),
+                    "nd_node-a",
+                    "nd_node-a-1",
+                    &policy(),
+                    &registration(),
+                    2_000,
+                )
+                .is_err()
+        );
+        let mut current = numbered_grant(4);
+        current.issuer_epoch = 2;
+        accept(&mut verifier, &current);
+        verifier
+            .consume(&current.id, &authorization_for(&current), 4, 2_100)
+            .unwrap();
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 
@@ -1877,6 +1964,7 @@ mod tests {
         let revocation_path = path.parent().unwrap().join("revoked-grants.jsonl");
         let mut verifier =
             GrantVerifier::with_state_files(&path, &time_path, &revocation_path).unwrap();
+        verifier.observe_issuer_epoch(1);
         verifier.pending_time = Some(super::TimeChallenge {
             value: "challenge-before-consume".to_owned(),
             sent_at_boottime_ms: 1_000,
@@ -1941,6 +2029,7 @@ mod tests {
 
         let mut restarted =
             GrantVerifier::with_state_files(&path, &time_path, &revocation_path).unwrap();
+        restarted.observe_issuer_epoch(1);
         restarted.pending_time = Some(super::TimeChallenge {
             value: "challenge-after-crash".to_owned(),
             sent_at_boottime_ms: 3_000,

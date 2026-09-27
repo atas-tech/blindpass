@@ -159,7 +159,13 @@ fn handle_command(
         _ if command.starts_with(b"PIN_ISSUER ") => {
             require_root_peer(stream)?;
             let pin = parse_pin(command)?;
+            let epoch = pin.epoch;
             identity.pin_issuer(pin)?;
+            state
+                .lock()
+                .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?
+                .grant_verifier
+                .observe_issuer_epoch(epoch);
             stream.write_all(b"OK issuer_pinned\n")?;
         }
         _ if command.starts_with(b"RELAY ") => {
@@ -215,6 +221,11 @@ fn apply_controller_document_to_state(
     persist: bool,
 ) -> Result<&'static str, BrokerError> {
     let kind = identity.verify_controller_document(document)?;
+    // Verification may have advanced the pinned epoch; grants of an older
+    // epoch lose their authority before anything else is applied.
+    if let Some(pin) = identity.pinned_issuer()? {
+        state.grant_verifier.observe_issuer_epoch(pin.epoch);
+    }
     if kind == "stale_epoch" {
         let source = std::str::from_utf8(document)
             .map_err(|_| BrokerError::Configuration("controller document is malformed"))?;
@@ -237,6 +248,25 @@ fn apply_controller_document_to_state(
             }
             state.apply_node_revocation(&revocation.node_id, revocation.revoked_at_ms)?;
             return Ok("node_revocation");
+        }
+        if envelope.kind() == DocumentKind::Revocation {
+            // A correctly signed revocation only removes authority, so it is
+            // honoured from any epoch; an older epoch never restores a grant.
+            let revocation = Revocation::from_value(envelope.body())
+                .map_err(|_| BrokerError::Configuration("controller revocation is malformed"))?;
+            let pin = identity.pinned_issuer()?.ok_or(BrokerError::Configuration(
+                "controller issuer is not pinned",
+            ))?;
+            if revocation.node_id != pin.node_id {
+                return Err(BrokerError::Configuration(
+                    "controller revocation is bound to another node",
+                ));
+            }
+            state
+                .grant_verifier
+                .revoke(&revocation)
+                .map_err(BrokerError::Configuration)?;
+            return Ok("revocation");
         }
         return Ok("stale_epoch");
     }
@@ -1521,6 +1551,246 @@ mod tests {
         drop(recovered_state);
         drop(identity);
         std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    /// A pinned broker with a registration, a policy and fresh signed time,
+    /// driven only through the control socket like the relay does.
+    pub(crate) struct Fleet {
+        pub directory: std::path::PathBuf,
+        pub identity: std::sync::Arc<NodeIdentity>,
+        pub state: std::sync::Arc<std::sync::Mutex<BrokerState>>,
+        issuer: Ed25519KeyPair,
+        issuer_key_id: String,
+        pub now_ms: u64,
+    }
+
+    impl Fleet {
+        pub fn new(seed: u8) -> Self {
+            let directory = temporary_directory();
+            let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
+            let issuer = Ed25519KeyPair::from_seed(&[seed; 32]).unwrap();
+            let issuer_public = base64_url_encode(issuer.public_key());
+            let issuer_key_id = format!("ed25519-{issuer_public}");
+            identity
+                .pin_issuer(crate::keys::PinnedIssuer {
+                    tenant_id: "tenant-a".to_owned(),
+                    node_id: "nd_node-a".to_owned(),
+                    epoch: 1,
+                    key_id: issuer_key_id.clone(),
+                    public_key: issuer_public,
+                })
+                .unwrap();
+            let mut state = BrokerState::new(DeliveryPolicy::default());
+            state.operation_directory = directory.join("ops");
+            state.configure_grant_storage(&identity).unwrap();
+            let fleet = Self {
+                directory,
+                identity,
+                state: std::sync::Arc::new(std::sync::Mutex::new(state)),
+                issuer,
+                issuer_key_id,
+                now_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64,
+            };
+            let registration = Registration {
+                node_id: "nd_node-a".to_owned(),
+                workload_id: "wl_worker-a".to_owned(),
+                unit: "worker.service".to_owned(),
+                account: "worker".to_owned(),
+                invocation_id: None,
+                status: "active".to_owned(),
+                consumption_mode: ConsumptionMode::File,
+                registration_version: 1,
+                policy_version: 4,
+                local_ceiling_seconds: 60,
+            };
+            let policy = PolicySnapshot {
+                policy_version: 4,
+                local_ceiling_seconds: 60,
+                allowed_actions: vec!["noop.marker".to_owned()],
+                allowed_modes: vec![ConsumptionMode::File],
+            };
+            for (kind, body) in [
+                (DocumentKind::Registration, registration.to_value().unwrap()),
+                (DocumentKind::PolicySnapshot, policy.to_value().unwrap()),
+            ] {
+                assert!(fleet.relay(&fleet.sign(kind, body, 1)).starts_with(b"OK "));
+            }
+            fleet.refresh_time(1);
+            fleet
+        }
+
+        pub fn sign(&self, kind: DocumentKind, body: Value, epoch: u64) -> Vec<u8> {
+            SignedEnvelope::sign(kind, body, &self.issuer_key_id, epoch, &self.issuer)
+                .unwrap()
+                .to_json()
+                .unwrap()
+        }
+
+        pub fn relay(&self, document: &[u8]) -> Vec<u8> {
+            relay_signed_document(&self.identity, &self.state, document)
+        }
+
+        pub fn refresh_time(&self, epoch: u64) {
+            let response = control_exchange(&self.identity, &self.state, b"TIME_CHALLENGE\n");
+            let challenge = std::str::from_utf8(&response)
+                .unwrap()
+                .strip_prefix("TIME ")
+                .unwrap()
+                .strip_suffix('\n')
+                .unwrap()
+                .to_owned();
+            let reply = TimeReply {
+                node_id: "nd_node-a".to_owned(),
+                challenge,
+                challenge_received_at_ms: self.now_ms,
+                controller_time_ms: self.now_ms,
+                issuer_epoch: epoch,
+            };
+            assert_eq!(
+                self.relay(&self.sign(DocumentKind::TimeReply, reply.to_value().unwrap(), epoch)),
+                b"OK document_applied time_reply\n"
+            );
+        }
+
+        pub fn grant(&self, index: u8, epoch: u64) -> Grant {
+            Grant {
+                id: format!("gr_{index:02}23456789abcdef0123456789abcdef"),
+                operation_id: format!("op_{index:02}23456789abcdef0123456789abcdef"),
+                node_id: "nd_node-a".to_owned(),
+                workload_id: "wl_worker-a".to_owned(),
+                invocation_id: "invocation-a".to_owned(),
+                unit: "worker.service".to_owned(),
+                account: "worker".to_owned(),
+                resource_id: format!("marker-{index}"),
+                recipient_key_id: "nd_node-a-1".to_owned(),
+                policy_version: 4,
+                approval_reference: None,
+                action: "noop.marker".to_owned(),
+                mode: ConsumptionMode::File,
+                audience: "blindpass-node".to_owned(),
+                issuer_epoch: epoch,
+                issued_at_ms: self.now_ms,
+                expires_at_ms: self.now_ms + 60_000,
+                local_ceiling_seconds: 60,
+            }
+        }
+
+        pub fn deliver(&self, grant: &Grant) -> Vec<u8> {
+            self.relay(&self.sign(
+                DocumentKind::Grant,
+                grant.to_value().unwrap(),
+                grant.issuer_epoch,
+            ))
+        }
+
+        pub fn revocation(&self, grant_id: &str, epoch: u64) -> Vec<u8> {
+            let revocation = Revocation {
+                grant_id: grant_id.to_owned(),
+                node_id: "nd_node-a".to_owned(),
+                reason: "operator".to_owned(),
+                revoked_at_ms: self.now_ms,
+                retain_until_ms: self.now_ms + 7 * 24 * 60 * 60 * 1_000,
+                issuer_epoch: epoch,
+            };
+            self.sign(
+                DocumentKind::Revocation,
+                revocation.to_value().unwrap(),
+                epoch,
+            )
+        }
+
+        pub fn peer() -> PeerIdentity {
+            PeerIdentity::fixture(
+                1000,
+                current_gid(),
+                "worker.service",
+                "invocation-a",
+                "worker",
+            )
+        }
+
+        pub fn request(operation: String) -> WorkloadRequest {
+            WorkloadRequest {
+                node_id: "nd_node-a".to_owned(),
+                workload_id: "wl_worker-a".to_owned(),
+                claimed_unit: "worker.service".to_owned(),
+                claimed_invocation_id: "invocation-a".to_owned(),
+                operation,
+            }
+        }
+
+        pub fn consume(&self, grant_id: &str) -> Result<Vec<u8>, crate::BrokerError> {
+            self.state
+                .lock()
+                .unwrap()
+                .process_workload(&Self::peer(), &Self::request(format!("consume:{grant_id}")))
+        }
+
+        pub fn marker_exists(&self, grant_id: &str) -> bool {
+            self.directory
+                .join("ops")
+                .join(format!("{grant_id}.marker"))
+                .exists()
+        }
+
+        pub fn pulled_events(&self) -> Vec<Value> {
+            let events = control_exchange(&self.identity, &self.state, b"PULL_EVENTS\n");
+            let header_end = events.iter().position(|byte| *byte == b'\n').unwrap();
+            let payload = std::str::from_utf8(&events[header_end + 1..events.len() - 1]).unwrap();
+            parse_json(payload).unwrap().as_array().unwrap().to_vec()
+        }
+    }
+
+    impl Drop for Fleet {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.directory);
+        }
+    }
+
+    fn denial(result: Result<Vec<u8>, crate::BrokerError>) -> &'static str {
+        match result {
+            Err(crate::BrokerError::Configuration(code)) => code,
+            other => panic!("expected a coded denial, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn issuer_epoch_bump_purges_old_grants_and_lower_epoch_revocations_still_apply() {
+        let fleet = Fleet::new(31);
+        let old_grant = fleet.grant(1, 1);
+        assert_eq!(fleet.deliver(&old_grant), b"OK document_applied grant\n");
+        let pending_grant = fleet.grant(2, 1);
+
+        // A newer-epoch document advances the pin and retires every grant of
+        // the older epoch before it can be consumed.
+        fleet.refresh_time(2);
+        assert_eq!(fleet.identity.pinned_issuer().unwrap().unwrap().epoch, 2);
+        assert_eq!(denial(fleet.consume(&old_grant.id)), "grant_epoch_stale");
+        assert!(!fleet.marker_exists(&old_grant.id));
+        assert_eq!(
+            fleet.deliver(&pending_grant),
+            b"OK document_applied stale_epoch\n"
+        );
+        assert_eq!(denial(fleet.consume(&pending_grant.id)), "grant_unknown");
+
+        // A correctly signed revocation from the older epoch is still a
+        // tombstone and denies the grant id from now on.
+        let current = fleet.grant(3, 2);
+        assert_eq!(fleet.deliver(&current), b"OK document_applied grant\n");
+        assert_eq!(
+            fleet.relay(&fleet.revocation(&current.id, 1)),
+            b"OK document_applied revocation\n"
+        );
+        assert_eq!(denial(fleet.consume(&current.id)), "grant_revoked");
+        assert!(!fleet.marker_exists(&current.id));
+        assert_eq!(
+            fleet.deliver(&current),
+            b"ERR invalid_controller_document\n",
+            "the tombstone also blocks redelivery"
+        );
     }
 
     fn relay_signed_document(
