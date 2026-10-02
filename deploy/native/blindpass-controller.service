@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass controller
+After=network.target
+ConditionPathExists=/etc/blindpass/controller-initialized
+
+[Service]
+User=blindpass
+Group=blindpass
+UMask=0077
+EnvironmentFile=/etc/blindpass/controller.env
+Environment=BLINDPASS_ROOT_SECRET_FILE=%d/root-secret
+Environment=BLINDPASS_AGENT_JWT_SECRET_FILE=%d/agent-jwt-secret
+Environment=BLINDPASS_ISSUER_KEY_FILE=%d/issuer-key
+LoadCredential=root-secret:/etc/blindpass/keys/root-secret
+LoadCredential=agent-jwt-secret:/etc/blindpass/keys/agent-jwt-secret
+LoadCredential=issuer-key:/etc/blindpass/keys/issuer-key
+StateDirectory=blindpass/controller
+StateDirectoryMode=0700
+RuntimeDirectory=blindpass-controller
+RuntimeDirectoryMode=0700
+ProtectSystem=strict
+ReadWritePaths=/var/lib/blindpass/controller /run/blindpass-controller
+ReadOnlyPaths=/etc/blindpass/keys
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+LimitCORE=0
+LimitNOFILE=8192
+KillMode=control-group
+TimeoutStartSec=60
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+Type=exec
+# Existing-state validation only. Locked upgrades land with P06 slice 7.
+ExecStartPre=/opt/blindpass/controller/current/bin/blindpass-controller check-config
+ExecStart=/opt/blindpass/controller/current/bin/blindpass-controller serve
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

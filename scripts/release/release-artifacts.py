@@ -172,6 +172,12 @@ def prepare(profile, stage, options, version):
         copy_file(ROOT / 'deploy/native/controller.env.example', stage / 'deploy/native/controller.env.example')
         copy_file(ROOT / 'docs/deploy/release-layout.md', stage / 'docs/deploy/release-layout.md')
         copy_file(ROOT / 'docs/deploy/controller-ingress.md', stage / 'docs/deploy/controller-ingress.md')
+        copy_file(ROOT / 'docs/deploy/native-quickstart.md', stage / 'docs/deploy/native-quickstart.md')
+        for name in ['controller-install.py', 'install.sh', 'uninstall.sh',
+                     'blindpass-controller.service', 'blindpass-controller-initialize.service',
+                     'blindpass-controller-reconcile-clock.service', 'blindpass-controller-backup.service',
+                     'blindpass-controller-backup.timer', 'blindpass-controller.sysusers', 'blindpass-controller.tmpfiles']:
+            copy_file(ROOT / 'deploy/native' / name, stage / 'deploy/native' / name, executable=name.endswith(('.sh','.py')))
         for name in ('nginx.conf.example', 'Caddyfile.example'):
             copy_file(ROOT / 'deploy/proxy' / name, stage / 'deploy/proxy' / name)
     else:

@@ -1,0 +1,6 @@
+    Checking blindpass-core v0.1.0 ([repository]/crates/blindpass-core)
+    Checking blindpass-broker v0.1.0 ([repository]/crates/blindpass-broker)
+    Checking blindpass-controller v0.1.0 ([repository]/crates/blindpass-controller)
+    Checking blindpass-node v0.1.0 ([repository]/crates/blindpass-node)
+    Checking blindpass-cli v0.1.0 ([repository]/crates/blindpass-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 10.26s

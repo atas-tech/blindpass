@@ -1,0 +1,15 @@
+...F.
+======================================================================
+FAIL: test_p06_n01_valid_controller_inventory_preflight (__main__.Preflight.test_p06_n01_valid_controller_inventory_preflight)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "[repository]/tests/deployment/native-package-test.py", line 38, in test_p06_n01_valid_controller_inventory_preflight
+    self.assertEqual(output.returncode, 0, output.stderr)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 2 != 0 : python3: can't open file '[repository]/deploy/native/controller-install.py': [Errno 2] No such file or directory
+
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.273s
+
+FAILED (failures=1)

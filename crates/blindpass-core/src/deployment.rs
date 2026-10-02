@@ -31,6 +31,12 @@ unsafe extern "C" {
     fn unlinkat(dirfd: i32, path: *const std::ffi::c_char, flags: i32) -> i32;
     fn geteuid() -> u32;
     fn flock(fd: i32, operation: i32) -> i32;
+    fn fgetxattr(
+        fd: i32,
+        name: *const std::ffi::c_char,
+        value: *mut std::ffi::c_void,
+        size: usize,
+    ) -> isize;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,8 +174,33 @@ fn read_private(file: File, limit: usize) -> Result<SecretBytes, UnsafeCredentia
     let metadata = file.metadata().map_err(|_| UnsafeCredential)?;
     // SAFETY: geteuid takes no pointers.
     let uid = unsafe { geteuid() };
+    let private_permissions = metadata.permissions().mode() & 0o7077 == 0;
+    // systemd 255 uses a root-owned read-only file plus one named-user ACL.
+    // Its mask appears as group-read in st_mode even though the owning group
+    // has no access. Accept only this exact descriptor-checked ACL, never a
+    // generic group-readable file or a grant to another user/group.
+    let service_credential = if metadata.uid() == 0
+        && metadata.gid() == 0
+        && metadata.permissions().mode() & 0o7777 == 0o440
+        && uid != 0
+    {
+        let mut acl = [0u8; 44];
+        // SAFETY: fd is live; the name is terminated and the writable buffer
+        // is exactly the advertised size. Longer/unsupported ACLs fail closed.
+        let length = unsafe {
+            fgetxattr(
+                file.as_raw_fd(),
+                c"system.posix_acl_access".as_ptr(),
+                acl.as_mut_ptr().cast(),
+                acl.len(),
+            )
+        };
+        length == acl.len() as isize && private_service_acl(&acl, uid)
+    } else {
+        false
+    };
     if !metadata.is_file()
-        || metadata.permissions().mode() & 0o7077 != 0
+        || !(private_permissions || service_credential)
         || metadata.nlink() != 1
         || (metadata.uid() != uid && metadata.uid() != 0)
         || metadata.len() > limit as u64
@@ -247,4 +278,107 @@ pub fn check_keys(path: &Path) -> Result<(), UnsafeCredential> {
         }
     }
     Ok(())
+}
+
+fn private_service_acl(acl: &[u8], uid: u32) -> bool {
+    // Linux POSIX ACL xattr ABI: version 2, followed by canonical 8-byte
+    // little-endian entries. Compare one allowed representation, not a
+    // permissive/general ACL parser. Base entries have an undefined ID.
+    if acl.len() != 44 || uid == 0 || uid == u32::MAX || acl[..4] != 2u32.to_le_bytes() {
+        return false;
+    }
+    let expected = [
+        (1u16, 4u16, u32::MAX),
+        (2, 4, uid),
+        (4, 0, u32::MAX),
+        (16, 4, u32::MAX),
+        (32, 0, u32::MAX),
+    ];
+    acl[4..]
+        .as_chunks::<8>()
+        .0
+        .iter()
+        .zip(expected)
+        .all(|(entry, (tag, permissions, id))| {
+            entry[..2] == tag.to_le_bytes()
+                && entry[2..4] == permissions.to_le_bytes()
+                && entry[4..] == id.to_le_bytes()
+        })
+}
+
+#[cfg(test)]
+mod acl_tests {
+    use super::private_service_acl;
+
+    fn acl(entries: &[(u16, u16, u32)]) -> Vec<u8> {
+        let mut bytes = 2u32.to_le_bytes().to_vec();
+        for (tag, permissions, uid) in entries {
+            bytes.extend(tag.to_le_bytes());
+            bytes.extend(permissions.to_le_bytes());
+            bytes.extend(uid.to_le_bytes());
+        }
+        bytes
+    }
+
+    #[test]
+    fn systemd_read_only_acl_admits_only_the_service_user() {
+        let undefined = u32::MAX;
+        let entries = [
+            (1, 4, undefined),
+            (2, 4, 999),
+            (4, 0, undefined),
+            (16, 4, undefined),
+            (32, 0, undefined),
+        ];
+        assert!(private_service_acl(&acl(&entries), 999));
+        assert!(!private_service_acl(&acl(&entries), 998));
+        assert!(!private_service_acl(&acl(&entries), 0));
+    }
+
+    #[test]
+    fn group_other_write_execute_or_extra_acl_authority_is_refused() {
+        let undefined = u32::MAX;
+        let entries = [
+            (1, 4, undefined),
+            (2, 4, 999),
+            (4, 0, undefined),
+            (16, 4, undefined),
+            (32, 0, undefined),
+        ];
+        for (index, permissions) in [(0, 6), (1, 6), (1, 5), (2, 4), (3, 6), (4, 4)] {
+            let mut changed = entries;
+            changed[index].1 = permissions;
+            assert!(!private_service_acl(&acl(&changed), 999));
+        }
+        let mut extra = entries.to_vec();
+        extra.insert(2, (2, 4, 998));
+        assert!(!private_service_acl(&acl(&extra), 999));
+        extra[2] = (8, 4, 998);
+        assert!(!private_service_acl(&acl(&extra), 999));
+    }
+
+    #[test]
+    fn malformed_or_unknown_acl_representations_are_refused() {
+        let undefined = u32::MAX;
+        let entries = [
+            (1, 4, undefined),
+            (2, 4, 999),
+            (4, 0, undefined),
+            (16, 4, undefined),
+            (32, 0, undefined),
+        ];
+        let bytes = acl(&entries);
+        for length in 0..bytes.len() {
+            assert!(!private_service_acl(&bytes[..length], 999));
+        }
+        let mut changed = bytes.clone();
+        changed[0] = 3;
+        assert!(!private_service_acl(&changed, 999));
+        let mut changed = entries;
+        changed[2].0 = 8;
+        assert!(!private_service_acl(&acl(&changed), 999));
+        let mut changed = entries;
+        changed[4].2 = 999;
+        assert!(!private_service_acl(&acl(&changed), 999));
+    }
 }

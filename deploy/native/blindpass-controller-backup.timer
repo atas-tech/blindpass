@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=Daily BlindPass controller backup (opt-in)
+[Timer]
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=15min
+Persistent=yes
+Unit=blindpass-controller-backup.service
+[Install]
+WantedBy=timers.target

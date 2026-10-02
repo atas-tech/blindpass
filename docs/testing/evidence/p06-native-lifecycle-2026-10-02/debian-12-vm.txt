@@ -1,0 +1,17 @@
+P06-NATIVE profile=debian-12 artifact_sha256=254649dcd1d824d2f548de44deae5b84f69993f0d984cf1af891240c43b78c83
+P06-NATIVE guest_test_sha256=74c602e84511f3e41e68eb4d7ef6094378df42c32df9150cd85a6f948e6451fa
+P06-N01 PASS
+P06-N02 install={"backup_timer": "disabled unless separately configured", "initialized": true, "ok": true, "version": "0.1.0"}
+P06-N02 PASS
+P06-N03 PASS
+P06-N04 stop_seconds=0.012
+P06-N04-restart PASS
+P06-N04-reboot PASS
+P06-N05 PASS
+P06-N06 PASS
+P06-N07 PASS
+P06-N08 PASS
+P06-N09 PASS
+P06-NATIVE kernel=6.1.0-53-cloud-amd64 systemd=systemd 252 (252.39-1~deb12u2)
+P06-NATIVE debian-12 PASS
+P06-NATIVE teardown complete

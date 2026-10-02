@@ -110,6 +110,7 @@ jobs:
       - name: Test actual extracted archive and CLI
         run: |
           python3 tests/deployment/release-artifacts-test.py
+          python3 tests/deployment/native-package-test.py
           python3 tests/deployment/release-archive.py --arch '${{ matrix.arch }}' \
             --bin-dir /tmp/blindpass-p06-binaries
       - name: Verify candidate HTTPS and bounded handshakes

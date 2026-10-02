@@ -1,0 +1,24 @@
+   Compiling blindpass-core v0.1.0 ([repository]/crates/blindpass-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.80s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_core-dd903b36c80cd40a)
+
+running 3 tests
+test deployment::acl_tests::malformed_or_unknown_acl_representations_are_refused ... ok
+test deployment::acl_tests::group_other_write_execute_or_extra_acl_authority_is_refused ... ok
+test deployment::acl_tests::systemd_read_only_acl_admits_only_the_service_user ... FAILED
+
+failures:
+
+---- deployment::acl_tests::systemd_read_only_acl_admits_only_the_service_user stdout ----
+
+thread 'deployment::acl_tests::systemd_read_only_acl_admits_only_the_service_user' (234) panicked at crates/blindpass-core/src/deployment.rs:275:9:
+assertion failed: private_service_acl(&acl(&entries), 999)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    deployment::acl_tests::systemd_read_only_acl_admits_only_the_service_user
+
+test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 56 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p blindpass-core --lib`

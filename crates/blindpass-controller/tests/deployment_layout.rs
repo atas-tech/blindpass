@@ -147,7 +147,7 @@ fn p06_l05_no_database_is_guessed_without_an_explicit_data_root() {
 
 #[test]
 fn p06_l06_credential_links_and_unbounded_files_fail_with_sanitized_diagnostics() {
-    for failure in ["symlink", "hardlink", "oversized"] {
+    for failure in ["symlink", "hardlink", "oversized", "group-readable"] {
         let fixture = Fixture::new();
         let path = fixture.0.join("keys/root-secret");
         match failure {
@@ -156,6 +156,9 @@ fn p06_l06_credential_links_and_unbounded_files_fail_with_sanitized_diagnostics(
                 symlink(fixture.0.join("other"), &path).unwrap();
             }
             "hardlink" => fs::hard_link(&path, fixture.0.join("other")).unwrap(),
+            "group-readable" => {
+                fs::set_permissions(&path, fs::Permissions::from_mode(0o440)).unwrap()
+            }
             _ => fs::write(&path, [b'Z'; 8192]).unwrap(),
         }
         let error = Config::from_variables(fixture.values())

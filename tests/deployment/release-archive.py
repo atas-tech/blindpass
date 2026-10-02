@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='p06-artifact-') as temporary:
         assert f'{file.stat().st_mode & 0o777:04o}' == record['mode']
     assert manifest['controller']['console_embedded'] and manifest['controller']['input_embedded']
     # Preserve source-relative guide/config links inside the extracted bundle.
-    for name in ('release-layout.md', 'controller-ingress.md'):
+    for name in ('release-layout.md', 'controller-ingress.md', 'native-quickstart.md'):
         guide = package / 'docs/deploy' / name
         for link in re.findall(r'\]\(([^)]+)\)', guide.read_text()):
             if '://' in link or link.startswith('#'):

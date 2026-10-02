@@ -1,0 +1,23 @@
+P06-NATIVE profile=ubuntu-24.04 artifact_sha256=f2963bf0a509a5b404d9aa8795e3e78e078c9c640d2c1eca790658c9b411f2ca
+P06-N01 PASS
+P06-N02 FAIL line=38 type=AssertionError (private guest diagnostics withheld)
+blindpass install: explicit database initialization failed; inspect sanitized service diagnostics
+Result=exit-code
+ExecMainStatus=1
+blindpass-controller: unreadable or unsafe credential file: BLINDPASS_ROOT_SECRET_FILE
+blindpass: controller command failed
+blindpass-controller-initialize.service: Main process exited, code=exited, status=1/FAILURE
+blindpass-controller-initialize.service: Main process exited, code=exited, status=1/FAILURE
+blindpass-controller-initialize.service: Failed with result 'exit-code'.
+P06-CREDENTIAL:root:root:x86-64:/root:/usr/bin/bash
+drwxr-xr-x root root /
+drwxr-xr-x root root run
+drwxr-xr-x root root credentials
+dr-xr-x--- root root blindpass-controller-initialize.service
+-r--r----- root root root-secret
+blindpass-controller: unreadable or unsafe credential file: BLINDPASS_ROOT_SECRET_FILE
+blindpass: controller command failed
+blindpass-controller-initialize.service: Main process exited, code=exited, status=1/FAILURE
+blindpass-controller-initialize.service: Main process exited, code=exited, status=1/FAILURE
+blindpass-controller-initialize.service: Failed with result 'exit-code'.
+P06-NATIVE teardown complete

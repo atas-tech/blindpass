@@ -1,0 +1,41 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running tests/deployment_layout.rs (target/debug/deps/deployment_layout-de9dec643a25ab28)
+
+running 7 tests
+test p06_l04_relative_layout_roots_are_rejected ... ok
+test p06_l05_no_database_is_guessed_without_an_explicit_data_root ... ok
+test p06_l06_credential_links_and_unbounded_files_fail_with_sanitized_diagnostics ... ok
+test p06_l03_missing_exposed_and_linked_directories_fail_without_repair ... ok
+test p06_l01_explicit_layout_resolves_keys_and_sqlite_without_creating_state ... ok
+test p06_l02_explicit_credential_paths_override_layout_names ... ok
+test p06_l07_version_works_without_any_runtime_credentials ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/deployment_proxy.rs (target/debug/deps/deployment_proxy-23686e2832e26809)
+
+running 6 tests
+test p06_x02_required_proxy_rejects_missing_trust_http_and_unguarded_wildcard_bind ... ok
+test p06_x01_specific_canonical_ipv4_ipv6_peers_and_cidrs_only ... ok
+test p06_x04_reviewed_forwarded_authorities_are_accepted_and_hsts_is_set ... ok
+test p06_x03_untrusted_tcp_peer_cannot_reach_api_ui_or_preflight ... ok
+test p06_x05_malformed_appended_duplicate_and_spoofed_forwarding_is_denied ... ok
+test p06_x06_only_trusted_proxy_clients_receive_independent_rate_windows ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.11s
+
+     Running tests/deployment_startup.rs (target/debug/deps/deployment_startup-8fac269a2cd3308b)
+
+running 10 tests
+test p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url ... ok
+test p06_s02_serve_does_not_initialize_an_empty_existing_database ... ok
+test p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart ... ok
+test p06_s03_serve_does_not_migrate_or_repair_schema_versions ... ok
+test p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata ... ok
+test p06_s02_existing_store_refuses_absent_schema_on_each_adapter ... ok
+test p06_s03_readiness_reports_changed_schema_on_each_adapter ... ok
+test p06_s03_existing_store_rejects_incomplete_schema_on_each_adapter ... ok
+test p06_s06_readiness_has_sanitized_outage_and_recovery_reasons ... ok
+test p06_s05_existing_store_never_fills_missing_metadata_on_each_adapter ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.65s
