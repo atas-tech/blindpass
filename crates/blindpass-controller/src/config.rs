@@ -3,13 +3,14 @@
 //! Validated controller configuration. Secret values are read from credential
 //! files and are never included in error messages or a `Debug` representation.
 
+use crate::proxy::TrustedProxy;
 use axum::http::Uri;
 use blindpass_core::deployment::{Directory, read_private_file};
 use blindpass_core::secret::SecretBytes;
 use blindpass_core::signing::ed25519::Ed25519KeyPair;
 use std::collections::BTreeMap;
 use std::fmt;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -49,7 +50,9 @@ pub struct Config {
     secret_registry_json: Option<String>,
     exchange_policy_json: Option<String>,
     allowed_origins: Vec<String>,
-    trusted_proxy_addresses: Vec<IpAddr>,
+    trusted_proxy_peers: Vec<TrustedProxy>,
+    proxy_required: bool,
+    tls_config: Option<Arc<tokio_rustls::rustls::ServerConfig>>,
     body_limit_bytes: usize,
     agent_token_rate_limit: u32,
     agent_request_rate_limit: u32,
@@ -123,11 +126,6 @@ impl Config {
             .unwrap_or("127.0.0.1:3200")
             .parse::<SocketAddr>()
             .map_err(|_| ConfigError::Invalid("BLINDPASS_LISTEN"))?;
-        if listen.ip().is_unspecified() && !test_mode {
-            return Err(ConfigError::Invalid(
-                "BLINDPASS_LISTEN must not be an unrestricted bind",
-            ));
-        }
 
         let public_url = required(values, "BLINDPASS_PUBLIC_URL")?;
         validate_origin(public_url, "BLINDPASS_PUBLIC_URL")?;
@@ -255,24 +253,60 @@ impl Config {
             .collect::<Result<Vec<_>, ConfigError>>()?;
 
         // A boolean proxy trust switch would trust attacker-supplied
-        // X-Forwarded-For values from every peer. Accept only explicit IPs.
-        let trusted_proxy_addresses = value(values, "BLINDPASS_TRUST_PROXY")
+        // X-Forwarded-For values from every peer. Accept only explicit IPs
+        // or canonical restricted CIDRs.
+        let proxy_required = match value(values, "BLINDPASS_PROXY_REQUIRED") {
+            None | Some("0") => false,
+            Some("1") => true,
+            Some(_) => return Err(ConfigError::Invalid("BLINDPASS_PROXY_REQUIRED")),
+        };
+        let trusted_proxy_peers = value(values, "BLINDPASS_TRUST_PROXY")
             .unwrap_or("")
             .split(',')
             .map(str::trim)
-            .filter(|proxy| !proxy.is_empty())
             .map(|proxy| {
                 proxy
                     .parse()
                     .map_err(|_| ConfigError::Invalid("BLINDPASS_TRUST_PROXY"))
             })
-            .collect::<Result<Vec<IpAddr>, _>>()?;
-
+            .collect::<Result<Vec<TrustedProxy>, _>>();
+        let trusted_proxy_peers =
+            if value(values, "BLINDPASS_TRUST_PROXY").is_none_or(str::is_empty) {
+                Vec::new()
+            } else {
+                trusted_proxy_peers?
+            };
+        if proxy_required
+            && (trusted_proxy_peers.is_empty()
+                || !public_url.starts_with("https://")
+                || !ui_base_url.starts_with("https://"))
+        {
+            return Err(ConfigError::Invalid(
+                "BLINDPASS_PROXY_REQUIRED requires HTTPS origins and explicit proxy peers",
+            ));
+        }
         let tls_cert = value(values, "BLINDPASS_TLS_CERT_FILE");
         let tls_key = value(values, "BLINDPASS_TLS_KEY_FILE");
-        if tls_cert.is_some() || tls_key.is_some() {
+        let tls_config = match (tls_cert, tls_key) {
+            (None, None) => None,
+            (Some(cert), Some(key)) => {
+                if !public_url.starts_with("https://") || !ui_base_url.starts_with("https://") {
+                    return Err(ConfigError::Invalid("built-in TLS requires HTTPS origins"));
+                }
+                Some(
+                    crate::tls::load_config(Path::new(cert), Path::new(key))
+                        .map_err(ConfigError::CredentialFile)?,
+                )
+            }
+            _ => {
+                return Err(ConfigError::Invalid(
+                    "both BLINDPASS_TLS_CERT_FILE and BLINDPASS_TLS_KEY_FILE are required",
+                ));
+            }
+        };
+        if listen.ip().is_unspecified() && !test_mode && !proxy_required && tls_config.is_none() {
             return Err(ConfigError::Invalid(
-                "TLS terminates at the configured reverse proxy; built-in TLS is not enabled",
+                "BLINDPASS_LISTEN must not be an unrestricted bind",
             ));
         }
 
@@ -372,7 +406,9 @@ impl Config {
             secret_registry_json,
             exchange_policy_json,
             allowed_origins,
-            trusted_proxy_addresses,
+            trusted_proxy_peers,
+            proxy_required,
+            tls_config,
             body_limit_bytes,
             agent_token_rate_limit,
             agent_request_rate_limit,
@@ -434,8 +470,18 @@ impl Config {
     }
 
     #[must_use]
-    pub fn trusted_proxy_addresses(&self) -> &[IpAddr] {
-        &self.trusted_proxy_addresses
+    pub fn trusted_proxy_peers(&self) -> &[TrustedProxy] {
+        &self.trusted_proxy_peers
+    }
+
+    #[must_use]
+    pub fn proxy_required(&self) -> bool {
+        self.proxy_required
+    }
+
+    #[must_use]
+    pub fn tls_config(&self) -> Option<Arc<tokio_rustls::rustls::ServerConfig>> {
+        self.tls_config.clone()
     }
 
     #[must_use]

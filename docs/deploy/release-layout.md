@@ -56,8 +56,10 @@ opened through directory descriptors without following symlink components;
 credential files must be private regular files with a single hard link. Secret
 reads are bounded to 4 KiB (issuer seed exactly 32 bytes); URL-file reads to
 16 KiB. Symlinks, hardlinks and FIFOs are refused. Run `check-config` and explicit
-`migrate` before the first `serve`; deployment startup/recovery gates are still
-unfinished.
+`migrate` before the first `serve`. Production serving refuses missing/uninitialized
+or incompatible state and never creates replacement trust. See
+[startup, readiness and HTTPS](controller-ingress.md) for diagnostics and both
+ingress modes. Full deployment/recovery gates are still unfinished.
 
 ## Building and inspecting candidate archives
 

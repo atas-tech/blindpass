@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Replace both authorities and PEMs; match controller public/UI origins.
+# BLINDPASS_PROXY_REQUIRED=1, BLINDPASS_TRUST_PROXY=127.0.0.1,::1
+# Use an already trusted certificate. ACME/account setup is an operator choice.
+{
+    admin off
+    auto_https off
+    log default {
+        output discard
+    }
+}
+
+(blindpass_controller) {
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy 127.0.0.1:3200 {
+        header_up Host {args[0]}
+        header_up X-Forwarded-Host {args[0]}
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-For {http.request.remote.host}
+        header_up -Forwarded
+        header_down -Strict-Transport-Security
+        transport http {
+            versions 1.1
+            dial_timeout 5s
+            response_header_timeout 40s
+        }
+    }
+}
+
+https://blindpass.example {
+    tls /etc/caddy/blindpass/fullchain.pem /etc/caddy/blindpass/private-key.pem
+    import blindpass_controller blindpass.example
+}
+
+https://input.example {
+    tls /etc/caddy/blindpass/fullchain.pem /etc/caddy/blindpass/private-key.pem
+    import blindpass_controller input.example
+}

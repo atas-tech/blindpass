@@ -1,0 +1,8 @@
+   Compiling blindpass-controller v0.1.0 (<repository>/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.12s
+     Running tests/postgres_outage.rs (target/debug/deps/postgres_outage-4635ffb31be39a0b)
+
+running 1 test
+test readiness_fails_during_postgres_outage_and_recovers_with_state_intact ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.37s

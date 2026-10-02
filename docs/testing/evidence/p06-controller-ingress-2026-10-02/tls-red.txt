@@ -1,0 +1,9 @@
+PASS P06-T01 invalid/incomplete/mismatched/unsafe TLS refuses before state access
+Traceback (most recent call last):
+  File "<repository>/tests/deployment/controller-tls.py", line 155, in <module>
+    main()
+    ~~~~^^
+  File "<repository>/tests/deployment/controller-tls.py", line 90, in main
+    assert output.returncode == 0, 'valid TLS configuration denied'
+           ^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: valid TLS configuration denied

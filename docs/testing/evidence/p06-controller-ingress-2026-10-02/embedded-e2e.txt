@@ -1,0 +1,21 @@
+
+> @blindpass/console@0.1.0 test:e2e
+> playwright test e2e/embedded.spec.ts
+
+(node:3391082) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+Running 4 tests using 1 worker
+
+(node:3391147) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3391147) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(node:3391147) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 e2e/embedded.spec.ts:66:3 › embedded console and input page › P04-E04 / DR-E26: deep links load and survive a reload on the controller origin under the P04 CSP header, with no violations and self-hosted Inter (6.3s)
+  ✓  2 e2e/embedded.spec.ts:117:3 › embedded console and input page › P04-E04: hashed assets are immutable, misses are 404 and API paths never return the shell (44ms)
+  ✓  3 e2e/embedded.spec.ts:137:3 › embedded console and input page › P04-E04 / SI-E03: a signed link opens the embedded input page on the controller origin; it seals, submits and the requester opens the value once (383ms)
+  -  4 e2e/embedded.spec.ts:165:3 › embedded console and input page › P04-E04 / DR-E23 rollback: the previous controller artifact runs on the same database and the embedded build comes back with sessions intact
+
+  1 skipped
+  3 passed (10.5s)

@@ -6,6 +6,7 @@ export interface components {
     };
     "ReadinessResponse": {
       "ok": boolean;
+      "reason"?: "store_unavailable" | "state_missing" | "schema_mismatch" | "permissions_invalid" | "recovery_required" | "disk_full";
       "checks": {
         "database": "up" | "down";
       };

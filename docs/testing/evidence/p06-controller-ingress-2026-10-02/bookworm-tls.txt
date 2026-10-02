@@ -1,0 +1,4 @@
+PASS P06-T01 invalid/incomplete/mismatched/unsafe TLS refuses before state access
+PASS P06-T02 verified HTTPS readiness and embedded UI/CSP/HSTS; plaintext rejected
+PASS P06-T03 one stalled handshake isolated; 64 stalled peers drained, recovery 5.000s (<7s)
+PASS P06-T04 SIGTERM with stalled handshake, shutdown 0.003s (<10s)

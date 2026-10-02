@@ -1071,7 +1071,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       }
       const readiness = await adapter.withReadinessFailure(() => httpRequest(adapter.baseUrl, "/readyz"));
       expect(readiness.status).toBe(503);
-      expect(readiness.body).toEqual({ ok: false, checks: { database: "down" } });
+      expect(readiness.body).toEqual({ ok: false, checks: { database: "down" }, reason: "recovery_required" });
       snapshots.recordValue("CT18.error.503", {
         status: readiness.status,
         ok: (readiness.body as { ok: boolean }).ok,

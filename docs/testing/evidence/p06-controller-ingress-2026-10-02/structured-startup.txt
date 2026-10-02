@@ -1,0 +1,39 @@
+   Compiling blindpass-controller v0.1.0 (<repository>/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.77s
+     Running tests/deployment_startup.rs (target/debug/deps/deployment_startup-8fac269a2cd3308b)
+
+running 10 tests
+test p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url ... ok
+test p06_s02_existing_store_refuses_absent_schema_on_each_adapter ... ok
+test p06_s02_serve_does_not_initialize_an_empty_existing_database ... ok
+test p06_s03_existing_store_rejects_incomplete_schema_on_each_adapter ... ok
+test p06_s03_readiness_reports_changed_schema_on_each_adapter ... ok
+test p06_s03_serve_does_not_migrate_or_repair_schema_versions ... ok
+test p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart ... ok
+test p06_s05_existing_store_never_fills_missing_metadata_on_each_adapter ... ok
+test p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata ... ok
+test p06_s06_readiness_has_sanitized_outage_and_recovery_reasons ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.52s
+
+     Running tests/shell_config.rs (target/debug/deps/shell_config-efce51387ad8da82)
+
+running 16 tests
+test damaged_existing_schema_prevents_startup_without_recreation ... ok
+test environment_policy_is_validated_like_an_administrator_write ... ok
+test external_providers_must_name_a_jwks_file ... ok
+test inaccessible_production_database_prevents_startup_with_sanitized_error ... ok
+test migrate_command_initializes_database_without_starting_listener ... ok
+test missing_or_unsafe_production_credentials_fail_without_disclosing_contents ... ok
+test production_configuration_requires_a_private_issuer_seed ... ok
+test production_configuration_requires_file_backed_database_and_key_material ... ok
+test production_defaults_match_sps_and_test_overrides_are_bounded ... ok
+test production_shell_has_no_seed_route_or_test_override ... ok
+test readiness_fails_after_live_database_pool_disconnects ... ok
+test reconcile_clock_command_repairs_a_regressed_database_without_test_mode ... ok
+test seed_command_uses_test_fixture_and_rejects_production_mode ... ok
+test serving_clock_monitor_fences_running_regression_within_two_ticks ... ok
+test shell_exposes_liveness_readiness_and_ct19_capability_without_sensitive_details ... ok
+test test_overrides_are_rejected_unless_test_mode_is_explicit_and_nonproduction ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.96s

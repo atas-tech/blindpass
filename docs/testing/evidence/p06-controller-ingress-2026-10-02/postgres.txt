@@ -1,0 +1,105 @@
+   Compiling blindpass-controller v0.1.0 (<repository>/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 18.28s
+     Running tests/deployment_layout.rs (target/debug/deps/deployment_layout-de9dec643a25ab28)
+
+running 7 tests
+test p06_l01_explicit_layout_resolves_keys_and_sqlite_without_creating_state ... ok
+test p06_l02_explicit_credential_paths_override_layout_names ... ok
+test p06_l03_missing_exposed_and_linked_directories_fail_without_repair ... ok
+test p06_l04_relative_layout_roots_are_rejected ... ok
+test p06_l05_no_database_is_guessed_without_an_explicit_data_root ... ok
+test p06_l06_credential_links_and_unbounded_files_fail_with_sanitized_diagnostics ... ok
+test p06_l07_version_works_without_any_runtime_credentials ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/deployment_proxy.rs (target/debug/deps/deployment_proxy-23686e2832e26809)
+
+running 6 tests
+test p06_x01_specific_canonical_ipv4_ipv6_peers_and_cidrs_only ... ok
+test p06_x02_required_proxy_rejects_missing_trust_http_and_unguarded_wildcard_bind ... ok
+test p06_x03_untrusted_tcp_peer_cannot_reach_api_ui_or_preflight ... ok
+test p06_x04_reviewed_forwarded_authorities_are_accepted_and_hsts_is_set ... ok
+test p06_x05_malformed_appended_duplicate_and_spoofed_forwarding_is_denied ... ok
+test p06_x06_only_trusted_proxy_clients_receive_independent_rate_windows ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.06s
+
+     Running tests/deployment_startup.rs (target/debug/deps/deployment_startup-8fac269a2cd3308b)
+
+running 10 tests
+test p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url ... ok
+test p06_s02_existing_store_refuses_absent_schema_on_each_adapter ... ok
+test p06_s02_serve_does_not_initialize_an_empty_existing_database ... ok
+test p06_s03_existing_store_rejects_incomplete_schema_on_each_adapter ... ok
+test p06_s03_readiness_reports_changed_schema_on_each_adapter ... ok
+test p06_s03_serve_does_not_migrate_or_repair_schema_versions ... ok
+test p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart ... ok
+test p06_s05_existing_store_never_fills_missing_metadata_on_each_adapter ... ok
+test p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata ... ok
+test p06_s06_readiness_has_sanitized_outage_and_recovery_reasons ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.23s
+
+     Running tests/shell_config.rs (target/debug/deps/shell_config-efce51387ad8da82)
+
+running 16 tests
+test damaged_existing_schema_prevents_startup_without_recreation ... ok
+test environment_policy_is_validated_like_an_administrator_write ... ok
+test external_providers_must_name_a_jwks_file ... ok
+test inaccessible_production_database_prevents_startup_with_sanitized_error ... ok
+test migrate_command_initializes_database_without_starting_listener ... ok
+test missing_or_unsafe_production_credentials_fail_without_disclosing_contents ... ok
+test production_configuration_requires_a_private_issuer_seed ... ok
+test production_configuration_requires_file_backed_database_and_key_material ... ok
+test production_defaults_match_sps_and_test_overrides_are_bounded ... ok
+test production_shell_has_no_seed_route_or_test_override ... ok
+test readiness_fails_after_live_database_pool_disconnects ... ok
+test reconcile_clock_command_repairs_a_regressed_database_without_test_mode ... ok
+test seed_command_uses_test_fixture_and_rejects_production_mode ... ok
+test serving_clock_monitor_fences_running_regression_within_two_ticks ... ok
+test shell_exposes_liveness_readiness_and_ct19_capability_without_sensitive_details ... ok
+test test_overrides_are_rejected_unless_test_mode_is_explicit_and_nonproduction ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.74s
+
+     Running tests/store_transitions.rs (target/debug/deps/store_transitions-d177cb563893d5ee)
+
+running 35 tests
+test agent_key_rotation_revocation_and_ip_windows_are_atomic ... ok
+test approval_decision_is_audited_and_idempotent_by_actor_and_request ... ok
+test audit_retention_uses_its_own_day_limit_without_pruning_fresh_events ... ok
+test boot_change_fences_and_purges_transient_authority_but_keeps_sessions ... ok
+test bootstrap_serializes_first_admin_creation_and_consumes_setup_tokens_once ... ok
+test browser_refresh_rotation_and_replay_revoke_the_session_family ... ok
+test clock_reconciliation_purges_expiring_state_and_restores_startup ... ok
+test concurrent_rate_window_consumes_allow_exactly_the_limit_on_both_stores ... ok
+test concurrent_refresh_replay_revokes_the_family_without_store_errors ... ok
+test conditional_submit_and_consume_allow_one_winner_under_concurrency ... ok
+test exchange_reservation_submit_and_one_use_retrieval_are_durable_and_atomic ... ok
+test exchange_revocation_and_approval_decision_use_expiry_and_compare_and_set ... ok
+test exchange_submit_racing_revocation_never_restores_ciphertext ... ok
+test expiring_transitions_recheck_their_deadline_after_a_lock_wait ... ok
+test expiry_is_enforced_before_sweep_and_after_database_restart ... ok
+test foreign_tenant_exchange_cannot_be_read_reserved_revoked_or_retrieved ... ok
+test later_migration_table_missing_on_current_version_fails_closed ... ok
+test local_browser_sessions_are_operator_bound_idle_checked_and_revocable ... ok
+test local_operator_management_preserves_a_final_admin_and_revokes_reset_sessions ... ok
+test missing_required_table_is_not_silently_recreated ... ok
+test older_schema_version_migrates_forward_and_records_current_version ... ok
+test p02_i03_committed_one_use_retrieval_stays_consumed_after_store_restart ... ok
+test p02_i03_policy_compare_and_set_retry_survives_store_restart ... ok
+test p03_fleet_migration_upgrades_a_v4_database_and_is_repeatable ... ok
+test password_changes_revoke_sessions_created_or_rotated_concurrently ... ok
+test persisted_clock_mark_advances_and_tolerates_small_regressions_but_fences_large_ones ... ok
+test persisted_clock_regression_denies_expiring_state_and_readiness ... ok
+test retention_sweep_removes_expired_ciphertext_only_after_grace ... ok
+test running_clock_monitor_persists_fence_until_reconciliation ... ok
+test same_boot_startup_detects_database_clock_regression_beyond_tolerance ... ok
+test schema_migrations_are_repeatable_and_tenant_identity_is_stable ... ok
+test schema_v3_clock_migrates_to_v4_and_fences_unknown_boot_anchor ... ok
+test sessions_and_password_changes_are_bound_to_the_verified_password ... ok
+test unreadable_boot_id_fences_and_purges_transient_authority ... ok
+test unsupported_schema_version_fails_closed_before_migration ... ok
+
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 77.87s

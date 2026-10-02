@@ -1,0 +1,57 @@
+   Compiling blindpass-controller v0.1.0 (<repository>/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.85s
+     Running tests/deployment_proxy.rs (target/debug/deps/deployment_proxy-c91a3198954b5b72)
+
+running 6 tests
+test p06_x01_specific_canonical_ipv4_ipv6_peers_and_cidrs_only ... FAILED
+test p06_x02_required_proxy_rejects_missing_trust_http_and_unguarded_wildcard_bind ... FAILED
+test p06_x03_untrusted_tcp_peer_cannot_reach_api_ui_or_preflight ... FAILED
+test p06_x04_reviewed_forwarded_authorities_are_accepted_and_hsts_is_set ... FAILED
+test p06_x05_malformed_appended_duplicate_and_spoofed_forwarding_is_denied ... FAILED
+test p06_x06_only_trusted_proxy_clients_receive_independent_rate_windows ... FAILED
+
+failures:
+
+---- p06_x01_specific_canonical_ipv4_ipv6_peers_and_cidrs_only stdout ----
+
+thread 'p06_x01_specific_canonical_ipv4_ipv6_peers_and_cidrs_only' (3290606) panicked at crates/blindpass-controller/tests/deployment_proxy.rs:96:9:
+denied 192.0.2.0/24,2001:db8::/32
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- p06_x02_required_proxy_rejects_missing_trust_http_and_unguarded_wildcard_bind stdout ----
+
+thread 'p06_x02_required_proxy_rejects_missing_trust_http_and_unguarded_wildcard_bind' (3290607) panicked at crates/blindpass-controller/tests/deployment_proxy.rs:108:5:
+assertion failed: Config::from_variables(fixture.values.clone()).is_ok()
+
+---- p06_x03_untrusted_tcp_peer_cannot_reach_api_ui_or_preflight stdout ----
+
+thread 'p06_x03_untrusted_tcp_peer_cannot_reach_api_ui_or_preflight' (3290608) panicked at crates/blindpass-controller/tests/deployment_proxy.rs:55:69:
+proxy config: Invalid("BLINDPASS_TRUST_PROXY")
+
+---- p06_x04_reviewed_forwarded_authorities_are_accepted_and_hsts_is_set stdout ----
+
+thread 'p06_x04_reviewed_forwarded_authorities_are_accepted_and_hsts_is_set' (3290609) panicked at crates/blindpass-controller/tests/deployment_proxy.rs:55:69:
+proxy config: Invalid("BLINDPASS_TRUST_PROXY")
+
+---- p06_x05_malformed_appended_duplicate_and_spoofed_forwarding_is_denied stdout ----
+
+thread 'p06_x05_malformed_appended_duplicate_and_spoofed_forwarding_is_denied' (3290610) panicked at crates/blindpass-controller/tests/deployment_proxy.rs:55:69:
+proxy config: Invalid("BLINDPASS_TRUST_PROXY")
+
+---- p06_x06_only_trusted_proxy_clients_receive_independent_rate_windows stdout ----
+
+thread 'p06_x06_only_trusted_proxy_clients_receive_independent_rate_windows' (3290611) panicked at crates/blindpass-controller/tests/deployment_proxy.rs:55:69:
+proxy config: Invalid("BLINDPASS_TRUST_PROXY")
+
+
+failures:
+    p06_x01_specific_canonical_ipv4_ipv6_peers_and_cidrs_only
+    p06_x02_required_proxy_rejects_missing_trust_http_and_unguarded_wildcard_bind
+    p06_x03_untrusted_tcp_peer_cannot_reach_api_ui_or_preflight
+    p06_x04_reviewed_forwarded_authorities_are_accepted_and_hsts_is_set
+    p06_x05_malformed_appended_duplicate_and_spoofed_forwarding_is_denied
+    p06_x06_only_trusted_proxy_clients_receive_independent_rate_windows
+
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.58s
+
+error: test failed, to rerun pass `-p blindpass-controller --test deployment_proxy`

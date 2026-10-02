@@ -169,7 +169,11 @@ def prepare(profile, stage, options, version):
             raise ReleaseError('controller must embed both UI surfaces at this version')
         metadata['controller'] = info
         copy_file(ROOT / 'deploy/native/controller.env.example', stage / 'config/controller.env.example')
-        copy_file(ROOT / 'docs/deploy/release-layout.md', stage / 'docs/release-layout.md')
+        copy_file(ROOT / 'deploy/native/controller.env.example', stage / 'deploy/native/controller.env.example')
+        copy_file(ROOT / 'docs/deploy/release-layout.md', stage / 'docs/deploy/release-layout.md')
+        copy_file(ROOT / 'docs/deploy/controller-ingress.md', stage / 'docs/deploy/controller-ingress.md')
+        for name in ('nginx.conf.example', 'Caddyfile.example'):
+            copy_file(ROOT / 'deploy/proxy' / name, stage / 'deploy/proxy' / name)
     else:
         if not options.node_root or not options.browser_root:
             raise ReleaseError('node profile requires reviewed Node root and pinned browser root')

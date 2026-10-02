@@ -90,6 +90,22 @@ async fn readiness_fails_during_postgres_outage_and_recovers_with_state_intact()
     .execute(&admin)
     .await
     .expect("create dedicated outage role");
+    // PostgreSQL 16+ gives a CREATEROLE creator ADMIN membership with SET
+    // disabled. Grant only this disposable role so its schema can be owned
+    // without requiring a superuser test account.
+    let version: String = sqlx::query_scalar("SHOW server_version_num")
+        .fetch_one(&admin)
+        .await
+        .expect("read test server version");
+    let membership = if version.parse::<u32>().expect("numeric server version") >= 160_000 {
+        format!("GRANT \"{role}\" TO CURRENT_USER WITH SET TRUE")
+    } else {
+        format!("GRANT \"{role}\" TO CURRENT_USER")
+    };
+    sqlx::query(&membership)
+        .execute(&admin)
+        .await
+        .expect("grant disposable schema-owner role");
     sqlx::query(&format!(
         "CREATE SCHEMA \"{role}\" AUTHORIZATION \"{role}\""
     ))

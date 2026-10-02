@@ -2,9 +2,9 @@
 
 use crate::config::Config;
 use crate::routes::{self, agents, exchanges, secrets};
-use crate::store::{FleetSigner, SCHEMA_VERSION, Store};
+use crate::store::{FleetSigner, SCHEMA_VERSION, Store, StoreError};
 use axum::body::Body;
-use axum::extract::{Request, State};
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderName, HeaderValue, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
@@ -15,7 +15,7 @@ use blindpass_core::signing::base64_url_encode;
 use blindpass_core::signing::ed25519::Ed25519KeyPair;
 use serde::Serialize;
 use serde_json::json;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Semaphore;
@@ -42,7 +42,10 @@ pub(crate) struct AppState {
     pub(crate) allowed_origins: Vec<String>,
     pub(crate) test_mode: bool,
     pub(crate) test_seed_token: Option<Arc<SecretBytes>>,
-    pub(crate) trusted_proxy_addresses: Vec<IpAddr>,
+    pub(crate) trusted_proxy_peers: Vec<crate::proxy::TrustedProxy>,
+    pub(crate) proxy_required: bool,
+    pub(crate) proxy_authorities: Vec<String>,
+    pub(crate) tls_enabled: bool,
     pub(crate) request_ttl_seconds: u64,
     pub(crate) submitted_ttl_seconds: u64,
     pub(crate) revoked_ttl_seconds: u64,
@@ -70,6 +73,8 @@ struct ReadinessChecks {
 struct ReadinessResponse {
     ok: bool,
     checks: ReadinessChecks,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -130,7 +135,17 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         test_seed_token: config
             .test_seed_token()
             .map(|token| Arc::new(SecretBytes::from_slice(token))),
-        trusted_proxy_addresses: config.trusted_proxy_addresses().to_vec(),
+        trusted_proxy_peers: config.trusted_proxy_peers().to_vec(),
+        proxy_required: config.proxy_required(),
+        tls_enabled: config.tls_config().is_some(),
+        proxy_authorities: [config.public_url(), config.ui_base_url()]
+            .iter()
+            .filter_map(|origin| origin.parse::<axum::http::Uri>().ok())
+            .filter_map(|uri| {
+                uri.authority()
+                    .map(|authority| authority.as_str().to_owned())
+            })
+            .collect(),
         request_ttl_seconds: config.request_ttl_seconds(),
         submitted_ttl_seconds: config.submitted_ttl_seconds(),
         revoked_ttl_seconds: config.revoked_ttl_seconds(),
@@ -159,7 +174,7 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
             routes::forced_password_change_gate,
         ))
         .fallback(crate::embedded_ui::fallback)
-        .with_state(state)
+        .with_state(state.clone())
         .layer(middleware::from_fn(security_headers))
         .layer(RequestBodyLimitLayer::new(body_limit_bytes))
         .layer(middleware::from_fn(request_timeout))
@@ -206,6 +221,73 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .layer(PropagateRequestIdLayer::new(request_id.clone()))
         .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))
         .layer(middleware::from_fn(normalize_compat_errors))
+        .layer(middleware::from_fn_with_state(state, enforce_proxy))
+}
+
+async fn enforce_proxy(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    if !state.proxy_required {
+        let mut response = next.run(request).await;
+        if state.tls_enabled {
+            response.headers_mut().insert(
+                header::STRICT_TRANSPORT_SECURITY,
+                HeaderValue::from_static("max-age=31536000"),
+            );
+        }
+        return response;
+    }
+    let peer = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|info| info.0.ip());
+    // Only local, read-only probes may bypass the ingress edge. No API/UI
+    // handler, including preflight and public capabilities, shares this bypass.
+    if matches!(request.method(), &Method::GET | &Method::HEAD)
+        && matches!(request.uri().path(), "/healthz" | "/readyz")
+        && peer.is_some_and(|ip| ip.is_loopback())
+    {
+        return next.run(request).await;
+    }
+    let headers = request.headers();
+    let one = |name: &str| {
+        let mut values = headers.get_all(name).iter();
+        let value = values.next()?.to_str().ok()?;
+        if values.next().is_some() {
+            None
+        } else {
+            Some(value)
+        }
+    };
+    let host = one("host");
+    let forwarded_host = one("x-forwarded-host");
+    let valid = peer.is_some_and(|ip| {
+        state
+            .trusted_proxy_peers
+            .iter()
+            .any(|network| network.contains(ip))
+    }) && host.is_some_and(|host| {
+        state
+            .proxy_authorities
+            .iter()
+            .any(|authority| authority.eq_ignore_ascii_case(host))
+    }) && host
+        .zip(forwarded_host)
+        .is_some_and(|(host, forwarded)| host.eq_ignore_ascii_case(forwarded))
+        && one("x-forwarded-proto") == Some("https")
+        && one("x-forwarded-for").is_some_and(|address| address.parse::<IpAddr>().is_ok())
+        && !headers.contains_key("forwarded");
+    if !valid {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(json!({"error":"proxy_required"})),
+        )
+            .into_response();
+    }
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        header::STRICT_TRANSPORT_SECURITY,
+        HeaderValue::from_static("max-age=31536000"),
+    );
+    response
 }
 
 async fn request_timeout(request: Request, next: Next) -> Response {
@@ -296,15 +378,22 @@ async fn healthz() -> Json<HealthResponse> {
 }
 
 async fn readyz(State(state): State<AppState>) -> Response {
-    let ready = match state.store.as_ref() {
-        Some(store) => store.is_ready().await,
-        None => false,
+    let reason = match state.store.as_ref() {
+        Some(store) => store
+            .readiness()
+            .await
+            .err()
+            .as_ref()
+            .map(store_failure_reason),
+        None => Some("store_unavailable"),
     };
+    let ready = reason.is_none();
     let payload = ReadinessResponse {
         ok: ready,
         checks: ReadinessChecks {
             database: if ready { "up" } else { "down" },
         },
+        reason,
     };
     let status = if ready {
         StatusCode::OK
@@ -312,6 +401,28 @@ async fn readyz(State(state): State<AppState>) -> Response {
         StatusCode::SERVICE_UNAVAILABLE
     };
     (status, Json(payload)).into_response()
+}
+
+/// Diagnostic vocabulary shared by readiness and production startup. Only
+/// known classes are exposed; driver details may contain credentials or paths.
+pub fn store_failure_reason(error: &StoreError) -> &'static str {
+    match error {
+        StoreError::MissingState(_) => "state_missing",
+        StoreError::UnsupportedSchemaVersion => "schema_mismatch",
+        StoreError::ClockRegression
+        | StoreError::ClockFenced
+        | StoreError::ClockSourceUnavailable => "recovery_required",
+        StoreError::InvalidInput("controller database permissions") => "permissions_invalid",
+        StoreError::Database(sqlx::Error::Database(error))
+            if error
+                .code()
+                .as_deref()
+                .is_some_and(|code| matches!(code, "13" | "53100")) =>
+        {
+            "disk_full"
+        }
+        _ => "store_unavailable",
+    }
 }
 
 async fn capabilities(State(state): State<AppState>) -> Response {

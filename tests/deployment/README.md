@@ -10,6 +10,8 @@ From the repository root:
 ```sh
 cargo test -p blindpass-cli --test keys --locked
 cargo test -p blindpass-controller --test deployment_layout --test shell_config --locked
+cargo test -p blindpass-controller --test deployment_startup --test deployment_proxy --locked
+python3 tests/deployment/controller-tls.py
 python3 tests/deployment/release-artifacts-test.py
 # After the pinned bookworm build from the release-layout guide:
 python3 tests/deployment/release-archive.py --arch x86_64 \
@@ -21,6 +23,17 @@ permissions, no silent trust replacement, symlink/hardlink denial, bounded
 FIFO refusal and safe output. Layout/version cases cover P06-L01–L07; existing
 shell tests preserve the legacy configuration/readiness envelope. Loopback
 and Unix sockets require permitted host execution.
+
+Startup/readiness cases preserve P06-S01–S06, including production process
+refusal of absent/empty/older/damaged state, stable identity across restart and
+adapter-specific missing metadata and clock-fence checks. Proxy cases preserve
+P06-X01–X06 with actual TCP peers, reviewed IPv4/IPv6 CIDRs, forwarded-header
+refusal, HSTS and rate-limit identity. The TLS script preserves P06-T01–T04;
+build the current controller with embedded UI first. It needs OpenSSL for a
+generated disposable certificate, validates it with Python's SSL trust store,
+checks distinct input/console HTML, rate limiting and plaintext rejection,
+saturates 64 handshakes and measures recovery and graceful shutdown. It consumes
+no protected Source and is not a VM or full deployment-profile result.
 
 The eight archive unit cases cover real ELF inspection, wrong architecture,
 incompatible glibc requirements, unsafe/missing inputs, manifest hashes,

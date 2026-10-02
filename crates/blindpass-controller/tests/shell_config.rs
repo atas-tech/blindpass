@@ -611,7 +611,7 @@ fn inaccessible_production_database_prevents_startup_with_sanitized_error() {
         .expect("run controller against an inaccessible database");
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("UTF-8 controller error");
-    assert!(stderr.contains("controller database initialization failed"));
+    assert!(stderr.contains("startup_failed"));
     assert!(!stderr.contains(&database_url));
     assert!(!stderr.contains("RRRR"));
     assert!(!stderr.contains("AAAA"));
@@ -654,7 +654,7 @@ async fn damaged_existing_schema_prevents_startup_without_recreation() {
         .expect("run controller against damaged schema");
     assert!(!output.status.success());
     let stderr = String::from_utf8(output.stderr).expect("UTF-8 controller error");
-    assert!(stderr.contains("controller database initialization failed"));
+    assert!(stderr.contains("startup_failed"));
     assert!(!stderr.contains(&database_url));
     assert!(!stderr.contains("RRRR"));
     assert!(!stderr.contains("AAAA"));
@@ -1083,7 +1083,7 @@ async fn shell_exposes_liveness_readiness_and_ct19_capability_without_sensitive_
     assert_eq!(readiness.0, 503);
     assert_eq!(
         readiness.1,
-        serde_json::json!({"ok": false, "checks": {"database": "down"}})
+        serde_json::json!({"ok": false, "checks": {"database": "down"}, "reason":"store_unavailable"})
     );
     assert!(!readiness.1.to_string().to_lowercase().contains("secret"));
 
@@ -1193,7 +1193,7 @@ async fn readiness_fails_after_live_database_pool_disconnects() {
     assert_eq!(status, 503);
     assert_eq!(
         body,
-        serde_json::json!({"ok":false,"checks":{"database":"down"}})
+        serde_json::json!({"ok":false,"checks":{"database":"down"},"reason":"store_unavailable"})
     );
     assert_eq!(request(&address, "GET", "/healthz").await.0, 200);
     server.abort();

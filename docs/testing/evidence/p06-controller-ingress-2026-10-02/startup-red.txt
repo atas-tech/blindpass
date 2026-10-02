@@ -1,0 +1,54 @@
+   Compiling blindpass-controller v0.1.0 (<repository>/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.24s
+     Running tests/deployment_startup.rs (target/debug/deps/deployment_startup-8de2a6e0995df2d3)
+
+running 6 tests
+test p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url ... FAILED
+test p06_s02_serve_does_not_initialize_an_empty_existing_database ... FAILED
+test p06_s03_serve_does_not_migrate_or_repair_schema_versions ... FAILED
+test p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart ... ok
+test p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata ... FAILED
+test p06_s06_readiness_has_sanitized_outage_and_recovery_reasons ... FAILED
+
+failures:
+
+---- p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url stdout ----
+
+thread 'p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url' (3280644) panicked at crates/blindpass-controller/tests/deployment_startup.rs:60:13:
+serve accepted unsafe state
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- p06_s02_serve_does_not_initialize_an_empty_existing_database stdout ----
+
+thread 'p06_s02_serve_does_not_initialize_an_empty_existing_database' (3280911) panicked at crates/blindpass-controller/tests/deployment_startup.rs:60:13:
+serve accepted unsafe state
+
+---- p06_s03_serve_does_not_migrate_or_repair_schema_versions stdout ----
+
+thread 'p06_s03_serve_does_not_migrate_or_repair_schema_versions' (3281131) panicked at crates/blindpass-controller/tests/deployment_startup.rs:60:13:
+serve accepted unsafe state
+
+---- p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata stdout ----
+
+thread 'p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata' (3281433) panicked at crates/blindpass-controller/tests/deployment_startup.rs:65:9:
+missing fixed diagnostic: blindpass-controller: controller database initialization failed
+
+
+---- p06_s06_readiness_has_sanitized_outage_and_recovery_reasons stdout ----
+
+thread 'p06_s06_readiness_has_sanitized_outage_and_recovery_reasons' (3281458) panicked at crates/blindpass-controller/tests/deployment_startup.rs:169:5:
+assertion `left == right` failed
+  left: Object {"checks": Object {"database": String("down")}, "ok": Bool(false)}
+ right: Object {"checks": Object {"database": String("down")}, "ok": Bool(false), "reason": String("recovery_required")}
+
+
+failures:
+    p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url
+    p06_s02_serve_does_not_initialize_an_empty_existing_database
+    p06_s03_serve_does_not_migrate_or_repair_schema_versions
+    p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata
+    p06_s06_readiness_has_sanitized_outage_and_recovery_reasons
+
+test result: FAILED. 1 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.83s
+
+error: test failed, to rerun pass `-p blindpass-controller --test deployment_startup`

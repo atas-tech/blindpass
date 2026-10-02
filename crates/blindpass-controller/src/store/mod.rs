@@ -399,6 +399,70 @@ impl Store {
         Self::connect_with_clock_source(url, Arc::new(SystemClock), tolerance_ms).await
     }
 
+    /// Production serving opens initialized state only. Schema creation and
+    /// upgrades belong to the explicit migration command; lost metadata is
+    /// never filled in with a new tenant, issuer epoch or clock anchor.
+    pub async fn connect_existing(url: &str, tolerance_ms: u64) -> Result<Self, StoreError> {
+        let clock_tolerance_ms = i64::try_from(tolerance_ms)
+            .ok()
+            .filter(|value| *value > 0)
+            .ok_or(StoreError::InvalidInput("clock tolerance"))?;
+        let database = Database::connect_existing(url).await?;
+        if !database.table_exists("controller_meta").await? {
+            return Err(StoreError::MissingState("controller metadata"));
+        }
+        let metadata = match &database {
+            Database::Sqlite(pool) => sqlx::query_as::<_, (i64, String, i64)>(
+                "SELECT schema_version, tenant_id, issuer_epoch FROM controller_meta WHERE id = 1",
+            )
+            .fetch_optional(pool)
+            .await
+            .map_err(StoreError::Database)?,
+            Database::Postgres(pool) => sqlx::query_as::<_, (i32, String, i64)>(
+                "SELECT schema_version, tenant_id, issuer_epoch FROM controller_meta WHERE id = 1",
+            )
+            .fetch_optional(pool)
+            .await
+            .map_err(StoreError::Database)?
+            .map(|(version, tenant, epoch)| (i64::from(version), tenant, epoch)),
+        };
+        let Some((version, tenant_id, epoch)) = metadata else {
+            return Err(StoreError::MissingState("controller metadata"));
+        };
+        if version != SCHEMA_VERSION {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
+        if tenant_id.is_empty() || epoch < 1 {
+            return Err(StoreError::MissingState("controller metadata"));
+        }
+        database.validate_existing_schema_version().await?;
+        // Read before initialize_clock, which updates only an existing anchor.
+        // RowNotFound represents lost state, not an instruction to create it.
+        read_clock_anchor(&database)
+            .await
+            .map_err(|error| match error {
+                StoreError::Database(sqlx::Error::RowNotFound) => {
+                    StoreError::MissingState("controller clock")
+                }
+                error => error,
+            })?;
+        let clock_source = Arc::new(SystemClock);
+        let sample = clock_source
+            .sample()
+            .map_err(|_| StoreError::ClockSourceUnavailable)?;
+        let store = Self {
+            database,
+            tenant_id,
+            clock_source,
+            clock_tolerance_ms,
+            clock_monitor: Arc::new(Mutex::new(None)),
+            fleet_signer: None,
+        };
+        let database_ms = database_wall_now_ms(&store.database).await?;
+        store.initialize_clock(sample, database_ms).await?;
+        Ok(store)
+    }
+
     pub async fn connect_with_clock_source(
         url: &str,
         clock_source: Arc<dyn ClockSource>,
@@ -900,19 +964,32 @@ impl Store {
     }
 
     pub async fn is_ready(&self) -> bool {
-        if self.checkpoint_clock().await.is_err() {
-            return false;
+        self.readiness().await.is_ok()
+    }
+
+    /// Bounded public diagnostics are derived from actual database/clock
+    /// checks. Never include a driver error, URL, path or query in a response.
+    pub async fn readiness(&self) -> Result<(), StoreError> {
+        self.checkpoint_clock().await?;
+        let version = match &self.database {
+            Database::Sqlite(pool) => sqlx::query_scalar::<_, i64>(
+                "SELECT schema_version FROM controller_meta WHERE id = 1",
+            )
+            .fetch_optional(pool)
+            .await
+            .map_err(StoreError::Database)?,
+            Database::Postgres(pool) => sqlx::query_scalar::<_, i32>(
+                "SELECT schema_version FROM controller_meta WHERE id = 1",
+            )
+            .fetch_optional(pool)
+            .await
+            .map_err(StoreError::Database)?
+            .map(i64::from),
+        };
+        if version != Some(SCHEMA_VERSION) {
+            return Err(StoreError::UnsupportedSchemaVersion);
         }
-        match &self.database {
-            Database::Sqlite(pool) => sqlx::query("SELECT 1")
-                .fetch_one(pool)
-                .await
-                .is_ok_and(|row| row.try_get::<i32, _>(0).ok() == Some(1)),
-            Database::Postgres(pool) => sqlx::query("SELECT 1")
-                .fetch_one(pool)
-                .await
-                .is_ok_and(|row| row.try_get::<i32, _>(0).ok() == Some(1)),
-        }
+        Ok(())
     }
 
     /// Refuse every store operation while the durable clock fence is set.
@@ -2356,13 +2433,51 @@ async fn update_clock_anchor(
 
 impl Database {
     async fn connect(url: &str) -> Result<Self, StoreError> {
+        Self::connect_mode(url, true).await
+    }
+
+    async fn connect_existing(url: &str) -> Result<Self, StoreError> {
+        Self::connect_mode(url, false).await
+    }
+
+    async fn connect_mode(url: &str, create: bool) -> Result<Self, StoreError> {
         if url.starts_with("sqlite:") {
             let options = SqliteConnectOptions::from_str(url)
                 .map_err(|_| StoreError::InvalidInput("BLINDPASS_DATABASE_URL"))?
-                .create_if_missing(true)
+                .create_if_missing(create)
                 .journal_mode(SqliteJournalMode::Wal)
                 .foreign_keys(true)
                 .busy_timeout(Duration::from_secs(5));
+            if !create {
+                let path = options.get_filename();
+                let metadata = std::fs::symlink_metadata(path).map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::NotFound {
+                        StoreError::MissingState("controller database")
+                    } else {
+                        StoreError::InvalidInput("controller database permissions")
+                    }
+                })?;
+                use std::os::unix::fs::MetadataExt;
+                if !metadata.is_file() || metadata.nlink() != 1 {
+                    return Err(StoreError::InvalidInput("controller database permissions"));
+                }
+                // SQLx opens by pathname, so reject linked ancestors as well.
+                // The service account must retain exclusive custody of the
+                // configured data directory while serving.
+                let absolute = if path.is_absolute() {
+                    path.to_path_buf()
+                } else {
+                    std::env::current_dir()
+                        .map_err(|_| StoreError::InvalidInput("controller database permissions"))?
+                        .join(path)
+                };
+                blindpass_core::deployment::Directory::open(
+                    absolute
+                        .parent()
+                        .ok_or(StoreError::InvalidInput("controller database permissions"))?,
+                )
+                .map_err(|_| StoreError::InvalidInput("controller database permissions"))?;
+            }
             let pool = SqlitePoolOptions::new()
                 .max_connections(8)
                 .connect_with(options)

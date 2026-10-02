@@ -112,5 +112,7 @@ jobs:
           python3 tests/deployment/release-artifacts-test.py
           python3 tests/deployment/release-archive.py --arch '${{ matrix.arch }}' \
             --bin-dir /tmp/blindpass-p06-binaries
+      - name: Verify candidate HTTPS and bounded handshakes
+        run: python3 tests/deployment/controller-tls.py --binary /tmp/blindpass-p06-binaries/blindpass-controller
       # Runtime matrix and node/helper archives are separate real-host gates.
       # This job publishes no images/releases and confers no support guarantee.

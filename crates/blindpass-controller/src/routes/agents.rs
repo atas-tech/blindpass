@@ -137,7 +137,13 @@ async fn mint_token(
 }
 
 pub(crate) fn client_ip(headers: &HeaderMap, peer: SocketAddr, state: &AppState) -> String {
-    if state.trusted_proxy_addresses.contains(&peer.ip()) {
+    let trusted = |ip| {
+        state
+            .trusted_proxy_peers
+            .iter()
+            .any(|network| network.contains(ip))
+    };
+    if trusted(peer.ip()) {
         if state.test_mode && peer.ip().is_loopback() {
             if let Some(forwarded) = headers
                 .get("x-forwarded-for")
@@ -157,7 +163,7 @@ pub(crate) fn client_ip(headers: &HeaderMap, peer: SocketAddr, state: &AppState)
                 .filter_map(|value| value.trim().parse::<IpAddr>().ok())
                 .collect::<Vec<_>>();
             for address in chain.iter().rev() {
-                if !state.trusted_proxy_addresses.contains(address) {
+                if !trusted(*address) {
                     return address.to_string();
                 }
             }

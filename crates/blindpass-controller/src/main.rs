@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+use axum::serve::ListenerExt;
 use blindpass_controller::{
     admin_socket::{bind_admin_socket, serve_admin_socket},
     app::build_app,
     config::Config,
     observability,
     seed::{SeedRequest, seed_fixture},
-    store::{FleetSigner, Store},
+    store::{FleetSigner, Store, StoreError},
 };
 use std::future::IntoFuture;
 use std::io::Read;
@@ -19,7 +20,11 @@ async fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()).await {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
-            eprintln!("blindpass-controller: {message}");
+            if serde_json::from_str::<serde_json::Value>(&message).is_ok() {
+                eprintln!("{message}");
+            } else {
+                eprintln!("blindpass-controller: {message}");
+            }
             ExitCode::FAILURE
         }
     }
@@ -124,9 +129,14 @@ async fn migrate() -> Result<(), String> {
 async fn serve() -> Result<(), String> {
     let config = Config::from_env().map_err(|error| error.to_string())?;
     observability::init(config.log_format()).map_err(str::to_owned)?;
-    let store = Store::connect_with_tolerance(config.database_url(), config.clock_tolerance_ms())
-        .await
-        .map_err(|_| "controller database initialization failed".to_owned())?;
+    let result = if config.is_test_mode() {
+        Store::connect_with_tolerance(config.database_url(), config.clock_tolerance_ms()).await
+    } else {
+        Store::connect_existing(config.database_url(), config.clock_tolerance_ms()).await
+    };
+    let store = result.map_err(|error| {
+        serde_json::json!({"event":"startup_failed","reason":store_reason(&error)}).to_string()
+    })?;
     // Fleet expiry signs OperationClosed documents, so the maintenance store
     // carries the same issuer as the HTTP application.
     let sweep_store = match config.issuer_keypair() {
@@ -187,13 +197,26 @@ async fn serve() -> Result<(), String> {
     let admin_socket = bind_admin_socket(config.admin_socket_path())
         .map_err(|_| "local administration socket could not bind")?;
     let mut admin_task = tokio::spawn(serve_admin_socket(admin_socket, store.clone()));
+    let tls_config = config.tls_config();
     let app = build_app(config, Some(store));
-    let server = axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .into_future();
+    let service = app.into_make_service_with_connect_info::<std::net::SocketAddr>();
+    let server = async move {
+        if let Some(tls_config) = tls_config {
+            // ListenerExt's wrapper preserves the concrete SocketAddr peer
+            // through Axum's generic ConnectInfo implementation.
+            let listener =
+                blindpass_controller::tls::TlsListener::new(listener, tls_config).tap_io(|_| {});
+            axum::serve(listener, service)
+                .with_graceful_shutdown(shutdown_signal())
+                .into_future()
+                .await
+        } else {
+            axum::serve(listener, service)
+                .with_graceful_shutdown(shutdown_signal())
+                .into_future()
+                .await
+        }
+    };
     tokio::pin!(server);
     let result = tokio::select! {
         result = &mut server => result.map_err(|_| "controller server stopped unexpectedly".to_owned()),
@@ -208,6 +231,10 @@ async fn serve() -> Result<(), String> {
     clock_task.abort();
     admin_task.abort();
     result
+}
+
+fn store_reason(error: &StoreError) -> &'static str {
+    blindpass_controller::app::store_failure_reason(error)
 }
 
 async fn shutdown_signal() {

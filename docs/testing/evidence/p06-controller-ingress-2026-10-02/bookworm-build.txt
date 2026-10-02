@@ -1,0 +1,753 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.36kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#2 DONE 1.5s
+
+#3 [internal] load metadata for docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#3 DONE 1.6s
+
+#4 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#4 DONE 0.0s
+
+#5 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 203.50kB 0.0s done
+#6 DONE 0.0s
+
+#7 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [binaries  3/10] WORKDIR /source
+#8 CACHED
+
+#9 [ui 2/4] WORKDIR /source
+#9 CACHED
+
+#10 [binaries  4/10] COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+#10 CACHED
+
+#11 [binaries  5/10] COPY crates ./crates
+#11 DONE 0.2s
+
+#12 [ui 3/4] COPY . .
+#12 DONE 0.2s
+
+#13 [ui 4/4] RUN npm ci && npm run build
+#13 3.148 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#13 9.285
+#13 9.285 added 312 packages, and audited 325 packages in 9s
+#13 9.285
+#13 9.285 73 packages are looking for funding
+#13 9.285   run `npm fund` for details
+#13 9.309
+#13 9.309 10 vulnerabilities (2 low, 2 moderate, 6 high)
+#13 9.309
+#13 9.309 To address all issues, run:
+#13 9.309   npm audit fix
+#13 9.309
+#13 9.309 Run `npm audit` for details.
+#13 9.310 npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+#13 9.310 npm warn install-scripts   esbuild@0.27.3 (postinstall: node install.js)
+#13 9.310 npm warn install-scripts
+#13 9.310 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+#13 9.311 npm notice
+#13 9.311 npm notice New major version of npm available! 11.19.1 -> 12.2.0
+#13 9.311 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#13 9.311 npm notice To update run: npm install -g npm@12.2.0
+#13 9.311 npm notice
+#13 9.445
+#13 9.445 > blindpass@0.1.0 build
+#13 9.445 > npm run build:i18n && npm run build --workspaces --if-present
+#13 9.445
+#13 9.525
+#13 9.525 > blindpass@0.1.0 build:i18n
+#13 9.525 > npm run build --workspace=@blindpass/i18n
+#13 9.525
+#13 9.623
+#13 9.623 > @blindpass/i18n@0.1.0 build
+#13 9.623 > tsc
+#13 9.623
+#13 10.54
+#13 10.54 > @blindpass/agent-skill@0.1.0 build
+#13 10.54 > tsc -p tsconfig.json
+#13 10.54
+#13 12.29
+#13 12.29 > @blindpass/browser-ui@0.1.0 build
+#13 12.29 > vite build && vite build --mode embedded
+#13 12.29
+#13 12.44 vite v7.3.6 building client environment for production...
+#13 12.49 transforming...
+#13 12.58 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#13 12.59 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#13 12.59 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#13 12.60 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+#13 12.60
+#13 12.60 "// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+#13 12.60
+#13 12.60 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 12.60 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+#13 12.60
+#13 12.60 "//   /* @__PURE__ */ oidNist(0x07),"
+#13 12.60
+#13 12.60 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 12.60 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+#13 12.60
+#13 12.60 "//   /* @__PURE__ */"
+#13 12.60
+#13 12.60 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 12.60 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+#13 12.60
+#13 12.60 "//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+#13 12.60
+#13 12.60 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 12.60 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+#13 12.60
+#13 12.60 "//   /* @__PURE__ */"
+#13 12.60
+#13 12.60 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 12.60 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+#13 12.60
+#13 12.60 "//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+#13 12.60
+#13 12.60 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 12.62 ../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+#13 12.62
+#13 12.62 "/* @__PURE__ */"
+#13 12.62
+#13 12.62 in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 12.80 ✓ 86 modules transformed.
+#13 12.84 rendering chunks...
+#13 12.88 computing gzip size...
+#13 12.88 dist/index.html                                    9.98 kB │ gzip:  2.32 kB
+#13 12.88 dist/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+#13 12.88 dist/assets/index-Blx-gcvB.css                    16.97 kB │ gzip:  4.29 kB
+#13 12.88 dist/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+#13 12.88 dist/assets/index-DbiCBHEa.js                    130.80 kB │ gzip: 38.22 kB
+#13 12.88 ✓ built in 424ms
+#13 13.01 vite v7.3.6 building client environment for embedded...
+#13 13.05 transforming...
+#13 13.13 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#13 13.14 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#13 13.14 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#13 13.15 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+#13 13.15
+#13 13.15 "// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+#13 13.15
+#13 13.15 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 13.15 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+#13 13.15
+#13 13.15 "//   /* @__PURE__ */ oidNist(0x07),"
+#13 13.15
+#13 13.15 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 13.15 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+#13 13.15
+#13 13.15 "//   /* @__PURE__ */"
+#13 13.15
+#13 13.15 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 13.15 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+#13 13.15
+#13 13.15 "//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+#13 13.15
+#13 13.15 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 13.15 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+#13 13.15
+#13 13.15 "//   /* @__PURE__ */"
+#13 13.15
+#13 13.15 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 13.15 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+#13 13.15
+#13 13.15 "//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+#13 13.15
+#13 13.15 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 13.16 ../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+#13 13.16
+#13 13.16 "/* @__PURE__ */"
+#13 13.16
+#13 13.16 in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#13 13.35 ✓ 86 modules transformed.
+#13 13.39 rendering chunks...
+#13 13.42 computing gzip size...
+#13 13.43 dist-embedded/index.html                                   10.00 kB │ gzip:  2.33 kB
+#13 13.43 dist-embedded/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+#13 13.43 dist-embedded/assets/index-CsPbKv2W.css                    16.97 kB │ gzip:  4.29 kB
+#13 13.43 dist-embedded/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+#13 13.43 dist-embedded/assets/index-Bol_NMIH.js                    130.81 kB │ gzip: 38.22 kB
+#13 13.43 ✓ built in 407ms
+#13 13.44
+#13 13.44 > @blindpass/console@0.1.0 build
+#13 13.44 > tsc --noEmit && vite build && node scripts/check-bundle.mjs
+#13 13.44
+#13 17.71 vite v7.3.6 building client environment for production...
+#13 17.74 transforming...
+#13 18.79 ✓ 136 modules transformed.
+#13 18.89 rendering chunks...
+#13 19.00 computing gzip size...
+#13 19.02 dist/index.html                              0.74 kB │ gzip:   0.38 kB
+#13 19.02 dist/assets/InterVariable-DxOIOTVw.woff2    90.90 kB
+#13 19.02 dist/assets/index-BIedOzTD.css              59.33 kB │ gzip:  10.55 kB
+#13 19.02 dist/assets/status-BrYlLUa7.js               0.15 kB │ gzip:   0.12 kB
+#13 19.02 dist/assets/events-DAm_YHLZ.js               0.30 kB │ gzip:   0.24 kB
+#13 19.02 dist/assets/validation-DQ6FMKO6.js           0.34 kB │ gzip:   0.22 kB
+#13 19.02 dist/assets/metadata-suhM9rdo.js             0.58 kB │ gzip:   0.34 kB
+#13 19.02 dist/assets/source-CCbCv4Kf.js               0.82 kB │ gzip:   0.39 kB
+#13 19.02 dist/assets/model-CptRzFhc.js                0.98 kB │ gzip:   0.46 kB
+#13 19.02 dist/assets/reveal-BKRVdsBV.js               1.00 kB │ gzip:   0.55 kB
+#13 19.02 dist/assets/dialog-Cfr1jBwQ.js               1.92 kB │ gzip:   0.85 kB
+#13 19.02 dist/assets/field-DLkuKEPR.js                1.97 kB │ gzip:   0.67 kB
+#13 19.02 dist/assets/exchange-timeline-CnltRhkd.js    2.51 kB │ gzip:   1.10 kB
+#13 19.02 dist/assets/change-password-CauJfWqx.js      2.60 kB │ gzip:   1.11 kB
+#13 19.02 dist/assets/common-7phvXdvY.js               3.12 kB │ gzip:   1.37 kB
+#13 19.02 dist/assets/login-Wg9N_2j2.js                3.22 kB │ gzip:   1.32 kB
+#13 19.02 dist/assets/settings-D3nH5Bq5.js             3.38 kB │ gzip:   1.31 kB
+#13 19.02 dist/assets/approvals-C-qEjgFR.js            3.85 kB │ gzip:   1.58 kB
+#13 19.02 dist/assets/setup-BTdXbNSq.js                4.40 kB │ gzip:   1.52 kB
+#13 19.02 dist/assets/grants-GpiU9MSO.js               5.42 kB │ gzip:   2.05 kB
+#13 19.02 dist/assets/audit-0KAmMx_X.js                5.60 kB │ gzip:   2.11 kB
+#13 19.02 dist/assets/fleet-policy-CZeeS5kK.js         6.34 kB │ gzip:   2.48 kB
+#13 19.02 dist/assets/agents-BD5F8Kcw.js               7.17 kB │ gzip:   2.50 kB
+#13 19.02 dist/assets/overview-Dh_KRXsR.js             7.64 kB │ gzip:   2.45 kB
+#13 19.02 dist/assets/enrollments-B2SoHFbq.js          8.43 kB │ gzip:   2.85 kB
+#13 19.02 dist/assets/operators-VwhJ9Zb_.js           10.23 kB │ gzip:   3.46 kB
+#13 19.02 dist/assets/nodes-4JpWiTbE.js               10.52 kB │ gzip:   3.06 kB
+#13 19.02 dist/assets/operations-SbUmKqri.js          11.24 kB │ gzip:   3.70 kB
+#13 19.02 dist/assets/workloads-CJwhNX0S.js           12.88 kB │ gzip:   3.97 kB
+#13 19.02 dist/assets/detail-CXYAJlKI.js              13.20 kB │ gzip:   3.84 kB
+#13 19.02 dist/assets/exchange-policy-B-6d60z0.js     17.38 kB │ gzip:   5.35 kB
+#13 19.02 dist/assets/index-BBTvxewk.js              481.13 kB │ gzip: 151.43 kB
+#13 19.02
+#13 19.02 (!) Some chunks are larger than 400 kB after minification. Consider:
+#13 19.02 - Using dynamic import() to code-split the application
+#13 19.02 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#13 19.02 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#13 19.02 ✓ built in 1.30s
+#13 19.08 assets/index-BBTvxewk.js  147.9 kB gzip
+#13 19.09 assets/index-BIedOzTD.css  10.3 kB gzip
+#13 19.09 initial route: 158.2 kB gzip (budget 250 kB)
+#13 19.09
+#13 19.09 > @blindpass/contract-tests@0.1.0 build
+#13 19.09 > tsc -p tsconfig.json --noEmit
+#13 19.09
+#13 20.09
+#13 20.09 > @blindpass/dashboard@0.1.0 build
+#13 20.09 > tsc --noEmit && vite build
+#13 20.09
+#13 23.39 vite v7.3.6 building client environment for production...
+#13 23.59 (node:224) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+#13 23.59 (Use `node --trace-deprecation ...` to show where the warning was created)
+#13 23.59 transforming...
+#13 23.62 Browserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+#13 23.62   npx update-browserslist-db@latest
+#13 23.62   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+#13 25.26 ✓ 1851 modules transformed.
+#13 25.44 rendering chunks...
+#13 25.45 computing gzip size...
+#13 25.46 dist/index.html                   1.18 kB │ gzip:   0.58 kB
+#13 25.46 dist/assets/index-CLLHCuqa.css   69.42 kB │ gzip:  10.26 kB
+#13 25.46 dist/assets/index-BVJRL2Wy.js   538.05 kB │ gzip: 152.51 kB
+#13 25.46
+#13 25.46 (!) Some chunks are larger than 500 kB after minification. Consider:
+#13 25.46 - Using dynamic import() to code-split the application
+#13 25.46 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#13 25.46 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#13 25.47 ✓ built in 2.07s
+#13 25.52
+#13 25.52 > @blindpass/gateway@0.1.0 build
+#13 25.52 > tsc -p tsconfig.json
+#13 25.52
+#13 26.19
+#13 26.19 > @blindpass/i18n@0.1.0 build
+#13 26.19 > tsc
+#13 26.19
+#13 26.91
+#13 26.91 > @blindpass/mcp-server@0.1.0 build
+#13 26.91 > node --check src/index.mjs
+#13 26.91
+#13 26.93
+#13 26.93 > @blindpass/openclaw-plugin@0.1.0 build
+#13 26.93 > bash ../../scripts/build_bundle.sh
+#13 26.93
+#13 26.94 [blindpass] building workspace dependencies for bundle inputs...
+#13 27.03
+#13 27.03 > @blindpass/gateway@0.1.0 build
+#13 27.03 > tsc -p tsconfig.json
+#13 27.03
+#13 27.82
+#13 27.82 > @blindpass/agent-skill@0.1.0 build
+#13 27.82 > tsc -p tsconfig.json
+#13 27.82
+#13 29.47 [blindpass] bundling plugin entrypoints with esbuild...
+#13 29.73
+#13 29.73   packages/openclaw-plugin/dist/blindpass.mjs  505.6kb
+#13 29.73
+#13 29.73 ⚡ Done in 81ms
+#13 30.04
+#13 30.04   packages/openclaw-plugin/dist/mcp-server.mjs  1.4mb ⚠️
+#13 30.04
+#13 30.04 ⚡ Done in 128ms
+#13 30.17 [blindpass] bundle staged in /source/packages/openclaw-plugin/dist
+#13 30.17
+#13 30.17 > @blindpass/sps-server@0.1.0 build
+#13 30.17 > tsc -p tsconfig.json && mkdir -p dist/db && cp -r src/db/migrations dist/db/
+#13 30.17
+#13 DONE 32.4s
+
+#14 [binaries  6/10] COPY --from=ui /source/packages/console/dist /source/packages/console/dist
+#14 DONE 0.1s
+
+#15 [binaries  7/10] COPY --from=ui /source/packages/browser-ui/dist-embedded /source/packages/browser-ui/dist-embedded
+#15 DONE 0.1s
+
+#16 [binaries  8/10] RUN cargo build --release --locked -p blindpass-controller -p blindpass-cli -p blindpass-node     -p blindpass-broker --bin blindpass-controller --bin blindpass --bin blindpass-node     --bin blindpass-broker --bin blindpass-provision --bin blindpass-credential-loader --bin blindpass-consumer     --bin blindpass-backup-probe --bin blindpass-workload-client
+#16 0.216 info: syncing channel updates for 1.98.1-x86_64-unknown-linux-gnu
+#16 0.812 info: latest update on 2026-09-03 for version 1.98.1 (48a229cea 2026-09-01)
+#16 0.822 info: downloading 2 components
+#16 1.906     Updating crates.io index
+#16 3.266  Downloading crates ...
+#16 3.577   Downloaded block-buffer v0.10.4
+#16 3.587   Downloaded clap_lex v1.1.1
+#16 3.589   Downloaded colorchoice v1.0.5
+#16 3.590   Downloaded crc v3.4.0
+#16 3.591   Downloaded generic-array v0.14.7
+#16 3.592   Downloaded cpufeatures v0.2.17
+#16 3.593   Downloaded cfg-if v1.0.5
+#16 3.594   Downloaded matchers v0.2.0
+#16 3.595   Downloaded itoa v1.0.18
+#16 3.596   Downloaded whoami v1.6.1
+#16 3.598   Downloaded crypto-common v0.1.7
+#16 3.603   Downloaded futures-sink v0.3.34
+#16 3.606   Downloaded futures-core v0.3.34
+#16 3.608   Downloaded http-body v1.1.0
+#16 3.608   Downloaded idna_adapter v1.2.2
+#16 3.619   Downloaded errno v0.3.14
+#16 3.620   Downloaded hex v0.4.3
+#16 3.622   Downloaded form_urlencoded v1.2.2
+#16 3.622   Downloaded futures-task v0.3.34
+#16 3.623   Downloaded home v0.5.12
+#16 3.624   Downloaded heck v0.5.0
+#16 3.625   Downloaded lazy_static v1.5.0
+#16 3.627   Downloaded aho-corasick v1.1.5
+#16 3.631   Downloaded atomic-waker v1.1.2
+#16 3.632   Downloaded equivalent v1.0.2
+#16 3.650   Downloaded anstyle-query v1.1.5
+#16 3.652   Downloaded md-5 v0.10.6
+#16 3.663   Downloaded futures-io v0.3.34
+#16 3.664   Downloaded is_terminal_polyfill v1.70.2
+#16 3.666   Downloaded mime v0.3.17
+#16 3.667   Downloaded atoi v2.0.0
+#16 3.677   Downloaded anstyle-parse v1.0.0
+#16 3.678   Downloaded argon2 v0.5.3
+#16 3.680   Downloaded axum-core v0.5.6
+#16 3.683   Downloaded base64ct v1.8.3
+#16 3.685   Downloaded byteorder v1.5.0
+#16 3.686   Downloaded crc-catalog v2.5.0
+#16 3.687   Downloaded anstream v1.0.0
+#16 3.689   Downloaded anstyle v1.0.14
+#16 3.690   Downloaded crossbeam-queue v0.3.14
+#16 3.692   Downloaded displaydoc v0.2.7
+#16 3.694   Downloaded dotenvy v0.15.7
+#16 3.696   Downloaded nu-ansi-term v0.50.3
+#16 3.697   Downloaded deranged v0.5.8
+#16 3.699   Downloaded find-msvc-tools v0.1.13
+#16 3.700   Downloaded foldhash v0.1.5
+#16 3.701   Downloaded futures-executor v0.3.34
+#16 3.702   Downloaded hashlink v0.10.0
+#16 3.703   Downloaded httpdate v1.0.3
+#16 3.723   Downloaded autocfg v1.5.1
+#16 3.730   Downloaded either v1.18.0
+#16 3.733   Downloaded http-body-util v0.1.5
+#16 3.734   Downloaded clap_derive v4.6.7
+#16 3.736   Downloaded const-oid v0.9.6
+#16 3.738   Downloaded digest v0.10.7
+#16 3.739   Downloaded utf8parse v0.2.2
+#16 3.739   Downloaded version_check v0.9.5
+#16 3.740   Downloaded axum-macros v0.5.1
+#16 3.748   Downloaded httparse v1.10.1
+#16 3.750   Downloaded litemap v0.8.3
+#16 3.752   Downloaded lock_api v0.4.14
+#16 3.753   Downloaded matchit v0.8.4
+#16 3.754   Downloaded tracing-log v0.2.0
+#16 3.755   Downloaded untrusted v0.9.0
+#16 3.756   Downloaded webpki-roots v0.26.11
+#16 3.757   Downloaded crossbeam-utils v0.8.23
+#16 3.760   Downloaded event-listener v5.4.2
+#16 3.764   Downloaded hmac v0.12.1
+#16 3.773   Downloaded blake2 v0.10.6
+#16 3.775   Downloaded futures-channel v0.3.34
+#16 3.777   Downloaded allocator-api2 v0.2.21
+#16 3.779   Downloaded bitflags v2.13.2
+#16 3.792   Downloaded jsonwebtoken v9.3.1
+#16 3.799   Downloaded icu_provider v2.3.1
+#16 3.802   Downloaded utf8_iter v1.0.4
+#16 3.803   Downloaded log v0.4.34
+#16 3.805   Downloaded tracing-serde v0.2.0
+#16 3.814   Downloaded flume v0.11.1
+#16 3.818   Downloaded bytes v1.12.1
+#16 3.821   Downloaded getrandom v0.2.17
+#16 3.825   Downloaded getrandom v0.4.3
+#16 3.827   Downloaded unicode-bidi v0.3.18
+#16 3.829   Downloaded unicode-properties v0.1.4
+#16 3.832   Downloaded futures-intrusive v0.5.0
+#16 3.836   Downloaded icu_locale_core v2.3.0
+#16 3.841   Downloaded unicode-ident v1.0.26
+#16 3.843   Downloaded base64 v0.22.1
+#16 3.846   Downloaded cc v1.4.7
+#16 3.849   Downloaded der v0.7.10
+#16 3.853   Downloaded hyper-util v0.1.20
+#16 3.858   Downloaded uuid v1.26.1
+#16 3.860   Downloaded clap v4.6.7
+#16 3.868   Downloaded mio v1.2.3
+#16 3.873   Downloaded http v1.5.0
+#16 3.876   Downloaded icu_collections v2.3.0
+#16 3.881   Downloaded icu_normalizer_data v2.3.0
+#16 3.882   Downloaded icu_properties v2.3.0
+#16 3.885   Downloaded memchr v2.8.3
+#16 3.889   Downloaded indexmap v2.14.2
+#16 3.894   Downloaded url v2.5.8
+#16 3.896   Downloaded hashbrown v0.15.5
+#16 3.902   Downloaded idna v1.1.0
+#16 3.905   Downloaded unicode-normalization v0.1.25
+#16 3.909   Downloaded hashbrown v0.17.1
+#16 3.913   Downloaded typenum v1.20.1
+#16 3.916   Downloaded axum v0.8.9
+#16 3.923   Downloaded clap_builder v4.6.7
+#16 3.928   Downloaded hkdf v0.12.4
+#16 3.930   Downloaded libm v0.2.16
+#16 3.938   Downloaded icu_properties_data v2.3.0
+#16 3.945   Downloaded futures-util v0.3.34
+#16 3.956   Downloaded hyper v1.11.1
+#16 3.961   Downloaded vcpkg v0.2.15
+#16 4.003   Downloaded icu_normalizer v2.3.0
+#16 4.013   Downloaded libc v0.2.189
+#16 4.118   Downloaded tower-layer v0.3.3
+#16 4.120   Downloaded yoke-derive v0.8.3
+#16 4.121   Downloaded libsqlite3-sys v0.30.1
+#16 4.251   Downloaded zerofrom v0.1.8
+#16 4.276   Downloaded sqlx-macros v0.8.6
+#16 4.277   Downloaded sync_wrapper v1.0.2
+#16 4.278   Downloaded time-core v0.1.9
+#16 4.393   Downloaded sha1 v0.10.7
+#16 4.438   Downloaded zerofrom-derive v0.1.8
+#16 4.583   Downloaded thread_local v1.1.10
+#16 4.593   Downloaded parking v2.2.1
+#16 4.609   Downloaded percent-encoding v2.3.2
+#16 4.662   Downloaded subtle v2.6.1
+#16 4.732   Downloaded strsim v0.11.1
+#16 4.777   Downloaded tower-service v0.3.3
+#16 4.786   Downloaded tokio-macros v2.7.2
+#16 4.869   Downloaded scopeguard v1.2.0
+#16 4.960   Downloaded num-iter v0.1.46
+#16 4.968   Downloaded stable_deref_trait v1.2.1
+#16 4.981   Downloaded num-conv v0.2.2
+#16 5.060   Downloaded serde_urlencoded v0.7.1
+#16 5.069   Downloaded num-bigint v0.4.8
+#16 5.078   Downloaded writeable v0.6.4
+#16 5.084   Downloaded simple_asn1 v0.6.4
+#16 5.114   Downloaded pin-project-lite v0.2.17
+#16 5.172   Downloaded shlex v2.0.1
+#16 5.175   Downloaded signature v2.2.0
+#16 5.180   Downloaded spki v0.7.3
+#16 5.182   Downloaded tokio-rustls v0.26.6
+#16 5.221   Downloaded sha2 v0.10.9
+#16 5.241   Downloaded zmij v1.0.23
+#16 5.261   Downloaded potential_utf v0.1.6
+#16 5.304   Downloaded smallvec v1.16.1
+#16 5.327   Downloaded thiserror v2.0.21
+#16 5.392   Downloaded password-hash v0.5.0
+#16 5.395   Downloaded powerfmt v0.2.0
+#16 5.413   Downloaded stringprep v0.1.5
+#16 5.415   Downloaded synstructure v0.14.0
+#16 5.426   Downloaded rand_chacha v0.3.1
+#16 5.427   Downloaded thiserror-impl v2.0.21
+#16 5.433   Downloaded pem-rfc7468 v0.7.0
+#16 5.434   Downloaded pkcs8 v0.10.2
+#16 5.440   Downloaded zeroize v1.9.0
+#16 5.469   Downloaded slab v0.4.12
+#16 5.475   Downloaded pem v3.0.6
+#16 5.486   Downloaded rand_core v0.6.4
+#16 5.561   Downloaded num-integer v0.1.47
+#16 5.590   Downloaded ppv-lite86 v0.2.21
+#16 5.592   Downloaded serde_path_to_error v0.1.20
+#16 5.593   Downloaded signal-hook-registry v1.4.8
+#16 5.594   Downloaded yoke v0.8.3
+#16 5.601   Downloaded quote v1.0.47
+#16 5.603   Downloaded zerovec-derive v0.11.6
+#16 5.657   Downloaded pkg-config v0.3.34
+#16 5.659   Downloaded tinystr v0.8.4
+#16 5.708   Downloaded sqlx-macros-core v0.8.6
+#16 5.715   Downloaded parking_lot v0.12.5
+#16 5.760   Downloaded parking_lot_core v0.9.12
+#16 5.763   Downloaded time-macros v0.2.32
+#16 5.849   Downloaded tracing-attributes v0.1.31
+#16 5.905   Downloaded rustls-pki-types v1.15.1
+#16 5.938   Downloaded once_cell v1.21.4
+#16 5.940   Downloaded pkcs1 v0.7.5
+#16 6.004   Downloaded num-traits v0.2.19
+#16 6.028   Downloaded tokio-stream v0.1.19
+#16 6.093   Downloaded socket2 v0.6.5
+#16 6.098   Downloaded serde_derive v1.0.229
+#16 6.121   Downloaded ryu v1.0.23
+#16 6.216   Downloaded spin v0.9.9
+#16 6.256   Downloaded tracing-core v0.1.36
+#16 6.266   Downloaded tinyvec v1.13.3
+#16 6.304   Downloaded serde_core v1.0.229
+#16 6.373   Downloaded proc-macro2 v1.0.107
+#16 6.390   Downloaded sqlx-mysql v0.8.6
+#16 6.468   Downloaded serde v1.0.229
+#16 6.537   Downloaded rsa v0.9.10
+#16 6.548   Downloaded sharded-slab v0.1.7
+#16 6.559   Downloaded sqlx-sqlite v0.8.6
+#16 6.595   Downloaded zerotrie v0.2.5
+#16 6.620   Downloaded rustls-webpki v0.103.15
+#16 6.675   Downloaded tower v0.5.3
+#16 6.760   Downloaded rand v0.8.8
+#16 6.822   Downloaded num-bigint-dig v0.8.6
+#16 6.836   Downloaded sqlx-core v0.8.6
+#16 6.925   Downloaded sqlx-postgres v0.8.6
+#16 6.951   Downloaded zerovec v0.11.8
+#16 7.026   Downloaded serde_json v1.0.151
+#16 7.152   Downloaded tower-http v0.6.11
+#16 7.174   Downloaded sqlx v0.8.6
+#16 7.380   Downloaded tracing-subscriber v0.3.23
+#16 7.407   Downloaded webpki-roots v1.0.9
+#16 7.577   Downloaded zerocopy v0.8.57
+#16 7.593   Downloaded time v0.3.55
+#16 7.610   Downloaded syn v3.0.6
+#16 7.701   Downloaded syn v2.0.119
+#16 7.814   Downloaded regex-syntax v0.8.11
+#16 7.819   Downloaded rustls v0.23.45
+#16 8.023   Downloaded tracing v0.1.44
+#16 8.089   Downloaded regex-automata v0.4.18
+#16 8.343   Downloaded tokio v1.53.1
+#16 8.524   Downloaded ring v0.17.14
+#16 8.627    Compiling proc-macro2 v1.0.107
+#16 8.627    Compiling unicode-ident v1.0.26
+#16 8.627    Compiling quote v1.0.47
+#16 8.627    Compiling libc v0.2.189
+#16 8.627    Compiling serde v1.0.229
+#16 8.627    Compiling version_check v0.9.5
+#16 8.627    Compiling shlex v2.0.1
+#16 8.630    Compiling find-msvc-tools v0.1.13
+#16 8.632    Compiling serde_core v1.0.229
+#16 8.638    Compiling cfg-if v1.0.5
+#16 8.641    Compiling icu_properties_data v2.3.0
+#16 8.643    Compiling icu_normalizer_data v2.3.0
+#16 8.643    Compiling pin-project-lite v0.2.17
+#16 8.643    Compiling zmij v1.0.23
+#16 8.647    Compiling autocfg v1.5.1
+#16 8.682    Compiling stable_deref_trait v1.2.1
+#16 8.710    Compiling itoa v1.0.18
+#16 8.728    Compiling serde_json v1.0.151
+#16 8.751    Compiling parking_lot_core v0.9.12
+#16 8.756    Compiling cc v1.4.7
+#16 8.774    Compiling futures-core v0.3.34
+#16 8.809    Compiling bytes v1.12.1
+#16 8.829    Compiling once_cell v1.21.4
+#16 8.838    Compiling crossbeam-utils v0.8.23
+#16 8.879    Compiling zerocopy v0.8.57
+#16 8.888    Compiling thiserror v2.0.21
+#16 8.901    Compiling generic-array v0.14.7
+#16 8.920    Compiling typenum v1.20.1
+#16 8.924    Compiling rustls v0.23.45
+#16 9.027    Compiling subtle v2.6.1
+#16 9.032    Compiling litemap v0.8.3
+#16 9.087    Compiling writeable v0.6.4
+#16 9.098    Compiling tracing-core v0.1.36
+#16 9.111    Compiling utf8_iter v1.0.4
+#16 9.199    Compiling futures-sink v0.3.34
+#16 9.226    Compiling memchr v2.8.3
+#16 9.309    Compiling scopeguard v1.2.0
+#16 9.343    Compiling log v0.4.34
+#16 9.372    Compiling zeroize v1.9.0
+#16 9.417    Compiling lock_api v0.4.14
+#16 9.509    Compiling rustls-pki-types v1.15.1
+#16 9.655    Compiling num-traits v0.2.19
+#16 9.696    Compiling syn v3.0.6
+#16 9.718    Compiling syn v2.0.119
+#16 9.770    Compiling blindpass-core v0.1.0 (/source/crates/blindpass-core)
+#16 9.789    Compiling vcpkg v0.2.15
+#16 10.01    Compiling pkg-config v0.3.34
+#16 10.20    Compiling getrandom v0.2.17
+#16 10.23    Compiling errno v0.3.14
+#16 10.39    Compiling signal-hook-registry v1.4.8
+#16 10.40    Compiling mio v1.2.3
+#16 10.40    Compiling socket2 v0.6.5
+#16 10.51    Compiling crypto-common v0.1.7
+#16 10.57    Compiling ring v0.17.14
+#16 10.59    Compiling block-buffer v0.10.4
+#16 10.65    Compiling libsqlite3-sys v0.30.1
+#16 10.71    Compiling digest v0.10.7
+#16 10.93    Compiling equivalent v1.0.2
+#16 10.95    Compiling percent-encoding v2.3.2
+#16 10.97    Compiling untrusted v0.9.0
+#16 11.12    Compiling form_urlencoded v1.2.2
+#16 11.35    Compiling allocator-api2 v0.2.21
+#16 11.39    Compiling foldhash v0.1.5
+#16 11.50    Compiling futures-io v0.3.34
+#16 11.61    Compiling slab v0.4.12
+#16 11.62    Compiling futures-task v0.3.34
+#16 11.71    Compiling hashbrown v0.15.5
+#16 11.75    Compiling futures-util v0.3.34
+#16 12.06    Compiling tokio v1.53.1
+#16 12.07    Compiling webpki-roots v1.0.9
+#16 12.07    Compiling http v1.5.0
+#16 12.30    Compiling parking v2.2.1
+#16 12.32    Compiling cpufeatures v0.2.17
+#16 12.41    Compiling hashbrown v0.17.1
+#16 12.42    Compiling crc-catalog v2.5.0
+#16 12.43    Compiling event-listener v5.4.2
+#16 12.45    Compiling hashlink v0.10.0
+#16 12.52    Compiling crc v3.4.0
+#16 12.70    Compiling sha2 v0.10.9
+#16 12.78    Compiling crossbeam-queue v0.3.14
+#16 12.79    Compiling webpki-roots v0.26.11
+#16 12.92    Compiling rand_core v0.6.4
+#16 13.10    Compiling indexmap v2.14.2
+#16 13.14    Compiling futures-channel v0.3.34
+#16 13.38    Compiling http-body v1.1.0
+#16 13.46    Compiling base64 v0.22.1
+#16 13.81    Compiling tinyvec v1.13.3
+#16 14.06    Compiling heck v0.5.0
+#16 14.25    Compiling synstructure v0.14.0
+#16 14.30    Compiling atoi v2.0.0
+#16 14.34    Compiling unicode-normalization v0.1.25
+#16 14.98    Compiling hmac v0.12.1
+#16 15.18    Compiling spin v0.9.9
+#16 15.38    Compiling tower-service v0.3.3
+#16 15.41    Compiling ryu v1.0.23
+#16 15.44    Compiling unicode-properties v0.1.4
+#16 15.47    Compiling httparse v1.10.1
+#16 15.52    Compiling unicode-bidi v0.3.18
+#16 15.67    Compiling flume v0.11.1
+#16 15.85    Compiling rustls-webpki v0.103.15
+#16 15.93    Compiling tracing-attributes v0.1.31
+#16 16.05    Compiling stringprep v0.1.5
+#16 16.16    Compiling hkdf v0.12.4
+#16 16.18    Compiling futures-executor v0.3.34
+#16 16.31    Compiling ppv-lite86 v0.2.21
+#16 16.38    Compiling serde_derive v1.0.229
+#16 16.41    Compiling zerofrom-derive v0.1.8
+#16 16.43    Compiling yoke-derive v0.8.3
+#16 16.45    Compiling zerovec-derive v0.11.6
+#16 16.61    Compiling displaydoc v0.2.7
+#16 16.74    Compiling thiserror-impl v2.0.21
+#16 16.77    Compiling tokio-macros v2.7.2
+#16 17.21    Compiling tokio-stream v0.1.19
+#16 17.50    Compiling rand_chacha v0.3.1
+#16 17.67    Compiling tracing v0.1.44
+#16 17.81    Compiling rand v0.8.8
+#16 17.82    Compiling blindpass-broker v0.1.0 (/source/crates/blindpass-broker)
+#16 18.03    Compiling md-5 v0.10.6
+#16 18.04    Compiling zerofrom v0.1.8
+#16 18.15    Compiling dotenvy v0.15.7
+#16 18.18    Compiling yoke v0.8.3
+#16 18.22    Compiling bitflags v2.13.2
+#16 18.28    Compiling time-core v0.1.9
+#16 18.35    Compiling zerovec v0.11.8
+#16 18.37    Compiling zerotrie v0.2.5
+#16 18.55    Compiling hex v0.4.3
+#16 18.57    Compiling byteorder v1.5.0
+#16 18.66    Compiling home v0.5.12
+#16 18.67    Compiling num-conv v0.2.2
+#16 18.78    Compiling getrandom v0.4.3
+#16 18.82    Compiling tower-layer v0.3.3
+#16 18.85    Compiling whoami v1.6.1
+#16 18.86    Compiling time-macros v0.2.32
+#16 18.97    Compiling http-body-util v0.1.5
+#16 19.01    Compiling tinystr v0.8.4
+#16 19.06    Compiling potential_utf v0.1.6
+#16 19.07    Compiling num-integer v0.1.47
+#16 19.16    Compiling icu_collections v2.3.0
+#16 19.21    Compiling icu_locale_core v2.3.0
+#16 19.69    Compiling powerfmt v0.2.0
+#16 19.79    Compiling sync_wrapper v1.0.2
+#16 19.85    Compiling utf8parse v0.2.2
+#16 19.87    Compiling deranged v0.5.8
+#16 19.95    Compiling atomic-waker v1.1.2
+#16 19.98    Compiling httpdate v1.0.3
+#16 20.05    Compiling regex-syntax v0.8.11
+#16 20.46    Compiling icu_provider v2.3.1
+#16 20.72    Compiling anstyle-parse v1.0.0
+#16 20.77    Compiling icu_properties v2.3.0
+#16 21.08    Compiling smallvec v1.16.1
+#16 21.29    Compiling either v1.18.0
+#16 21.33    Compiling icu_normalizer v2.3.0
+#16 21.61    Compiling parking_lot v0.12.5
+#16 21.66    Compiling serde_urlencoded v0.7.1
+#16 21.95    Compiling futures-intrusive v0.5.0
+#16 22.28    Compiling idna_adapter v1.2.2
+#16 22.35    Compiling regex-automata v0.4.18
+#16 22.36    Compiling idna v1.1.0
+#16 22.39    Compiling time v0.3.55
+#16 23.08    Compiling url v2.5.8
+#16 23.25    Compiling num-bigint v0.4.8
+#16 23.74    Compiling sqlx-core v0.8.6
+#16 24.13    Compiling hyper v1.11.1
+#16 25.85    Compiling anstyle v1.0.14
+#16 26.17    Compiling mime v0.3.17
+#16 26.47    Compiling is_terminal_polyfill v1.70.2
+#16 26.53    Compiling anstyle-query v1.1.5
+#16 26.60    Compiling base64ct v1.8.3
+#16 26.98    Compiling sqlx-sqlite v0.8.6
+#16 27.03    Compiling sqlx-postgres v0.8.6
+#16 27.16    Compiling lazy_static v1.5.0
+#16 27.22    Compiling colorchoice v1.0.5
+#16 27.36    Compiling anstream v1.0.0
+#16 27.40    Compiling sharded-slab v0.1.7
+#16 27.68    Compiling password-hash v0.5.0
+#16 27.84    Compiling axum-core v0.5.6
+#16 27.90    Compiling simple_asn1 v0.6.4
+#16 28.01    Compiling hyper-util v0.1.20
+#16 28.24    Compiling matchers v0.2.0
+#16 28.36    Compiling uuid v1.26.1
+#16 28.50    Compiling tower v0.5.3
+#16 28.63    Compiling tracing-serde v0.2.0
+#16 28.80    Compiling axum-macros v0.5.1
+#16 28.97    Compiling pem v3.0.6
+#16 29.00    Compiling serde_path_to_error v0.1.20
+#16 29.02    Compiling blake2 v0.10.6
+#16 29.09    Compiling tracing-log v0.2.0
+#16 29.35    Compiling thread_local v1.1.10
+#16 29.48    Compiling clap_lex v1.1.1
+#16 29.62    Compiling strsim v0.11.1
+#16 29.67    Compiling matchit v0.8.4
+#16 29.67    Compiling blindpass-controller v0.1.0 (/source/crates/blindpass-controller)
+#16 29.74    Compiling nu-ansi-term v0.50.3
+#16 29.88    Compiling clap_builder v4.6.7
+#16 29.91    Compiling argon2 v0.5.3
+#16 29.94    Compiling jsonwebtoken v9.3.1
+#16 30.43    Compiling axum v0.8.9
+#16 30.48    Compiling tokio-rustls v0.26.6
+#16 30.73    Compiling tracing-subscriber v0.3.23
+#16 30.82    Compiling tower-http v0.6.11
+#16 30.99    Compiling clap_derive v4.6.7
+#16 31.48    Compiling blindpass-node v0.1.0 (/source/crates/blindpass-node)
+#16 32.19    Compiling sqlx-macros-core v0.8.6
+#16 33.32    Compiling clap v4.6.7
+#16 35.22    Compiling sqlx-macros v0.8.6
+#16 40.19    Compiling blindpass-cli v0.1.0 (/source/crates/blindpass-cli)
+#16 86.26    Compiling sqlx v0.8.6
+#16 164.2     Finished `release` profile [optimized] target(s) in 2m 42s
+#16 DONE 195.8s
+
+#17 [binaries  9/10] RUN target/release/blindpass-controller --build-info && target/release/blindpass --version     && target/release/blindpass-node --version && target/release/blindpass-broker --version
+#17 10.38 {"console_embedded":true,"input_embedded":true,"protocol_version":"blindpass-broker/0.1","schema_version":16,"version":"0.1.0"}
+#17 10.38 blindpass 0.1.0
+#17 10.38 blindpass-node 0.1.0
+#17 10.39 blindpass-broker 0.1.0
+#17 DONE 17.4s
+
+#18 [binaries 10/10] RUN mkdir /out && cp target/release/blindpass-controller target/release/blindpass     target/release/blindpass-node target/release/blindpass-broker target/release/blindpass-provision     target/release/blindpass-credential-loader target/release/blindpass-consumer     target/release/blindpass-backup-probe target/release/blindpass-workload-client /out/
+#18 DONE 5.6s
+
+#19 [export 1/1] COPY --from=binaries /out/ /
+#19 DONE 0.1s
+
+#20 exporting to client directory
+#20 copying files 31.53MB 0.1s done
+#20 DONE 0.1s

@@ -7,9 +7,11 @@ pub mod app;
 pub mod config;
 pub mod embedded_ui;
 pub mod observability;
+pub mod proxy;
 pub(crate) mod routes;
 pub mod seed;
 pub mod store;
+pub mod tls;
 
 /// Abruptly terminate at a persistence boundary in the dedicated P02 crash
 /// test build. The feature is absent from normal controller builds.

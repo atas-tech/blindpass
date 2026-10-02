@@ -6,6 +6,7 @@ This is a loopback artifact gate, not a systemd/Compose deployment rehearsal.
 import argparse
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 import shutil
@@ -69,6 +70,14 @@ with tempfile.TemporaryDirectory(prefix='p06-artifact-') as temporary:
         assert file.stat().st_size == record['size']
         assert f'{file.stat().st_mode & 0o777:04o}' == record['mode']
     assert manifest['controller']['console_embedded'] and manifest['controller']['input_embedded']
+    # Preserve source-relative guide/config links inside the extracted bundle.
+    for name in ('release-layout.md', 'controller-ingress.md'):
+        guide = package / 'docs/deploy' / name
+        for link in re.findall(r'\]\(([^)]+)\)', guide.read_text()):
+            if '://' in link or link.startswith('#'):
+                continue
+            target = (guide.parent / link.split('#')[0]).resolve()
+            assert target.is_relative_to(package.resolve()) and target.exists(), 'broken archive guide link'
     assert manifest['architecture'] == options.arch
     data = root / 'data'; data.mkdir(mode=0o700)
     keys = root / 'keys'

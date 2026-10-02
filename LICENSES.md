@@ -49,11 +49,15 @@ The user approved this controller/CLI dependency set on 2026-09-24 after reviewi
 | `serde_json` | 1.0.151 | MIT OR Apache-2.0 |
 | `sqlx` | 0.8.6 | MIT OR Apache-2.0 |
 | `tokio` | 1.53.1 | MIT |
+| `tokio-rustls` | 0.26.6 | MIT OR Apache-2.0 |
 | `tower-http` | 0.6.11 | MIT |
 | `tracing` | 0.1.44 | MIT |
 | `tracing-subscriber` | 0.3.23 | MIT |
 
-This approval is for the P02 dependency proposal and its resolved Cargo graph. It does not change the license or dependency boundary of `blindpass-core`; that crate remains dependency-free.
+The scoped ring-only `tokio-rustls` addition was separately approved on
+2026-10-02 after [decision 0008](docs/product/decisions/0008-p06-controller-tls-dependency-review.md).
+It adds one locked package and reuses the existing rustls/ring stack. The earlier
+approval is for the P02 dependency proposal and its resolved Cargo graph. It does not change the license or dependency boundary of `blindpass-core`; that crate remains dependency-free.
 
 ## Boundary Expectations
 
