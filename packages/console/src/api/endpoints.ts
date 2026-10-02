@@ -30,6 +30,7 @@ import type {
   PolicyDocument,
   PolicyDocumentInput,
   PolicyValidation,
+  ProvisioningLink,
   Role,
   TemporaryPassword,
   UnifiedApprovalList,
@@ -164,5 +165,12 @@ export const grants = {
 export const operations = {
   list: (query: PageQuery & { status?: string } = {}) => api.get<OperationList>("/api/v3/operations", { query: { ...query } }),
   get: (id: string) => api.get<Operation>(`/api/v3/operations/${seg(id)}`),
-  cancel: (id: string) => api.delete<Operation | GrantRevocationResult>(`/api/v3/operations/${seg(id)}`)
+  cancel: (id: string) => api.delete<Operation | GrantRevocationResult>(`/api/v3/operations/${seg(id)}`),
+  /**
+   * Create, or idempotently re-read, the one Source link of a browser operation.
+   * The reply holds capabilities: callers hand `input_path` straight to
+   * window.open and keep nothing.
+   */
+  provisioningLink: (id: string, idempotencyKey: string) =>
+    api.post<ProvisioningLink>(`/api/v3/admin/operations/${seg(id)}/provisioning-link`, undefined, { idempotencyKey })
 };

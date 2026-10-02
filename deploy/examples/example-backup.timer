@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# Daily trigger for example-backup.service (P05.5 example, not verified with
+# real restic; see the service file).
+#
+# The broker holds credentials in memory only, for a bounded lifetime (default 1 h;
+# --credential-lifetime-seconds sets 60 s to 7 days). A daily activation therefore
+# finds a credential only if the operator provisioned it within that lifetime
+# before the run; otherwise the unit
+# fails closed at the credential load. Persistent=true additionally runs a missed
+# activation at the next boot, when the broker's memory is empty and the run fails
+# closed the same way. The timer never retries and no unattended-run behaviour is
+# claimed; it is a trigger for a pre-provisioned, operator-attended window.
+# Recovery: re-provision, then
+#   systemctl start example-backup.service
+[Unit]
+Description=Daily BlindPass example restic backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=30min
+Unit=example-backup.service
+
+[Install]
+WantedBy=timers.target

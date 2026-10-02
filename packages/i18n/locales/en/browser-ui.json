@@ -140,5 +140,91 @@
     "label": "BlindPass / Secret input",
     "detail": "One request. One encrypted handoff."
   },
-  "noscript": "This page needs JavaScript to encrypt your secret before sending it."
+  "noscript": "This page needs JavaScript to encrypt your secret before sending it.",
+  "fleet": {
+    "intro": {
+      "lead": "Provide the Source this approved operation needs. Your browser encrypts it for the broker on the target node before sending it.",
+      "step1Title": "Check the operation",
+      "step1Body": "Match the purpose, workload and destination with the operation you approved.",
+      "step2Title": "Enter the Source",
+      "step2Body": "The page encrypts it for the node's one-use key.",
+      "step3Title": "Send once",
+      "step3Body": "The encrypted Source is delivered to the node's broker once, before the offer ends.",
+      "boundary": "The node's broker can decrypt and use this Source, only for the destination shown. The controller never sees it."
+    },
+    "card": {
+      "label": "Source for an approved operation"
+    },
+    "form": {
+      "secretLabel": "Source value",
+      "footnote": "Encrypted in your browser for the node's broker. The controller stores ciphertext only."
+    },
+    "footer": {
+      "detail": "One approved operation. One encrypted handoff."
+    },
+    "purposeLabel": "Operation purpose",
+    "purposeHint": "Written by the workload that asked for it. BlindPass doesn't verify it.",
+    "workloadLabel": "Workload",
+    "unitLabel": "Destination service unit",
+    "credentialLabel": "Destination credential",
+    "expiryLabel": "Offer ends",
+    "destinationHint": "Verified against the controller's records for this operation. If the destination isn't the one you approved, close this page.",
+    "state": {
+      "loading": {
+        "title": "Checking this Source request",
+        "body": "Loading the operation details and verifying the node's encrypted-delivery offer.",
+        "note": "Entry stays disabled until the offer is verified."
+      },
+      "submitting": {
+        "title": "Encrypting & sending",
+        "body": "Encrypting the Source for the node's broker and sending the ciphertext.",
+        "note": "Keep this page open. Only the controller's answer confirms it was received."
+      },
+      "submitted": {
+        "title": "Your part is done.",
+        "body": "The controller received the encrypted Source for delivery to the node. You can close this tab.",
+        "bodyConfirmed": "The connection dropped, but a re-check shows the controller holds the receipt. You can close this tab.",
+        "note": "Received isn't delivered or in use. The node's broker still has to accept it before the offer ends."
+      },
+      "used": {
+        "title": "Already submitted.",
+        "body": "A Source was already received for this operation, which can't accept another.",
+        "bodyConflict": "A different encrypted value was already received for this operation, so this one wasn't stored.",
+        "note": "To change it, request a new operation. This doesn't confirm that the broker accepted it."
+      },
+      "expired": {
+        "title": "This Source request is no longer available.",
+        "body": "The offer or the operation ended. Nothing can be submitted through this link.",
+        "bodyWhileOpen": "The offer ended while this page was open. Nothing was sent, and the field was cleared.",
+        "bodyOnSubmit": "The controller no longer accepts a Source for this operation. Nothing was stored.",
+        "note": "Request a new operation, then open its Source link from the console."
+      },
+      "invalid": {
+        "title": "This link is unavailable.",
+        "body": "We couldn't open this Source request. The link may be incomplete or altered.",
+        "bodyOffer": "The node's offer didn't verify against the controller's records, so nothing will be encrypted or sent.",
+        "bodyOrigin": "This copy of the page isn't served by the controller, so it can't use the operator session a Source link needs.",
+        "bodySubmit": "The controller refused this link. Nothing was stored.",
+        "note": "Open the Source link again from the console. If it still fails, request a new operation."
+      },
+      "auth": {
+        "title": "Sign in as the named operator.",
+        "body": "This link works only for the operator who approved the request, signed in to the console.",
+        "note": "Sign in to the console as that operator, then check again. Don't enter anything until the details appear.",
+        "action": "Check again",
+        "link": "Open console sign-in"
+      },
+      "unknown": {
+        "title": "Submission not confirmed.",
+        "body": "The connection was interrupted before the controller answered. Your Source may already have been received.",
+        "note": "Don't send it again until the outcome is known. Check again, or ask the operator who approved the request.",
+        "bodyChecking": "The connection was interrupted before the controller answered. Checking whether it holds a receipt…",
+        "bodyPending": "No receipt was found when we checked, so it may not have arrived, or it may still arrive.",
+        "bodyUnavailable": "The re-check didn't get an answer either. Your Source may already have been received.",
+        "bodyGone": "This link is no longer available, so its status can't be checked. Your Source may or may not have been received.",
+        "noteGone": "Don't assume it failed. Check the operation in the console before requesting another.",
+        "action": "Check again"
+      }
+    }
+  }
 }

@@ -28,8 +28,12 @@ mod grants;
 mod node_channel;
 mod operation_approvals;
 mod operators;
+mod provisioning;
+mod provisioning_links;
 mod workload_authority;
+mod workload_cancellation;
 pub use audit::AuditDraft;
+pub(crate) use authorization::BrokerOperationEvent;
 pub use authorization::{
     FleetPolicyRecord, OperationApprovalDraft, OperationApprovalRecord, OperationCreateOutcome,
     OperationDecisionOutcome, OperationRecord, WorkloadRecord,
@@ -49,6 +53,12 @@ pub use node_channel::{
 };
 pub use operation_approvals::{OperationCancelOutcome, OperationDecision};
 pub use operators::{LocalOperator, LocalSession, SessionKind};
+pub use provisioning::SourceBindingRecord;
+pub use provisioning_links::{
+    ProvisioningLinkOutcome, ProvisioningLinkRecord, ProvisioningMetadata,
+    ProvisioningMetadataOutcome, ProvisioningPhase, ProvisioningReceipt, ProvisioningStatus,
+    ProvisioningSubmitOutcome,
+};
 pub use workload_authority::WORKLOAD_UNIT_CONFLICT;
 
 const SQLITE_WALL_NOW_MS: &str = "CAST((julianday('now') - 2440587.5) * 86400000 AS INTEGER)";
@@ -57,8 +67,11 @@ const SQLITE_NOW_MS: &str = "(CASE WHEN CAST((julianday('now') - 2440587.5) * 86
 const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT >= (SELECT last_observed_ms FROM controller_clock WHERE id = 1) THEN FLOOR(EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT ELSE NULL END)";
 /// Current schema version. Versions 5-12 add fleet authorization, node
 /// revocation reconciliation, channel state and staged key rotation; version
-/// 13 adds approval scoping, revocation outcomes and fleet retention state.
-pub const SCHEMA_VERSION: i64 = 13;
+/// 13 adds approval scoping, revocation outcomes and fleet retention state;
+/// 14 expires plaintext session identifiers before hashed-token issuance;
+/// 15 adds independent source destinations and public recipient offers;
+/// 16 adds scoped Source links and immutable ciphertext receipts.
+pub const SCHEMA_VERSION: i64 = 16;
 /// Tables that must exist for a database that reports the given version.
 /// A supported older version is migrated forward; a version whose tables
 /// are missing is damaged and fails closed instead of being recreated.
@@ -109,6 +122,78 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
     (11, &["node_revocation_queue"]),
     (12, &["node_key_rotations"]),
     (13, &["operation_approvals", "grants", "node_sessions"]),
+    (15, &["fleet_source_bindings", "fleet_provisioning_offers"]),
+    (
+        16,
+        &["fleet_provisioning_links", "fleet_provisioning_receipts"],
+    ),
+];
+/// Columns every provisioning table must carry. `CREATE TABLE IF NOT EXISTS`
+/// leaves an existing table untouched, so a pre-existing table of the wrong
+/// shape is damage that fails closed rather than something a migration repairs.
+const PROVISIONING_COLUMNS: &[(i64, &str, &[&str])] = &[
+    (
+        15,
+        "fleet_source_bindings",
+        &[
+            "tenant_id",
+            "node_id",
+            "resource_id",
+            "source_unit",
+            "credential",
+            "version",
+            "updated_at",
+            "updated_by",
+        ],
+    ),
+    (
+        15,
+        "fleet_provisioning_offers",
+        &[
+            "id",
+            "tenant_id",
+            "node_id",
+            "operation_id",
+            "grant_id",
+            "source_binding_version",
+            "offer_json",
+            "issued_at",
+            "expires_at",
+            "created_at",
+        ],
+    ),
+    (
+        16,
+        "fleet_provisioning_links",
+        &[
+            "id",
+            "tenant_id",
+            "node_id",
+            "operation_id",
+            "grant_id",
+            "offer_id",
+            "operator_id",
+            "idempotency_hash",
+            "expires_at",
+            "created_at",
+        ],
+    ),
+    (
+        16,
+        "fleet_provisioning_receipts",
+        &[
+            "link_id",
+            "tenant_id",
+            "node_id",
+            "grant_id",
+            "offer_id",
+            "operator_id",
+            "ciphertext_digest",
+            "delivery_digest",
+            "submitted_at",
+            "expires_at",
+        ],
+    ),
 ];
 /// The persisted clock high-water mark advances at most this often, so
 /// ordinary reads never take a write lock. The independent one-second clock
@@ -326,6 +411,14 @@ impl Store {
         let database = Database::connect(url).await?;
         database.validate_existing_schema_version().await?;
         database.migrate().await?;
+        // A table that already existed with the wrong columns survives the
+        // idempotent migration; the version marker is never advanced over it.
+        if !database
+            .provisioning_columns_present(SCHEMA_VERSION)
+            .await?
+        {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
 
         let candidate_tenant_id = new_uuid();
         match &database {
@@ -2362,7 +2455,50 @@ impl Database {
         if version >= 13 && !self.review_columns_present().await? {
             return Err(StoreError::UnsupportedSchemaVersion);
         }
+        // Whatever the marker says, an existing provisioning table of the wrong
+        // shape is damage: the idempotent migration would never repair it.
+        if !self.provisioning_columns_present(SCHEMA_VERSION).await? {
+            return Err(StoreError::UnsupportedSchemaVersion);
+        }
         Ok(())
+    }
+
+    /// Whether every provisioning table introduced at or before `version`
+    /// carries all of its expected columns. A table that does not exist is
+    /// skipped here: presence is `SCHEMA_TABLES`' concern, and migration
+    /// creates tables a database predates.
+    async fn provisioning_columns_present(&self, version: i64) -> Result<bool, StoreError> {
+        for (introduced_in, table, columns) in PROVISIONING_COLUMNS {
+            if *introduced_in > version || !self.table_exists(table).await? {
+                continue;
+            }
+            match self {
+                Self::Sqlite(pool) => {
+                    let present = sqlite_columns(pool, table).await?;
+                    if columns.iter().any(|column| !present.contains(*column)) {
+                        return Ok(false);
+                    }
+                }
+                Self::Postgres(pool) => {
+                    for column in *columns {
+                        let count: i64 = sqlx::query_scalar(
+                            "SELECT COUNT(*) FROM information_schema.columns
+                             WHERE table_schema = current_schema() AND table_name = $1
+                               AND column_name = $2",
+                        )
+                        .bind(table)
+                        .bind(column)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                        if count != 1 {
+                            return Ok(false);
+                        }
+                    }
+                }
+            }
+        }
+        Ok(true)
     }
 
     async fn review_columns_present(&self) -> Result<bool, StoreError> {
@@ -2741,6 +2877,22 @@ impl Database {
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!("migrations/sqlite/0014_session_tokens.sql"))
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/sqlite/0015_provisioning_offers.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/sqlite/0016_provisioning_links.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
                 Ok(())
             }
             Self::Postgres(pool) => {
@@ -2813,8 +2965,24 @@ impl Database {
                 sqlx::raw_sql(include_str!("migrations/postgres/0013_fleet_review.sql"))
                     .execute(pool)
                     .await
-                    .map(|_| ())
-                    .map_err(StoreError::Database)
+                    .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!("migrations/postgres/0014_session_tokens.sql"))
+                    .execute(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0015_provisioning_offers.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0016_provisioning_links.sql"
+                ))
+                .execute(pool)
+                .await
+                .map(|_| ())
+                .map_err(StoreError::Database)
             }
         }
     }

@@ -459,12 +459,27 @@ async fn node_poll(
     let deadline = Instant::now() + NODE_POLL_HOLD;
     let mut ack_seq = body.ack_seq;
     loop {
-        let documents = match store
-            .poll_node_inbox(&claims.node_id, &claims.sid, ack_seq)
-            .await
-        {
-            Ok(documents) => documents,
-            Err(_) => return unavailable(),
+        let need_delivery = if ack_seq.is_some() {
+            true
+        } else {
+            match store
+                .has_pending_node_inbox(&claims.node_id, &claims.sid)
+                .await
+            {
+                Ok(pending) => pending,
+                Err(_) => return unavailable(),
+            }
+        };
+        let documents = if need_delivery {
+            match store
+                .poll_node_inbox(&claims.node_id, &claims.sid, ack_seq)
+                .await
+            {
+                Ok(documents) => documents,
+                Err(_) => return unavailable(),
+            }
+        } else {
+            Vec::new()
         };
         ack_seq = None;
         if !documents.is_empty() || Instant::now() >= deadline {
@@ -609,28 +624,29 @@ async fn node_events(
     // applied, recorded and acknowledged; it and later events are neither
     // recorded nor acknowledged, so the broker retries them.
     for event in &body.events {
-        let outcome = match apply_node_event(store, &claims, &node, &public_key, event).await {
-            Err(failure @ (EventFailure::Rejected | EventFailure::Conflict)) => match store
-                .record_rejected_node_event(
-                    &claims.node_id,
-                    &event.idempotency_key,
-                    &event.kind,
-                    failure.code(),
-                )
-                .await
-            {
-                Ok(()) => {
-                    accepted_keys.push(event.idempotency_key.clone());
-                    discarded.push(json!({
-                        "idempotency_key": event.idempotency_key,
-                        "error": failure.code()
-                    }));
-                    continue;
-                }
-                Err(_) => Err(EventFailure::Unavailable),
-            },
-            outcome => outcome,
-        };
+        let outcome =
+            match apply_node_event(&state, store, &claims, &node, &public_key, event).await {
+                Err(failure @ (EventFailure::Rejected | EventFailure::Conflict)) => match store
+                    .record_rejected_node_event(
+                        &claims.node_id,
+                        &event.idempotency_key,
+                        &event.kind,
+                        failure.code(),
+                    )
+                    .await
+                {
+                    Ok(()) => {
+                        accepted_keys.push(event.idempotency_key.clone());
+                        discarded.push(json!({
+                            "idempotency_key": event.idempotency_key,
+                            "error": failure.code()
+                        }));
+                        continue;
+                    }
+                    Err(_) => Err(EventFailure::Unavailable),
+                },
+                outcome => outcome,
+            };
         match outcome {
             Ok(true) => {
                 accepted += 1;
@@ -757,9 +773,11 @@ impl EventFailure {
 
 /// Verify, apply and then record one node event. Returns `true` when newly
 /// recorded and `false` for an exact duplicate, which is not re-applied.
-/// Recording happens only after the event applied, so a recorded event is
-/// always an applied one and a failed event leaves no row behind.
+/// Legacy events are recorded after application. Versioned browser requests
+/// commit their receipt with request effects; grant issuance must finish before
+/// ACK, and exact replay resumes it after a transient failure.
 async fn apply_node_event(
+    state: &AppState,
     store: &Store,
     claims: &NodeSessionClaims,
     node: &NodeRecord,
@@ -784,6 +802,9 @@ async fn apply_node_event(
     blindpass_core::secret::wipe(&mut message);
     let (body_hash, exact_duplicate) = outcome?;
     if exact_duplicate {
+        if event.kind == "operation_request" && event.body.get("request_version").is_some() {
+            return apply_browser_intent(state, claims, event, body_json, &body_hash, true).await;
+        }
         return Ok(false);
     }
     // Events signed by a key that a pending rotation is replacing are retried
@@ -797,6 +818,45 @@ async fn apply_node_event(
     }
     if node.status == "revoked" && event.kind == "operation_request" {
         return Err(EventFailure::Rejected);
+    }
+    if event.kind == "operation_request" && event.body.get("request_version").is_some() {
+        return apply_browser_intent(state, claims, event, body_json, &body_hash, false).await;
+    }
+    if event.kind == "operation_cancel" {
+        return match store
+            .apply_browser_cancellation(
+                &claims.node_id,
+                &event.idempotency_key,
+                body_json,
+                &body_hash,
+            )
+            .await
+        {
+            Ok(NodeEventInsert::Inserted) => Ok(true),
+            Ok(NodeEventInsert::Duplicate) => Ok(false),
+            Ok(NodeEventInsert::Conflict) => Err(EventFailure::Conflict),
+            Err(StoreError::MissingState("fleet cancellation issuer")) => {
+                Err(EventFailure::Unavailable)
+            }
+            Err(error) => Err(EventFailure::from_applied(&error)),
+        };
+    }
+    if event.kind == "recipient_offer" {
+        return match store
+            .record_browser_recipient_offer(
+                &claims.node_id,
+                &event.idempotency_key,
+                body_json,
+                &body_hash,
+            )
+            .await
+        {
+            Ok(NodeEventInsert::Inserted) => Ok(true),
+            Ok(NodeEventInsert::Duplicate) => Ok(false),
+            Ok(NodeEventInsert::Conflict) => Err(EventFailure::Conflict),
+            Err(StoreError::MissingState("provisioning issuer")) => Err(EventFailure::Unavailable),
+            Err(error) => Err(EventFailure::from_applied(&error)),
+        };
     }
     let applied = match event.kind.as_str() {
         "operation_result" => {
@@ -838,6 +898,31 @@ async fn apply_node_event(
         Ok(NodeEventInsert::Conflict) => Err(EventFailure::Conflict),
         Err(error) => Err(EventFailure::from_store(&error)),
     }
+}
+
+async fn apply_browser_intent(
+    state: &AppState,
+    claims: &NodeSessionClaims,
+    event: &NodeEventInput,
+    body_json: &str,
+    body_hash: &str,
+    duplicate: bool,
+) -> Result<bool, EventFailure> {
+    use super::browser_intent::{IntentFailure, apply_verified_request};
+    apply_verified_request(
+        state,
+        &claims.node_id,
+        &event.idempotency_key,
+        body_json,
+        body_hash,
+        duplicate,
+    )
+    .await
+    .map_err(|failure| match failure {
+        IntentFailure::Rejected => EventFailure::Rejected,
+        IntentFailure::Conflict => EventFailure::Conflict,
+        IntentFailure::Unavailable => EventFailure::Unavailable,
+    })
 }
 
 /// Check the broker signature and prior recording. Returns the event hash

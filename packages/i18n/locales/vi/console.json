@@ -287,7 +287,8 @@
     },
     "mode": {
       "file": "Tệp",
-      "socket": "Socket"
+      "socket": "Socket",
+      "browser_session": "Phiên trình duyệt"
     },
     "purpose": {
       "label": "Mục đích do người yêu cầu cung cấp"
@@ -1081,6 +1082,31 @@
       "errors": {
         "notCancellable": "Thao tác này không còn hủy được.",
         "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem trạng thái thao tác."
+      }
+    },
+    "provision": {
+      "title": "Cung cấp Source",
+      "awaiting": "Đang chờ node công bố đề nghị chuyển giao mã hóa…",
+      "awaitingNote": "Trang này tự kiểm tra lại. Hiện bạn chưa cần làm gì.",
+      "readyBody": "Broker của node sẵn sàng nhận Source cho thao tác đã được phê duyệt này. Bạn nhập Source trên một trang riêng, được mã hóa ngay trong trình duyệt; bảng điều khiển này không bao giờ thấy giá trị.",
+      "issuedBody": "Trang Source đã được mở cho thao tác này. Hãy mở lại nếu bạn đã đóng hoặc nó không xuất hiện.",
+      "endsIn": "Đề nghị kết thúc sau",
+      "provide": "Cung cấp Source",
+      "reopen": "Mở lại trang Source",
+      "opensNote": "Mở trong thẻ mới. Trang chỉ hoạt động khi bạn đang đăng nhập bảng điều khiển này bằng đúng tài khoản đã phê duyệt yêu cầu.",
+      "opened": "Trang Source đã mở trong thẻ mới. Nếu không thấy gì, hãy cho phép cửa sổ bật lên cho trang này rồi bấm lại nút.",
+      "ownerOnly": "Chỉ người vận hành đã phê duyệt yêu cầu này mới cung cấp được Source (với yêu cầu được cho phép tự động, đó là quản trị viên đã cấu hình đích đến). Bạn xem được trạng thái ở đây nhưng không có thao tác.",
+      "submittedTitle": "Đã nhận Source",
+      "submittedBody": "Bộ điều khiển đã nhận Source mã hóa và xếp hàng để chuyển đến broker của node. Bảng điều khiển không bao giờ thấy giá trị.",
+      "expiredTitle": "Đề nghị Source đã kết thúc",
+      "expiredBody": "Đề nghị, quyền cấp hoặc thẩm quyền đứng sau đã kết thúc trước khi Source đến. Hãy yêu cầu một thao tác mới để cung cấp.",
+      "errors": {
+        "pending": "Node chưa công bố đề nghị. Trang này tự kiểm tra lại.",
+        "owner": "Chỉ người vận hành đã phê duyệt yêu cầu này mới cung cấp được Source.",
+        "gone": "Đề nghị Source không còn khả dụng. Hãy yêu cầu một thao tác mới để cung cấp.",
+        "conflict": "Thao tác này đã có liên kết Source và không thể thay thế. Tải lại để xem trạng thái hiện tại.",
+        "unknown": "Bộ điều khiển không phản hồi nên chưa biết liên kết đã được tạo chưa. Hãy bấm lại nút; lặp lại là an toàn.",
+        "failed": "Bảng điều khiển không mở được trang Source ({{code}}). Hãy thử lại."
       }
     }
   },

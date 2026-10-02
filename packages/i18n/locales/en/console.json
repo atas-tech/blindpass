@@ -287,7 +287,8 @@
     },
     "mode": {
       "file": "File",
-      "socket": "Socket"
+      "socket": "Socket",
+      "browser_session": "Browser session"
     },
     "purpose": {
       "label": "Requester-provided purpose"
@@ -1081,6 +1082,31 @@
       "errors": {
         "notCancellable": "This operation can no longer be cancelled.",
         "unknown": "The controller didn't answer. Reload to see the operation's status."
+      }
+    },
+    "provision": {
+      "title": "Provide Source",
+      "awaiting": "Waiting for the node to publish its encrypted-delivery offer…",
+      "awaitingNote": "This page checks again automatically. Nothing is needed from you yet.",
+      "readyBody": "The node's broker is ready to receive the Source for this approved operation. You type it on a separate page that encrypts it in your browser; this console never sees the value.",
+      "issuedBody": "A Source page was already opened for this operation. Open it again if you closed it or it didn't appear.",
+      "endsIn": "The offer ends in",
+      "provide": "Provide Source",
+      "reopen": "Open the Source page again",
+      "opensNote": "Opens in a new tab. The page works only while you are signed in to this console as the operator who approved the request.",
+      "opened": "The Source page opened in a new tab. If nothing opened, allow pop-ups for this site and press the button again.",
+      "ownerOnly": "Only the operator who approved this request can provide its Source (for an automatically allowed request, the administrator who configured its destination). You can see the state here but have no action.",
+      "submittedTitle": "Source received",
+      "submittedBody": "The encrypted Source was received by the controller and is queued for the node's broker. The console never saw its value.",
+      "expiredTitle": "The Source offer ended",
+      "expiredBody": "The offer, the grant or the authority behind it ended before a Source arrived. Request a new operation to provide one.",
+      "errors": {
+        "pending": "The node hasn't published its offer yet. This page checks again automatically.",
+        "owner": "Only the operator who approved this request can provide its Source.",
+        "gone": "The Source offer is no longer available. Request a new operation to provide one.",
+        "conflict": "A Source link already exists for this operation and can't be replaced. Reload to see its current state.",
+        "unknown": "The controller didn't answer, so it isn't known whether the link was created. Press the button again; repeating it is safe.",
+        "failed": "The console couldn't open the Source page ({{code}}). Try again."
       }
     }
   },

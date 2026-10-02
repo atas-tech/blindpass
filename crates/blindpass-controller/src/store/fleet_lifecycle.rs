@@ -35,6 +35,9 @@ pub struct FleetPruneSummary {
     pub node_sessions: u64,
     pub node_challenges: u64,
     pub grant_tombstones: u64,
+    pub provisioning_offers: u64,
+    pub provisioning_links: u64,
+    pub provisioning_receipts: u64,
 }
 
 const REQUEUE_SELECT: &str = "SELECT t.envelope_json FROM grant_tombstones t
@@ -211,7 +214,7 @@ const NODE_SESSION_RETENTION_MS: i64 = 60 * 60 * 1_000;
 /// Bounded retention statements. Each keeps the rows a live channel still
 /// needs: the highest inbox sequence per node (sequence allocation) and the
 /// newest session per node (delivered high-water mark inheritance).
-const PRUNE_STATEMENTS: [&str; 5] = [
+const PRUNE_STATEMENTS: [&str; 8] = [
     "DELETE FROM node_inbox WHERE (node_id, seq) IN (
        SELECT i.node_id, i.seq FROM node_inbox i JOIN nodes n ON n.id = i.node_id
        WHERE n.tenant_id = ? AND i.acked_at IS NOT NULL AND i.acked_at < {now} - ?
@@ -230,6 +233,15 @@ const PRUNE_STATEMENTS: [&str; 5] = [
     "DELETE FROM grant_tombstones WHERE grant_id IN (
        SELECT t.grant_id FROM grant_tombstones t JOIN nodes n ON n.id = t.node_id
        WHERE n.tenant_id = ? AND t.retain_until < {now} - ? LIMIT ?)",
+    "DELETE FROM fleet_provisioning_offers WHERE id IN (
+       SELECT id FROM fleet_provisioning_offers
+       WHERE tenant_id = ? AND expires_at < {now} - ? LIMIT ?)",
+    "DELETE FROM fleet_provisioning_links WHERE id IN (
+       SELECT id FROM fleet_provisioning_links
+       WHERE tenant_id = ? AND expires_at < {now} - ? LIMIT ?)",
+    "DELETE FROM fleet_provisioning_receipts WHERE link_id IN (
+       SELECT link_id FROM fleet_provisioning_receipts
+       WHERE tenant_id = ? AND expires_at < {now} - ? LIMIT ?)",
 ];
 
 impl Store {
@@ -246,8 +258,11 @@ impl Store {
             NODE_SESSION_RETENTION_MS,
             i64::MAX / 4,
             0,
+            NODE_EVENT_RETENTION_MS,
+            NODE_EVENT_RETENTION_MS,
+            NODE_EVENT_RETENTION_MS,
         ];
-        let mut counts = [0_u64; 5];
+        let mut counts = [0_u64; 8];
         for (index, statement) in PRUNE_STATEMENTS.iter().enumerate() {
             counts[index] = match &self.database {
                 Database::Sqlite(pool) => sqlx::query(&statement.replace("{now}", SQLITE_NOW_MS))
@@ -276,6 +291,9 @@ impl Store {
             node_sessions: counts[2],
             node_challenges: counts[3],
             grant_tombstones: counts[4],
+            provisioning_offers: counts[5],
+            provisioning_links: counts[6],
+            provisioning_receipts: counts[7],
         })
     }
 }

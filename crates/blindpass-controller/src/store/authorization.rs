@@ -14,11 +14,23 @@ use super::{
     AuditDraft, Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
     audit::{insert_audit_postgres, insert_audit_sqlite},
 };
+use blindpass_core::fleet::{DocumentKind, MAX_NODE_DOCUMENT_BYTES, SignedEnvelope};
 use sqlx::{
     Row, Transaction,
     postgres::{PgRow, Postgres},
     sqlite::{Sqlite, SqliteRow},
 };
+
+/// Event whose broker signature was verified by the node transport. This is
+/// internal controller input, never accepted from an operator create request.
+pub(crate) struct BrokerOperationEvent<'a> {
+    pub id: &'a str,
+    pub node_id: &'a str,
+    pub key: &'a str,
+    pub body_json: &'a str,
+    pub body_hash: &'a str,
+    pub observed_at_ms: i64,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkloadRecord {
@@ -36,12 +48,34 @@ pub struct WorkloadRecord {
     pub version: i64,
 }
 
+/// Every inbox document is capped at 64 KiB except the dedicated Source
+/// delivery, whose fully sealed 64 KiB Source needs the 128 KiB cap. The kind
+/// is read from the signed envelope only for documents past the ordinary cap.
+pub(super) fn node_document_size_allowed(envelope_json: &str) -> bool {
+    node_document_size_within(envelope_json.len(), || {
+        SignedEnvelope::from_json(envelope_json)
+            .ok()
+            .map(|envelope| envelope.kind())
+    })
+}
+
+fn node_document_size_within(length: usize, kind: impl FnOnce() -> Option<DocumentKind>) -> bool {
+    if length == 0 {
+        return false;
+    }
+    if length <= MAX_NODE_DOCUMENT_BYTES {
+        return true;
+    }
+    length <= DocumentKind::ProvisioningDelivery.max_document_bytes()
+        && kind() == Some(DocumentKind::ProvisioningDelivery)
+}
+
 pub(super) async fn enqueue_node_document_sqlite(
     transaction: &mut Transaction<'_, Sqlite>,
     node_id: &str,
     envelope_json: &str,
 ) -> Result<(), StoreError> {
-    if envelope_json.is_empty() || envelope_json.len() > 64 * 1024 {
+    if !node_document_size_allowed(envelope_json) {
         return Err(StoreError::InvalidInput("signed node document size"));
     }
     // Take the database write lock before reading MAX(seq) so the allocation
@@ -78,7 +112,7 @@ pub(super) async fn enqueue_node_document_postgres(
     node_id: &str,
     envelope_json: &str,
 ) -> Result<(), StoreError> {
-    if envelope_json.is_empty() || envelope_json.len() > 64 * 1024 {
+    if !node_document_size_allowed(envelope_json) {
         return Err(StoreError::InvalidInput("signed node document size"));
     }
     // Serialize every writer for this node on its row so MAX(seq) + 1 cannot
@@ -839,12 +873,35 @@ async fn create_operation_sqlite(
     approval: Option<&OperationApprovalDraft>,
     signer: Option<&FleetSigner>,
     audit: &AuditDraft,
+    event: Option<&BrokerOperationEvent<'_>>,
 ) -> Result<OperationCreateOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
         .execute(&mut *tx)
         .await
         .map_err(StoreError::Database)?;
+    let receipt = if let Some(event) = event {
+        let sql =
+            "SELECT kind, body_hash FROM node_events WHERE node_id = ? AND idempotency_key = ?";
+        let row = sqlx::query(sql)
+            .bind(event.node_id)
+            .bind(event.key)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(StoreError::Database)?;
+        if let Some(row) = row {
+            let kind: String = row.try_get("kind").map_err(StoreError::Database)?;
+            let hash: String = row.try_get("body_hash").map_err(StoreError::Database)?;
+            if kind != "operation_request" || hash != event.body_hash {
+                return Ok(OperationCreateOutcome::Conflict);
+            }
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
     let lookup = format!(
         "SELECT {OPERATION_COLUMNS} FROM operations WHERE tenant_id = ? AND requested_by = ? AND idempotency_key = ?"
     );
@@ -857,6 +914,9 @@ async fn create_operation_sqlite(
         .map_err(StoreError::Database)?
     {
         let existing = operation_from_sqlite(&row)?;
+        if event.is_some() && !receipt {
+            return Err(StoreError::MissingState("browser request receipt"));
+        }
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(if existing.request_hash == record.request_hash {
             OperationCreateOutcome::Existing(existing)
@@ -865,6 +925,24 @@ async fn create_operation_sqlite(
         });
     }
     if let Some(event_key) = record.broker_event_key.as_deref() {
+        if record.mode == "browser_session" {
+            let cancellation = blindpass_core::fleet::OperationCancellation {
+                node_id: record.node_id.clone(),
+                workload_id: record.workload_id.clone(),
+                invocation_id: record.invocation_id.clone(),
+                request_event_key: event_key.to_owned(),
+            };
+            let cancel_key = cancellation
+                .event_key()
+                .map_err(|_| StoreError::InvalidInput("cancellation key"))?;
+            let cancelled: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM node_events WHERE node_id = ? AND idempotency_key = ? AND kind = 'operation_cancel')")
+                .bind(&record.node_id).bind(cancel_key).fetch_one(&mut *tx).await.map_err(StoreError::Database)?;
+            if cancelled {
+                tx.commit().await.map_err(StoreError::Database)?;
+                return Ok(OperationCreateOutcome::Conflict);
+            }
+        }
+
         let used: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM operations WHERE tenant_id = ? AND node_id = ? AND broker_event_key = ?)",
         )
@@ -893,7 +971,13 @@ async fn create_operation_sqlite(
         .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::Database)?;
-    if record.expires_at_ms <= current_now {
+    if record.expires_at_ms <= current_now
+        || event.is_some_and(|event| {
+            event.observed_at_ms <= 0
+                || current_now.saturating_sub(event.observed_at_ms) > 60_000
+                || event.observed_at_ms > current_now.saturating_add(60_000)
+        })
+    {
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(OperationCreateOutcome::Stale);
     }
@@ -917,6 +1001,25 @@ async fn create_operation_sqlite(
     if !active {
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(OperationCreateOutcome::Stale);
+    }
+    if let Some(event) = event {
+        // Original intent and all request effects commit together. A persisted
+        // receipt without its operation cannot reconstruct fresh authority.
+        if receipt {
+            return Err(StoreError::MissingState("browser request operation"));
+        }
+        let sql = format!(
+            "INSERT INTO node_events (id, node_id, idempotency_key, kind, body_json, body_hash, received_at) VALUES (?, ?, ?, 'operation_request', ?, ?, {SQLITE_NOW_MS})"
+        );
+        sqlx::query(&sql)
+            .bind(event.id)
+            .bind(event.node_id)
+            .bind(event.key)
+            .bind(event.body_json)
+            .bind(event.body_hash)
+            .execute(&mut *tx)
+            .await
+            .map_err(StoreError::Database)?;
     }
     let approval_id = if let Some(draft) = approval {
         Some(create_or_extend_approval_sqlite(&mut tx, tenant_id, &record.id, draft).await?)
@@ -956,12 +1059,35 @@ async fn create_operation_postgres(
     approval: Option<&OperationApprovalDraft>,
     signer: Option<&FleetSigner>,
     audit: &AuditDraft,
+    event: Option<&BrokerOperationEvent<'_>>,
 ) -> Result<OperationCreateOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
         .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::Database)?;
+    let receipt = if let Some(event) = event {
+        let sql =
+            "SELECT kind, body_hash FROM node_events WHERE node_id = ? AND idempotency_key = ?";
+        let row = sqlx::query(&super::pg(sql))
+            .bind(event.node_id)
+            .bind(event.key)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(StoreError::Database)?;
+        if let Some(row) = row {
+            let kind: String = row.try_get("kind").map_err(StoreError::Database)?;
+            let hash: String = row.try_get("body_hash").map_err(StoreError::Database)?;
+            if kind != "operation_request" || hash != event.body_hash {
+                return Ok(OperationCreateOutcome::Conflict);
+            }
+            true
+        } else {
+            false
+        }
+    } else {
+        false
+    };
     let lookup = format!(
         "SELECT {OPERATION_COLUMNS} FROM operations WHERE tenant_id = $1 AND requested_by = $2 AND idempotency_key = $3"
     );
@@ -974,6 +1100,9 @@ async fn create_operation_postgres(
         .map_err(StoreError::Database)?
     {
         let existing = operation_from_postgres(&row)?;
+        if event.is_some() && !receipt {
+            return Err(StoreError::MissingState("browser request receipt"));
+        }
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(if existing.request_hash == record.request_hash {
             OperationCreateOutcome::Existing(existing)
@@ -982,6 +1111,24 @@ async fn create_operation_postgres(
         });
     }
     if let Some(event_key) = record.broker_event_key.as_deref() {
+        if record.mode == "browser_session" {
+            let cancellation = blindpass_core::fleet::OperationCancellation {
+                node_id: record.node_id.clone(),
+                workload_id: record.workload_id.clone(),
+                invocation_id: record.invocation_id.clone(),
+                request_event_key: event_key.to_owned(),
+            };
+            let cancel_key = cancellation
+                .event_key()
+                .map_err(|_| StoreError::InvalidInput("cancellation key"))?;
+            let cancelled: bool = sqlx::query_scalar(&super::pg("SELECT EXISTS(SELECT 1 FROM node_events WHERE node_id = ? AND idempotency_key = ? AND kind = 'operation_cancel')"))
+                .bind(&record.node_id).bind(cancel_key).fetch_one(&mut *tx).await.map_err(StoreError::Database)?;
+            if cancelled {
+                tx.commit().await.map_err(StoreError::Database)?;
+                return Ok(OperationCreateOutcome::Conflict);
+            }
+        }
+
         let used: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM operations WHERE tenant_id = $1 AND node_id = $2 AND broker_event_key = $3)",
         )
@@ -1010,7 +1157,13 @@ async fn create_operation_postgres(
         .fetch_one(&mut *tx)
         .await
         .map_err(StoreError::Database)?;
-    if record.expires_at_ms <= current_now {
+    if record.expires_at_ms <= current_now
+        || event.is_some_and(|event| {
+            event.observed_at_ms <= 0
+                || current_now.saturating_sub(event.observed_at_ms) > 60_000
+                || event.observed_at_ms > current_now.saturating_add(60_000)
+        })
+    {
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(OperationCreateOutcome::Stale);
     }
@@ -1033,6 +1186,25 @@ async fn create_operation_postgres(
     if !active {
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(OperationCreateOutcome::Stale);
+    }
+    if let Some(event) = event {
+        // Original intent and all request effects commit together. A persisted
+        // receipt without its operation cannot reconstruct fresh authority.
+        if receipt {
+            return Err(StoreError::MissingState("browser request operation"));
+        }
+        let sql = format!(
+            "INSERT INTO node_events (id, node_id, idempotency_key, kind, body_json, body_hash, received_at) VALUES (?, ?, ?, 'operation_request', ?, ?, {POSTGRES_NOW_MS})"
+        );
+        sqlx::query(&super::pg(&sql))
+            .bind(event.id)
+            .bind(event.node_id)
+            .bind(event.key)
+            .bind(event.body_json)
+            .bind(event.body_hash)
+            .execute(&mut *tx)
+            .await
+            .map_err(StoreError::Database)?;
     }
     let approval_id = if let Some(draft) = approval {
         Some(create_or_extend_approval_postgres(&mut tx, tenant_id, &record.id, draft).await?)
@@ -1382,6 +1554,7 @@ impl Store {
                     approval,
                     self.fleet_signer.as_ref(),
                     audit,
+                    None,
                 )
                 .await
             }
@@ -1396,6 +1569,66 @@ impl Store {
                     approval,
                     self.fleet_signer.as_ref(),
                     audit,
+                    None,
+                )
+                .await
+            }
+        }
+    }
+
+    /// Commit a newly verified browser intent and all request effects atomically.
+    #[allow(clippy::too_many_arguments)] // Binds the verified event to its operation and approval.
+    pub(crate) async fn create_browser_operation(
+        &self,
+        record: &OperationRecord,
+        expected_unit: &str,
+        expected_account: &str,
+        effective_ttl_seconds: i64,
+        approval: Option<&OperationApprovalDraft>,
+        audit: &AuditDraft,
+        event: &BrokerOperationEvent<'_>,
+    ) -> Result<OperationCreateOutcome, StoreError> {
+        self.checkpoint_clock().await?;
+        self.fleet_signer
+            .as_ref()
+            .ok_or(StoreError::MissingState("browser request issuer"))?;
+        if record.node_id != event.node_id
+            || record.broker_event_key.as_deref() != Some(event.key)
+            || record.action != "browser.session"
+            || record.mode != "browser_session"
+            || record.request_hash != event.body_hash
+            || record.requested_by != format!("workload:{}", record.workload_id)
+        {
+            return Err(StoreError::InvalidInput("browser request binding"));
+        }
+        match &self.database {
+            Database::Sqlite(pool) => {
+                create_operation_sqlite(
+                    pool,
+                    &self.tenant_id,
+                    record,
+                    expected_unit,
+                    expected_account,
+                    effective_ttl_seconds,
+                    approval,
+                    self.fleet_signer.as_ref(),
+                    audit,
+                    Some(event),
+                )
+                .await
+            }
+            Database::Postgres(pool) => {
+                create_operation_postgres(
+                    pool,
+                    &self.tenant_id,
+                    record,
+                    expected_unit,
+                    expected_account,
+                    effective_ttl_seconds,
+                    approval,
+                    self.fleet_signer.as_ref(),
+                    audit,
+                    Some(event),
                 )
                 .await
             }
@@ -1595,5 +1828,39 @@ impl Store {
                     .map_err(StoreError::Database)
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{DocumentKind, node_document_size_allowed, node_document_size_within};
+
+    #[test]
+    fn ordinary_documents_keep_the_64_kib_cap_in_both_directions() {
+        for kind in [
+            DocumentKind::Grant,
+            DocumentKind::Registration,
+            DocumentKind::RecipientOffer,
+            DocumentKind::OperationClosed,
+        ] {
+            assert!(node_document_size_within(65_536, || Some(kind)));
+            assert!(!node_document_size_within(65_537, || Some(kind)));
+            assert!(!node_document_size_within(131_072, || Some(kind)));
+        }
+        assert!(!node_document_size_within(0, || {
+            Some(DocumentKind::ProvisioningDelivery)
+        }));
+        assert!(!node_document_size_within(65_537, || None));
+        assert!(!node_document_size_allowed(&"x".repeat(65_537)));
+        assert!(node_document_size_allowed(&"x".repeat(65_536)));
+        assert!(!node_document_size_allowed(""));
+    }
+
+    #[test]
+    fn only_the_provisioning_delivery_kind_may_reach_the_128_kib_cap() {
+        let delivery = || Some(DocumentKind::ProvisioningDelivery);
+        assert!(node_document_size_within(65_537, delivery));
+        assert!(node_document_size_within(131_072, delivery));
+        assert!(!node_document_size_within(131_073, delivery));
     }
 }

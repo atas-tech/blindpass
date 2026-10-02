@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError } from "../../api/client.js";
@@ -16,9 +16,14 @@ import { Countdown, Timestamp } from "../../ui/time.js";
 import { Metadata } from "../audit/metadata.js";
 import { FLEET_POLL, ListBody, NodeRef, OperationBadge, useNodeNames, usePagedList } from "./common.js";
 import { RevocationOutcome } from "./grants.js";
+import { ProvideSourcePanel } from "./provide-source.js";
 
 const STATUSES = ["requested", "awaiting_approval", "granted", "executing", "completed", "failed", "uncertain", "denied", "revoked", "cancelled"] as const;
 const CANCELLABLE = new Set<Operation["status"]>(["requested", "awaiting_approval", "granted", "executing"]);
+// While a Source offer is awaited or live the page re-reads often, so the node's
+// offer, the owner's link and the receipt show up within seconds.
+const PROVISION_POLL = { visibleMs: 3_000, hiddenMs: 60_000 };
+const PROVISION_LIVE = new Set(["awaiting_offer", "offer_ready", "link_issued"]);
 
 export function OperationsPage() {
   const { t } = useTranslation();
@@ -102,7 +107,10 @@ export function OperationDetailPage() {
   const { id = "" } = useParams();
   const operationId = decodeURIComponent(id);
   const { can } = useSession();
-  const { state, reload, replace } = useResource(`operation:${operationId}`, () => endpoints.operations.get(operationId), { poll: FLEET_POLL });
+  const [provisioningLive, setProvisioningLive] = useState(false);
+  const { state, reload, replace } = useResource(`operation:${operationId}`, () => endpoints.operations.get(operationId), { poll: provisioningLive ? PROVISION_POLL : FLEET_POLL });
+  const lastProvisioning = (state.status === "ready" ? state.data : state.status === "error" ? state.previous : null)?.provisioning?.state;
+  useEffect(() => setProvisioningLive(lastProvisioning !== undefined && PROVISION_LIVE.has(lastProvisioning)), [lastProvisioning]);
   const nodeName = useNodeNames();
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -129,7 +137,11 @@ export function OperationDetailPage() {
       if (isRevocation(result)) {
         setRevocation(result);
         void reload();
-      } else replace(result as Operation);
+      } else {
+        replace(result as Operation);
+        // The reply carries no Source state; read it again.
+        void reload();
+      }
       setConfirming(false);
     } catch (failure) {
       const apiError = failure instanceof ApiError ? failure : null;
@@ -162,6 +174,7 @@ export function OperationDetailPage() {
           {t("fleet.operation.uncertainBody")}
         </Notice>
       ) : null}
+      <ProvideSourcePanel operation={operation} onChanged={() => void reload()} />
       <div className="detail-grid">
         <Panel title={t("fleet.operation.scope")} icon="approvals">
           <KeyValue

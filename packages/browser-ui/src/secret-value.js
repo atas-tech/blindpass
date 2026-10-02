@@ -5,6 +5,9 @@
  */
 export const MAX_SECRET_BYTES = 393_200;
 
+/** A fleet Source is at most 64 KiB of UTF-8, the broker custody and sealer limit. */
+export const FLEET_MAX_SOURCE_BYTES = 65_536;
+
 /** UTF-8 bytes exactly as typed: nothing is trimmed or normalised here. */
 export function secretBytes(value) {
   return new TextEncoder().encode(value);

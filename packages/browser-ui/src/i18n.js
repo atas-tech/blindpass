@@ -7,6 +7,21 @@ export const LOCALE_STORAGE_KEY = "blindpass_locale";
 
 const translations = { en, vi };
 let activeLocale = "en";
+// Fleet links show the operator-bound wording wherever an element names a
+// `data-i18n-fleet` key; everything else is shared with the legacy page.
+let fleetMode = false;
+
+export function setFleetMode(on) {
+  fleetMode = Boolean(on);
+}
+
+/** The fleet wording for `path` when it exists, otherwise the shared wording. */
+export function tf(path, params) {
+  if (!fleetMode) return t(path, params);
+  const fleet = `fleet.${path}`;
+  const text = t(fleet, params);
+  return text === fleet ? t(path, params) : text;
+}
 
 function getValueByPath(source, path) {
   return path.split(".").reduce((value, key) => (value && typeof value === "object" ? value[key] : undefined), source);
@@ -36,7 +51,8 @@ export function t(path, params) {
 export function applyTranslations(root = document) {
   root.documentElement.lang = activeLocale;
   root.querySelectorAll("[data-i18n]").forEach((element) => {
-    if (element.dataset.i18n) element.textContent = t(element.dataset.i18n);
+    const key = fleetMode && element.dataset.i18nFleet ? element.dataset.i18nFleet : element.dataset.i18n;
+    if (key) element.textContent = t(key);
   });
   root.querySelectorAll("[data-i18n-aria-label]").forEach((element) => {
     if (element.dataset.i18nAriaLabel) element.setAttribute("aria-label", t(element.dataset.i18nAriaLabel));

@@ -794,6 +794,14 @@ fn aead_decrypt(
 struct CustodyEntry {
     key_pair: RecipientKeyPair,
     expires_at: Instant,
+    expires_at_boottime_ms: i64,
+}
+impl CustodyEntry {
+    fn current(&self) -> bool {
+        Instant::now() < self.expires_at
+            && crate::clock::boottime_milliseconds()
+                .is_ok_and(|boot| boot >= 0 && boot < self.expires_at_boottime_ms)
+    }
 }
 
 #[derive(Debug)]
@@ -819,13 +827,24 @@ impl EphemeralCustody {
         if self.entries.contains_key(recipient_id) {
             return Err(CryptoError::OpenSsl("recipient already provisioned"));
         }
+        let expires_at = Instant::now()
+            .checked_add(self.lifetime)
+            .ok_or(CryptoError::OpenSsl("custody lifetime invalid"))?;
+        let expires_at_boottime_ms = crate::clock::boottime_milliseconds()
+            .map_err(|_| CryptoError::UnsupportedHost("boottime_unavailable"))?
+            .checked_add(
+                i64::try_from(self.lifetime.as_millis())
+                    .map_err(|_| CryptoError::OpenSsl("custody lifetime invalid"))?,
+            )
+            .ok_or(CryptoError::OpenSsl("custody lifetime invalid"))?;
         let key_pair = RecipientKeyPair::generate()?;
         let public_key = key_pair.public_key().to_vec();
         self.entries.insert(
             recipient_id.to_owned(),
             CustodyEntry {
                 key_pair,
-                expires_at: Instant::now() + self.lifetime,
+                expires_at,
+                expires_at_boottime_ms,
             },
         );
         Ok(public_key)
@@ -843,12 +862,30 @@ impl EphemeralCustody {
             .entries
             .remove(recipient_id)
             .ok_or(CryptoError::OpenSsl("recipient key missing or expired"))?;
-        entry.key_pair.open(enc, ciphertext, aad)
+        if !entry.current() {
+            return Err(CryptoError::OpenSsl("recipient key missing or expired"));
+        }
+        let plaintext = entry.key_pair.open(enc, ciphertext, aad)?;
+        // Suspension during the cryptographic call cannot renew provisioning
+        // authority or place late plaintext into the broker registry.
+        if !entry.current() {
+            return Err(CryptoError::OpenSsl("recipient key missing or expired"));
+        }
+        Ok(plaintext)
     }
 
     pub fn purge_expired(&mut self) {
         let now = Instant::now();
-        self.entries.retain(|_, entry| entry.expires_at > now);
+        self.purge_expired_at(now, crate::clock::boottime_milliseconds());
+    }
+
+    fn purge_expired_at(&mut self, now: Instant, boottime: Result<i64, crate::clock::ClockError>) {
+        // No wall clock or suspend-excluding Instant can extend recipient-key
+        // custody. Clock failure withdraws every pending private key.
+        self.entries.retain(|_, entry| {
+            entry.expires_at > now
+                && boottime.is_ok_and(|boot| boot >= 0 && boot < entry.expires_at_boottime_ms)
+        });
     }
 
     #[must_use]
@@ -923,6 +960,42 @@ mod tests {
             custody.open_once("recipient-expiring", &sealed.enc, &sealed.ciphertext, &[]),
             Err(CryptoError::OpenSsl("recipient key missing or expired"))
         ));
+        assert!(custody.is_empty());
+    }
+
+    #[test]
+    fn ephemeral_custody_does_not_resume_an_expired_recipient_key_after_suspend() {
+        let mut custody = EphemeralCustody::new(Duration::from_secs(120));
+        let public_key = custody.provision("recipient-suspended").unwrap();
+        let sealed = RecipientKeyPair::seal(&public_key, b"GENERATED-HPKE-CANARY", &[]).unwrap();
+        custody.purge_expired_at(std::time::Instant::now(), Ok(i64::MAX));
+        assert!(
+            custody.is_empty(),
+            "elapsed suspend time must retire the pending private key"
+        );
+        assert!(
+            custody
+                .open_once("recipient-suspended", &sealed.enc, &sealed.ciphertext, &[])
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn ephemeral_custody_clock_failure_withdraws_all_pending_keys() {
+        let mut custody = EphemeralCustody::new(Duration::from_secs(120));
+        custody.provision("recipient-a").unwrap();
+        custody.provision("recipient-b").unwrap();
+        custody.purge_expired_at(
+            std::time::Instant::now(),
+            Err(crate::clock::ClockError::Unavailable),
+        );
+        assert!(custody.is_empty());
+    }
+
+    #[test]
+    fn ephemeral_custody_unrepresentable_lifetime_returns_error_without_a_key() {
+        let mut custody = EphemeralCustody::new(Duration::MAX);
+        assert!(custody.provision("recipient-overflow").is_err());
         assert!(custody.is_empty());
     }
 

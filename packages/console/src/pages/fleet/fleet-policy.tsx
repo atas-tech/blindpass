@@ -12,10 +12,20 @@ import { PageHeader, Panel, SegmentedControl } from "../../ui/layout.js";
 import { Timestamp } from "../../ui/time.js";
 import { useToast } from "../../ui/toast.js";
 
-/** The controller allows one rule per (action, mode); today the only action is noop.marker. */
-const ACTION = "noop.marker";
-const MODES = ["file", "socket"] as const;
-type Mode = (typeof MODES)[number];
+/**
+ * The controller allows one rule per (action, mode) and accepts only these pairs:
+ * noop.marker with file or socket, and browser.session with browser_session.
+ */
+const RULES = [
+  { action: "noop.marker", mode: "file", id: "noop-marker-file" },
+  { action: "noop.marker", mode: "socket", id: "noop-marker-socket" },
+  { action: "browser.session", mode: "browser_session", id: "browser-session" }
+] as const;
+const ACTIONS = ["noop.marker", "browser.session"] as const;
+const MODES = RULES.map((rule) => rule.mode);
+type Mode = (typeof RULES)[number]["mode"];
+const ACTION_OF = Object.fromEntries(RULES.map((rule) => [rule.mode, rule.action])) as Record<Mode, (typeof ACTIONS)[number]>;
+const ID_OF = Object.fromEntries(RULES.map((rule) => [rule.mode, rule.id])) as Record<Mode, string>;
 type Decision = FleetPolicyRule["decision"] | "none";
 const TONE: Record<Decision, Tone> = { allow: "ok", pending_approval: "warn", deny: "danger", none: "neutral" };
 const APPROVER = /^[A-Za-z0-9_.@-]{1,128}$/;
@@ -30,10 +40,10 @@ interface Row {
 function toRows(policy: FleetPolicy): Record<Mode, Row> {
   const rows = {} as Record<Mode, Row>;
   for (const mode of MODES) {
-    const rule = policy.rules.find((item) => item.action === ACTION && item.mode === mode);
+    const rule = policy.rules.find((item) => item.action === ACTION_OF[mode] && item.mode === mode);
     rows[mode] = rule
       ? { id: rule.id, decision: rule.decision, ttl: String(rule.max_ttl_seconds), approvers: (rule.approver_ids ?? []).join("\n") }
-      : { id: `${ACTION.replace(".", "-")}-${mode}`, decision: "none", ttl: "120", approvers: "" };
+      : { id: ID_OF[mode], decision: "none", ttl: "120", approvers: "" };
   }
   return rows;
 }
@@ -46,7 +56,7 @@ function toRules(rows: Record<Mode, Row>, others: FleetPolicyRule[]): FleetPolic
     const approvers = row.approvers.split(/[\n,]/).map((value) => value.trim()).filter(Boolean);
     rules.push({
       id: row.id,
-      action: ACTION,
+      action: ACTION_OF[mode],
       mode,
       decision: row.decision,
       approval_required: row.decision === "pending_approval",
@@ -85,7 +95,7 @@ export default function FleetPolicyPage() {
   if (state.status === "error" && !state.previous) return <ErrorState error={state.error} onRetry={() => void reload()} />;
   const policy = state.status === "ready" ? state.data : state.previous!;
   const rows = draft?.rows ?? toRows(policy);
-  const others = (draft?.base ?? policy).rules.filter((rule) => rule.action !== ACTION || !(MODES as readonly string[]).includes(rule.mode));
+  const others = (draft?.base ?? policy).rules.filter((rule) => !RULES.some((known) => known.action === rule.action && known.mode === rule.mode));
   const errors = Object.fromEntries(MODES.map((mode) => [mode, rowErrors(rows[mode], t)])) as Record<Mode, ReturnType<typeof rowErrors>>;
   const invalid = MODES.some((mode) => Object.keys(errors[mode]).length > 0);
 
@@ -158,60 +168,62 @@ export default function FleetPolicyPage() {
         </Notice>
       ) : null}
       {error ? <Notice tone="danger">{error}</Notice> : null}
-      <Panel title={t("fleet.policy.matrix", { action: ACTION })} icon="policy" flush>
-        <div className="fleet-rules">
-          {MODES.map((mode) => {
-            const row = rows[mode];
-            const rowError = submitted ? errors[mode] : {};
-            return (
-              <section key={mode} className="fleet-rule" data-mode={mode} aria-labelledby={`fleet-rule-${mode}`}>
-                <header className="fleet-rule-head">
-                  <h2 id={`fleet-rule-${mode}`} className="section-title">
-                    <code className="mono">{ACTION}</code> · {t(`approvals.mode.${mode}`)}
-                  </h2>
-                  <StatusBadge tone={TONE[row.decision]}>{t(`fleet.policy.decision.${row.decision}`)}</StatusBadge>
-                </header>
-                {canWrite ? (
-                  <div className="fleet-rule-form">
-                    <div className="field field-wide">
-                      <span className="field-label">{t("fleet.policy.fields.decision")}</span>
-                      <SegmentedControl<Decision>
-                        label={t("fleet.policy.fields.decisionFor", { mode: t(`approvals.mode.${mode}`) })}
-                        value={row.decision}
-                        onChange={(decision) => setRow(mode, { decision })}
-                        options={(["none", "allow", "pending_approval", "deny"] as const).map((value) => ({ value, label: t(`fleet.policy.decision.${value}`) }))}
-                      />
-                    </div>
-                    {row.decision !== "none" ? <TextField label={t("fleet.policy.fields.ttl")} hint={t("fleet.policy.fields.ttlHint")} value={row.ttl} onChange={(event) => setRow(mode, { ttl: event.currentTarget.value })} error={rowError.ttl} type="number" min={1} max={3600} inputMode="numeric" /> : null}
-                    {row.decision === "pending_approval" ? <TextAreaField label={t("fleet.policy.fields.approvers")} hint={t("fleet.policy.fields.approversHint")} value={row.approvers} onChange={(event) => setRow(mode, { approvers: event.currentTarget.value })} error={rowError.approvers} rows={2} mono spellCheck={false} /> : null}
-                  </div>
-                ) : row.decision !== "none" ? (
-                  <dl className="rule-grid">
-                    <div>
-                      <dt>{t("fleet.policy.fields.ttl")}</dt>
-                      <dd>{t("fleet.seconds", { count: Number(row.ttl) })}</dd>
-                    </div>
-                    {row.decision === "pending_approval" ? (
-                      <div>
-                        <dt>{t("fleet.policy.fields.approvers")}</dt>
-                        <dd className="chip-list">
-                          {row.approvers.split("\n").filter(Boolean).map((value) => (
-                            <code key={value} className="chip mono">
-                              {value}
-                            </code>
-                          ))}
-                        </dd>
+      {ACTIONS.map((action) => (
+        <Panel key={action} title={t("fleet.policy.matrix", { action })} icon="policy" flush>
+          <div className="fleet-rules">
+            {MODES.filter((mode) => ACTION_OF[mode] === action).map((mode) => {
+              const row = rows[mode];
+              const rowError = submitted ? errors[mode] : {};
+              return (
+                <section key={mode} className="fleet-rule" data-mode={mode} aria-labelledby={`fleet-rule-${mode}`}>
+                  <header className="fleet-rule-head">
+                    <h2 id={`fleet-rule-${mode}`} className="section-title">
+                      <code className="mono">{action}</code> · {t(`approvals.mode.${mode}`)}
+                    </h2>
+                    <StatusBadge tone={TONE[row.decision]}>{t(`fleet.policy.decision.${row.decision}`)}</StatusBadge>
+                  </header>
+                  {canWrite ? (
+                    <div className="fleet-rule-form">
+                      <div className="field field-wide">
+                        <span className="field-label">{t("fleet.policy.fields.decision")}</span>
+                        <SegmentedControl<Decision>
+                          label={t("fleet.policy.fields.decisionFor", { mode: t(`approvals.mode.${mode}`) })}
+                          value={row.decision}
+                          onChange={(decision) => setRow(mode, { decision })}
+                          options={(["none", "allow", "pending_approval", "deny"] as const).map((value) => ({ value, label: t(`fleet.policy.decision.${value}`) }))}
+                        />
                       </div>
-                    ) : null}
-                  </dl>
-                ) : (
-                  <p className="section-body">{t("fleet.policy.noneBody")}</p>
-                )}
-              </section>
-            );
-          })}
-        </div>
-      </Panel>
+                      {row.decision !== "none" ? <TextField label={t("fleet.policy.fields.ttl")} hint={t("fleet.policy.fields.ttlHint")} value={row.ttl} onChange={(event) => setRow(mode, { ttl: event.currentTarget.value })} error={rowError.ttl} type="number" min={1} max={3600} inputMode="numeric" /> : null}
+                      {row.decision === "pending_approval" ? <TextAreaField label={t("fleet.policy.fields.approvers")} hint={t("fleet.policy.fields.approversHint")} value={row.approvers} onChange={(event) => setRow(mode, { approvers: event.currentTarget.value })} error={rowError.approvers} rows={2} mono spellCheck={false} /> : null}
+                    </div>
+                  ) : row.decision !== "none" ? (
+                    <dl className="rule-grid">
+                      <div>
+                        <dt>{t("fleet.policy.fields.ttl")}</dt>
+                        <dd>{t("fleet.seconds", { count: Number(row.ttl) })}</dd>
+                      </div>
+                      {row.decision === "pending_approval" ? (
+                        <div>
+                          <dt>{t("fleet.policy.fields.approvers")}</dt>
+                          <dd className="chip-list">
+                            {row.approvers.split("\n").filter(Boolean).map((value) => (
+                              <code key={value} className="chip mono">
+                                {value}
+                              </code>
+                            ))}
+                          </dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  ) : (
+                    <p className="section-body">{t("fleet.policy.noneBody")}</p>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </Panel>
+      ))}
       {others.length ? <Notice tone="neutral">{t("fleet.policy.otherRules", { count: others.length })}</Notice> : null}
       <Notice tone="neutral" icon="info">
         {t("fleet.policy.boundary")}

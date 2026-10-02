@@ -5,6 +5,7 @@
 // review is still separate.
 import { expect, test, type Page } from "@playwright/test";
 import { axeViolations, horizontalOverflow, smallTargets } from "./support/a11y.js";
+import { publishOffer, seedOperation, startWorld } from "./support/provisioning-world.js";
 import { ADMIN, AGENT_IDS, AdminClient, Stack } from "./support/stack.js";
 
 const ROUTES = [
@@ -57,7 +58,7 @@ async function focusWalk(page: Page, limit = 80): Promise<string[]> {
       const ring = style.outlineStyle !== "none" && parseFloat(style.outlineWidth) > 0;
       const shadow = style.boxShadow !== "none";
       // A native control wrapped by a styled label shows the ring on the label.
-      const wrapper = element.closest("label, .role-option, .segmented-option");
+      const wrapper = element.closest("label, .role-option, .segmented-option, .secret-field");
       const wrapperStyle = wrapper ? getComputedStyle(wrapper) : null;
       const wrapperRing = wrapperStyle ? (wrapperStyle.outlineStyle !== "none" && parseFloat(wrapperStyle.outlineWidth) > 0) || wrapperStyle.boxShadow !== "none" : false;
       const name = `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${element.className && typeof element.className === "string" ? `.${element.className.split(" ")[0]}` : ""} "${(element.getAttribute("aria-label") ?? element.textContent ?? "").trim().slice(0, 30)}"`;
@@ -84,10 +85,11 @@ async function focusWalk(page: Page, limit = 80): Promise<string[]> {
 
 test.describe("accessibility across the console", () => {
   let stack: Stack;
+  let admin: AdminClient;
 
   test.beforeAll(async () => {
     stack = await Stack.start({});
-    const admin = new AdminClient(stack);
+    admin = new AdminClient(stack);
     await admin.bootstrap();
     await admin.createOperator("e2e-long-operator-name-for-wrapping-checks", "operator", "Nguyễn Thị Phương Thảo — Night Shift Operations Lead");
     const keys = await stack.seedAgents([AGENT_IDS.requester, AGENT_IDS.fulfiller]);
@@ -129,6 +131,76 @@ test.describe("accessibility across the console", () => {
     }
     expect(small).toEqual([]);
     await touch.close();
+  });
+
+  test("DR-E07 / DR-E22 / P05-PV06-S: the operation detail with the Provide Source panel in every state, and the fleet input page, fit 320-1440 px, pass axe and have a clean focus walk", async ({ browser }) => {
+    test.setTimeout(300_000);
+    const world = await startWorld(stack, admin);
+    const seeded = await seedOperation(world, "accessibility");
+    const context = await browser.newContext({ bypassCSP: true, viewport: { width: 1440, height: 900 } });
+    const failures: string[] = [];
+    const panelHeading = (page: Page) => page.getByRole("heading", { name: "Provide Source" });
+    const audit = async (page: Page, label: string, widths = WIDTHS) => {
+      for (const width of widths) {
+        await page.setViewportSize({ width, height: 900 });
+        const overflow = await horizontalOverflow(page);
+        if (overflow > 0) failures.push(`${label} at ${width}px overflows by ${overflow}px`);
+        if (width === 390 || width === 1440) for (const violation of await axeViolations(page)) failures.push(`${label} at ${width}px axe ${violation}`);
+      }
+      await page.setViewportSize({ width: 1440, height: 900 });
+      for (const problem of await focusWalk(page)) failures.push(`${label}: ${problem}`);
+    };
+    try {
+      const page = await context.newPage();
+      await page.goto(`${stack.consoleUrl}/login`);
+      await page.getByLabel("Username").fill(world.owner.username);
+      await page.getByLabel("Password", { exact: true }).fill(world.owner.password);
+      await page.getByRole("button", { name: "Sign in" }).click();
+      await expect(page).not.toHaveURL(/\/login/);
+      await page.goto(`${stack.consoleUrl}/operations/${encodeURIComponent(seeded.operationId)}`);
+      await expect(panelHeading(page)).toBeVisible();
+      await expect(page.locator("section.provision-panel").getByRole("status")).toContainText("Waiting for the node");
+      await audit(page, "operation detail, waiting for the offer");
+
+      await publishOffer(world, seeded, 200_000);
+      const provide = page.locator("section.provision-panel").getByRole("button", { name: "Provide Source", exact: true });
+      await expect(provide).toBeVisible({ timeout: 15_000 });
+      await audit(page, "operation detail, offer ready");
+
+      const [input] = await Promise.all([context.waitForEvent("page"), provide.click()]);
+      await input.waitForLoadState("domcontentloaded");
+      await expect(input.getByTestId("status")).toHaveText("Awaiting input");
+      await audit(input, "fleet input page, ready");
+
+      await expect(page.locator("section.provision-panel").getByRole("button", { name: "Open the Source page again" })).toBeVisible({ timeout: 15_000 });
+      await audit(page, "operation detail, link issued");
+
+      await input.setViewportSize({ width: 1440, height: 900 });
+      await input.getByTestId("secret-input").fill("accessibility check value");
+      await input.getByTestId("submit-btn").click();
+      await expect(input.getByTestId("outcome-title")).toHaveText("Your part is done.", { timeout: 20_000 });
+      await audit(input, "fleet input page, submitted");
+
+      await expect(page.locator("section.provision-panel").getByText("Source received")).toBeVisible({ timeout: 15_000 });
+      await audit(page, "operation detail, submitted");
+
+      // The refusal states a stranger sees (no session): sign-in required, and an unavailable link.
+      const stranger = await browser.newContext({ bypassCSP: true, viewport: { width: 1440, height: 900 } });
+      try {
+        const anonymous = await stranger.newPage();
+        const issued = await world.owner.client.call<{ input_path: string }>("POST", `/api/v3/admin/operations/${encodeURIComponent(seeded.operationId)}/provisioning-link`, undefined, { "idempotency-key": `e2e-a11y-${Date.now()}-${"0".repeat(8)}` });
+        // The operation is submitted, so the link route answers 410; fall back to a well-formed dummy link.
+        const target = issued.status === 201 || issued.status === 200 ? issued.body.input_path : `/?kind=fleet&id=${"a".repeat(64)}&metadata_sig=1.${"A".repeat(43)}&submit_sig=1.${"A".repeat(43)}`;
+        await anonymous.goto(`${stack.consoleUrl}${target}`);
+        await expect(anonymous.getByTestId("outcome-title")).toBeVisible();
+        await audit(anonymous, "fleet input page, refused");
+      } finally {
+        await stranger.close();
+      }
+    } finally {
+      await context.close();
+    }
+    expect(failures).toEqual([]);
   });
 
   test("DR-E07: at 200% zoom (720 CSS px on a 1440 px window) every route stays usable and navigation is reachable", async ({ browser }) => {

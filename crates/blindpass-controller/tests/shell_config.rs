@@ -992,8 +992,14 @@ async fn production_shell_has_no_seed_route_or_test_override() {
         .await
         .expect("bind local test listener");
     let address = listener.local_addr().expect("resolve local listener");
-    let server =
-        tokio::spawn(async move { axum::serve(listener, app).await.expect("serve shell") });
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .expect("serve shell")
+    });
 
     let (status, body) = raw_request(&address.to_string(), "POST", "/api/v3/admin/test/seed").await;
     assert_eq!(status, 404);
@@ -1059,8 +1065,14 @@ async fn shell_exposes_liveness_readiness_and_ct19_capability_without_sensitive_
         .await
         .expect("bind local test listener");
     let address = listener.local_addr().expect("resolve local listener");
-    let server =
-        tokio::spawn(async move { axum::serve(listener, app).await.expect("serve shell") });
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .expect("serve shell")
+    });
 
     let address = address.to_string();
     let health = request(&address, "GET", "/healthz").await;
@@ -1166,9 +1178,12 @@ async fn readiness_fails_after_live_database_pool_disconnects() {
         .expect("bind local readiness test listener");
     let address = listener.local_addr().expect("resolve readiness address");
     let server = tokio::spawn(async move {
-        axum::serve(listener, app)
-            .await
-            .expect("serve readiness test")
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .expect("serve readiness test")
     });
 
     let address = address.to_string();

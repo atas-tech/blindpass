@@ -33,7 +33,12 @@ export function nodeKeys(): SimulatedNode & { signingKey: KeyObject } {
 }
 
 /** Submit an enrollment the way blindpass-node does; returns the node's printed fingerprint. */
-export async function submitEnrollment(controllerUrl: string, token: string, keys = nodeKeys()): Promise<SimulatedNode & { status: number }> {
+export async function submitEnrollment(
+  controllerUrl: string,
+  token: string,
+  keys = nodeKeys(),
+  capabilities: Record<string, unknown> = { modes: ["file", "socket"], actions: ["noop.marker"] }
+): Promise<SimulatedNode & { status: number }> {
   const message = Buffer.concat([ENROLLMENT_DOMAIN, field(Buffer.from(token, "utf8")), field(keys.signingPub), field(keys.recipientPub)]);
   const proof = sign(null, message, keys.signingKey);
   const response = await fetch(`${controllerUrl}/api/v3/node/enroll`, {
@@ -45,7 +50,7 @@ export async function submitEnrollment(controllerUrl: string, token: string, key
       recipient_pub: keys.recipientPub.toString("base64url"),
       proof: proof.toString("base64url"),
       protocol_version: "blindpass-node/1",
-      capabilities: { modes: ["file", "socket"], actions: ["noop.marker"] },
+      capabilities,
       host_facts: { os: "linux", simulated: true }
     })
   });

@@ -49,30 +49,13 @@ async function ensureDistArtifacts() {
 }
 
 function encodeMcpFrame(payload) {
-    const body = JSON.stringify(payload);
-    const length = Buffer.byteLength(body, "utf8");
-    return `Content-Length: ${length}\r\n\r\n${body}`;
+    return `${JSON.stringify(payload)}\n`;
 }
 
 function parseMcpFrame(buffer) {
-    const headerEnd = buffer.indexOf("\r\n\r\n");
-    if (headerEnd === -1) return null;
-
-    const headerText = buffer.slice(0, headerEnd).toString("utf8");
-    const contentLengthMatch = headerText.match(/content-length:\s*(\d+)/i);
-    if (!contentLengthMatch) {
-        throw new Error("MCP frame missing Content-Length header.");
-    }
-
-    const contentLength = Number.parseInt(contentLengthMatch[1], 10);
-    const bodyStart = headerEnd + 4;
-    const bodyEnd = bodyStart + contentLength;
-    if (buffer.length < bodyEnd) return null;
-
-    return {
-        message: JSON.parse(buffer.slice(bodyStart, bodyEnd).toString("utf8")),
-        remainder: buffer.slice(bodyEnd),
-    };
+    const end = buffer.indexOf('\n');
+    if (end === -1) return null;
+    return { message: JSON.parse(buffer.subarray(0, end).toString('utf8')), remainder: buffer.subarray(end + 1) };
 }
 
 async function readOneMcpResponse(stream, timeoutMs = 5000) {
@@ -195,6 +178,15 @@ async function testMcpNpmPackagingAndRuntimeHandshake() {
         const packJson = JSON.parse(packDryRun.stdout);
         const packFilePaths = (packJson?.[0]?.files ?? []).map((entry) => entry.path);
         assert.ok(packFilePaths.includes("dist/mcp-server.mjs"));
+        assert.ok(packFilePaths.includes('dist/THIRD_PARTY_NOTICES.md'));
+        assert.ok(packFilePaths.includes('dist/licenses/bundle-packages.json'));
+        const inventory = JSON.parse(await readFile(path.join(stageDir, 'dist/licenses/bundle-packages.json'), 'utf8'));
+        assert.ok(inventory.some((pkg) => pkg.name === '@modelcontextprotocol/server' && pkg.version === '2.2.0'));
+        assert.ok(inventory.every((pkg) => pkg.files.length > 0));
+        for (const pkg of inventory) for (const file of pkg.files) {
+            assert.ok(packFilePaths.includes(`dist/${file.path}`));
+            assert.ok((await readFile(path.join(stageDir, 'dist', file.path))).length > 0);
+        }
         assert.ok(packFilePaths.includes("dist/blindpass-resolver.mjs"));
 
         const child = spawn("node", [path.join(stageDir, "dist", "mcp-server.mjs")], {
@@ -215,7 +207,7 @@ async function testMcpNpmPackagingAndRuntimeHandshake() {
                 jsonrpc: "2.0",
                 id: 1,
                 method: "initialize",
-                params: {},
+                params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "blindpass-launch-contract", version: "1" } },
             }));
             const response = await readOneMcpResponse(child.stdout);
             assert.equal(response?.result?.serverInfo?.name, "blindpass");

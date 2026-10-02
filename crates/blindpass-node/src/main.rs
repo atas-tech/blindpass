@@ -3,11 +3,13 @@
 use blindpass_core::canon::{Value, canonicalize_value, parse_json};
 use blindpass_core::custody::sha256;
 use blindpass_core::fleet::{
-    enrollment_proof_message, node_key_fingerprint, node_session_challenge_message,
+    DocumentKind, MAX_NODE_DOCUMENT_BYTES, enrollment_proof_message, node_key_fingerprint,
+    node_session_challenge_message,
 };
 use blindpass_core::secret::wipe;
 use blindpass_core::signing::{base64_url_decode, ed25519::verify};
 mod outbox;
+mod provisioning_relay;
 use blindpass_node::transport::{HttpsTransport, TransportError};
 use outbox::{NodeEvent, Outbox};
 use std::io::{Read, Write};
@@ -397,6 +399,7 @@ fn run_channel(socket: &Path, state_dir: PathBuf, controller: &str) -> Result<()
         .map_err(|_| "controller must be a valid HTTPS origin".to_owned())?;
     let mut outbox = Outbox::open(&state_dir).map_err(str::to_owned)?;
     let mut ack_seq = None;
+    let mut published_offers = std::collections::HashSet::new();
     let mut backoff_seconds = 1_u64;
     let mut retry_stage = "starting node channel";
     loop {
@@ -404,6 +407,7 @@ fn run_channel(socket: &Path, state_dir: PathBuf, controller: &str) -> Result<()
             socket,
             &transport,
             &mut outbox,
+            &mut published_offers,
             &mut ack_seq,
             &mut backoff_seconds,
             &mut retry_stage,
@@ -428,6 +432,7 @@ fn run_channel_session(
     socket: &Path,
     transport: &HttpsTransport,
     outbox: &mut Outbox,
+    published_offers: &mut std::collections::HashSet<String>,
     ack_seq: &mut Option<u64>,
     backoff_seconds: &mut u64,
     retry_stage: &mut &'static str,
@@ -639,7 +644,16 @@ fn run_channel_session(
                 .ok_or(ChannelError::Retryable)?;
             check_inbox_sequence(ack_seq, previous_seq, seq)?;
             let envelope = item.get("envelope").ok_or(ChannelError::Retryable)?;
-            relay_document(socket, envelope).map_err(|_| ChannelError::Retryable)?;
+            // RELAY for ordinary documents; browser grants also publish their
+            // broker-signed offer and Source deliveries use PROVISION_SOURCE.
+            // Nothing is acknowledged until the whole step has succeeded.
+            provisioning_relay::process_inbox_document(
+                socket,
+                outbox,
+                published_offers,
+                &mut |line| eprintln!("{line}"),
+                envelope,
+            )?;
             previous_seq = Some(seq);
             *ack_seq = Some(seq);
             if envelope.get("kind").and_then(Value::as_str) == Some("node_key_rotation") {
@@ -740,9 +754,20 @@ fn check_inbox_sequence(
 }
 
 fn relay_document(socket: &Path, envelope: &Value) -> Result<(), String> {
+    relay_document_response(socket, envelope).map(|_| ())
+}
+
+/// RELAY carries every kind but `provisioning_delivery` and keeps the 64 KiB
+/// cap for all of them; a delivery enters the broker only via PROVISION_SOURCE.
+fn relay_document_response(socket: &Path, envelope: &Value) -> Result<Vec<u8>, String> {
+    if envelope.get("kind").and_then(Value::as_str)
+        == Some(DocumentKind::ProvisioningDelivery.as_str())
+    {
+        return Err("provisioning deliveries use the dedicated broker command".to_owned());
+    }
     let mut document = canonicalize_value(envelope)
         .map_err(|_| "controller document could not be encoded".to_owned())?;
-    if document.is_empty() || document.len() > 64 * 1024 {
+    if document.is_empty() || document.len() > MAX_NODE_DOCUMENT_BYTES {
         wipe(&mut document);
         return Err("controller document size is invalid".to_owned());
     }
@@ -762,7 +787,7 @@ fn relay_document(socket: &Path, envelope: &Value) -> Result<(), String> {
         eprintln!("node relay received a broker rejection for a signed controller document");
         return Err("broker rejected the signed controller document".to_owned());
     }
-    Ok(())
+    Ok(relay_response)
 }
 
 fn broker_document_response_succeeded(response: &[u8]) -> bool {

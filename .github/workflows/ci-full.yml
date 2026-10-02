@@ -19,9 +19,13 @@ env:
 
 jobs:
   workspace:
-    name: Build and workspace tests
+    name: Build and workspace tests (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24.21.0", "26.10.0"]
     services:
       postgres:
         image: postgres:16-alpine
@@ -52,7 +56,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install lockfile dependencies
@@ -85,9 +89,13 @@ jobs:
         run: npm run test:e2e
 
   contract:
-    name: P00 HTTP contract suite
+    name: P00 HTTP contract suite (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24.21.0", "26.10.0"]
     services:
       postgres:
         image: postgres:16-alpine
@@ -118,7 +126,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install lockfile dependencies
@@ -137,9 +145,13 @@ jobs:
           node scripts/tests/assert-no-vitest-skips.mjs /tmp/p00-contract-results.json
 
   base-contract:
-    name: P00 harness-spawned base URL adapter
+    name: P00 harness-spawned base URL adapter (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24.21.0", "26.10.0"]
     services:
       postgres:
         image: postgres:16-alpine
@@ -176,7 +188,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install lockfile dependencies
@@ -189,13 +201,17 @@ jobs:
         run: node --import tsx scripts/tests/p00-base-contract.mjs
 
   contract-rust:
-    name: P02 Rust HTTP contract (${{ matrix.backend }})
+    # The Rust controller is Node-independent, but this job also runs the TS
+    # contract harness, console build and Playwright flows, so both declared
+    # Node profiles run (4 jobs). It is a manual workflow; cost is accepted.
+    name: P02 Rust HTTP contract (${{ matrix.backend }}, Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         backend: [sqlite, postgres]
+        node-version: ["24.21.0", "26.10.0"]
     services:
       postgres:
         image: postgres:16-alpine
@@ -217,7 +233,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install lockfile dependencies
@@ -267,6 +283,9 @@ jobs:
           --test fleet_approvals --test fleet_audit --test fleet_channel
           --test fleet_clock --test fleet_enrollment --test fleet_events
           --test fleet_lifecycle --test fleet_registry --test fleet_roles
+          --test fleet_browser_intents --test fleet_browser_operations
+          --test security_perf_regressions --test fleet_provisioning_offers
+          --test fleet_provisioning_submit
 
       - name: Run P02 I07 PostgreSQL outage and reconnection test
         if: matrix.backend == 'postgres'
@@ -368,9 +387,13 @@ jobs:
           fi
 
   openapi-drift:
-    name: P02 controller OpenAPI and generated types
+    name: P02 controller OpenAPI and generated types (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24.21.0", "26.10.0"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -378,7 +401,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install lockfile dependencies
@@ -410,9 +433,13 @@ jobs:
           git diff --exit-code -- packages/contract-tests/src/generated/controller.d.ts
 
   console:
-    name: P04 console, input page and embedded E2E
+    name: P04 console, input page and embedded E2E (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24.21.0", "26.10.0"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -420,7 +447,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install lockfile dependencies
@@ -476,4 +503,6 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Run locked Rust tests
-        run: cargo test --workspace --locked
+        # Single-threaded: parallel test binaries race on executable files
+        # (ETXTBSY), as recorded in the execution evidence.
+        run: cargo test --workspace --locked -- --test-threads=1

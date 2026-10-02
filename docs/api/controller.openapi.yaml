@@ -638,6 +638,504 @@
         "responses": { "200": { "description": "Node revoked; revocation_pending remains true until the node applies the signed revocation and its channel session is closed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Node" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "409": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
+    "/api/v3/nodes/{node_id}/source-bindings/{resource_id}": {
+      "get": {
+        "operationId": "getFleetSourceBinding",
+        "tags": [
+          "Fleet administration"
+        ],
+        "description": "An authenticated administrator cookie is required. The binding is independently configured for one enrolled node/resource. A change invalidates later use of previously recorded offers.",
+        "security": [
+          {
+            "adminSession": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Independent source destination metadata; no Source or input URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceBinding"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "404": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdminError"
+          }
+        }
+      },
+      "put": {
+        "operationId": "updateFleetSourceBinding",
+        "tags": [
+          "Fleet administration"
+        ],
+        "description": "An authenticated administrator cookie is required. The binding is independently configured for one enrolled node/resource. A change invalidates later use of previously recorded offers. Origin/CSRF and the expected version are checked; version0 creates and current positive versions update. Inactive or pending rotation/revocation nodes and stale versions return409.",
+        "security": [
+          {
+            "adminSession": [],
+            "csrfCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "node_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "resource_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/CsrfHeader"
+          },
+          {
+            "$ref": "#/components/parameters/Origin"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Independent source destination metadata; no Source or input URL",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SourceBinding"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "401": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "403": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "409": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "422": {
+            "$ref": "#/components/responses/AdminError"
+          },
+          "503": {
+            "$ref": "#/components/responses/AdminError"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SourceBindingInput"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v3/admin/operations/{id}/provisioning-link": {
+      "post": {
+        "operationId": "createFleetProvisioningLink",
+        "tags": [
+          "Fleet administration"
+        ],
+        "description": "Creates the one immutable Source link for an original browser_session grant. The deciding operator owns Source collection for an approved grant; for an automatically allowed grant the administrator who last configured the node/resource destination owns it. A viewer, another administrator or operator, a node bearer or a desktop token is denied (403/401). Origin, CSRF and a 16-128 character Idempotency-Key are required. The transaction re-checks session, role, grant, operation, workload registration, policy, issuer epoch, enrolled key and destination version. The link expires with the original recipient offer. An exact retry (same key and operator) returns the original link with 200; any other key, or a second link for the grant, conflicts. 409 provisioning_offer_pending means the node has not yet published its offer; retry shortly. Capabilities are derived from the root secret in a fleet-specific signing domain; a legacy browser capability is never accepted.",
+        "security": [
+          {
+            "adminSession": [],
+            "csrfCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Controller operation identifier of a browser_session operation"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfHeader"
+          },
+          {
+            "$ref": "#/components/parameters/Origin"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Exact retry: the original immutable link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisioningLink"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Link created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisioningLink"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or malformed Idempotency-Key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session required or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Role, CSRF/Origin or named-owner check failed (role_denied, csrf_or_origin_denied, provisioning_owner_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "operation_not_found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "provisioning_offer_pending or provisioning_link_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "provisioning_unavailable: authority, offer or deadline no longer holds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Controller state unavailable; no link was created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v3/fleet/provisioning/{id}/metadata": {
+      "get": {
+        "operationId": "getFleetProvisioningMetadata",
+        "tags": [
+          "Fleet administration"
+        ],
+        "description": "Read-only status for the link's named operator. Requires that operator's current browser session cookie and the fleet metadata capability (sig); the submit capability, a legacy browser capability, another operator or a node bearer is denied. Repeated reads and browser prefetch never consume the recipient key, create a delivery or write audit. A ready response carries the original signed recipient offer and the independently trusted expected values (the original controller-signed grant body, the enrolled broker signing key, node key version and the administrator-configured destination) in exactly the shape the browser library's verifyBrowserRecipientOffer accepts as `expected`; none of them is derived from the offer. After a successful submit the answer is the immutable receipt, even if the grant was later consumed.",
+        "security": [
+          {
+            "adminSession": [],
+            "fleetProvisioningCapability": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Fleet metadata capability returned as metadata_sig"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ready for Source or already submitted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ProvisioningMetadata"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ProvisioningReceipt"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session required or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid capability, role, or not the link's named operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "provisioning_unavailable: expired, withdrawn or changed authority",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Controller state unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v3/fleet/provisioning/{id}/submit": {
+      "post": {
+        "operationId": "submitFleetProvisioning",
+        "tags": [
+          "Fleet administration"
+        ],
+        "description": "Accepts only canonical bounded HPKE encapsulation and ciphertext sealed by the browser to the offer's one-use recipient key. Requires the link's named operator session, Origin, CSRF and the fleet submit capability. The first valid submission atomically commits the immutable receipt (ciphertext digest), one controller-signed provisioning_delivery document in the node inbox (envelope epoch equals the original grant issuer epoch) and a fleet.source_submitted audit event. A concurrent or exact retry returns the original receipt with 200 and never reopens or requeues; a different ciphertext conflicts (409). Malformed, oversized, unknown-field or plaintext input answers a fixed 400 that never echoes the body; bodies above 128 KiB answer 413. The controller never receives Source plaintext. The deployment's BLINDPASS_BODY_LIMIT_BYTES must be at least 131072.",
+        "security": [
+          {
+            "adminSession": [],
+            "csrfCookie": [],
+            "fleetProvisioningCapability": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sig",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Fleet submit capability returned as submit_sig"
+          },
+          {
+            "$ref": "#/components/parameters/CsrfHeader"
+          },
+          {
+            "$ref": "#/components/parameters/Origin"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProvisioningSubmitInput"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Exact retry: the original immutable receipt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisioningReceipt"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Ciphertext, receipt, signed delivery and audit committed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProvisioningReceipt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_provisioning_submission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Session required or ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing/invalid capability, CSRF/Origin, role, or not the link's named operator",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "provisioning_ciphertext_conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "provisioning_unavailable: expired, withdrawn or changed authority; no receipt exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds the 128 KiB submission limit (global Payload Too Large body)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegacyError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Controller state unavailable; nothing was committed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v3/nodes/{id}/rotate-key": {
       "post": {
         "operationId": "rotateFleetNodeKey",
@@ -787,6 +1285,7 @@
       "get": {
         "operationId": "listFleetOperations",
         "tags": ["Fleet administration"],
+        "description": "Each item includes the calling operator's secret-free provisioning state, so can_provide differs between operators for the same operation.",
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "query", "name": "status", "schema": { "type": "string" } }, { "in": "query", "name": "cursor", "schema": { "type": "string" } }, { "in": "query", "name": "limit", "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }],
         "responses": { "200": { "description": "Operation page", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationList" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
@@ -805,6 +1304,7 @@
       "get": {
         "operationId": "getFleetOperation",
         "tags": ["Fleet administration"],
+        "description": "Includes the calling operator's secret-free provisioning state. Administrators and operators only: a viewer receives 403 role_denied and never a state.",
         "security": [{ "adminSession": [] }],
         "parameters": [{ "in": "path", "name": "id", "required": true, "schema": { "type": "string" } }],
         "responses": { "200": { "description": "Operation metadata", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Operation" } } } }, "401": { "$ref": "#/components/responses/AdminError" }, "403": { "$ref": "#/components/responses/AdminError" }, "404": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
@@ -850,7 +1350,7 @@
         "tags": ["Node channel"],
         "security": [{ "nodeBearer": [] }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NodePollInput" } } } },
-        "responses": { "200": { "description": "At most 50 signed documents; an empty bounded long poll carries controller time", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NodePollResponse" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
+        "responses": { "200": { "description": "At most 50 signed documents, and at most about 512 KiB of document text beyond the first (unanswered documents stay unacknowledged for the next poll); an empty bounded long poll carries controller time. Every document is capped at 64 KiB except a provisioning_delivery, which may carry a sealed 64 KiB Source in up to 128 KiB", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NodePollResponse" } } } }, "400": { "$ref": "#/components/responses/AdminError" }, "401": { "$ref": "#/components/responses/AdminError" }, "503": { "$ref": "#/components/responses/AdminError" } }
       }
     },
     "/api/v3/node/events": {
@@ -876,6 +1376,7 @@
       "adminRefresh": { "type": "apiKey", "in": "cookie", "name": "bp_refresh" },
       "csrfCookie": { "type": "apiKey", "in": "cookie", "name": "bp_csrf" },
       "desktopBearer": { "type": "http", "scheme": "bearer", "description": "P04-D3 desktop approval-app access token from a kind desktop login or refresh, sent without Origin. Accepted only by session read, refresh and logout and the /api/v3/approvals routes; every other route answers 401. It expires 20 minutes after the login or refresh that issued it, as well as on logout, idle timeout, password change, reset, removal and family revocation. Unsafe methods need no CSRF value because nothing is ambient." },
+      "fleetProvisioningCapability": { "type": "apiKey", "in": "query", "name": "sig", "description": "Fleet Source link capability: expiry and a scope-bound (metadata or submit) HMAC in a fleet-specific derived signing domain, distinct from browserSignedLink. It never authorizes by itself: the link's named operator session, role and current authority are also required on every call." },
       "seedToken": { "type": "apiKey", "in": "header", "name": "x-blindpass-seed-token" }
     },
     "parameters": {
@@ -917,7 +1418,7 @@
       "ExchangeRetrieved": { "type": "object", "properties": { "enc": { "type": "string" }, "ciphertext": { "type": "string" }, "secret_name": { "type": "string" }, "fulfilled_by": { "type": ["string", "null"] } }, "required": ["enc", "ciphertext", "secret_name", "fulfilled_by"], "additionalProperties": false },
       "RevokedResponse": { "type": "object", "properties": { "status": { "type": "string", "const": "revoked" } }, "required": ["status"], "additionalProperties": false },
       "BrowserStatusCapabilityResponse": { "type": "object", "properties": { "status_sig": { "type": "string", "minLength": 16 } }, "required": ["status_sig"], "additionalProperties": false },
-      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3", "fleet.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 12 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
+      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3", "fleet.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 16 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
       "NodeStatus": { "type": "string", "enum": ["online", "stale", "offline", "revoked"] },
       "Node": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "status": { "$ref": "#/components/schemas/NodeStatus" }, "revocation_pending": { "type": "boolean", "description": "True until the node applies its signed revocation and the controller closes its session." }, "rotation_pending": { "type": "boolean", "description": "True while the broker has not yet applied the staged key rotation." }, "pending_key_version": { "type": ["integer", "null"] }, "pending_rotation_id": { "type": ["string", "null"] }, "protocol_version": { "type": "string" }, "capabilities": { "type": "object", "additionalProperties": true }, "key_version": { "type": "integer", "minimum": 1 }, "signing_fingerprint": { "type": "string" }, "recipient_fingerprint": { "type": "string" }, "last_seen_at": { "type": ["integer", "null"] }, "last_poll_at": { "type": ["integer", "null"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "name", "status", "revocation_pending", "rotation_pending", "pending_key_version", "pending_rotation_id", "protocol_version", "capabilities", "key_version", "signing_fingerprint", "recipient_fingerprint", "last_seen_at", "last_poll_at", "created_at", "version"], "additionalProperties": false },
       "NodeKeyRotationInput": { "type": "object", "properties": { "expected_key_version": { "type": "integer", "minimum": 1 }, "expected_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "Operator-confirmed SHA-256 fingerprint of the staged replacement signing and recipient keys." }, "signing_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "recipient_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" } }, "required": ["expected_key_version", "expected_fingerprint", "signing_pub", "recipient_pub"], "additionalProperties": false },
@@ -930,25 +1431,26 @@
       "EnrollmentDecisionInput": { "type": "object", "properties": { "expected_fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 }, "expected_version": { "type": "integer", "minimum": 1 } }, "required": ["expected_fingerprint", "expected_version"], "additionalProperties": false },
       "EnrollmentSubmitInput": { "type": "object", "properties": { "token": { "type": "string", "minLength": 48, "maxLength": 256 }, "signing_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "recipient_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "proof": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }, "protocol_version": { "type": "string", "maxLength": 64 }, "capabilities": { "type": "object", "additionalProperties": true }, "host_facts": { "type": "object", "additionalProperties": true } }, "required": ["token", "signing_pub", "recipient_pub", "proof", "protocol_version", "capabilities", "host_facts"], "additionalProperties": false },
       "EnrollmentSubmitted": { "type": "object", "properties": { "enrollment_id": { "type": "string" }, "node_id": { "type": "string" }, "tenant_id": { "type": "string" }, "fingerprint": { "type": "string", "minLength": 64, "maxLength": 64 }, "status": { "type": "string", "const": "submitted" } }, "required": ["enrollment_id", "node_id", "tenant_id", "fingerprint", "status"], "additionalProperties": false },
-      "Workload": { "type": "object", "properties": { "id": { "type": "string" }, "node_id": { "type": "string" }, "name": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "consumption_mode": { "type": "string", "enum": ["file", "socket"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "registration_version": { "type": "integer", "minimum": 1 }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds", "registration_version", "status", "created_at", "version"], "additionalProperties": false },
+      "Workload": { "type": "object", "properties": { "id": { "type": "string" }, "node_id": { "type": "string" }, "name": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "registration_version": { "type": "integer", "minimum": 1 }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds", "registration_version", "status", "created_at", "version"], "additionalProperties": false },
       "WorkloadList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Workload" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
-      "WorkloadInput": { "type": "object", "properties": { "node_id": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 128 }, "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "consumption_mode": { "type": "string", "enum": ["file", "socket"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 } }, "required": ["node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds"], "additionalProperties": false },
-      "WorkloadUpdateInput": { "type": "object", "properties": { "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "consumption_mode": { "type": "string", "enum": ["file", "socket"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "expected_version": { "type": "integer", "minimum": 1 } }, "required": ["expected_version"], "minProperties": 2, "additionalProperties": false },
-      "FleetPolicyRule": { "type": "object", "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 128 }, "action": { "type": "string", "const": "noop.marker" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "decision": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "approval_required": { "type": "boolean" }, "max_ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "approver_ids": { "type": "array", "description": "Operator ids or usernames allowed to decide approvals for this rule. Required (1 to 32 unique entries) when decision is pending_approval and empty otherwise.", "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.@-]+$" }, "maxItems": 32, "uniqueItems": true } }, "required": ["id", "action", "mode", "decision", "approval_required", "max_ttl_seconds"], "additionalProperties": false },
+      "WorkloadInput": { "type": "object", "properties": { "node_id": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 128 }, "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 } }, "required": ["node_id", "name", "unit", "account", "consumption_mode", "local_ceiling_seconds"], "additionalProperties": false },
+      "WorkloadUpdateInput": { "type": "object", "properties": { "unit": { "type": "string", "minLength": 1, "maxLength": 256 }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "consumption_mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "local_ceiling_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "expected_version": { "type": "integer", "minimum": 1 } }, "required": ["expected_version"], "minProperties": 2, "additionalProperties": false },
+      "FleetPolicyRule": { "type": "object", "properties": { "id": { "type": "string", "minLength": 1, "maxLength": 128 }, "action": { "type": "string", "enum": ["noop.marker", "browser.session"], "description": "noop.marker pairs with file or socket; browser.session pairs with browser_session." }, "mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "decision": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "approval_required": { "type": "boolean" }, "max_ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "approver_ids": { "type": "array", "description": "Operator ids or usernames allowed to decide approvals for this rule. Required (1 to 32 unique entries) when decision is pending_approval and empty otherwise.", "items": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9_.@-]+$" }, "maxItems": 32, "uniqueItems": true } }, "required": ["id", "action", "mode", "decision", "approval_required", "max_ttl_seconds"], "additionalProperties": false },
       "FleetPolicy": { "type": "object", "properties": { "version": { "type": "integer", "minimum": 1 }, "rules": { "type": "array", "items": { "$ref": "#/components/schemas/FleetPolicyRule" }, "maxItems": 256 }, "updated_at": { "type": "integer" }, "updated_by": { "type": "string" } }, "required": ["version", "rules", "updated_at", "updated_by"], "additionalProperties": false },
       "FleetPolicyInput": { "type": "object", "properties": { "expected_version": { "type": "integer", "minimum": 1 }, "rules": { "type": "array", "items": { "$ref": "#/components/schemas/FleetPolicyRule" }, "maxItems": 256 } }, "required": ["expected_version", "rules"], "additionalProperties": false },
-      "OperationApprovalScope": { "type": "object", "description": "Stable authority scope shared by every operation in an approval group. Per-operation evidence is listed under operations.", "properties": { "tenant_id": { "type": "string" }, "node_id": { "type": "string" }, "workload_id": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "action": { "type": "string" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "rule_id": { "type": ["string", "null"] }, "policy_version": { "type": "integer" } }, "required": ["tenant_id", "node_id", "workload_id", "unit", "account", "action", "mode", "rule_id", "policy_version"], "additionalProperties": false },
+      "OperationApprovalScope": { "type": "object", "description": "Stable authority scope shared by every operation in an approval group. Per-operation evidence is listed under operations.", "properties": { "tenant_id": { "type": "string" }, "node_id": { "type": "string" }, "workload_id": { "type": "string" }, "unit": { "type": "string" }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "action": { "type": "string" }, "mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "rule_id": { "type": ["string", "null"] }, "policy_version": { "type": "integer" } }, "required": ["tenant_id", "node_id", "workload_id", "unit", "account", "action", "mode", "rule_id", "policy_version"], "additionalProperties": false },
       "OperationApprovalMember": { "type": "object", "description": "One operation in an approval group with its own requester and broker evidence.", "properties": { "id": { "type": "string" }, "requested_by": { "type": "string" }, "invocation_id": { "type": "string" }, "resource_id": { "type": "string" }, "purpose": { "type": "string" }, "broker_event_key": { "type": ["string", "null"] }, "status": { "type": "string" }, "created_at": { "type": "integer" } }, "required": ["id", "requested_by", "invocation_id", "resource_id", "purpose", "broker_event_key", "status", "created_at"], "additionalProperties": false },
-      "OperationInput": { "type": "object", "description": "Every operation field must match a recent operation_request event signed by the enrolled broker. The invocation is taken from that evidence; caller input alone has no authority.", "properties": { "workload_id": { "type": "string" }, "action": { "type": "string", "const": "noop.marker" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "purpose": { "type": "string", "maxLength": 512 }, "resource_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "invocation_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "broker_event_key": { "type": "string", "minLength": 16, "maxLength": 128 } }, "required": ["workload_id", "action", "mode", "purpose", "resource_id", "invocation_id", "ttl_seconds", "broker_event_key"], "additionalProperties": false },
-      "Operation": { "type": "object", "properties": { "id": { "type": "string" }, "workload_id": { "type": "string" }, "node_id": { "type": "string" }, "action": { "type": "string" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "purpose": { "type": "string" }, "resource_id": { "type": "string" }, "policy_version": { "type": "integer" }, "decision": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "status": { "type": "string", "enum": ["requested", "awaiting_approval", "granted", "executing", "completed", "failed", "uncertain", "denied", "revoked", "cancelled"] }, "approval_id": { "type": ["string", "null"] }, "grant_id": { "type": ["string", "null"] }, "result": { "type": ["object", "null"], "additionalProperties": true }, "created_at": { "type": "integer" }, "expires_at": { "type": "integer" }, "completed_at": { "type": ["integer", "null"] }, "version": { "type": "integer" } }, "required": ["id", "workload_id", "node_id", "action", "mode", "purpose", "resource_id", "policy_version", "decision", "status", "approval_id", "grant_id", "result", "created_at", "expires_at", "completed_at", "version"], "additionalProperties": false },
+      "OperationInput": { "type": "object", "description": "Every operation field must match a recent operation_request event signed by the enrolled broker. The invocation is taken from that evidence; caller input alone has no authority.", "properties": { "workload_id": { "type": "string" }, "action": { "type": "string", "enum": ["noop.marker", "browser.session"], "description": "noop.marker pairs with file or socket; browser.session pairs with browser_session." }, "mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "purpose": { "type": "string", "maxLength": 512 }, "resource_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "invocation_id": { "type": "string", "minLength": 1, "maxLength": 128 }, "ttl_seconds": { "type": "integer", "minimum": 1, "maximum": 3600 }, "broker_event_key": { "type": "string", "minLength": 16, "maxLength": 128 } }, "required": ["workload_id", "action", "mode", "purpose", "resource_id", "invocation_id", "ttl_seconds", "broker_event_key"], "additionalProperties": false },
+      "Operation": { "type": "object", "properties": { "id": { "type": "string" }, "workload_id": { "type": "string" }, "node_id": { "type": "string" }, "action": { "type": "string" }, "mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "purpose": { "type": "string" }, "resource_id": { "type": "string" }, "policy_version": { "type": "integer" }, "decision": { "type": "string", "enum": ["allow", "pending_approval", "deny"] }, "status": { "type": "string", "enum": ["requested", "awaiting_approval", "granted", "executing", "completed", "failed", "uncertain", "denied", "revoked", "cancelled"] }, "approval_id": { "type": ["string", "null"] }, "grant_id": { "type": ["string", "null"] }, "result": { "type": ["object", "null"], "additionalProperties": true }, "created_at": { "type": "integer" }, "expires_at": { "type": "integer" }, "completed_at": { "type": ["integer", "null"] }, "version": { "type": "integer" }, "provisioning": { "$ref": "#/components/schemas/OperationProvisioning" } }, "required": ["id", "workload_id", "node_id", "action", "mode", "purpose", "resource_id", "policy_version", "decision", "status", "approval_id", "grant_id", "result", "created_at", "expires_at", "completed_at", "version"], "additionalProperties": false },
+      "OperationProvisioning": { "type": "object", "description": "Secret-free Source collection state for the calling operator. Present on the operation list and detail reads (never on create or cancel replies). It is computed by the same current-authority checks the provisioning-link route applies and never carries a capability, key material, ciphertext or link. not_applicable: not a browser_session operation or no grant exists. awaiting_offer: a live grant whose node has not published its recipient offer. offer_ready: the signed offer is live and no link exists. link_issued: the named owner's link exists and the offer is live. submitted: a ciphertext receipt is committed. expired: the grant, offer, link, key, destination or policy authority ended before any receipt.", "properties": { "state": { "type": "string", "enum": ["not_applicable", "awaiting_offer", "offer_ready", "link_issued", "submitted", "expired"] }, "offer_expires_at_ms": { "type": ["integer", "null"], "description": "The original offer deadline in Unix milliseconds while the state is offer_ready or link_issued; otherwise null" }, "can_provide": { "type": "boolean", "description": "True only for the named Source owner (the deciding operator of an approved grant, or the administrator who configured the destination for an allowed grant) while the original offer is live and no receipt exists. Viewers cannot read operations at all." } }, "required": ["state", "offer_expires_at_ms", "can_provide"], "additionalProperties": false },
       "OperationList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Operation" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "OperationApproval": { "type": "object", "properties": { "id": { "type": "string", "pattern": "^oa_" }, "kind": { "type": "string", "const": "operation" }, "operation_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 10 }, "status": { "type": "string", "enum": ["pending", "approved", "rejected", "expired"] }, "requester_summary": { "type": "object", "additionalProperties": true }, "verified_identity": { "$ref": "#/components/schemas/OperationApprovalScope" }, "approver_ids": { "type": "array", "items": { "type": "string" }, "maxItems": 32 }, "rule_id": { "type": "string" }, "expires_at": { "type": "integer" }, "version": { "type": "integer" }, "created_at": { "type": "integer" }, "decided_by": { "type": ["string", "null"] }, "decided_at": { "type": ["integer", "null"] }, "operations": { "type": "array", "description": "Present on the single-approval read.", "items": { "$ref": "#/components/schemas/OperationApprovalMember" }, "maxItems": 10 } }, "required": ["id", "kind", "operation_ids", "status", "requester_summary", "verified_identity", "approver_ids", "rule_id", "expires_at", "version", "created_at", "decided_by", "decided_at"], "additionalProperties": false },
       "UnifiedApprovalList": { "type": "object", "properties": { "items": { "type": "array", "items": { "oneOf": [{ "$ref": "#/components/schemas/OperationApproval" }, { "$ref": "#/components/schemas/Approval" }] } }, "next_cursor": { "type": ["string", "null"] }, "count": { "type": "integer", "minimum": 0 } }, "required": ["items", "next_cursor", "count"], "additionalProperties": false },
       "OperationDecisionInput": { "type": "object", "properties": { "expected_status": { "type": "string", "const": "pending" }, "expected_version": { "type": "integer", "minimum": 1 }, "operation_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1, "maxItems": 10 } }, "required": ["expected_status", "expected_version", "operation_ids"], "additionalProperties": false },
-      "Grant": { "type": "object", "properties": { "id": { "type": "string" }, "operation_id": { "type": "string" }, "node_id": { "type": "string" }, "workload_id": { "type": "string" }, "invocation_id": { "type": "string" }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "resource_id": { "type": "string" }, "recipient_key_id": { "type": "string" }, "policy_version": { "type": "integer" }, "approval_reference": { "type": ["string", "null"] }, "action": { "type": "string", "const": "noop.marker" }, "mode": { "type": "string", "enum": ["file", "socket"] }, "audience": { "type": "string", "const": "blindpass-node" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "issued_at": { "type": "integer" }, "expires_at": { "type": "integer" }, "status": { "type": "string", "enum": ["issued", "delivered", "consumed", "revoked", "expired"] }, "unit": { "type": "string" }, "consumed_at": { "type": ["integer", "null"], "description": "Set when the node reports a result for the grant, including after revocation" }, "revoked_at": { "type": ["integer", "null"] }, "revoked_by": { "type": ["string", "null"], "description": "Operator id, or system:<reason> for controller-initiated revocations" }, "broker_revocation_outcome": { "type": ["string", "null"], "description": "Outcome the broker reported after applying the signed revocation" } }, "required": ["id", "operation_id", "node_id", "workload_id", "invocation_id", "account", "resource_id", "recipient_key_id", "policy_version", "approval_reference", "action", "mode", "audience", "issuer_epoch", "issued_at", "expires_at", "status", "unit", "consumed_at", "revoked_at", "revoked_by", "broker_revocation_outcome"], "additionalProperties": false },
+      "Grant": { "type": "object", "properties": { "id": { "type": "string" }, "operation_id": { "type": "string" }, "node_id": { "type": "string" }, "workload_id": { "type": "string" }, "invocation_id": { "type": "string" }, "account": { "type": "string", "minLength": 1, "maxLength": 32, "pattern": "^(?:[a-z0-9_.-]{1,32}|uid:[1-9][0-9]{0,9})$", "description": "Lowercase Linux account name or canonical non-root UID mapping" }, "resource_id": { "type": "string" }, "recipient_key_id": { "type": "string" }, "policy_version": { "type": "integer" }, "approval_reference": { "type": ["string", "null"] }, "action": { "type": "string", "enum": ["noop.marker", "browser.session"], "description": "noop.marker pairs with file or socket; browser.session pairs with browser_session." }, "mode": { "type": "string", "enum": ["file", "socket", "browser_session"] }, "audience": { "type": "string", "const": "blindpass-node" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "issued_at": { "type": "integer" }, "expires_at": { "type": "integer" }, "status": { "type": "string", "enum": ["issued", "delivered", "consumed", "revoked", "expired"] }, "unit": { "type": "string" }, "consumed_at": { "type": ["integer", "null"], "description": "Set when the node reports a result for the grant, including after revocation" }, "revoked_at": { "type": ["integer", "null"] }, "revoked_by": { "type": ["string", "null"], "description": "Operator id, or system:<reason> for controller-initiated revocations" }, "broker_revocation_outcome": { "type": ["string", "null"], "description": "Outcome the broker reported after applying the signed revocation" } }, "required": ["id", "operation_id", "node_id", "workload_id", "invocation_id", "account", "resource_id", "recipient_key_id", "policy_version", "approval_reference", "action", "mode", "audience", "issuer_epoch", "issued_at", "expires_at", "status", "unit", "consumed_at", "revoked_at", "revoked_by", "broker_revocation_outcome"], "additionalProperties": false },
       "GrantList": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Grant" } }, "next_cursor": { "type": ["string", "null"] } }, "required": ["items", "next_cursor"], "additionalProperties": false },
       "GrantRevocationResult": { "type": "object", "properties": { "status": { "type": "string", "enum": ["grant_revoked", "grant_revoked_after_consumption", "not_revocable_offline"] }, "grant_id": { "type": "string" }, "consumer_lifetime_seconds": { "type": ["integer", "null"] } }, "required": ["status", "grant_id", "consumer_lifetime_seconds"], "additionalProperties": false },
-      "SignedDocument": { "type": "object", "properties": { "kind": { "type": "string", "enum": ["registration", "policy_snapshot", "grant", "revocation", "node_revocation", "node_key_rotation", "time_reply", "application_ack", "operation_result", "audit_event"] }, "v": { "type": "integer", "const": 1 }, "body": { "type": "object", "additionalProperties": true }, "sig": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }, "kid": { "type": "string" }, "epoch": { "type": "integer", "minimum": 1 } }, "required": ["kind", "v", "body", "sig", "kid", "epoch"], "additionalProperties": false },
+      "SignedDocument": { "type": "object", "properties": { "kind": { "type": "string", "enum": ["registration", "policy_snapshot", "grant", "revocation", "node_revocation", "node_key_rotation", "time_reply", "application_ack", "operation_result", "operation_closed", "recipient_offer", "provisioning_delivery", "audit_event"] }, "v": { "type": "integer", "const": 1 }, "body": { "type": "object", "additionalProperties": true }, "sig": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }, "kid": { "type": "string" }, "epoch": { "type": "integer", "minimum": 1 } }, "required": ["kind", "v", "body", "sig", "kid", "epoch"], "additionalProperties": false },
       "NodeRevocationBody": { "type": "object", "properties": { "node_id": { "type": "string", "minLength": 1 }, "revoked_at_ms": { "type": "integer", "minimum": 1 }, "issuer_epoch": { "type": "integer", "minimum": 1 } }, "required": ["node_id", "revoked_at_ms", "issuer_epoch"], "additionalProperties": false },
       "ApplicationAckBody": { "type": "object", "properties": { "node_id": { "type": "string" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "acknowledged_at_ms": { "type": "integer", "minimum": 1 }, "event_keys": { "type": "array", "items": { "type": "string", "minLength": 16, "maxLength": 128 }, "minItems": 1, "maxItems": 100, "uniqueItems": true } }, "required": ["node_id", "issuer_epoch", "acknowledged_at_ms", "event_keys"], "additionalProperties": false },
       "ApplicationAck": { "type": "object", "description": "Controller-signed proof that listed broker events were stored and applied.", "properties": { "kind": { "type": "string", "const": "application_ack" }, "v": { "type": "integer", "const": 1 }, "body": { "$ref": "#/components/schemas/ApplicationAckBody" }, "sig": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }, "kid": { "type": "string" }, "epoch": { "type": "integer", "minimum": 1 } }, "required": ["kind", "v", "body", "sig", "kid", "epoch"], "additionalProperties": false },
@@ -958,7 +1460,14 @@
       "NodePollInput": { "type": "object", "properties": { "ack_seq": { "type": ["integer", "null"], "minimum": 0 }, "health": { "type": "object", "additionalProperties": true }, "time_challenge": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$", "description": "One-use suspend-aware broker challenge; when provided the response includes a signed time_reply." } }, "additionalProperties": false },
       "NodeInboxDocument": { "type": "object", "properties": { "seq": { "type": "integer", "minimum": 1 }, "envelope": { "$ref": "#/components/schemas/SignedDocument" } }, "required": ["seq", "envelope"], "additionalProperties": false },
       "NodePollResponse": { "type": "object", "properties": { "documents": { "type": "array", "items": { "$ref": "#/components/schemas/NodeInboxDocument" }, "maxItems": 50 }, "highest_seq": { "type": ["integer", "null"], "minimum": 1 }, "server_time_ms": { "type": "integer" }, "time_reply": { "oneOf": [{ "$ref": "#/components/schemas/SignedDocument" }, { "type": "null" }], "description": "Signed reply bound to time_challenge, node ID and current issuer epoch; null when no challenge was supplied. The body carries challenge_received_at_ms (controller time when the poll arrived) and controller_time_ms (response time); the broker counts any round trip beyond that controller-measured hold as elapsed controller time." } }, "required": ["documents", "highest_seq", "server_time_ms", "time_reply"], "additionalProperties": false },
-      "NodeEvent": { "type": "object", "properties": { "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 128 }, "kind": { "type": "string", "enum": ["operation_request", "operation_result", "audit"] }, "body": { "type": "object", "description": "An audit event with action grant_rejected carries grant_id, node_id, expires_at_ms from the signed grant, and reason_code expired_before_receipt, binding_mismatch or stale_at_receipt. The controller verifies the broker signature and matches the node and stored grant expiry.", "additionalProperties": true }, "broker_signature": { "type": "string" } }, "required": ["idempotency_key", "kind", "body", "broker_signature"], "additionalProperties": false },
+      "SourceBindingInput": {"type": "object", "properties": {"source_unit": {"type": "string", "minLength": 1, "maxLength": 255, "pattern": "^(?!\\.)[A-Za-z0-9_.@:-]+\\.service$"}, "credential": {"type": "string", "minLength": 1, "maxLength": 128, "pattern": "^(?!\\.)[A-Za-z0-9_.-]+$"}, "expected_version": {"type": "integer", "minimum": 0}}, "required": ["source_unit", "credential", "expected_version"], "additionalProperties": false},
+      "SourceBinding": {"type": "object", "properties": {"node_id": {"type": "string"}, "resource_id": {"type": "string"}, "source_unit": {"type": "string"}, "credential": {"type": "string"}, "version": {"type": "integer", "minimum": 1}, "updated_at": {"type": "integer"}}, "required": ["node_id", "resource_id", "source_unit", "credential", "version", "updated_at"], "additionalProperties": false},
+      "ProvisioningLink": {"type": "object", "properties": {"id": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "metadata_sig": {"type": "string"}, "submit_sig": {"type": "string"}, "operator_id": {"type": "string"}, "operation_id": {"type": "string"}, "expires_at_ms": {"type": "integer", "minimum": 1, "description": "The original recipient offer deadline"}, "input_path": {"type": "string", "description": "Same-origin path that opens the ordinary input page in fleet mode: /?kind=fleet&id=...&metadata_sig=...&submit_sig=..."}}, "required": ["id", "metadata_sig", "submit_sig", "operator_id", "operation_id", "expires_at_ms", "input_path"], "additionalProperties": false},
+      "ProvisioningMetadata": {"type": "object", "properties": {"status": {"type": "string", "const": "ready"}, "server_time_ms": {"type": "integer"}, "expires_at_ms": {"type": "integer"}, "offer": {"$ref": "#/components/schemas/SignedDocument"}, "expected": {"$ref": "#/components/schemas/ProvisioningExpected"}, "summary": {"type": "object", "properties": {"purpose": {"type": "string"}, "workload_name": {"type": "string"}}, "required": ["purpose", "workload_name"], "additionalProperties": false}}, "required": ["status", "server_time_ms", "expires_at_ms", "offer", "expected", "summary"], "additionalProperties": false},
+      "ProvisioningExpected": {"type": "object", "description": "Independently trusted values, never taken from the offer. Pass this object unchanged as `expected` to verifyBrowserRecipientOffer.", "properties": {"grant": {"type": "object", "description": "Original controller-signed grant body", "additionalProperties": true}, "node_key_version": {"type": "integer", "minimum": 1}, "source_unit": {"type": "string"}, "credential": {"type": "string"}, "signing_public": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"}}, "required": ["grant", "node_key_version", "source_unit", "credential", "signing_public"], "additionalProperties": false},
+      "ProvisioningReceipt": {"type": "object", "properties": {"status": {"type": "string", "const": "submitted"}, "offer_id": {"type": "string"}, "ciphertext_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "delivery_digest": {"type": "string", "pattern": "^[a-f0-9]{64}$"}, "submitted_at_ms": {"type": "integer"}, "expires_at_ms": {"type": "integer"}}, "required": ["status", "offer_id", "ciphertext_digest", "delivery_digest", "submitted_at_ms", "expires_at_ms"], "additionalProperties": false},
+      "ProvisioningSubmitInput": {"type": "object", "properties": {"enc": {"type": "string", "minLength": 43, "maxLength": 43, "pattern": "^[A-Za-z0-9_-]{43}$", "description": "Canonical unpadded base64url 32-byte X25519 encapsulation"}, "ciphertext": {"type": "string", "minLength": 22, "maxLength": 87403, "pattern": "^[A-Za-z0-9_-]+$", "description": "Canonical unpadded base64url ChaCha20-Poly1305 ciphertext of 16 to 65552 bytes (a 64 KiB Source plus the 16-byte tag)"}}, "required": ["enc", "ciphertext"], "additionalProperties": false},
+      "NodeEvent": { "type": "object", "properties": { "idempotency_key": { "type": "string", "minLength": 16, "maxLength": 128 }, "kind": { "type": "string", "enum": ["operation_request", "operation_result", "operation_cancel", "recipient_offer", "audit"] }, "body": { "type": "object", "description": "An audit event with action grant_rejected carries grant_id, node_id, expires_at_ms from the signed grant, and reason_code expired_before_receipt, binding_mismatch or stale_at_receipt. The controller verifies the broker signature and matches the node and stored grant expiry. A recipient_offer body is the broker-signed recipient_offer envelope; ingestion verifies its inner signature, original controller-signed grant and current independent destination/authority atomically with its receipt and audit. No Source input is accepted by this event.", "additionalProperties": true }, "broker_signature": { "type": "string" } }, "required": ["idempotency_key", "kind", "body", "broker_signature"], "additionalProperties": false },
       "NodeEventsInput": { "type": "object", "properties": { "events": { "type": "array", "items": { "$ref": "#/components/schemas/NodeEvent" }, "maxItems": 100 } }, "required": ["events"], "additionalProperties": false },
       "NodeEventsResponse": { "type": "object", "properties": { "accepted": { "type": "integer", "minimum": 0 }, "duplicates": { "type": "integer", "minimum": 0 }, "ack": { "oneOf": [{ "$ref": "#/components/schemas/ApplicationAck" }, { "type": "null" }] }, "discarded": { "description": "Correctly signed events that can never apply. Each is audited and included in the acknowledgement.", "type": "array", "items": { "type": "object", "properties": { "idempotency_key": { "type": "string" }, "error": { "type": "string", "enum": ["invalid_node_event", "event_idempotency_conflict"] } }, "required": ["idempotency_key", "error"], "additionalProperties": false } }, "rejected": { "description": "The first event that was not applied or discarded; later events in the batch were not processed.", "oneOf": [{ "type": "object", "properties": { "idempotency_key": { "type": "string" }, "error": { "type": "string" } }, "required": ["idempotency_key", "error"], "additionalProperties": false }, { "type": "null" }] } }, "required": ["accepted", "duplicates", "ack", "rejected"], "additionalProperties": false },
       "BootstrapInput": { "type": "object", "properties": { "username": { "type": "string", "minLength": 3, "maxLength": 128 }, "password": { "type": "string", "minLength": 12, "maxLength": 1024 }, "display_name": { "type": "string", "minLength": 1, "maxLength": 160 } }, "required": ["username", "password", "display_name"], "additionalProperties": false },

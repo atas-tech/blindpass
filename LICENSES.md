@@ -16,6 +16,9 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `packages/browser-ui` | `MIT` | Client-side encryption sandbox |
 | `packages/gateway` | `MIT` | Interception / delivery middleware |
 | `packages/openclaw-plugin` | `MIT` | Runtime integration plugin |
+| `packages/mcp-server` | `MIT` | Official MCP SDK integration; retain actual upstream Apache/MIT transition notices |
+| `helpers/browser-tool` | `AGPL-3.0-only` | Private pinned stock Playwright MCP acceptance profile; upstream Apache notices retained |
+| `helpers/login` | `AGPL-3.0-only` | Private login helper; Playwright and its upstream Apache notices remain applicable |
 | `packages/contract-tests` | `AGPL-3.0-only` | Black-box compatibility and acceptance harness; private test package |
 | `assets/ui` | `MIT` (Inter font: `OFL-1.1`) | Shared design tokens, icons and self-hosted font consumed by landing, input page and console; no application code or translated strings. See `assets/ui/ASSETS.md` |
 | `crates/blindpass-core` | `AGPL-3.0-only` | Shared identity, delivery, custody, signing, policy and protocol primitives |
@@ -62,3 +65,47 @@ This approval is for the P02 dependency proposal and its resolved Cargo graph. I
   above; its graph includes `jsonwebtoken`, `argon2`, and sqlx with `rustls`,
   `ring` and a bundled SQLite.
 - If package boundaries change materially, the licensing split should be reviewed again.
+
+
+### P05 MCP distribution boundary
+
+The MIT OpenClaw startup wrapper adapts its existing MIT legacy callbacks into
+`packages/mcp-server`'s official SDK factory. The factory imports no OpenClaw or
+AGPL application implementation; protocol interactions do not embed broker code.
+The standalone MCP bundle preserves SDK/Zod notices and complete licenses for
+all emitted third-party package versions. The compiler-input check is an allowlist:
+only node_modules packages with an approved license and the MIT workspace packages
+`packages/mcp-server`, `packages/openclaw-plugin`, `packages/gateway` and
+`packages/agent-skill` may enter the bundle; any other workspace (including MIT),
+helper, crate, script or root path, and any missing/unsupported license text, is
+rejected. A generated version/hash inventory ships under
+`dist/licenses/bundle-packages.json`.
+
+The P05 work changes the npm manifests and `package-lock.json` against commit
+`1a37bbe` (verified from `git diff 1a37bbe -- package-lock.json package.json`
+and the workspace manifests; no locked package was removed and no previously
+locked package changed version):
+
+- New direct dependencies, exact pins approved in decisions 0005 and 0006:
+  `@modelcontextprotocol/server` 2.2.0 and `zod` 4.6.5 (`packages/mcp-server`,
+  MIT), `playwright` 1.58.2 (`helpers/login`, AGPL-3.0-only workspace) and
+  `@playwright/mcp` 0.0.83 (`helpers/browser-tool`, AGPL-3.0-only workspace).
+- New transitive packages: `@modelcontextprotocol/core` 2.2.0 (MIT) and `zod`
+  4.6.5, installed three times (package, SDK server, SDK core); and
+  `@playwright/mcp`'s own nested `playwright` and `playwright-core`
+  1.64.0-alpha-1790635538000 (Apache-2.0), separate from the root 1.58.2 copies.
+- `playwright` 1.58.2, `playwright-core` 1.58.2 and playwright's optional nested
+  `fsevents` 2.3.2 keep their versions but are no longer dev-only, because
+  `helpers/login` depends on Playwright at runtime. `@playwright/test` stays dev.
+- Workspaces gain `helpers/*` (`helpers/login`, `helpers/browser-tool`) and
+  `packages/mcp-server`; the root `engines.node` moves from `>=26 <27` to
+  `^24.21.0 || ^26.10.0`, and every existing workspace package (agent-skill,
+  browser-ui, console, contract-tests, dashboard, gateway, i18n, openclaw-plugin,
+  sps-server), which declared no engines before, gains the same range.
+
+The Cargo graph is outside this paragraph. The change does not extend frozen
+payment features. Node 24.21.0/26.10.0 have local build/workspace and selected
+real-systemd profile evidence. Engine declarations use the tested minimums, and
+CI contains both pinned profiles; remote CI execution remains unverified. The private
+runtime archive preserves the complete upstream Node license text as well as
+the existing SDK/browser notices.

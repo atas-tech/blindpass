@@ -19,6 +19,8 @@ const MAX_OUTBOX_BYTES: u64 = MAX_EVENTS as u64 * MAX_EVENT_BYTES as u64;
 const PRIVATE_MODE: u32 = 0o600;
 const DIRECTORY_MODE: u32 = 0o700;
 const O_NOFOLLOW: i32 = 0x20000;
+/// An already queued key with different bytes is never replaced.
+pub(crate) const KEY_REUSED: &str = "node event key was reused with different bytes";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +53,16 @@ impl NodeEvent {
         let kind = value
             .get("kind")
             .and_then(Value::as_str)
-            .filter(|kind| matches!(*kind, "operation_request" | "operation_result" | "audit"))
+            .filter(|kind| {
+                matches!(
+                    *kind,
+                    "operation_request"
+                        | "operation_result"
+                        | "operation_cancel"
+                        | "recipient_offer"
+                        | "audit"
+                )
+            })
             .ok_or("node event kind is malformed")?;
         let body = value
             .get("body")
@@ -130,8 +141,10 @@ impl Outbox {
                 .iter()
                 .find(|existing| existing.idempotency_key == event.idempotency_key)
             {
-                if existing != &event {
-                    return Err("node event key was reused with different bytes");
+                let existing_bytes = canonicalize_value(&existing.to_value())
+                    .map_err(|_| "node event could not be encoded")?;
+                if existing_bytes != encoded {
+                    return Err(KEY_REUSED);
                 }
             } else {
                 updated.push(event);
@@ -327,6 +340,58 @@ mod tests {
             body: Value::Object(vec![("event".to_owned(), Value::String("test".to_owned()))]),
             broker_signature: base64_url_encode(&[7; 64]),
         }
+    }
+
+    #[test]
+    fn cancellation_survives_relay_restart_until_acknowledgement() {
+        let directory = directory();
+        let cancellation = blindpass_core::fleet::OperationCancellation {
+            node_id: "node-a".into(),
+            workload_id: "workload-a".into(),
+            invocation_id: "a".repeat(32),
+            request_event_key: "event_cancel_relay_0001".into(),
+        };
+        let mut item = event(&cancellation.event_key().unwrap());
+        item.kind = "operation_cancel".into();
+        item.body = cancellation.to_value().unwrap();
+        assert_eq!(NodeEvent::from_value(&item.to_value()).unwrap(), item);
+        let mut outbox = Outbox::open(&directory).unwrap();
+        outbox.insert_batch(vec![item.clone()]).unwrap();
+        drop(outbox);
+        let mut restored = Outbox::open(&directory).unwrap();
+        let recovered = restored.first_batch(10);
+        assert_eq!(recovered.len(), 1);
+        assert_eq!(
+            blindpass_core::canon::canonicalize_value(&recovered[0].to_value()).unwrap(),
+            blindpass_core::canon::canonicalize_value(&item.to_value()).unwrap()
+        );
+        restored.insert_batch(vec![item.clone()]).unwrap();
+        assert_eq!(restored.len(), 1);
+        let mut changed = item.clone();
+        changed.body = Value::Object(vec![("changed".into(), Value::Bool(true))]);
+        assert!(restored.insert_batch(vec![changed]).is_err());
+        assert_eq!(restored.len(), 1);
+        restored.remove_acked(&[item.idempotency_key]).unwrap();
+        assert_eq!(restored.len(), 0);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn recipient_offer_events_are_accepted_persist_and_stay_bounded() {
+        let directory = directory();
+        let mut offer =
+            event("ro_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+        offer.kind = "recipient_offer".into();
+        assert_eq!(NodeEvent::from_value(&offer.to_value()).unwrap(), offer);
+        let mut other = offer.clone();
+        other.kind = "recipient_offers".into();
+        assert!(NodeEvent::from_value(&other.to_value()).is_err());
+        let mut outbox = Outbox::open(&directory).unwrap();
+        outbox.insert_batch(vec![offer.clone()]).unwrap();
+        drop(outbox);
+        let restored = Outbox::open(&directory).unwrap();
+        assert_eq!(restored.first_batch(10), vec![offer]);
+        std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]

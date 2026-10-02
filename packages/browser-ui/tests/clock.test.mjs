@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDeadline, formatRemaining } from "../src/clock.js";
+import { createDeadline, createServerDeadline, formatRemaining } from "../src/clock.js";
 
 const EXPIRY = 1_900_000_300; // unix seconds
 
@@ -45,4 +45,38 @@ test("formatRemaining rounds down and never shows negative time", () => {
   assert.equal(formatRemaining(59_999), "00:59");
   assert.equal(formatRemaining(3_725_000), "1:02:05");
   assert.equal(formatRemaining(-5), "00:00");
+});
+
+const SERVER_NOW = 1_900_000_000_000;
+const OFFER_END = SERVER_NOW + 30_000;
+
+test("P05-PV06-S GUI: the server's own milliseconds drive the fleet deadline, not the device clock", () => {
+  // The device clock is ten minutes fast; the controller said it was 30 s before the offer ends.
+  const deadline = createServerDeadline({ serverTimeMs: SERVER_NOW, expiresAtMs: OFFER_END, sentAt: SERVER_NOW + 600_000 - 200, receivedAt: SERVER_NOW + 600_000, perfAt: 5_000 });
+  assert.equal(deadline.serverClock, true);
+  assert.equal(deadline.expiresAt.getTime(), OFFER_END);
+  // The whole round trip counts as already elapsed on the server.
+  assert.equal(deadline.remaining({ perf: 5_000, wall: SERVER_NOW + 600_000 }), 30_000 - 200);
+  assert.equal(deadline.serverNow({ perf: 5_000, wall: SERVER_NOW + 600_000 }), SERVER_NOW + 200);
+  assert.equal(deadline.remaining({ perf: 15_000, wall: SERVER_NOW + 610_000 }), 20_000 - 200);
+  assert.equal(deadline.serverNow({ perf: 15_000, wall: SERVER_NOW + 610_000 }), SERVER_NOW + 10_200);
+  assert.equal(deadline.expired({ perf: 35_000, wall: SERVER_NOW + 630_000 }), true);
+});
+
+test("P05-PV06-S GUI: a suspended tab or a moved wall clock cannot stretch the fleet deadline or the sealing time", () => {
+  const deadline = createServerDeadline({ serverTimeMs: SERVER_NOW, expiresAtMs: OFFER_END, sentAt: 1_000, receivedAt: 1_000, perfAt: 0 });
+  // performance.now() paused while the wall clock moved 40 s.
+  assert.equal(deadline.remaining({ perf: 1_000, wall: 41_000 }), 0);
+  assert.equal(deadline.expired({ perf: 1_000, wall: 41_000 }), true);
+  assert.equal(deadline.serverNow({ perf: 1_000, wall: 41_000 }), SERVER_NOW + 40_000);
+  // A wall clock moved backwards adds nothing; monotonic time still counts.
+  assert.equal(deadline.remaining({ perf: 10_000, wall: -3_600_000 }), 20_000);
+  assert.equal(deadline.serverNow({ perf: 10_000, wall: -3_600_000 }), SERVER_NOW + 10_000);
+});
+
+test("P05-PV06-S GUI: unusable fleet clock evidence gives no deadline at all", () => {
+  const good = { serverTimeMs: SERVER_NOW, expiresAtMs: OFFER_END, sentAt: 0, receivedAt: 0, perfAt: 0 };
+  for (const change of [{ serverTimeMs: undefined }, { serverTimeMs: -1 }, { serverTimeMs: 1.5 }, { serverTimeMs: "now" }, { expiresAtMs: 0 }, { expiresAtMs: null }, { expiresAtMs: Number.NaN }, { expiresAtMs: SERVER_NOW }, { expiresAtMs: SERVER_NOW - 1 }, { expiresAtMs: Number.MAX_SAFE_INTEGER + 2 }]) {
+    assert.equal(createServerDeadline({ ...good, ...change }), null, JSON.stringify(change));
+  }
 });

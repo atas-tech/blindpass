@@ -19,3 +19,8 @@ tmp/socket-reports/
 **/playwright-report/
 *.log
 **/server.log
+
+# Python bytecode from the P05 harness helpers and local agent worktrees
+__pycache__/
+*.pyc
+.claude/worktrees/

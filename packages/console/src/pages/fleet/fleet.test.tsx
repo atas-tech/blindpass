@@ -143,6 +143,67 @@ describe("fleet", () => {
     });
   });
 
+  it("P05 browser session: the fleet policy editor offers the browser.session rule and saves it with the existing rules intact", async () => {
+    const { calls } = fakeController({
+      handler: (call) => {
+        if (call.path === "/api/v3/policies" && call.method === "PUT") return json(200, { version: 4, rules: (call.body as { rules: unknown[] }).rules, updated_at: Date.now(), updated_by: "op_ada" });
+        if (call.path === "/api/v3/policies") return json(200, { version: 3, rules: [{ id: "noop-file", action: "noop.marker", mode: "file", decision: "allow", approval_required: false, max_ttl_seconds: 60 }], updated_at: Date.now(), updated_by: "op_ada" });
+        return undefined;
+      }
+    });
+    const user = userEvent.setup();
+    renderRoute("/policy/fleet");
+    const browser = await screen.findByRole("radiogroup", { name: "Decision for Browser session" });
+    expect(screen.getByRole("heading", { name: /browser\.session · Browser session/ })).toBeTruthy();
+    await user.click(within(browser).getByRole("radio", { name: "Needs approval" }));
+    await user.type(screen.getByLabelText("Approvers"), "ada");
+    await user.click(screen.getByRole("button", { name: "Save fleet policy" }));
+    expect(await screen.findByText("Fleet policy saved as version 4")).toBeTruthy();
+    expect(calls.find((call) => call.method === "PUT")!.body).toEqual({
+      expected_version: 3,
+      rules: [
+        { id: "noop-file", action: "noop.marker", mode: "file", decision: "allow", approval_required: false, max_ttl_seconds: 60 },
+        { id: "browser-session", action: "browser.session", mode: "browser_session", decision: "pending_approval", approval_required: true, max_ttl_seconds: 120, approver_ids: ["ada"] }
+      ]
+    });
+  });
+
+  it("P05 browser session: a stored browser.session rule is shown in its own group and is not counted as an unknown rule", async () => {
+    fakeController({
+      handler: (call) => {
+        if (call.path === "/api/v3/policies") return json(200, { version: 5, rules: [{ id: "browser-session", action: "browser.session", mode: "browser_session", decision: "deny", approval_required: false, max_ttl_seconds: 90 }], updated_at: Date.now(), updated_by: "op_ada" });
+        return undefined;
+      }
+    });
+    renderRoute("/policy/fleet");
+    const group = await screen.findByRole("radiogroup", { name: "Decision for Browser session" });
+    expect(within(group).getByRole("radio", { name: "Deny", checked: true })).toBeTruthy();
+    expect(screen.queryByText(/other rule/i)).toBeNull();
+  });
+
+  it("P05 browser session: registering a workload can select the Browser session mode and sends it unchanged", async () => {
+    const { calls } = fakeController({
+      handler: (call) => {
+        if (call.path === "/api/v3/workloads" && call.method === "POST") return json(201, { id: "wl_9", node_id: "nd_1", name: "report-agent", unit: "agent.service", account: "uid:1001", consumption_mode: "browser_session", local_ceiling_seconds: 120, registration_version: 1, status: "active", created_at: Date.now(), version: 1 });
+        if (call.path === "/api/v3/workloads") return json(200, { items: [], next_cursor: null });
+        if (call.path === "/api/v3/nodes") return json(200, { items: [node({ status: "online" })], next_cursor: null });
+        return undefined;
+      }
+    });
+    const user = userEvent.setup();
+    renderRoute("/workloads");
+    await user.click(await screen.findByRole("button", { name: "Register workload" }));
+    const dialog = await screen.findByRole("dialog", { name: "Register a workload" });
+    await user.selectOptions(within(dialog).getByLabelText(/Node/), "nd_1");
+    await user.type(within(dialog).getByLabelText(/^Workload name/), "report-agent");
+    await user.type(within(dialog).getByLabelText(/^systemd unit/), "agent.service");
+    await user.type(within(dialog).getByLabelText(/^Runs as/), "uid:1001");
+    await user.click(within(dialog).getByRole("radio", { name: "Browser session" }));
+    await user.click(within(dialog).getByRole("button", { name: /^Register/ }));
+    await waitFor(() => expect(calls.some((call) => call.path === "/api/v3/workloads" && call.method === "POST")).toBe(true));
+    expect(calls.find((call) => call.path === "/api/v3/workloads" && call.method === "POST")!.body).toMatchObject({ consumption_mode: "browser_session", unit: "agent.service" });
+  });
+
   it("node-reported capabilities render one line per key and stay inert text", async () => {
     expect(formatCapabilities({ modes: ["file", "socket"], actions: ["noop.marker"], limits: { ttl: 60 } })).toBe('modes: file, socket\nactions: noop.marker\nlimits: {"ttl":60}');
     fakeController({ handler: (call) => (call.path === "/api/v3/nodes/nd_1" ? json(200, node({ capabilities: { note: HOSTILE } })) : undefined) });

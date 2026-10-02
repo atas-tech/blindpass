@@ -276,3 +276,28 @@ preserve grant and node revocations when their signed documents are replayed.
 They verify the revoked grant remains denied after a fresh signed time reply.
 The VM scenarios above exercise policy, grant revocation and node revocation
 replay through the node HTTPS transport.
+
+## P05 native restic backup runner (blocked, never run)
+
+`p05-backup.sh` and `p05-backup-guest.sh` are the P05-I05 / P05-E02 harness for
+an ordinary systemd `restic` job whose repository password comes from the broker
+(`deploy/examples/example-backup.service`, no MCP) with a disposable
+`rest-server` on a second guest. They have **never been run**: the real restic and
+rest-server binaries are blocked pending human review
+([ADR 0007](../../docs/product/decisions/0007-p05-native-backup-dependency-review.md)).
+Only `bash -n`, the artifact-gate exit paths and an offline scanner self-test
+have been executed. They are not P05-I05 or P05-E02 evidence.
+
+The runner exits `77` with `blocked: reviewed restic/rest-server artifacts not
+provided (ADR 0007)` unless `RESTIC_BIN`, `REST_SERVER_BIN`, `RESTIC_SHA256` and
+`REST_SERVER_SHA256` name executable files whose SHA-256 values match the reviewed
+ones. The gate hashes the files and never executes them; `--check-artifacts`
+stops after the gate. When allowed it provisions the password through the real
+HPKE path, runs the unit, restores and byte-compares the artifact, exercises the
+`password-file` profile rejections, shows that a JSON-looking value is never
+decoded, rotates the repository password with `restic key passwd`, proves
+missing (broker restart) and stale (old password) denial, keeps a running job
+alive across operator logout, repeats the cycle with a native
+`LoadCredentialEncrypted=` unit derived from the same example, and scans files,
+process arguments and the journal for generated canaries with positive controls.
+See `docs/product/p05-native-service.md` for the scope and what stays open.

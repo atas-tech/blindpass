@@ -43,6 +43,9 @@ export type GrantList = Schemas["GrantList"];
 export type GrantRevocationResult = Schemas["GrantRevocationResult"];
 export type Operation = Schemas["Operation"];
 export type OperationList = Schemas["OperationList"];
+export type OperationProvisioning = Schemas["OperationProvisioning"];
+export type ProvisioningState = OperationProvisioning["state"];
+export type ProvisioningLink = Schemas["ProvisioningLink"];
 
 export type AnyApproval = ExchangeApproval | OperationApproval;
 

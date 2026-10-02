@@ -4,10 +4,11 @@
   "license": "SEE LICENSE IN LICENSES.md",
   "version": "0.1.0",
   "engines": {
-    "node": ">=26 <27"
+    "node": "^24.21.0 || ^26.10.0"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "helpers/*"
   ],
   "scripts": {
     "generate:api": "node scripts/generate-controller-types.mjs",
@@ -15,6 +16,9 @@
     "test:contract-progress": "node --test scripts/tests/assert-contract-progress.test.mjs",
     "test:p02:clients": "node --import=tsx scripts/tests/p02-rust-client-flows.mjs",
     "test:p02:crash": "node --import=tsx scripts/tests/p02-rust-crash-recovery.mjs",
+    "test:p05:fixture": "node --test --test-isolation=none tests/browser-handoff/fixture-app/*.test.mjs",
+    "test:p05:oauth": "node --test --test-isolation=none tests/browser-handoff/oauth-fixture.test.mjs",
+    "test:p05:grafana": "node --test --test-isolation=none tests/browser-handoff/managed-grafana.test.mjs",
     "build:i18n": "npm run build --workspace=@blindpass/i18n",
     "build": "npm run build:i18n && npm run build --workspaces --if-present",
     "build:skill": "bash scripts/build_bundle.sh",
@@ -40,7 +44,10 @@
     "redis:down": "docker compose down --remove-orphans",
     "demo:e2e": "npm run build && node scripts/demo-e2e.mjs",
     "e2e:human": "npm run build && node scripts/e2e-human.mjs",
-    "e2e:telegram": "npm run build && node scripts/e2e-openclaw-telegram.mjs"
+    "e2e:telegram": "npm run build && node scripts/e2e-openclaw-telegram.mjs",
+    "test:p05:helper": "node --test --test-isolation=none tests/browser-handoff/private-login.test.mjs tests/browser-handoff/private-login-browser.test.mjs tests/browser-handoff/private-login-worker.test.mjs tests/browser-handoff/private-login-worker-browser.test.mjs",
+    "test:p05:helper:grafana": "node --test tests/browser-handoff/private-login-grafana.test.mjs",
+    "test:p05:stock-channel": "node --test tests/browser-handoff/stock-browser-channel.test.mjs"
   },
   "dependencies": {
     "hpke-js": "^1.7.0"

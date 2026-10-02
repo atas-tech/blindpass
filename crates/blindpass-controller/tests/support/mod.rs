@@ -235,6 +235,7 @@ pub struct Harness {
     pub admin: Operator,
     pub issuer: Ed25519KeyPair,
     pub issuer_key_id: String,
+    variables: Vec<(String, String)>,
     server: tokio::task::JoinHandle<()>,
 }
 
@@ -309,6 +310,10 @@ impl Harness {
             ("BLINDPASS_ISSUER_KEY_FILE", issuer_file.to_str().unwrap()),
         ];
         variables.extend_from_slice(extra);
+        let owned_variables = variables
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect::<Vec<_>>();
         let config = Config::from_variables(variables).expect("valid harness config");
         let store = Store::connect(&database_url)
             .await
@@ -343,9 +348,13 @@ impl Harness {
         let address = listener.local_addr().unwrap();
         let app_store = store.clone();
         let server = tokio::spawn(async move {
-            axum::serve(listener, build_app(config, Some(app_store)))
-                .await
-                .unwrap();
+            axum::serve(
+                listener,
+                build_app(config, Some(app_store))
+                    .into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
         });
         let bootstrap = raw_request(
             address,
@@ -391,8 +400,42 @@ impl Harness {
             admin,
             issuer,
             issuer_key_id,
+            variables: owned_variables,
             server,
         }
+    }
+
+    /// Stop the HTTP server and start a new one on a fresh store connection
+    /// to the same database, as a controller restart would. Cookies, node
+    /// bearers and all durable state carry over; `address` and `store` are
+    /// replaced.
+    pub async fn restart_server(&mut self) {
+        self.server.abort();
+        let _ = (&mut self.server).await;
+        let store = Store::connect(&self.database_url)
+            .await
+            .expect("reconnect harness store");
+        let variables = self
+            .variables
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect::<Vec<_>>();
+        let config = Config::from_variables(variables).expect("valid harness config");
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind restarted harness");
+        self.address = listener.local_addr().unwrap();
+        let app_store = store.clone();
+        self.server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                build_app(config, Some(app_store))
+                    .into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        self.store = store;
     }
 
     pub async fn request(

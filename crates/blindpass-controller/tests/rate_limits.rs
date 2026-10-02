@@ -238,7 +238,13 @@ async fn authenticated_agent_windows_are_scoped_and_reject_without_writing() {
         .expect("bind HTTP test listener");
     let address = listener.local_addr().expect("HTTP test listener address");
     let app: Router = build_app(config, Some(store.clone()));
-    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+    });
 
     let no_auth = request(
         address,

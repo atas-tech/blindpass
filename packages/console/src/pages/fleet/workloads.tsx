@@ -23,7 +23,7 @@ interface WorkloadForm {
   name: string;
   unit: string;
   account: string;
-  consumption_mode: "file" | "socket";
+  consumption_mode: "file" | "socket" | "browser_session";
   local_ceiling_seconds: string;
 }
 
@@ -81,7 +81,7 @@ function WorkloadFields({ form, setForm, errors, nodes, creating }: { form: Work
       <TextField label={t("fleet.workload.fields.account")} hint={t("fleet.workload.fields.accountHint")} value={form.account} onChange={set("account")} error={errors.account} mono autoComplete="off" spellCheck={false} />
       <div className="field">
         <span className="field-label">{t("fleet.workload.fields.mode")}</span>
-        <SegmentedControl label={t("fleet.workload.fields.mode")} value={form.consumption_mode} onChange={(value) => setForm({ ...form, consumption_mode: value })} options={[{ value: "file", label: t("approvals.mode.file") }, { value: "socket", label: t("approvals.mode.socket") }]} />
+        <SegmentedControl label={t("fleet.workload.fields.mode")} value={form.consumption_mode} onChange={(value) => setForm({ ...form, consumption_mode: value })} options={[{ value: "file", label: t("approvals.mode.file") }, { value: "socket", label: t("approvals.mode.socket") }, { value: "browser_session", label: t("approvals.mode.browser_session") }]} />
         {errors.consumption_mode ? <p className="field-error">{errors.consumption_mode}</p> : null}
       </div>
       <TextField label={t("fleet.workload.fields.ceiling")} hint={t("fleet.workload.fields.ceilingHint")} value={form.local_ceiling_seconds} onChange={set("local_ceiling_seconds")} error={errors.local_ceiling_seconds} inputMode="numeric" type="number" min={1} max={3600} />

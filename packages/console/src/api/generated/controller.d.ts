@@ -136,7 +136,7 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3" | "fleet.v3">;
       "version": string;
-      "schema_version": 12;
+      "schema_version": 16;
       "setup_required": boolean;
       "issuer_pub"?: string;
       "issuer_kid"?: string;
@@ -243,7 +243,7 @@ export interface components {
       "name": string;
       "unit": string;
       "account": string;
-      "consumption_mode": "file" | "socket";
+      "consumption_mode": "file" | "socket" | "browser_session";
       "local_ceiling_seconds": number;
       "registration_version": number;
       "status": "active" | "revoked";
@@ -259,20 +259,20 @@ export interface components {
       "name": string;
       "unit": string;
       "account": string;
-      "consumption_mode": "file" | "socket";
+      "consumption_mode": "file" | "socket" | "browser_session";
       "local_ceiling_seconds": number;
     };
     "WorkloadUpdateInput": {
       "unit"?: string;
       "account"?: string;
-      "consumption_mode"?: "file" | "socket";
+      "consumption_mode"?: "file" | "socket" | "browser_session";
       "local_ceiling_seconds"?: number;
       "expected_version": number;
     };
     "FleetPolicyRule": {
       "id": string;
-      "action": "noop.marker";
-      "mode": "file" | "socket";
+      "action": "noop.marker" | "browser.session";
+      "mode": "file" | "socket" | "browser_session";
       "decision": "allow" | "pending_approval" | "deny";
       "approval_required": boolean;
       "max_ttl_seconds": number;
@@ -295,7 +295,7 @@ export interface components {
       "unit": string;
       "account": string;
       "action": string;
-      "mode": "file" | "socket";
+      "mode": "file" | "socket" | "browser_session";
       "rule_id": string | null;
       "policy_version": number;
     };
@@ -311,8 +311,8 @@ export interface components {
     };
     "OperationInput": {
       "workload_id": string;
-      "action": "noop.marker";
-      "mode": "file" | "socket";
+      "action": "noop.marker" | "browser.session";
+      "mode": "file" | "socket" | "browser_session";
       "purpose": string;
       "resource_id": string;
       "invocation_id": string;
@@ -324,7 +324,7 @@ export interface components {
       "workload_id": string;
       "node_id": string;
       "action": string;
-      "mode": "file" | "socket";
+      "mode": "file" | "socket" | "browser_session";
       "purpose": string;
       "resource_id": string;
       "policy_version": number;
@@ -339,6 +339,12 @@ export interface components {
       "expires_at": number;
       "completed_at": number | null;
       "version": number;
+      "provisioning"?: components["schemas"]["OperationProvisioning"];
+    };
+    "OperationProvisioning": {
+      "state": "not_applicable" | "awaiting_offer" | "offer_ready" | "link_issued" | "submitted" | "expired";
+      "offer_expires_at_ms": number | null;
+      "can_provide": boolean;
     };
     "OperationList": {
       "items": Array<components["schemas"]["Operation"]>;
@@ -383,8 +389,8 @@ export interface components {
       "recipient_key_id": string;
       "policy_version": number;
       "approval_reference": string | null;
-      "action": "noop.marker";
-      "mode": "file" | "socket";
+      "action": "noop.marker" | "browser.session";
+      "mode": "file" | "socket" | "browser_session";
       "audience": "blindpass-node";
       "issuer_epoch": number;
       "issued_at": number;
@@ -406,7 +412,7 @@ export interface components {
       "consumer_lifetime_seconds": number | null;
     };
     "SignedDocument": {
-      "kind": "registration" | "policy_snapshot" | "grant" | "revocation" | "node_revocation" | "node_key_rotation" | "time_reply" | "application_ack" | "operation_result" | "audit_event";
+      "kind": "registration" | "policy_snapshot" | "grant" | "revocation" | "node_revocation" | "node_key_rotation" | "time_reply" | "application_ack" | "operation_result" | "operation_closed" | "recipient_offer" | "provisioning_delivery" | "audit_event";
       "v": 1;
       "body": {
         [key: string]: unknown;
@@ -480,9 +486,63 @@ export interface components {
       "server_time_ms": number;
       "time_reply": components["schemas"]["SignedDocument"] | null;
     };
+    "SourceBindingInput": {
+      "source_unit": string;
+      "credential": string;
+      "expected_version": number;
+    };
+    "SourceBinding": {
+      "node_id": string;
+      "resource_id": string;
+      "source_unit": string;
+      "credential": string;
+      "version": number;
+      "updated_at": number;
+    };
+    "ProvisioningLink": {
+      "id": string;
+      "metadata_sig": string;
+      "submit_sig": string;
+      "operator_id": string;
+      "operation_id": string;
+      "expires_at_ms": number;
+      "input_path": string;
+    };
+    "ProvisioningMetadata": {
+      "status": "ready";
+      "server_time_ms": number;
+      "expires_at_ms": number;
+      "offer": components["schemas"]["SignedDocument"];
+      "expected": components["schemas"]["ProvisioningExpected"];
+      "summary": {
+        "purpose": string;
+        "workload_name": string;
+      };
+    };
+    "ProvisioningExpected": {
+      "grant": {
+        [key: string]: unknown;
+      };
+      "node_key_version": number;
+      "source_unit": string;
+      "credential": string;
+      "signing_public": string;
+    };
+    "ProvisioningReceipt": {
+      "status": "submitted";
+      "offer_id": string;
+      "ciphertext_digest": string;
+      "delivery_digest": string;
+      "submitted_at_ms": number;
+      "expires_at_ms": number;
+    };
+    "ProvisioningSubmitInput": {
+      "enc": string;
+      "ciphertext": string;
+    };
     "NodeEvent": {
       "idempotency_key": string;
-      "kind": "operation_request" | "operation_result" | "audit";
+      "kind": "operation_request" | "operation_result" | "operation_cancel" | "recipient_offer" | "audit";
       "body": {
         [key: string]: unknown;
       };
@@ -2450,6 +2510,277 @@ export interface operations {
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
   };
+  "getFleetSourceBinding": {
+  parameters: {
+    path: {
+      "node_id": string;
+      "resource_id": string;
+    };
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["SourceBinding"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession"]>;
+  };
+  "updateFleetSourceBinding": {
+  parameters: {
+    path: {
+      "node_id": string;
+      "resource_id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["SourceBindingInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["SourceBinding"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "422": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "createFleetProvisioningLink": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "Idempotency-Key": string;
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["ProvisioningLink"];
+      };
+    };
+    "201": {
+      content: {
+        "application/json": components["schemas"]["ProvisioningLink"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "410": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFleetProvisioningMetadata": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: {
+      "sig": string;
+    };
+    header: never;
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["ProvisioningMetadata"] | components["schemas"]["ProvisioningReceipt"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "410": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "fleetProvisioningCapability"]>;
+  };
+  "submitFleetProvisioning": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: {
+      "sig": string;
+    };
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["ProvisioningSubmitInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["ProvisioningReceipt"];
+      };
+    };
+    "201": {
+      content: {
+        "application/json": components["schemas"]["ProvisioningReceipt"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "410": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "413": {
+      content: {
+        "application/json": components["schemas"]["LegacyError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie", "fleetProvisioningCapability"]>;
+  };
   "rotateFleetNodeKey": {
   parameters: {
     path: {
@@ -3641,6 +3972,19 @@ export interface paths {
   "/api/v3/nodes/{id}": {
     get?: operations["getFleetNode"];
     delete?: operations["revokeFleetNode"];
+  };
+  "/api/v3/nodes/{node_id}/source-bindings/{resource_id}": {
+    get?: operations["getFleetSourceBinding"];
+    put?: operations["updateFleetSourceBinding"];
+  };
+  "/api/v3/admin/operations/{id}/provisioning-link": {
+    post?: operations["createFleetProvisioningLink"];
+  };
+  "/api/v3/fleet/provisioning/{id}/metadata": {
+    get?: operations["getFleetProvisioningMetadata"];
+  };
+  "/api/v3/fleet/provisioning/{id}/submit": {
+    post?: operations["submitFleetProvisioning"];
   };
   "/api/v3/nodes/{id}/rotate-key": {
     post?: operations["rotateFleetNodeKey"];

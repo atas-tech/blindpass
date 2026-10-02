@@ -368,6 +368,27 @@ impl NodeIdentity {
         Ok(base64_url_encode(&signature?))
     }
 
+    pub(crate) fn sign_browser_offer(
+        &self,
+        binding: &blindpass_core::provisioning::BrowserProvisioningBinding,
+    ) -> Result<SignedEnvelope, BrokerError> {
+        let pin = self
+            .pinned_issuer()?
+            .ok_or(BrokerError::Configuration("browser_provisioning_denied"))?;
+        let keys = self
+            .keys
+            .lock()
+            .map_err(|_| BrokerError::Configuration("browser_provisioning_denied"))?;
+        if pin.node_id != binding.grant.node_id
+            || pin.epoch != binding.grant.issuer_epoch
+            || keys.version != binding.node_key_version
+        {
+            return Err(BrokerError::Configuration("browser_provisioning_denied"));
+        }
+        blindpass_core::provisioning::sign_browser_recipient_offer(binding, &keys.signing)
+            .map_err(|_| BrokerError::Configuration("browser_provisioning_denied"))
+    }
+
     pub fn pin_issuer(&self, candidate: PinnedIssuer) -> Result<(), BrokerError> {
         validate_pin(&candidate)?;
         let mut current = self

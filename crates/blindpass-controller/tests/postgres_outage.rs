@@ -155,7 +155,13 @@ async fn readiness_fails_during_postgres_outage_and_recovers_with_state_intact()
         .expect("bind local HTTP test listener");
     let address = listener.local_addr().expect("resolve test address");
     let app: Router = build_app(config, Some(store.clone()));
-    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+    });
     wait_for_readiness(address, 200).await;
 
     sqlx::query(&format!("ALTER ROLE \"{role}\" NOLOGIN"))

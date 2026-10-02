@@ -15,7 +15,30 @@ import register, {
 } from "../index.mjs";
 import { cleanup as cleanupBridge, requestSecretFlow } from "../sps-bridge.mjs";
 import { parseProtocolRequest, resolveSecretEntries, runResolver } from "../blindpass-resolver.mjs";
-import { createMcpServer, handleMcpRpcRequest } from "../mcp-server.mjs";
+import { createMcpOptions } from "../mcp-server.mjs";
+import { createMcpServer as createSdkServer } from "../../mcp-server/src/index.mjs";
+import { createMcpHandler } from "@modelcontextprotocol/server";
+
+function createMcpServer(options) {
+    return createMcpOptions({ ...options, toolContext: { sendText: async () => {} } });
+}
+
+// In-process contract cases use the official SDK HTTP micro-transport. Actual
+// newline stdio launch and packaging checks below remain separate regressions.
+async function handleMcpRpcRequest(options, message) {
+    if (message.method === "initialize") message = { ...message,
+        params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "blindpass-core-contract", version: "1" }, ...message.params } };
+    const handle = createMcpHandler(() => createSdkServer(options), { legacy: "stateless", onerror: () => {} });
+    const response = await handle.fetch(new Request("http://localhost/mcp", { method: "POST",
+        headers: { "content-type": "application/json", accept: "application/json, text/event-stream", "mcp-protocol-version": "2025-11-25" },
+        body: JSON.stringify(message) }));
+    try {
+        const body = await response.text();
+        if (response.headers.get('content-type')?.startsWith('application/json')) return JSON.parse(body);
+        const messages = body.split('\n').filter((line) => line.startsWith('data: ')).map((line) => JSON.parse(line.slice(6)));
+        return messages.find((value) => value.id === message.id);
+    } finally { await handle.close(); }
+}
 import {
     deriveSopsCommandEnv,
     emitManagedStoreBootstrapReminder,
@@ -211,31 +234,13 @@ async function withDateNow(nowMs, fn) {
 }
 
 function encodeMcpFrame(payload) {
-    const body = JSON.stringify(payload);
-    const length = Buffer.byteLength(body, "utf8");
-    return `Content-Length: ${length}\r\n\r\n${body}`;
+    return `${JSON.stringify(payload)}\n`;
 }
 
 function parseMcpFrame(buffer) {
-    const headerEnd = buffer.indexOf("\r\n\r\n");
-    if (headerEnd === -1) return null;
-
-    const headerText = buffer.slice(0, headerEnd).toString("utf8");
-    const lengthMatch = headerText.match(/content-length:\s*(\d+)/i);
-    if (!lengthMatch) {
-        throw new Error("MCP response is missing Content-Length header.");
-    }
-
-    const contentLength = Number.parseInt(lengthMatch[1], 10);
-    const bodyStart = headerEnd + 4;
-    const bodyEnd = bodyStart + contentLength;
-    if (buffer.length < bodyEnd) return null;
-
-    const body = buffer.slice(bodyStart, bodyEnd).toString("utf8");
-    return {
-        message: JSON.parse(body),
-        remainder: buffer.slice(bodyEnd),
-    };
+    const end = buffer.indexOf('\n');
+    if (end === -1) return null;
+    return { message: JSON.parse(buffer.subarray(0, end).toString('utf8')), remainder: buffer.subarray(end + 1) };
 }
 
 async function readOneMcpResponse(stream, timeoutMs = 5000) {
@@ -345,7 +350,7 @@ async function runMcpLaunchSmokeFromConfig(configPath) {
                 jsonrpc: "2.0",
                 id: 1,
                 method: "initialize",
-                params: {},
+                params: { protocolVersion: "2025-11-25", capabilities: {}, clientInfo: { name: "blindpass-launch-contract", version: "1" } },
             }),
         );
         const response = await readOneMcpResponse(child.stdout);
@@ -1829,9 +1834,7 @@ async function testMcpServerUnknownMethodsAndTools() {
             arguments: {},
         },
     });
-    assert.equal(unknownTool.error, undefined);
-    assert.equal(unknownTool.result?.isError, true);
-    assert.match(unknownTool.result?.content?.[0]?.text ?? "", /Unknown tool/);
+    assert.equal(unknownTool.error?.code, -32602);
 }
 
 async function testMcpManagedModeResponsesRemainMetadataOnly() {
@@ -1913,9 +1916,12 @@ async function testMcpManagedModeResponsesRemainMetadataOnly() {
 }
 
 async function testMcpToolsEnforcePersistValidationInHandlers() {
+    let flowCalls = 0;
     const server = createMcpServer({
         runtime: {
             emitManagedStoreBootstrapReminderFn: async () => ({ emitted: false }),
+            requestSecretFlowFn: async () => { flowCalls++; throw new Error('unexpected_secret_flow'); },
+            requestExchangeFlowFn: async () => { flowCalls++; throw new Error('unexpected_exchange_flow'); },
         },
     });
 
@@ -1934,7 +1940,7 @@ async function testMcpToolsEnforcePersistValidationInHandlers() {
             },
         },
     });
-    assert.match(requestSecretResponse.result?.content?.[0]?.text ?? "", /secret_name is required when persist=true/);
+    assert.match(requestSecretResponse.result?.content?.[0]?.text ?? '', /secret_name is required when persist=true/);
 
     const requestExchangeResponse = await handleMcpRpcRequest(server, {
         jsonrpc: "2.0",
@@ -1949,7 +1955,9 @@ async function testMcpToolsEnforcePersistValidationInHandlers() {
             },
         },
     });
-    assert.match(requestExchangeResponse.result?.content?.[0]?.text ?? "", /secret_name is required when persist=true/);
+    assert.equal(requestExchangeResponse.result?.isError, true);
+    assert.match(requestExchangeResponse.result?.content?.[0]?.text ?? "", /secret_name.*(?:required|expected string)/);
+    assert.equal(flowCalls, 0, 'invalid persistence never starts secret collection');
 }
 
 async function testClaudeConfigLaunchesMcpServer() {

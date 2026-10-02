@@ -111,6 +111,87 @@ pub fn verify_browser_payload(
     Ok(expires_at)
 }
 
+/// Fleet Source provisioning capabilities use their own derived key and a
+/// distinct canonical prefix, so a legacy exchange capability (`browser-sig`)
+/// can never authorize a fleet link and the reverse. Only the metadata and
+/// submit scopes exist; the link also binds a named operator in controller
+/// state, which this signature alone never grants.
+const FLEET_PROVISIONING_DOMAIN: &str = "fleet-provisioning-sig";
+
+fn fleet_scope(scope: BrowserScope) -> Option<&'static str> {
+    match scope {
+        BrowserScope::Metadata | BrowserScope::Submit => Some(scope.as_str()),
+        BrowserScope::Status => None,
+    }
+}
+
+fn fleet_provisioning_signature(
+    link_id: &str,
+    expires_at: u64,
+    scope: BrowserScope,
+    root_secret: &[u8],
+) -> Result<String, CryptoError> {
+    let scope = fleet_scope(scope)
+        .filter(|_| valid_request_id(link_id) && expires_at != 0)
+        .ok_or(CryptoError::UnsupportedHost(
+            "invalid fleet provisioning capability",
+        ))?;
+    let derived = derive_secret(root_secret, FLEET_PROVISIONING_DOMAIN)?;
+    let canonical = format!("fleet-provisioning.{link_id}.{expires_at}.{scope}");
+    let mut digest = hmac_sha256(derived.as_bytes(), canonical.as_bytes())?;
+    let signature = base64_url_encode(&digest);
+    wipe(&mut digest);
+    Ok(signature)
+}
+
+/// `expires_at` is in seconds; callers round the real millisecond deadline up
+/// so this coarse check never denies before the authoritative database check.
+pub fn sign_fleet_provisioning_capability(
+    link_id: &str,
+    expires_at: u64,
+    scope: BrowserScope,
+    root_secret: &[u8],
+) -> Result<String, CryptoError> {
+    let signature = fleet_provisioning_signature(link_id, expires_at, scope, root_secret)?;
+    Ok(format!("{expires_at}.{signature}"))
+}
+
+pub fn verify_fleet_provisioning_capability(
+    link_id: &str,
+    scope: BrowserScope,
+    token: &str,
+    root_secret: &[u8],
+    now_seconds: u64,
+) -> Result<u64, VerifyError> {
+    if !valid_request_id(link_id) || fleet_scope(scope).is_none() {
+        return Err(VerifyError::Invalid);
+    }
+    let (expiry, signature) = token.split_once('.').ok_or(VerifyError::Invalid)?;
+    if signature.contains('.')
+        || signature.len() != 43
+        || !signature
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'-')
+    {
+        return Err(VerifyError::Invalid);
+    }
+    let expires_at = expiry.parse::<u64>().map_err(|_| VerifyError::Invalid)?;
+    if expires_at == 0 {
+        return Err(VerifyError::Invalid);
+    }
+    // Authenticate before reporting expiry so a stale forged token learns
+    // nothing about the link.
+    let expected = fleet_provisioning_signature(link_id, expires_at, scope, root_secret)
+        .map_err(|_| VerifyError::Invalid)?;
+    if !constant_time_equal(signature.as_bytes(), expected.as_bytes()) {
+        return Err(VerifyError::Invalid);
+    }
+    if expires_at < now_seconds {
+        return Err(VerifyError::Expired);
+    }
+    Ok(expires_at)
+}
+
 pub fn base64_url_encode(input: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut output = String::with_capacity((input.len() * 4).div_ceil(3));
@@ -186,7 +267,9 @@ fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        BrowserScope, VerifyError, derive_secret, sign_browser_payload, verify_browser_payload,
+        BrowserScope, VerifyError, derive_secret, sign_browser_payload,
+        sign_fleet_provisioning_capability, verify_browser_payload,
+        verify_fleet_provisioning_capability,
     };
 
     const ROOT_SECRET: &[u8] = b"p00-vector-root-secret";
@@ -253,6 +336,171 @@ mod tests {
                 1_893_456_001
             ),
             Err(VerifyError::Expired)
+        );
+    }
+
+    #[test]
+    fn fleet_provisioning_capabilities_use_a_distinct_domain_and_keep_scopes_separate() {
+        let metadata = sign_fleet_provisioning_capability(
+            REQUEST_ID,
+            1_893_456_000,
+            BrowserScope::Metadata,
+            ROOT_SECRET,
+        )
+        .unwrap();
+        let submit = sign_fleet_provisioning_capability(
+            REQUEST_ID,
+            1_893_456_000,
+            BrowserScope::Submit,
+            ROOT_SECRET,
+        )
+        .unwrap();
+        assert_ne!(metadata, submit);
+        let legacy_metadata = sign_browser_payload(
+            REQUEST_ID,
+            1_893_456_000,
+            BrowserScope::Metadata,
+            ROOT_SECRET,
+        )
+        .unwrap();
+        let legacy_submit =
+            sign_browser_payload(REQUEST_ID, 1_893_456_000, BrowserScope::Submit, ROOT_SECRET)
+                .unwrap();
+        assert_ne!(metadata, legacy_metadata);
+        assert_ne!(submit, legacy_submit);
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                REQUEST_ID,
+                BrowserScope::Metadata,
+                &metadata,
+                ROOT_SECRET,
+                1_893_455_999
+            ),
+            Ok(1_893_456_000)
+        );
+        // A legacy exchange capability is never a fleet capability, and the
+        // reverse, even with the same request id, expiry, scope and root.
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                REQUEST_ID,
+                BrowserScope::Metadata,
+                &legacy_metadata,
+                ROOT_SECRET,
+                1_893_455_999
+            ),
+            Err(VerifyError::Invalid)
+        );
+        assert_eq!(
+            verify_browser_payload(
+                REQUEST_ID,
+                BrowserScope::Metadata,
+                &metadata,
+                ROOT_SECRET,
+                1_893_455_999
+            ),
+            Err(VerifyError::Invalid)
+        );
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                REQUEST_ID,
+                BrowserScope::Submit,
+                &metadata,
+                ROOT_SECRET,
+                1_893_455_999
+            ),
+            Err(VerifyError::Invalid)
+        );
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                REQUEST_ID,
+                BrowserScope::Metadata,
+                &metadata,
+                ROOT_SECRET,
+                1_893_456_001
+            ),
+            Err(VerifyError::Expired)
+        );
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                REQUEST_ID,
+                BrowserScope::Metadata,
+                &metadata,
+                b"another-root-secret",
+                1_893_455_999
+            ),
+            Err(VerifyError::Invalid)
+        );
+        let other_link = "b".repeat(64);
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                &other_link,
+                BrowserScope::Metadata,
+                &metadata,
+                ROOT_SECRET,
+                1_893_455_999
+            ),
+            Err(VerifyError::Invalid)
+        );
+        // A tampered expiry does not verify under the original signature.
+        let (_, signature) = metadata.split_once('.').unwrap();
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                REQUEST_ID,
+                BrowserScope::Metadata,
+                &format!("1893456001.{signature}"),
+                ROOT_SECRET,
+                1_893_455_999
+            ),
+            Err(VerifyError::Invalid)
+        );
+    }
+
+    #[test]
+    fn fleet_provisioning_capabilities_refuse_status_scope_and_malformed_inputs() {
+        assert!(
+            sign_fleet_provisioning_capability(
+                REQUEST_ID,
+                1_893_456_000,
+                BrowserScope::Status,
+                ROOT_SECRET
+            )
+            .is_err()
+        );
+        assert!(
+            sign_fleet_provisioning_capability(
+                "short",
+                1_893_456_000,
+                BrowserScope::Submit,
+                ROOT_SECRET
+            )
+            .is_err()
+        );
+        assert!(
+            sign_fleet_provisioning_capability(REQUEST_ID, 0, BrowserScope::Submit, ROOT_SECRET)
+                .is_err()
+        );
+        for token in ["", "1893456000", "1893456000.short", "x.AAAA", ".x"] {
+            assert_eq!(
+                verify_fleet_provisioning_capability(
+                    REQUEST_ID,
+                    BrowserScope::Submit,
+                    token,
+                    ROOT_SECRET,
+                    1
+                ),
+                Err(VerifyError::Invalid),
+                "{token}"
+            );
+        }
+        assert_eq!(
+            verify_fleet_provisioning_capability(
+                REQUEST_ID,
+                BrowserScope::Status,
+                "1893456000.AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ROOT_SECRET,
+                1
+            ),
+            Err(VerifyError::Invalid)
         );
     }
 }

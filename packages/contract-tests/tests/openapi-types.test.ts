@@ -24,7 +24,7 @@ const encryptedPayload: SubmitPayload = {
 const capabilities: CapabilitiesResponse = {
   api: ["compat.v2", "admin.v3", "fleet.v3"],
   version: "0.1.0",
-  schema_version: 12,
+  schema_version: 16,
   setup_required: true,
   features: { browser_status: true, fleet_authorization: true }
 };
@@ -67,6 +67,10 @@ it("generated operation and component types describe the controller wire shapes"
     key_version: 1,
     capabilities_hash: "a".repeat(64)
   };
+  // The console's secret-free Source collection state on operation reads.
+  const provisioning: components["schemas"]["OperationProvisioning"] = { state: "offer_ready", offer_expires_at_ms: 1_800_000_030_000, can_provide: true };
+  const waiting: components["schemas"]["OperationProvisioning"] = { state: "awaiting_offer", offer_expires_at_ms: null, can_provide: false };
+  expect([provisioning.state, waiting.state, provisioning.can_provide, waiting.offer_expires_at_ms]).toEqual(["offer_ready", "awaiting_offer", true, null]);
   const nodeSessionInput: components["schemas"]["NodeSessionInput"] = {
     node_id: "nd_node-a",
     key_version: 2,

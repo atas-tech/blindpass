@@ -18,7 +18,9 @@ use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
 const MAX_CONTROL_LINE_BYTES: usize = 512;
-const MAX_CONTROL_DOCUMENT_BYTES: usize = 64 * 1024;
+/// RELAY and every non-delivery document; only `provisioning_delivery` (via
+/// PROVISION_SOURCE) may be larger.
+const MAX_CONTROL_DOCUMENT_BYTES: usize = blindpass_core::fleet::MAX_NODE_DOCUMENT_BYTES;
 
 pub(crate) fn handle_connection(
     stream: &mut UnixStream,
@@ -47,12 +49,20 @@ fn handle_command(
             let mut state = state
                 .lock()
                 .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?;
+            state.retry_pending_persistence(identity);
+            if state
+                .pending_state_fenced
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err(BrokerError::Configuration("broker_persistence_fenced"));
+            }
             let pin = identity.pinned_issuer()?.ok_or(BrokerError::Configuration(
                 "controller issuer is not pinned",
             ))?;
             state.queue_overflow_event_if_possible(&pin.node_id)?;
             state.queue_node_revocation_ack_if_possible(&pin.node_id)?;
             state.queue_deferred_revocation_outcomes()?;
+            state.queue_pending_cancellations(&pin.node_id)?;
             if let Some((rotation_id, key_version, fingerprint)) =
                 identity.applied_rotation_ack()?
             {
@@ -135,6 +145,67 @@ fn handle_command(
             )?,
             None => stream.write_all(b"PIN none\n")?,
         },
+        _ if command.starts_with(b"BROWSER_OFFER ") => {
+            let grant_id = std::str::from_utf8(&command[14..command.len() - 1])
+                .ok()
+                .filter(|id| crate::valid_event_identifier(id));
+            let offer = grant_id.and_then(|id| {
+                state
+                    .lock()
+                    .ok()?
+                    .browser_recipient_offer(identity, id)
+                    .ok()
+            });
+            match offer.and_then(|offer| offer.to_json().ok()) {
+                Some(bytes) => {
+                    writeln!(stream, "OFFER {}", bytes.len())?;
+                    stream.write_all(&bytes)?;
+                    stream.write_all(b"\n")?;
+                }
+                None => stream.write_all(b"ERR browser_provisioning_denied\n")?,
+            }
+        }
+        _ if command.starts_with(b"BROWSER_OFFER_EVENT ") => {
+            // The broker signs the outer node event only for an offer it minted
+            // itself; the unprivileged relay never supplies a body to sign.
+            let grant_id = std::str::from_utf8(&command[20..command.len() - 1])
+                .ok()
+                .filter(|id| crate::valid_event_identifier(id));
+            let event = grant_id.and_then(|id| {
+                state
+                    .lock()
+                    .ok()?
+                    .browser_recipient_offer_event(identity, id)
+                    .ok()
+            });
+            match event {
+                Some(bytes) => {
+                    writeln!(stream, "OFFER_EVENT {}", bytes.len())?;
+                    stream.write_all(&bytes)?;
+                    stream.write_all(b"\n")?;
+                }
+                None => stream.write_all(b"ERR browser_provisioning_denied\n")?,
+            }
+        }
+        _ if command.starts_with(b"PROVISION_SOURCE ") => {
+            let length = parse_provision_length(command);
+            let Some(length) = length else {
+                stream.write_all(b"ERR browser_provisioning_denied\n")?;
+                return Ok(());
+            };
+            let mut document = vec![0_u8; length];
+            read_exact_until(stream, &mut document, deadline)?;
+            let applied = state
+                .lock()
+                .ok()
+                .and_then(|mut state| state.accept_browser_provisioning(identity, &document).ok());
+            wipe(&mut document);
+            match applied {
+                Some(true) => stream.write_all(b"OK browser_source_provisioned\n")?,
+                Some(false) => stream.write_all(b"OK browser_source_already_provisioned\n")?,
+                None => stream.write_all(b"ERR browser_provisioning_denied\n")?,
+            }
+        }
         _ if command.starts_with(b"SIGN_ENROLLMENT ") => {
             require_root_peer(stream)?;
             let token = std::str::from_utf8(&command[16..command.len() - 1])
@@ -174,6 +245,13 @@ fn handle_command(
             let mut document = vec![0_u8; length];
             let read_result = read_exact_until(stream, &mut document, deadline);
             read_result?;
+            if is_provisioning_delivery(&document) {
+                // Source delivery has exactly one entry point; refuse it here
+                // before signature verification can touch the issuer pin.
+                wipe(&mut document);
+                stream.write_all(b"ERR invalid_controller_document\n")?;
+                return Ok(());
+            }
             let application = apply_controller_document(state, identity, &document, true);
             wipe(&mut document);
             match application {
@@ -354,6 +432,41 @@ fn apply_controller_document_to_state(
             identity.acknowledge_rotation_event(&ack.event_keys)?;
         }
         DocumentKind::Grant => {
+            if envelope.body().get("registration_version").is_none() {
+                // The signed pre-migration shape is valid but carries no
+                // binding to a registration version. Discard it permanently
+                // so it cannot authorize a changed registration or block
+                // later documents in the relay inbox.
+                let node_id = envelope
+                    .body()
+                    .get("node_id")
+                    .and_then(Value::as_str)
+                    .ok_or(BrokerError::Configuration("controller grant is malformed"))?;
+                if node_id != pin.node_id {
+                    return Err(BrokerError::Configuration(
+                        "controller grant is bound to another node",
+                    ));
+                }
+                if persist {
+                    let grant_id = envelope
+                        .body()
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .ok_or(BrokerError::Configuration("controller grant is malformed"))?;
+                    let expires_at_ms = envelope
+                        .body()
+                        .get("expires_at_ms")
+                        .and_then(Value::as_u64)
+                        .ok_or(BrokerError::Configuration("controller grant is malformed"))?;
+                    state.queue_grant_rejection_audit(
+                        &pin.node_id,
+                        grant_id,
+                        expires_at_ms,
+                        "missing_registration_version",
+                    )?;
+                }
+                return Ok("grant_discarded_rejected");
+            }
             let grant = Grant::from_value(envelope.body())
                 .map_err(|_| BrokerError::Configuration("controller grant is malformed"))?;
             if grant.node_id != pin.node_id {
@@ -401,6 +514,9 @@ fn apply_controller_document_to_state(
                         }
                         "grant is stale or exceeds the broker lifetime maximum" => {
                             ("stale_at_receipt", "grant_discarded_rejected")
+                        }
+                        "broker grant capacity reached" => {
+                            ("capacity_exceeded", "grant_discarded_rejected")
                         }
                         _ => return Err(BrokerError::Configuration(reason)),
                     };
@@ -453,7 +569,16 @@ fn apply_controller_document_to_state(
                     "controller operation closure is bound to another node or epoch",
                 ));
             }
-            state.record_operation_closure(&closed.request_event_key, &closed.status);
+            if state
+                .operation_requests
+                .get(&closed.request_event_key)
+                .is_some()
+            {
+                // A known owner was durable before its request was published.
+                // Unknown closures confer no authority and need no local slot.
+                state.record_operation_closure(&closed.request_event_key, &closed.status);
+                state.persist_pending_node_events()?;
+            }
         }
         DocumentKind::NodeKeyRotation => {
             let rotation = NodeKeyRotation::from_value(envelope.body()).map_err(|_| {
@@ -623,6 +748,26 @@ fn valid_control_identifier(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
+/// `PROVISION_SOURCE <len>\n` carries one canonical `provisioning_delivery`
+/// document: no leading zero, digits only, at most the dedicated delivery cap.
+fn parse_provision_length(command: &[u8]) -> Option<usize> {
+    let line = command.strip_prefix(b"PROVISION_SOURCE ")?;
+    let text = std::str::from_utf8(line.strip_suffix(b"\n")?).ok()?;
+    if text.starts_with('0') || !text.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    text.parse::<usize>().ok().filter(|length| {
+        (2..=blindpass_core::fleet::MAX_PROVISIONING_DELIVERY_DOCUMENT_BYTES).contains(length)
+    })
+}
+
+fn is_provisioning_delivery(document: &[u8]) -> bool {
+    std::str::from_utf8(document)
+        .ok()
+        .and_then(|source| SignedEnvelope::from_json(source).ok())
+        .is_some_and(|envelope| envelope.kind() == DocumentKind::ProvisioningDelivery)
+}
+
 fn parse_relay_length(command: &[u8]) -> Result<usize, BrokerError> {
     if command.len() < 8 || command.last() != Some(&b'\n') {
         return Err(BrokerError::Configuration("invalid_control_command"));
@@ -688,8 +833,8 @@ fn read_exact_until(
 #[cfg(test)]
 mod tests {
     use super::{
-        MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_relay_length,
-        restore_controller_documents,
+        MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_provision_length,
+        parse_relay_length, restore_controller_documents,
     };
     use crate::BrokerState;
     use crate::keys::NodeIdentity;
@@ -714,6 +859,121 @@ mod tests {
         assert!(parse_relay_length(b"RELAY 02\n").is_err());
         assert!(parse_relay_length(b"RELAY 65537\n").is_err());
         assert_eq!(MAX_CONTROL_DOCUMENT_BYTES, 64 * 1024);
+    }
+
+    #[test]
+    fn relay_cap_is_the_shared_node_document_cap_for_every_kind() {
+        assert_eq!(
+            MAX_CONTROL_DOCUMENT_BYTES,
+            blindpass_core::fleet::MAX_NODE_DOCUMENT_BYTES
+        );
+        assert!(matches!(parse_relay_length(b"RELAY 65536\n"), Ok(65_536)));
+        assert!(parse_relay_length(b"RELAY 65537\n").is_err());
+        assert!(parse_relay_length(b"RELAY 131072\n").is_err());
+    }
+
+    #[test]
+    fn provision_source_length_gate_accepts_exactly_the_delivery_cap() {
+        assert_eq!(
+            blindpass_core::fleet::MAX_PROVISIONING_DELIVERY_DOCUMENT_BYTES,
+            131_072
+        );
+        assert_eq!(
+            parse_provision_length(b"PROVISION_SOURCE 131072\n"),
+            Some(131_072)
+        );
+        assert_eq!(parse_provision_length(b"PROVISION_SOURCE 2\n"), Some(2));
+        assert_eq!(
+            parse_provision_length(b"PROVISION_SOURCE 65537\n"),
+            Some(65_537)
+        );
+        for rejected in [
+            &b"PROVISION_SOURCE 131073\n"[..],
+            b"PROVISION_SOURCE 0131072\n",
+            b"PROVISION_SOURCE 0\n",
+            b"PROVISION_SOURCE 1\n",
+            b"PROVISION_SOURCE \n",
+            b"PROVISION_SOURCE +5\n",
+            b"PROVISION_SOURCE 5 \n",
+            b"PROVISION_SOURCE 1e3\n",
+            b"PROVISION_SOURCE 99999999999999999999\n",
+            b"PROVISION_SOURCE 131072",
+        ] {
+            assert_eq!(parse_provision_length(rejected), None, "{rejected:?}");
+        }
+    }
+
+    fn short_deadline_exchange(
+        command: &[u8],
+        payload: &[u8],
+        close_after_payload: bool,
+    ) -> Result<Vec<u8>, crate::BrokerError> {
+        let directory = temporary_directory();
+        let identity = std::sync::Arc::new(NodeIdentity::load_or_create(&directory).unwrap());
+        let state = std::sync::Arc::new(std::sync::Mutex::new(BrokerState::new(
+            DeliveryPolicy::default(),
+        )));
+        let (mut broker, mut client) = UnixStream::pair().unwrap();
+        let mut request = command.to_vec();
+        let payload = payload.to_vec();
+        // Write from a thread: a large frame must not depend on socket buffer size.
+        let writer = std::thread::spawn(move || {
+            request.extend_from_slice(&payload);
+            let _ = client.write_all(&request);
+            if close_after_payload {
+                let _ = client.shutdown(std::net::Shutdown::Write);
+            }
+            let mut response = Vec::new();
+            let _ = client.read_to_end(&mut response);
+            response
+        });
+        let result = handle_connection(
+            &mut broker,
+            Some(current_gid()),
+            identity,
+            state,
+            Instant::now() + Duration::from_millis(1_500),
+        );
+        drop(broker);
+        let response = writer.join().unwrap();
+        let _ = std::fs::remove_dir_all(directory);
+        result.map(|()| response)
+    }
+
+    #[test]
+    fn provision_source_reads_exactly_the_delivery_cap_and_refuses_one_byte_more_before_reading() {
+        let at_cap = vec![b'x'; 131_072];
+        assert_eq!(
+            short_deadline_exchange(b"PROVISION_SOURCE 131072\n", &at_cap, true).unwrap(),
+            b"ERR browser_provisioning_denied\n"
+        );
+        // One byte short of the declared length is a partial frame, not a document.
+        assert!(
+            short_deadline_exchange(b"PROVISION_SOURCE 131072\n", &at_cap[..131_071], true)
+                .is_err()
+        );
+        // Over the cap is refused from the header alone: no payload is ever sent
+        // and the handler answers before its read deadline.
+        let started = Instant::now();
+        assert_eq!(
+            short_deadline_exchange(b"PROVISION_SOURCE 131073\n", &[], false).unwrap(),
+            b"ERR browser_provisioning_denied\n"
+        );
+        assert!(started.elapsed() < Duration::from_millis(1_000));
+    }
+
+    #[test]
+    fn relay_reads_exactly_the_node_document_cap_and_refuses_one_byte_more() {
+        let at_cap = vec![b'x'; 65_536];
+        assert_eq!(
+            short_deadline_exchange(b"RELAY 65536\n", &at_cap, true).unwrap(),
+            b"ERR invalid_controller_document\n"
+        );
+        assert!(short_deadline_exchange(b"RELAY 65536\n", &at_cap[..65_535], true).is_err());
+        // A header over the cap is an error before any payload read.
+        let started = Instant::now();
+        assert!(short_deadline_exchange(b"RELAY 65537\n", &[], false).is_err());
+        assert!(started.elapsed() < Duration::from_millis(1_000));
     }
 
     #[test]
@@ -1055,8 +1315,10 @@ mod tests {
             account: "worker".to_owned(),
             resource_id: "marker-revoked".to_owned(),
             recipient_key_id: "nd_node-a-1".to_owned(),
+            registration_version: 1,
             policy_version: 4,
             approval_reference: None,
+            request_event_key: None,
             action: "noop.marker".to_owned(),
             mode: ConsumptionMode::File,
             audience: "blindpass-node".to_owned(),
@@ -1374,8 +1636,10 @@ mod tests {
             account: "worker".to_owned(),
             resource_id: "marker-a".to_owned(),
             recipient_key_id: "nd_node-a-1".to_owned(),
+            registration_version: 1,
             policy_version: 4,
             approval_reference: None,
+            request_event_key: None,
             action: "noop.marker".to_owned(),
             mode: ConsumptionMode::File,
             audience: "blindpass-node".to_owned(),
@@ -1724,8 +1988,10 @@ mod tests {
                 account: "worker".to_owned(),
                 resource_id: format!("marker-{index}"),
                 recipient_key_id: "nd_node-a-1".to_owned(),
+                registration_version: 1,
                 policy_version: 4,
                 approval_reference: None,
+                request_event_key: None,
                 action: "noop.marker".to_owned(),
                 mode: ConsumptionMode::File,
                 audience: "blindpass-node".to_owned(),
@@ -1946,11 +2212,23 @@ mod tests {
             fleet.deliver(&stale),
             b"OK document_discarded grant_rejected\n"
         );
+        let mut legacy = fleet.grant(6, 1);
+        legacy.recipient_key_id = "nd_node-a-2".to_owned();
+        let mut legacy_body = legacy.to_value().unwrap();
+        if let Value::Object(fields) = &mut legacy_body {
+            fields.retain(|(name, _)| name != "registration_version");
+        }
+        assert_eq!(
+            fleet.relay(&fleet.sign(DocumentKind::Grant, legacy_body, 1)),
+            b"OK document_discarded grant_rejected\n"
+        );
+        assert_eq!(denial(fleet.consume(&legacy.id)), "grant_unknown");
         assert_eq!(
             grant_rejection_reasons(&fleet),
             vec![
                 (old_key.id.clone(), "binding_mismatch".to_owned()),
                 (stale.id.clone(), "stale_at_receipt".to_owned()),
+                (legacy.id.clone(), "missing_registration_version".to_owned()),
             ],
             "each rejection is audited exactly once"
         );
@@ -2296,8 +2574,8 @@ mod tests {
             assert!(verify(&public_key, &message, &signature).unwrap());
         }
 
-        // Replays neither duplicate a pending outcome nor recreate an
-        // acknowledged one, before or after a restart.
+        // Replays do not duplicate a pending or acknowledged outcome, before
+        // or after a restart.
         assert_eq!(
             fleet.relay(&fleet.revocation(&unconsumed.id, 1)),
             b"OK document_applied revocation\n"
@@ -2360,6 +2638,13 @@ mod tests {
             crate::MAX_BROKER_AUDIT_EVENTS
         );
 
+        // The relay already acknowledged the revocation. Restart without
+        // redelivering it; startup must recover the deferred outcome itself.
+        let mut restarted = BrokerState::new(DeliveryPolicy::default());
+        restarted.configure_grant_storage(&fleet.identity).unwrap();
+        restore_controller_documents(&mut restarted, &fleet.identity).unwrap();
+        *fleet.state.lock().unwrap() = restarted;
+
         // Space returns after an acknowledgement; the outcome is emitted
         // exactly once and the grant stays revoked. Four acknowledgements
         // leave room for the overflow audit, the outcome and a consumption.
@@ -2392,6 +2677,7 @@ mod tests {
             Some("revoked_before_consumption")
         );
         drop(state);
+        fleet.refresh_time(1);
         assert_eq!(denial(fleet.consume(&grant.id)), "grant_revoked");
     }
 
@@ -2419,6 +2705,194 @@ mod tests {
             closed.to_value().unwrap(),
             epoch,
         )
+    }
+
+    #[test]
+    fn recipient_offer_cannot_be_relayed_as_controller_authority() {
+        use blindpass_core::provisioning::{
+            BrowserProvisioningBinding, sign_browser_recipient_offer,
+        };
+        let fleet = Fleet::new(114);
+        let binding = BrowserProvisioningBinding::from_json(include_str!(
+            "../../../packages/browser-ui/tests/fixtures/fleet-provisioning-v1.json"
+        ))
+        .unwrap();
+        let signer = Ed25519KeyPair::generate().unwrap();
+        let offer = sign_browser_recipient_offer(&binding, &signer)
+            .unwrap()
+            .to_json()
+            .unwrap();
+        // Even a controller-signed document with this kind has no grant role.
+        let controller_signed =
+            fleet.sign(DocumentKind::RecipientOffer, binding.to_value().unwrap(), 1);
+        for document in [&offer, &controller_signed] {
+            assert_eq!(fleet.relay(document), b"ERR invalid_controller_document\n");
+            assert_eq!(fleet.identity.pinned_issuer().unwrap().unwrap().epoch, 1);
+            let state = fleet.state.lock().unwrap();
+            assert!(state.pending_node_events.is_empty());
+            assert!(state.operation_requests.values.is_empty());
+            assert!(state.original_workload_leases.is_empty());
+            assert_eq!(state.fleet_policy.as_ref().unwrap().policy_version, 4);
+        }
+        std::fs::remove_dir_all(&fleet.directory).unwrap();
+    }
+
+    #[test]
+    fn signed_browser_grant_crosses_control_transport_and_correlates_with_its_request() {
+        use std::os::unix::fs::PermissionsExt;
+        let fleet = Fleet::new(113);
+        let mut registration = fleet
+            .state
+            .lock()
+            .unwrap()
+            .fleet_registrations
+            .get("wl_worker-a")
+            .unwrap()
+            .clone();
+        registration.registration_version = 2;
+        registration.policy_version = 5;
+        registration.consumption_mode = ConsumptionMode::BrowserSession;
+        let policy = PolicySnapshot {
+            policy_version: 5,
+            local_ceiling_seconds: 60,
+            allowed_actions: vec!["browser.session".into()],
+            allowed_modes: vec![ConsumptionMode::BrowserSession],
+        };
+        for (kind, body) in [
+            (DocumentKind::Registration, registration.to_value().unwrap()),
+            (DocumentKind::PolicySnapshot, policy.to_value().unwrap()),
+        ] {
+            assert!(fleet.relay(&fleet.sign(kind, body, 1)).starts_with(b"OK "));
+        }
+        let resource = crate::BrowserResource::from_value(&parse_json(r#"{"resource_id":"report-primary","workload_ids":["wl_worker-a"],"credential_unit":"blindpass-login-helper@.service","credential_name":"primary-password","revocation":{"kind":"fixture-admin","credential_unit":"blindpass-session-revoker@.service","credential_name":"fixture-admin"},"configuration":{"kind":"fixture","origin":"https://127.0.0.1:4443","account":"primary","sessionMaxMs":300000}}"#).unwrap()).unwrap();
+        let bytes = canonicalize_value(&Value::Object(vec![
+            ("version".into(), Value::Unsigned(1)),
+            ("resources".into(), Value::Array(vec![resource.to_value()])),
+        ]))
+        .unwrap();
+        {
+            let mut state = fleet.state.lock().unwrap();
+            let (unit, name) = resource.credential_destination();
+            state.loader_policy.map_unit(unit, name).unwrap();
+            let (admin_unit, admin_name) = resource
+                .revocation_profile()
+                .unwrap()
+                .credential_destination();
+            state
+                .loader_policy
+                .map_unit(admin_unit, admin_name)
+                .unwrap();
+            state
+                .credentials
+                .insert(
+                    &crate::destination_key(admin_unit, admin_name),
+                    "a".repeat(64).as_bytes(),
+                )
+                .unwrap();
+            state
+                .credentials
+                .insert(
+                    &crate::destination_key(unit, name),
+                    b"P05-SIGNED-SOURCE-CANARY",
+                )
+                .unwrap();
+            state.credential_expiries.insert(
+                crate::destination_key(unit, name),
+                crate::CredentialExpiry::after(Duration::from_secs(300)).unwrap(),
+            );
+            state
+                .configure_browser_catalog(
+                    crate::browser_catalog::BrowserCatalog::from_bytes(&bytes).unwrap(),
+                )
+                .unwrap();
+        }
+        let invocation = "a".repeat(32);
+        let peer =
+            PeerIdentity::fixture(1000, current_gid(), "worker.service", &invocation, "worker");
+        let mut request = Fleet::request(format!("request:{}", base64_url_encode(br#"{"action":"browser.session","mode":"browser_session","purpose":"read report","resource_id":"report-primary","ttl_seconds":60}"#)));
+        request.claimed_invocation_id = invocation.clone();
+        let requested = fleet
+            .state
+            .lock()
+            .unwrap()
+            .process_workload(&peer, &request)
+            .unwrap();
+        let key = std::str::from_utf8(&requested)
+            .unwrap()
+            .strip_prefix("OK operation_request ")
+            .unwrap()
+            .trim()
+            .to_owned();
+        {
+            let mut state = fleet.state.lock().unwrap();
+            let authorization =
+                crate::authorize_workload(&peer, &request, &state.workloads).unwrap();
+            let (lease, _) = crate::original_workload::OriginalWorkloadLease::fixture(
+                &key,
+                authorization,
+                peer.clone(),
+            );
+            state.original_workload_leases.insert(key.clone(), lease);
+        }
+        let mut grant = fleet.grant(1, 1);
+        grant.action = "browser.session".into();
+        grant.mode = ConsumptionMode::BrowserSession;
+        grant.invocation_id = invocation;
+        grant.resource_id = "report-primary".into();
+        grant.registration_version = 2;
+        grant.policy_version = 5;
+        grant.request_event_key = Some(key.clone());
+        let signed = fleet.sign(DocumentKind::Grant, grant.to_value().unwrap(), 1);
+        let tampered = String::from_utf8(signed.clone())
+            .unwrap()
+            .replace("report-primary", "report-isolation");
+        assert!(fleet.relay(tampered.as_bytes()).starts_with(b"ERR "));
+        assert!(fleet.relay(&signed).starts_with(b"OK "));
+        request.operation = format!("status:{key}");
+        assert_eq!(
+            fleet
+                .state
+                .lock()
+                .unwrap()
+                .process_workload(&peer, &request)
+                .unwrap(),
+            format!(
+                "OK operation_status granted {} {}\n",
+                grant.id, grant.operation_id
+            )
+            .as_bytes()
+        );
+        let path = fleet.directory.join("sessions");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let mut journal =
+            crate::session_journal::SessionJournal::open_at(&path, crate::effective_uid()).unwrap();
+        request.operation = format!("consume:{}", grant.id);
+        let preparation = fleet
+            .state
+            .lock()
+            .unwrap()
+            .prepare_browser_login(&peer, &request, &resource, &mut journal)
+            .unwrap();
+        assert!(matches!(preparation, crate::BrowserPreparation::Login(_)));
+        assert_eq!(journal.pending().len(), 1);
+        assert!(matches!(
+            fleet
+                .state
+                .lock()
+                .unwrap()
+                .prepare_browser_login(&peer, &request, &resource, &mut journal)
+                .unwrap(),
+            crate::BrowserPreparation::Existing(_)
+        ));
+        let events = canonicalize_value(&Value::Array(fleet.pulled_events())).unwrap();
+        for private in [
+            b"P05-SIGNED-SOURCE-CANARY".as_slice(),
+            b"127.0.0.1",
+            b"primary-password",
+        ] {
+            assert!(!events.windows(private.len()).any(|bytes| bytes == private));
+        }
     }
 
     #[test]
@@ -2479,15 +2953,125 @@ mod tests {
             status(&fleet, &peer, "event_not_issued_by_this_broker").unwrap(),
             b"OK operation_status unknown\n"
         );
-        // After a restart the in-memory request and closure records are gone.
+        // Acknowledgement removes transport evidence, not its ownership.
+        fleet
+            .state
+            .lock()
+            .unwrap()
+            .acknowledge_node_events("nd_node-a", std::slice::from_ref(&event_key))
+            .unwrap();
+        assert!(fleet.state.lock().unwrap().pending_node_events.is_empty());
         let mut restarted = BrokerState::new(DeliveryPolicy::default());
         restarted.configure_grant_storage(&fleet.identity).unwrap();
         restore_controller_documents(&mut restarted, &fleet.identity).unwrap();
         *fleet.state.lock().unwrap() = restarted;
         assert_eq!(
             status(&fleet, &peer, &event_key).unwrap(),
-            b"OK operation_status unknown\n"
+            b"OK operation_status closed rejected\n"
         );
+        assert_eq!(
+            denial(status(&fleet, &other_invocation, &event_key)),
+            "operation_status_denied"
+        );
+    }
+
+    #[test]
+    fn operation_owner_survives_ack_and_restart_while_pending() {
+        let fleet = Fleet::new(119);
+        let reply = operation_request(&fleet).unwrap();
+        let key = std::str::from_utf8(&reply)
+            .unwrap()
+            .strip_prefix("OK operation_request ")
+            .unwrap()
+            .trim()
+            .to_owned();
+        fleet
+            .state
+            .lock()
+            .unwrap()
+            .acknowledge_node_events("nd_node-a", std::slice::from_ref(&key))
+            .unwrap();
+        let mut restarted = BrokerState::new(DeliveryPolicy::default());
+        restarted.configure_grant_storage(&fleet.identity).unwrap();
+        restore_controller_documents(&mut restarted, &fleet.identity).unwrap();
+        *fleet.state.lock().unwrap() = restarted;
+        assert_eq!(
+            status(&fleet, &Fleet::peer(), &key).unwrap(),
+            b"OK operation_status pending\n"
+        );
+        let other = PeerIdentity::fixture(
+            1000,
+            current_gid(),
+            "worker.service",
+            "invocation-b",
+            "worker",
+        );
+        assert_eq!(
+            denial(status(&fleet, &other, &key)),
+            "operation_status_denied"
+        );
+        assert!(fleet.state.lock().unwrap().pending_node_events.is_empty());
+    }
+
+    #[test]
+    fn operation_closure_write_failure_fences_until_durable_retry() {
+        let fleet = Fleet::new(120);
+        let reply = operation_request(&fleet).unwrap();
+        let key = std::str::from_utf8(&reply)
+            .unwrap()
+            .strip_prefix("OK operation_request ")
+            .unwrap()
+            .trim()
+            .to_owned();
+        let path = fleet.identity.pending_node_events_path();
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        let document = closure(&fleet, "nd_node-a", &key, "cancelled", 1);
+        assert!(fleet.relay(&document).starts_with(b"ERR "));
+        assert!(fleet.state.lock().unwrap().persistence_fenced());
+        assert_eq!(
+            status(&fleet, &Fleet::peer(), &key).unwrap(),
+            b"OK operation_status closed cancelled\n"
+        );
+        assert!(operation_request(&fleet).is_err());
+        std::fs::remove_dir(&path).unwrap();
+        assert!(fleet.relay(&document).starts_with(b"OK "));
+        assert!(!fleet.state.lock().unwrap().persistence_fenced());
+        let mut restarted = BrokerState::new(DeliveryPolicy::default());
+        restarted.configure_grant_storage(&fleet.identity).unwrap();
+        restore_controller_documents(&mut restarted, &fleet.identity).unwrap();
+        *fleet.state.lock().unwrap() = restarted;
+        assert_eq!(
+            status(&fleet, &Fleet::peer(), &key).unwrap(),
+            b"OK operation_status closed cancelled\n"
+        );
+    }
+
+    #[test]
+    fn full_operation_owner_storage_denies_admission_without_eviction() {
+        let fleet = Fleet::new(121);
+        {
+            let mut state = fleet.state.lock().unwrap();
+            for index in 0..crate::MAX_OPERATION_RECORDS {
+                state.remember_operation_request(
+                    &format!("capacity_owner_{index:08}"),
+                    "wl_worker-a",
+                    "invocation-a",
+                );
+            }
+        }
+        assert_eq!(
+            denial(operation_request(&fleet)),
+            "operation_record_capacity"
+        );
+        let state = fleet.state.lock().unwrap();
+        assert!(
+            state
+                .operation_requests
+                .contains_key("capacity_owner_00000000")
+        );
+        assert_eq!(state.operation_requests.len(), crate::MAX_OPERATION_RECORDS);
+        assert!(state.pending_node_events.is_empty());
     }
 
     #[test]

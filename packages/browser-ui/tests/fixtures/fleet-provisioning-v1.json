@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "purpose": "browser_source",
+  "offer_id": "offer_00000000000001",
+  "node_key_version": 1,
+  "source_unit": "blindpass-login@source.service",
+  "credential": "source-credential",
+  "recipient_public": "hSDwCYkwp1R0i33ctD73Wg2_Og0mOBr066SpjqqbTmo",
+  "issued_at_ms": 1700000001000,
+  "expires_at_ms": 1700000060000,
+  "grant": {
+    "id": "gr_grant-a",
+    "operation_id": "op_operation-a",
+    "node_id": "nd_node-a",
+    "workload_id": "wl_workload-a",
+    "invocation_id": "1234567890abcdef1234567890abcdef",
+    "unit": "p05-agent.service",
+    "account": "p05-agent",
+    "resource_id": "report-primary",
+    "recipient_key_id": "nd_node-a-1",
+    "registration_version": 1,
+    "policy_version": 1,
+    "request_event_key": "event_request_0001",
+    "action": "browser.session",
+    "mode": "browser_session",
+    "audience": "blindpass-node",
+    "issuer_epoch": 1,
+    "issued_at_ms": 1700000000000,
+    "expires_at_ms": 1700000120000,
+    "local_ceiling_seconds": 120
+  }
+}

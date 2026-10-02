@@ -106,7 +106,10 @@ fn validate_operation(field: &str) -> Result<(), ProtocolError> {
     {
         return Err(ProtocolError::InvalidField);
     }
-    if let Some(event_key) = field.strip_prefix(STATUS_OPERATION_PREFIX)
+    if let Some(event_key) = field
+        .strip_prefix(STATUS_OPERATION_PREFIX)
+        .or_else(|| field.strip_prefix(CANCEL_OPERATION_PREFIX))
+        .or_else(|| field.strip_prefix(CANCEL_KEY_OPERATION_PREFIX))
         && !is_valid_event_key(event_key)
     {
         return Err(ProtocolError::InvalidField);
@@ -117,6 +120,12 @@ fn validate_operation(field: &str) -> Result<(), ProtocolError> {
 /// Operation prefix for a workload asking about one of its own operation
 /// requests: `status:<event_key>`.
 pub const STATUS_OPERATION_PREFIX: &str = "status:";
+
+/// Stop the browser request owned by this workload invocation.
+pub const CANCEL_OPERATION_PREFIX: &str = "cancel:";
+
+/// Stop a browser retry key, including before its request is admitted.
+pub const CANCEL_KEY_OPERATION_PREFIX: &str = "cancel-key:";
 
 /// Broker event keys are opaque, 16 to 128 bytes of `[A-Za-z0-9_-]`.
 #[must_use]
@@ -203,5 +212,49 @@ mod tests {
             parse_workload_request(long.as_bytes()),
             Err(ProtocolError::InvalidField)
         );
+    }
+
+    #[test]
+    fn retry_key_cancellation_uses_bounded_opaque_key() {
+        assert!(
+            parse_workload_request(
+                b"WORK node-a workload-a agent.service inv-a cancel-key:retry_0123456789abcdef\n"
+            )
+            .is_ok()
+        );
+        for key in [
+            "",
+            "short",
+            "retry.with.dot_012345",
+            "retry:0123456789abcdef",
+        ] {
+            let frame = format!("WORK node-a workload-a agent.service inv-a cancel-key:{key}\n");
+            assert_eq!(
+                parse_workload_request(frame.as_bytes()),
+                Err(ProtocolError::InvalidField)
+            );
+        }
+    }
+
+    #[test]
+    fn cancellation_queries_name_one_broker_event_key() {
+        assert!(
+            parse_workload_request(
+                b"WORK node-a workload-a agent.service inv-a cancel:event_0123456789abcdef-_\n"
+            )
+            .is_ok()
+        );
+        for invalid in [
+            "cancel:",
+            "cancel:short",
+            "cancel:event_with.dot_0123456",
+            "cancel:event:0123456789abcdef",
+        ] {
+            let frame = format!("WORK node-a workload-a agent.service inv-a {invalid}\n");
+            assert_eq!(
+                parse_workload_request(frame.as_bytes()),
+                Err(ProtocolError::InvalidField)
+            );
+        }
     }
 }

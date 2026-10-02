@@ -4,6 +4,7 @@ use blindpass_controller::store::{
     ApprovalRecord, ExchangePolicyRecord, ExchangeRecord, SecretRequestStatus, Store, StoreError,
 };
 use blindpass_core::clock::{ClockError, ClockSample, ClockSource, SystemClock};
+use blindpass_core::custody::sha256;
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -15,6 +16,14 @@ struct StoreFixture {
     sqlite_dir: Option<PathBuf>,
     postgres_schema: Option<String>,
     admin_pool: Option<PgPool>,
+}
+
+fn stored_session_id(token: &str) -> String {
+    sha256(token.as_bytes())
+        .unwrap()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 impl StoreFixture {
@@ -154,6 +163,10 @@ async fn fixture_table_count(fixture: &StoreFixture, table: &str) -> i64 {
 async fn remove_fleet_schema(fixture: &mut StoreFixture, schema_version: i64) {
     fixture.store.take();
     let tables = [
+        "fleet_provisioning_receipts",
+        "fleet_provisioning_links",
+        "fleet_provisioning_offers",
+        "fleet_source_bindings",
         "node_key_rotations",
         "node_revocation_queue",
         "node_challenges",
@@ -2138,7 +2151,7 @@ async fn local_browser_sessions_are_operator_bound_idle_checked_and_revocable() 
                 "UPDATE operator_sessions SET last_seen_at = last_seen_at - $1 WHERE id = $2",
             )
             .bind(age_ms)
-            .bind(id)
+            .bind(stored_session_id(id))
             .execute(&pool)
             .await
             .expect("age PostgreSQL browser session");
@@ -2153,7 +2166,7 @@ async fn local_browser_sessions_are_operator_bound_idle_checked_and_revocable() 
                 "UPDATE operator_sessions SET last_seen_at = last_seen_at - ? WHERE id = ?",
             )
             .bind(age_ms)
-            .bind(id)
+            .bind(stored_session_id(id))
             .execute(&pool)
             .await
             .expect("age SQLite browser session");
@@ -2433,7 +2446,7 @@ async fn password_changes_revoke_sessions_created_or_rotated_concurrently() {
         let survivors = format!(
             "SELECT COUNT(*) FROM operator_sessions WHERE operator_id = '{operator_id}'
             AND id <> '{}' AND revoked_at IS NULL",
-            current.session_id
+            stored_session_id(&current.session_id)
         );
         assert_eq!(
             count_query(&fixture, &survivors).await,
@@ -2967,8 +2980,9 @@ async fn older_schema_version_migrates_forward_and_records_current_version() {
         pool.close().await;
         (version, clock != 0, idempotency != 0)
     };
-    // Version 4 adds boot-anchored clock checks; versions 5-13 add fleet state.
-    assert_eq!(version, 13);
+    // Version 4 adds boot-anchored clock checks; later versions add fleet
+    // state and hashed operator access tokens.
+    assert_eq!(version, blindpass_controller::store::SCHEMA_VERSION);
     assert!(clock_present && idempotency_present);
     assert_fleet_schema_present(&fixture).await;
     fixture.close().await;

@@ -37,44 +37,68 @@
             <span data-i18n="intro.titleLine1">Share a secret.</span>
             <span data-i18n="intro.titleLine2">Keep it out of chat.</span>
           </h1>
-          <p class="lead" data-i18n="intro.lead"></p>
+          <p class="lead" data-i18n="intro.lead" data-i18n-fleet="fleet.intro.lead"></p>
           <ol class="handoff" data-i18n-aria-label="intro.stepsLabel">
             <li>
               <span class="step-number" aria-hidden="true">01</span>
               <div>
-                <h2 data-i18n="intro.step1Title"></h2>
-                <p data-i18n="intro.step1Body"></p>
+                <h2 data-i18n="intro.step1Title" data-i18n-fleet="fleet.intro.step1Title"></h2>
+                <p data-i18n="intro.step1Body" data-i18n-fleet="fleet.intro.step1Body"></p>
               </div>
             </li>
             <li>
               <span class="step-number" aria-hidden="true">02</span>
               <div>
-                <h2 data-i18n="intro.step2Title"></h2>
-                <p data-i18n="intro.step2Body"></p>
+                <h2 data-i18n="intro.step2Title" data-i18n-fleet="fleet.intro.step2Title"></h2>
+                <p data-i18n="intro.step2Body" data-i18n-fleet="fleet.intro.step2Body"></p>
               </div>
             </li>
             <li>
               <span class="step-number" aria-hidden="true">03</span>
               <div>
-                <h2 data-i18n="intro.step3Title"></h2>
-                <p data-i18n="intro.step3Body"></p>
+                <h2 data-i18n="intro.step3Title" data-i18n-fleet="fleet.intro.step3Title"></h2>
+                <p data-i18n="intro.step3Body" data-i18n-fleet="fleet.intro.step3Body"></p>
               </div>
             </li>
           </ol>
           <div class="boundary">
             <span class="boundary-mark" data-icon="arrow-right" aria-hidden="true"></span>
-            <p data-i18n="intro.boundary"></p>
+            <p data-i18n="intro.boundary" data-i18n-fleet="fleet.intro.boundary"></p>
           </div>
         </section>
 
         <section id="secret-card" class="request-card" data-state="loading" aria-labelledby="card-label">
           <div class="card-header">
-            <p id="card-label" class="eyebrow" data-i18n="card.label">Secret request</p>
+            <p id="card-label" class="eyebrow" data-i18n="card.label" data-i18n-fleet="fleet.card.label">Secret request</p>
             <span id="status-badge" class="status-badge" data-tone="neutral" data-testid="status"></span>
           </div>
 
           <div id="entry-panel" hidden>
-            <div class="request-summary">
+            <div id="fleet-summary" class="request-summary" hidden>
+              <p class="small-label" data-i18n="fleet.purposeLabel"></p>
+              <p id="fleet-purpose" class="request-description" data-testid="fleet-purpose" dir="auto"></p>
+              <p class="hint" data-i18n="fleet.purposeHint"></p>
+              <dl class="fleet-facts">
+                <div>
+                  <dt class="small-label" data-i18n="fleet.workloadLabel"></dt>
+                  <dd id="fleet-workload" data-testid="fleet-workload" dir="auto"></dd>
+                </div>
+                <div>
+                  <dt class="small-label" data-i18n="fleet.unitLabel"></dt>
+                  <dd id="fleet-unit" class="mono" data-testid="fleet-unit"></dd>
+                </div>
+                <div>
+                  <dt class="small-label" data-i18n="fleet.credentialLabel"></dt>
+                  <dd id="fleet-credential" class="mono" data-testid="fleet-credential"></dd>
+                </div>
+                <div>
+                  <dt class="small-label" data-i18n="fleet.expiryLabel"></dt>
+                  <dd id="fleet-expiry" class="expiry" data-testid="fleet-expiry"></dd>
+                </div>
+              </dl>
+              <p class="hint" data-i18n="fleet.destinationHint"></p>
+            </div>
+            <div id="legacy-summary" class="request-summary">
               <p class="small-label" data-i18n="card.descriptionLabel"></p>
               <p id="request-description" class="request-description" data-testid="request-description" dir="auto"></p>
               <p class="hint" data-i18n="card.descriptionHint"></p>
@@ -91,7 +115,7 @@
 
             <form id="secret-form" novalidate autocomplete="off">
               <div class="field-heading">
-                <label id="secret-label" for="secret-single" data-i18n="form.secretLabel"></label>
+                <label id="secret-label" for="secret-single" data-i18n="form.secretLabel" data-i18n-fleet="fleet.form.secretLabel"></label>
                 <button id="clear" type="button" class="text-button" data-i18n="form.clear" data-testid="clear"></button>
               </div>
               <div id="single-field" class="secret-field">
@@ -133,7 +157,7 @@
                 <span data-i18n="form.submit"></span>
                 <span class="primary-mark" data-icon="arrow-up-right" aria-hidden="true"></span>
               </button>
-              <p class="form-footnote" data-i18n="form.footnote"></p>
+              <p class="form-footnote" data-i18n="form.footnote" data-i18n-fleet="fleet.form.footnote"></p>
             </form>
             <div class="card-footer">
               <span class="footer-dot" aria-hidden="true"></span>
@@ -147,6 +171,7 @@
             <p id="outcome-body" data-testid="outcome-body"></p>
             <p id="outcome-note" class="outcome-note" data-testid="outcome-note"></p>
             <button id="outcome-action" type="button" class="secondary" data-testid="outcome-action" hidden></button>
+            <a id="outcome-link" class="secondary outcome-link" data-testid="outcome-link" target="_blank" rel="noopener noreferrer" hidden></a>
             <p id="outcome-followup" class="hint outcome-followup" hidden></p>
           </div>
           <p id="announcer" class="sr-only" role="status" aria-live="polite"></p>
@@ -155,7 +180,7 @@
 
       <footer class="page-footer">
         <span data-i18n="footer.label">BlindPass / Secret input</span>
-        <span data-i18n="footer.detail">One request. One encrypted handoff.</span>
+        <span data-i18n="footer.detail" data-i18n-fleet="fleet.footer.detail">One request. One encrypted handoff.</span>
       </footer>
     </div>
     <noscript><p class="noscript">This page needs JavaScript to encrypt your secret before sending it.</p></noscript>

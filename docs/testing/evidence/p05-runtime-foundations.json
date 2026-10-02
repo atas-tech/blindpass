@@ -1,0 +1,3005 @@
+{
+  "date": "2026-10-01",
+  "scope": "Actual controller/node/kernel-bound broker/helper/browser lifecycle and combined runtime components; not P05 acceptance",
+  "runtime": {
+    "node": "26.10.0",
+    "privatePlaywright": "1.58.2",
+    "chromium": "145.0.7632.6",
+    "stockTool": "@playwright/mcp@0.0.83",
+    "stockPlaywright": "1.64.0-alpha-1790635538000",
+    "mcpServer": "2.2.0",
+    "mcpCore": "2.2.0",
+    "zod": "4.6.5"
+  },
+  "checks": {
+    "helper": {
+      "command": "npm run test:p05:helper",
+      "passed": 13,
+      "skipped": 0,
+      "previousBeforeHelperIdentity": {
+        "command": "npm run test:p05:helper",
+        "passed": 11,
+        "skipped": 0
+      }
+    },
+    "managedHelper": {
+      "command": "npm run test:p05:helper:grafana",
+      "application": "Grafana OSS 13.2.3 managed Generic OAuth Viewer",
+      "passed": 1
+    },
+    "sdk": {
+      "command": "npm run test --workspace=@blindpass/mcp-server",
+      "passed": 11,
+      "legacyRevisions": [
+        "2024-11-05",
+        "2025-03-26",
+        "2025-06-18",
+        "2025-11-25"
+      ],
+      "modernRevision": "2026-07-28",
+      "scope": "Actual official SDK newline transport, four older/modern flows, registry validation, generic thrown/returned failures and actual legacy caught failure; three actual wrapper cases. No complete stock AI task.",
+      "recordedDate": "2026-09-30"
+    },
+    "stockChannel": {
+      "command": "npm run test:p05:stock-channel",
+      "passed": 1,
+      "transport": "Unix CDP",
+      "reportReads": 2,
+      "reconnects": 1,
+      "normalArtifactsScanned": 2,
+      "canariesAndRawEndpointAbsent": true,
+      "namespaceInvocationIsolation": "not tested"
+    },
+    "brokerPrivateIpc": {
+      "command": "cargo test -p blindpass-broker private_helper",
+      "passed": 6,
+      "scope": "Actual Unix wire/parser, backlog, slow response and boot-time deadline arithmetic; root-only Rust caller verified in guest; operation integration pending"
+    },
+    "nativeProbe": {
+      "command": "cargo build -p blindpass-broker --bin blindpass-private-helper-probe && node --test tests/browser-handoff/private-helper-native-probe.test.mjs",
+      "passed": 2,
+      "normalOutput": "empty"
+    },
+    "sessionJournal": {
+      "command": "cargo test -p blindpass-broker session_journal",
+      "passed": 14,
+      "scope": "Durable reservation/helper identity before delivery/staged handle, strict schema-3 fields, conservative schema-2 recovery, lost-reply restart blocking, identity replacement denial, injected write failure fencing and existing confirmed-cleanup/24h retention transitions; not actual production reconciliation",
+      "schema": 3,
+      "previousBeforeHelperIdentity": {
+        "command": "cargo test -p blindpass-broker session_journal",
+        "passed": 10,
+        "scope": "Durable reservation, replay/binding/conflict, restart blocking, staged handle, metadata/corruption, injected write failure, confirmed-cleanup transitions and 24h retention; not connected to actual operation coordinator",
+        "schema": 2
+      }
+    },
+    "browserPreparation": {
+      "command": "cargo test -p blindpass-broker browser_",
+      "passed": 35,
+      "scope": "Combined catalog, proxy, recipe/import, admission, request correlation, signed control preparation and staged-handle checks; no asynchronous runtime execution"
+    },
+    "isolatedBrowserPure": {
+      "command": "node --test --test-isolation=none tests/browser-handoff/browser-transport.test.mjs tests/browser-handoff/isolated-browser.test.mjs",
+      "passed": 12,
+      "scope": "Framing, duplicate keys/UTF8/depth/bounds, private stream sequencing, tunnel directions, fresh import gate and safe cleanup; test doubles are not OS isolation evidence"
+    },
+    "fixtureAccountRecovery": {
+      "command": "node --test --test-isolation=none tests/browser-handoff/fixture-app/app.test.mjs tests/browser-handoff/fixture-app/revocation.test.mjs",
+      "passed": 15,
+      "httpCases": 13,
+      "pureCases": 2,
+      "scope": "Account-wide invalidation without login handle; other account preserved; in-flight authentication generation fenced in pure test"
+    },
+    "namespaceStockChannel": {
+      "command": "./tests/browser-handoff/private-helper-vm.sh",
+      "passed": 1,
+      "reportReads": 2,
+      "reconnects": 1,
+      "stockAgent": "Separate fixed agent UID; two actual stock tool processes in one verified workload unit/invocation",
+      "browser": "Distinct DynamicUser and verified PrivateNetwork namespace",
+      "canariesAndRawEndpointAbsent": true,
+      "scope": "Actual Rust invocation proxy, reverse worker kernel pidfd proof and namespace browser; Root test-driver expected identity/synthetic lease; production signed dispatcher/coordinator and Claude/Codex tasks pending",
+      "actualInvocationProxy": true,
+      "actualSignedBrokerGrant": false,
+      "kernelPidfd": true,
+      "sameUidOtherUnit": "denied before backend attachment, including claimed-unit header",
+      "restartedInvocation": "denied before backend attachment",
+      "runtimeWorkerPidfd": true,
+      "runtimeWrongUnit": "same-UID wrong unit denied without consuming legitimate ticket",
+      "runtimeExit": "held proof denied after actual worker exit",
+      "proofBeforeCookieImport": true
+    },
+    "browserProxy": {
+      "command": "cargo test -p blindpass-broker browser_proxy",
+      "passed": 7,
+      "scope": "Bound peer/route validation, slot generation, bounded live relay and revocation, half-close drainage; actual kernel pidfd and manager identity verified separately in guest"
+    },
+    "agentControl": {
+      "command": "node --test tests/browser-handoff/isolated-browser-agent.test.mjs",
+      "passed": 2,
+      "environment": "Approved host; sandbox subprocess returned empty IO and did not establish passing execution"
+    },
+    "browserCatalog": {
+      "command": "cargo test -p blindpass-broker browser_catalog",
+      "passed": 5,
+      "scope": "Exact selection, parser/bounds/duplicates, retained-descriptor private regular file, symlink/owner/mode/hard-link denial and FIFO rejection"
+    },
+    "browserAdmission": {
+      "command": "cargo test -p blindpass-broker browser_request",
+      "passed": 6,
+      "scope": "Fixed catalog/current registration/policy/independent ceilings, safe durable event, atomic mapping validation, actual workload framing and pre-consumption runtime-unavailable denial"
+    },
+    "browserRequestCorrelation": {
+      "passed": 2,
+      "scope": "Original request owner and exact invocation, closure denial, ambiguous grant fail-closed status/preparation; workload identity fixtures",
+      "commands": [
+        "cargo test -p blindpass-broker browser_grant_requires",
+        "cargo test -p blindpass-broker browser_operation_status"
+      ]
+    },
+    "signedBrowserControl": {
+      "command": "cargo test -p blindpass-broker signed_browser_grant",
+      "passed": 1,
+      "scope": "Actual Unix control transport and signatures; typed browser registration/policy/grant, tamper denial, exact request lookup, one-use durable source preparation and replay; no helper call; fixture workload identity"
+    },
+    "signedBrowserCore": {
+      "command": "cargo test -p blindpass-core browser_grant",
+      "passed": 1,
+      "scope": "Real canonical body signing/verification, request/resource/time signature binding, exact action/mode, mandatory request key and maximum 120s grant lifetime; native wire fields retained"
+    },
+    "controllerBrowserOperations": {
+      "command": "cargo test -p blindpass-controller --test fleet_browser_operations --locked",
+      "sqlitePassed": 3,
+      "postgresPassed": 3,
+      "scope": "Real HTTP broker evidence, named approval and self-denial, idempotent signed grant, resource/mode/TTL/evidence denial; no helper or AI task"
+    },
+    "productionCatalogStartup": {
+      "command": "./tests/browser-handoff/private-helper-vm.sh",
+      "passed": 1,
+      "scope": "Actual broker binary READY and unsafe mode/symlink/writable parent/malformed denial before workload socket exposure; no grants consumed"
+    },
+    "runtimeIdentity": {
+      "command": "cargo test -p blindpass-broker runtime_identity --locked",
+      "passed": 6,
+      "scope": "Existing exact browser binding/tickets/parser plus dedicated helper UID/template/manager invocation, separate challenge books; actual valid/wrong-unit/replay/exit proofs separately executed in guest",
+      "previousBeforeHelperIdentity": {
+        "command": "cargo test -p blindpass-broker runtime_identity --locked",
+        "passed": 4,
+        "scope": "Exact unit/invocation/UID binding, private bounded tickets and cancellation/shutdown, strict parser, actual Unix partial/trailing/stalled input; valid actual peer separately proved in guest"
+      }
+    },
+    "runtimeWorkerProof": {
+      "command": "node --test --test-isolation=none tests/browser-handoff/runtime-identity-client.test.mjs tests/browser-handoff/isolated-browser.test.mjs",
+      "passed": 7,
+      "scope": "Fixed root/group metadata and bounded frame; fresh context requires exact one-use proof before import; invalid/repeated/failed proof closes browser; private challenge references cleared"
+    },
+    "legacyMcpPlugin": {
+      "command": "npm test --workspace=@blindpass/openclaw-plugin",
+      "passed": 62,
+      "scope": "Legacy handlers/resolver/store, managed metadata-only responses, missing-persist denial before flow, SDK callback/schema adapter and three configured Node startup profiles; not actual Claude/Codex application execution"
+    },
+    "mcpBundleNotices": {
+      "command": "node --test --test-isolation=none scripts/tests/mcp-bundle-notices.test.mjs",
+      "passed": 2,
+      "emittedPackageVersions": 19,
+      "scope": "Actual compiler-emitted package inventory and full texts; reject missing/unsupported license text and AGPL workspace implementation; no new dependency versions"
+    },
+    "mcpPackaging": {
+      "command": "npm run test:audience-packaging",
+      "passed": 3,
+      "scope": "ClawHub dry-run/staging, staged npm standalone SDK startup/newline initialize and full license inventory, Git install fallback; no publish"
+    },
+    "mcpInstall": {
+      "command": "npm run test:skill-install",
+      "passed": 5,
+      "scope": "Isolated Codex/Claude/Antigravity/all profiles, replace/backup preservation, SDK notice/license retention; no real account/config mutation"
+    },
+    "mcpReleaseMetadata": {
+      "command": "npm run test:release-metadata",
+      "passed": 1
+    },
+    "mcpStagedBundle": {
+      "sha256": "d3faec245d9fe74e1dcaf7a6e35daeb57c242c7e74765ab5a661bda31a08ab07",
+      "source": "packages/openclaw-plugin/mcp-server.mjs -> packages/mcp-server SDK factory",
+      "inputInventorySha256": "5a85fa2580077453ec2166870206a52c1a8f3c81e3a01bf71c2deaed01affc1a",
+      "scope": "Final compiled standalone SDK/legacy wrapper and actual emitted license inventory; no source map, node_modules or machine paths shipped",
+      "recordedDate": "2026-09-30"
+    },
+    "operationOwnership": {
+      "command": "cargo test -p blindpass-broker --lib --locked -- --test-threads=1",
+      "brokerSuitePassed": 138,
+      "newCases": 5,
+      "outboxVersion": 3,
+      "maximumOwners": 10000,
+      "acknowledgementRestart": "original workload/invocation retained; verified closure retained",
+      "writeFailure": "new authority fenced; failed request withdrawn before relay publication; closure durable retry",
+      "scope": "Local actual Unix control/transport with identity fixtures; not workload cancellation, lost-reply idempotency, retention pruning, production browser runtime or full AI tasks",
+      "focusedFinalPassed": 13,
+      "vmRuns": [
+        {
+          "scope": "Before final lint corrections",
+          "observedCleanupMs": 2136,
+          "releaseSha256": {
+            "blindpass-broker": "95b0e79332d7da7d86a6d6b2e76185484312e241c37a615180fbef5c8785aeb2",
+            "blindpass-private-helper-probe": "a055aaddfee868c0e6c465541d6da80c01e5248bf85f9d879e1305257312849c",
+            "blindpass-session-journal-probe": "1d5c7166d042f4f2ed39aef681a41115cd17e1c6a504a04541b2cb990350c3e4",
+            "blindpass-browser-proxy-probe": "24b86a206e7d841b569029aa24ccd0f0ee6b68b4a88fe3a35868dc7a5765187a",
+            "blindpass-runtime-identity-probe": "7cec1e7604a0aecdf4d76ce726a08cb411520cef2a6360a8976c562a77430e2e"
+          }
+        },
+        {
+          "scope": "Exact final rebuilt release artifacts",
+          "observedCleanupMs": 2135,
+          "releaseSha256": {
+            "blindpass-broker": "02b027292900abe3b1728bdb274f5f4f850a4771fac1b1e8afd2233dd99fb048",
+            "blindpass-private-helper-probe": "a055aaddfee868c0e6c465541d6da80c01e5248bf85f9d879e1305257312849c",
+            "blindpass-session-journal-probe": "7d762858e66fe0ef2451127553a29042e48b54b068ca7246041df24837c7a32a",
+            "blindpass-browser-proxy-probe": "24b86a206e7d841b569029aa24ccd0f0ee6b68b4a88fe3a35868dc7a5765187a",
+            "blindpass-runtime-identity-probe": "6bbbb0b8fb311d3b3546b0c6dc7dece2e8e4bdfd1edf5874ba9db9269d77bb18"
+          }
+        }
+      ],
+      "ephemeralCleanup": {
+        "keysRemaining": 0,
+        "overlaysRemaining": 0
+      },
+      "date": "2026-09-30",
+      "stagedReleaseMatchesSourceAtExecution": true
+    },
+    "browserCancellation": {
+      "date": "2026-10-01",
+      "scenarioIds": [
+        "P05-I02",
+        "P05-I03",
+        "P05-I04",
+        "P05-I06"
+      ],
+      "outboxVersion": 4,
+      "brokerSuiteCommand": "cargo test -p blindpass-broker --lib --locked -- --test-threads=1",
+      "brokerSuitePassed": 146,
+      "newBrokerCases": 8,
+      "coreCancellationCases": 3,
+      "coreSuitePassed": 49,
+      "relaySuitePassed": 13,
+      "controllerCommand": "cargo test -p blindpass-controller --test fleet_browser_operations --locked -- --test-threads=1",
+      "controllerSQLitePassed": 11,
+      "controllerPostgreSQLPassed": 11,
+      "newControllerCases": 8,
+      "brokerScope": "Invocation-owned browser-only local stop; full queue deferred signed delivery; no fresh controller clock; failed-write fence/retry; ACK/restart; untyped legacy refusal; actual Unix control signing with fixture workload identity",
+      "controllerScope": "Actual HTTP and Ed25519 signatures on SQLite/PostgreSQL; before/concurrent creation; unconsumed/consumed/expired grant revocation; original evidence and approval-sibling binding; replay; injected write-failure atomic rollback/retry",
+      "relayReplay": "Expected failure after restart: structural JSON object order changed. Canonical signed bytes now compare equal; changed content still denied; durable replay/ACK passes in final workspace gate",
+      "legacyState": "Read versions 1/2 without fabricating owners; version 3 has no trusted consumption mode and cannot cancel. Older brokers reject version 4; rollback requires matching backup",
+      "metadataLimit": "No owner pruning; deny admission at 10000. Cancellation acknowledgement and signed closure are metadata, not website/runtime cleanup",
+      "plaintext": "Only opaque IDs, mode and cancellation/status metadata persist; no password, cookie, bearer link or browser endpoint introduced. Existing private source/session lifetimes unchanged",
+      "dependencyChange": false,
+      "vm": {
+        "command": "./tests/browser-handoff/private-helper-vm.sh",
+        "observedCleanupMs": 2130,
+        "releaseSha256": {
+          "blindpass-broker": "44d4713dd84f4ae0f48b99515ebb34f5d0b930c838d43ea39bbf3424d5a321c3",
+          "blindpass-private-helper-probe": "e9d714ce1d6afedaeeff6be498d2872d6ab54cee5e6bc328da0f9c3aba10a55e",
+          "blindpass-session-journal-probe": "78653d0922519efd5d5feac0a69bc54f6166aae8acd7ef12d968aa84e01c1646",
+          "blindpass-browser-proxy-probe": "e5caa4e4c5288264bbfb22ab4ed8a43b9a44792653114389e3d5add49cd60bb8",
+          "blindpass-runtime-identity-probe": "3f744ab201d2ac2c2f160cbfb83bca5cef5611df647a187e1dcce1d22003a668"
+        },
+        "scope": "Actual existing helper/catalog/proxy/worker identity/stock-channel/journal components, synthetic Root browser lease; no fleet controller cancellation/website cleanup or actual AI client task"
+      },
+      "ephemeralCleanup": {
+        "failedCancellationFixturesRemoved": 7,
+        "keysRemaining": 0,
+        "overlaysRemaining": 0
+      },
+      "pending": [
+        "Lost-reply request idempotency and original recipe binding",
+        "MCP operation tools",
+        "Production signed runtime coordinator and verified website/helper/browser reconciliation",
+        "Original P05 and inherited acceptance gates"
+      ],
+      "relativeLinks": {
+        "checked": 62,
+        "missing": 0,
+        "scope": "Four updated repository guides/execution record; URL-encoded spaces decoded"
+      }
+    },
+    "requestRetry": {
+      "date": "2026-10-01",
+      "scenarioIds": [
+        "P05-I02",
+        "P05-I03",
+        "P05-I04",
+        "P05-I06"
+      ],
+      "outboxVersion": 5,
+      "brokerCommand": "cargo test -p blindpass-broker --lib --locked -- --test-threads=1",
+      "brokerSuitePassed": 160,
+      "newBrokerCases": 12,
+      "newInputParserCases": 2,
+      "coreSuitePassed": 50,
+      "newCoreProtocolCases": 1,
+      "retryScope": "Original node/workload/unit/invocation and all request fields/full Root recipe/source mapping. Identical canonical retries return original event metadata after ACK/restart without new event or TTL. Wrong invocation, changed purpose/TTL/resource/recipe deny",
+      "transport": "Actual Unix listener lost reply and reconnect using the same key, with fixture workload identity; one persisted request/owner",
+      "withdrawal": "cancel-key before admission persists local stop; late request cannot publish. No controller cancellation without original evidence. After admission uses original signed cancellation. Queue/clock pressure, failed writes, retry, capacity and owner denial tested",
+      "freshLogin": "Every new browser request has original resource/full recipe binding even without retry key. Catalog change after restored snapshot denies unused grant before source/journal reservation. This is preparation coverage, not an executed production login/task",
+      "snapshot": "Bounded v5 records, strict digest/key/field validation and duplicate node/workload/retry-key denial; pre-cancel records share 10000-owner cap. No pruning",
+      "legacy": "Versions 1/2 cannot recover forgotten ownership. V3 lacks trusted mode. V4 typed browser owners may cancel by event ID but lack recipe/retry binding and cannot establish fresh login. Older brokers reject v5; rollback requires matching backup",
+      "recipeChange": "Fingerprint now hashes complete Root resource including configuration, source destination and resource/workload allow-list. Old journal fingerprints do not silently match changed recipe",
+      "initialFailures": "Five expected behavioral failures; corrected three fixture compile errors. Expanded gate caught admission/backpressure precedence and fixture assumptions. Pre-cancel was incorrectly queued without evidence; corrected and final cases pass. Initial Clippy collapsed-if/range corrections applied",
+      "vmRuns": [
+        {
+          "scope": "Before final lint/owner-mode guard",
+          "observedCleanupMs": 2050,
+          "releaseSha256": {
+            "blindpass-broker": "188203ac292a1dc7fbfcfe5340834cdc2c216402bb3b0215d6cf81d4a7e3756d",
+            "blindpass-private-helper-probe": "17eb503af5141f0bf26df53585a98cb7c1721df92e1691aed77818ef49d4d112",
+            "blindpass-session-journal-probe": "3ec79bf3ae337f6522ad5aa0bf74533fe17b3d8f6d84ddb3d579840713982d46",
+            "blindpass-browser-proxy-probe": "93da080b81593e30f5dcd5833ab363e135c721f530406bde8f4235bd667665ed",
+            "blindpass-runtime-identity-probe": "0555b63417a1e0842c12e8b6aef49f544017a49149e5641e6a62bf94d5535ba3"
+          }
+        },
+        {
+          "scope": "Exact final post-lint/owner-mode release artifacts",
+          "observedCleanupMs": 2136,
+          "releaseSha256": {
+            "blindpass-broker": "42a5f3db69583d9fd8a27688269d525410686ee27255f8f8de5ed28d28198469",
+            "blindpass-private-helper-probe": "61ea4f1471150c313e775c517b6f4b2e9575359fd63ba089ab67f101117b6de3",
+            "blindpass-session-journal-probe": "e78e8f04b1412372480d1f861e5aa816fa65b45c290d2397ce9f255e8c4cebbc",
+            "blindpass-browser-proxy-probe": "c0e99501428ad5c4f20e82e6aecb33f2fefcd7c1e690a61634edd258d56c6ea4",
+            "blindpass-runtime-identity-probe": "228bc283f8b2629d02e093f652b5a8c40fb0b638950a4f025cd982562e072800"
+          }
+        }
+      ],
+      "vmScope": "Actual existing private helper/catalog/namespace/proxy/worker identity/stock-channel/SIGKILL/ENOSPC components; synthetic Root browser lease. No fleet retry/pre-cancel or production website/runtime recovery in guest",
+      "plaintext": "Persists opaque key/IDs plus hashes; source password/cookie/link/endpoint absent. Purpose remains original request metadata; existing source/session lifetimes unchanged",
+      "dependencyChange": false,
+      "ephemeralCleanup": {
+        "failedFixturesRemoved": 8,
+        "keysRemaining": 0,
+        "overlaysRemaining": 0
+      },
+      "pending": [
+        "MCP request/status/cancel tools and 30s cancellation",
+        "Production signed coordinator and private-helper lost-reply/website/runtime cleanup",
+        "Retention/pruning",
+        "Provisioning/native backup, actual stock AI tasks and full original/inherited gates"
+      ],
+      "controllerSQLitePassed": 11,
+      "controllerPostgreSQLPassed": 11,
+      "controllerScope": "Existing actual HTTP browser/cancellation regression gate rerun after protocol changes; retry key stays local and controller request body unchanged",
+      "relativeLinks": {
+        "checked": 62,
+        "missing": 0,
+        "scope": "Four updated repository guides/execution; encoded spaces decoded"
+      }
+    },
+    "mcpOperationTools": {
+      "date": "2026-10-01",
+      "command": "npm run test --workspace=@blindpass/mcp-server",
+      "passed": 34,
+      "skipped": 0,
+      "originalSdkContracts": 11,
+      "brokerClientCases": 16,
+      "actualSdkBrokerTools": 3,
+      "actualSdkAbortEof": 2,
+      "allCallbackDeadlineCases": 2,
+      "tools": [
+        "blindpass_request_operation",
+        "blindpass_operation_status",
+        "blindpass_cancel_operation"
+      ],
+      "brokerRevisions": [
+        "2025-11-25",
+        "2026-07-28"
+      ],
+      "clientIdentity": "Trusted runtime claims; Root checks actual kernel unit/invocation/account; fixed root-owned socket and safe ancestors/inode",
+      "callbackResponseBoundMs": 30000,
+      "brokerClientBudgetMs": 29900,
+      "withdrawalReserveMs": 5000,
+      "clock": "Linux kernel /proc/uptime; shortened/injected clock regressions, not actual suspend evidence",
+      "ordinaryConcurrency": 12,
+      "reservedCancelConcurrency": 4,
+      "replyLimitBytes": 4096,
+      "requestInterrupted": "After submission, independent cancel-key; no replacement request; uncertainty if withdrawal unconfirmed",
+      "plaintext": "No source plaintext in these tools; metadata purpose and opaque IDs only; copied reply buffers wiped, no forensic erasure of JS strings",
+      "scope": "Host actual SDK/Unix transport and metadata; bounded legacy response does not prove arbitrary callback I/O termination; no readiness/verified cleanup/full AI task",
+      "finalMcpBundleSha256": "0d28394377588163edeb3a0653244049adeb88b44cff8cb3984bd86d90436958",
+      "emittedLicenseInventorySha256": "5a85fa2580077453ec2166870206a52c1a8f3c81e3a01bf71c2deaed01affc1a",
+      "firstMcpBundleSha256": "e8be3930a4abd15e54e0a461c555dff006ec630f9c9572f0c74f998174bd6d02",
+      "vmCommand": "./tests/browser-handoff/private-helper-vm.sh (fleet setup pinned image/disposable SSH key)",
+      "vmRuns": [
+        {
+          "runtimeBundleSha256": "885c1f30e70ae73df07bc0f62373b05842a7d0fb9ecb87b91ed0b58fc4c3780a",
+          "helperOverrideCleanupMs": 2133,
+          "scope": "Before final all-callback deadline"
+        },
+        {
+          "runtimeBundleSha256": "cd0af390f480c0625f523f0e5c992e322e882bf40c674bf17c6343d249f73907",
+          "helperOverrideCleanupMs": 2160,
+          "scope": "Final rebuilt standalone bundle with all-callback deadline"
+        }
+      ],
+      "releaseSha256": {
+        "blindpass-broker": "42a5f3db69583d9fd8a27688269d525410686ee27255f8f8de5ed28d28198469",
+        "blindpass-private-helper-probe": "61ea4f1471150c313e775c517b6f4b2e9575359fd63ba089ab67f101117b6de3",
+        "blindpass-session-journal-probe": "e78e8f04b1412372480d1f861e5aa816fa65b45c290d2397ce9f255e8c4cebbc",
+        "blindpass-browser-proxy-probe": "c0e99501428ad5c4f20e82e6aecb33f2fefcd7c1e690a61634edd258d56c6ea4",
+        "blindpass-runtime-identity-probe": "228bc283f8b2629d02e093f652b5a8c40fb0b638950a4f025cd982562e072800"
+      },
+      "vmProductionBroker": {
+        "actualPackagedSdk": true,
+        "actualKernelWorkloadIdentity": true,
+        "sameUidOtherUnit": "denied",
+        "brokerRequestCancelSignatures": "verified Ed25519",
+        "applicationAckThenBrokerRestartRetry": "same event ID; no duplicate request",
+        "sourceProvisioned": false,
+        "controllerRunning": false,
+        "scope": "Production metadata transport only; namespace component still uses synthetic Root lease"
+      },
+      "gates": {
+        "build": "pass",
+        "rootHostNpm": "pass; original 101 SPS skips",
+        "legacyPlugin": 62,
+        "licenseBoundary": 2,
+        "packaging": 3,
+        "isolatedInstall": 5,
+        "releaseMetadata": 1,
+        "serialHostRust": "pass; 160 broker/50 core/13 relay; four inherited ignored",
+        "allTargetClippy": "pass",
+        "formatSyntaxDiff": "pass",
+        "relativeLinks": {
+          "checked": 99,
+          "missing": 0
+        },
+        "disposableVmKeysOverlaysRemaining": 0
+      },
+      "expectedFailure": "Missing SDK tools and missing callback deadline confirmed before implementation; fixture errors are not behavioral evidence",
+      "restrictedRuns": "npm/packaging/legacy subprocess runs failed; Rust socket tests failed/stalled and were stopped; approved host reruns pass",
+      "remaining": [
+        "Actual production node/controller/broker browser lifecycle (automatic intent HTTP now tested)",
+        "Production signed runtime/coordinator and private helper identity before source delivery",
+        "Private-helper lost-login reply and website/helper/browser reconciliation",
+        "Owner pruning/retention; P04-D4/native backup",
+        "Elicitation/fallback; Node 24; real Claude/Codex tasks; all inherited gates"
+      ]
+    },
+    "controllerBrowserIntents": {
+      "date": "2026-10-01",
+      "command": "cargo test -p blindpass-controller --test fleet_browser_intents --test fleet_browser_operations --locked -- --test-threads=1",
+      "sqliteIntentPassed": 11,
+      "postgresIntentPassed": 11,
+      "originalManualCasesPassedPerDatabase": 11,
+      "requestVersion": 2,
+      "scope": "Actual HTTP, signatures and database transitions; not integrated production node/controller/broker login/runtime/cleanup",
+      "requester": "Verified workload:<id>; summary requester_type workload; no invented operator",
+      "approval": "Existing named human operator auth; outsider/node auth denied",
+      "atomic": "Receipt/operation/approval/audit/initial deny closure; policy-change denial state/closure/audit; injected failures roll back",
+      "replay": "Deterministic node/event operation ID, original hash/receipt required; failed grant write leaves request unACKed and exact replay resumes without a new request/deadline",
+      "deadline": "Allow grant expires no later than original committed absolute request deadline; cancel/expiry prevents recovery grant",
+      "malformedSignedInputs": 15,
+      "legacy": "Native and unversioned/manual evidence unchanged; old evidence not promoted; human cannot claim versioned workload intent",
+      "newBrokerCase": 1,
+      "brokerSuitePassed": 161,
+      "expectedFailures": [
+        "Missing broker request version",
+        "Seven missing automatic HTTP behaviors after fixture compile fix",
+        "Missing policy-change signed closure",
+        "Missing original receipt permitted recovery authority"
+      ],
+      "postgresRuns": [
+        {
+          "result": "failed",
+          "intentPassed": 10,
+          "intentFailed": 1,
+          "failure": "HTTP 408 during approval creation while VM and full Rust also ran; cause not proven; not counted as passing"
+        },
+        {
+          "result": "passed",
+          "intentPassed": 11,
+          "manualPassed": 11,
+          "condition": "unchanged suite after other gates finished"
+        }
+      ],
+      "vm": {
+        "command": "./tests/browser-handoff/private-helper-vm.sh (pinned fleet image/disposable SSH key)",
+        "result": "passed",
+        "signedRequestVersion": 2,
+        "runtimeBundleSha256": "373b037c15520837cd8e69a93687771b96e676ddad24f32a23863abebd0e94af",
+        "helperOverrideMs": 2000,
+        "observedCleanupMs": 2145,
+        "releaseSha256": {
+          "blindpass-broker": "9fda9fd3d522b621b2c50a8c766fe896ae8468132a14f6de8537b84a504fc9f8",
+          "blindpass-private-helper-probe": "473140950b96cb0ef491722dad14f4ece08aa0cbbd154f3831d747da1ac03c6b",
+          "blindpass-session-journal-probe": "3e513975ec00e63720bbcb94ada9433bea477263c8317141cf09cc8f9c6052fc",
+          "blindpass-browser-proxy-probe": "b890bc7e5f69d52a19020fcc0f4863095112668ab254b45902a9ff6fdf107c32",
+          "blindpass-runtime-identity-probe": "cf87dd6b9e4e524aa083d1ff1d5dc966beed18d379837a537e08a0680958ab96"
+        },
+        "mcpBundleSha256": "0d28394377588163edeb3a0653244049adeb88b44cff8cb3984bd86d90436958",
+        "scope": "Actual production Root broker/packaged MCP kernel identity, signed version-2 events and ACK/restart retry. No controller/source here; other browser probes synthetic Root lease"
+      },
+      "gates": {
+        "build": "pass",
+        "hostRootNpm": "pass; 101 original SPS skips",
+        "serialLockedRust": "pass; four inherited ignored",
+        "allTargetClippy": "pass",
+        "formatSyntaxDiffLinks": "pass; 100 valid relative links",
+        "disposableVmKeysOverlays": 0,
+        "failedOwnBrokerFixturesRemoved": 1
+      },
+      "plaintext": "Controller receives metadata only; no source/password/cookie/session plaintext; rejection audit omits raw body",
+      "deployment": "Updated broker and controller required together; no database migration, dependency/manifest/lockfile change",
+      "remaining": [
+        "Production signed grant dispatch/outside runtime supervisor and actual node/controller/broker browser lifecycle",
+        "Private-helper identity before source/lost-login reply; verified website/helper/browser reconciliation",
+        "Retention/pruning, P04-D4/native backup, elicitation/fallback, Node24, actual Claude/Codex and inherited gates"
+      ]
+    },
+    "privateHelperIdentity": {
+      "date": "2026-10-01",
+      "brokerSuitePassed": 167,
+      "journalPassed": 14,
+      "identityPassed": 6,
+      "workerAndClientPassed": 7,
+      "actualHelperBrowserPassed": 13,
+      "fixtureAndNativePassed": 17,
+      "expectedBehavioralFailures": [
+        "Login accepted without durable helper identity",
+        "Socket mode accepted raw source job before proof",
+        "Schema-3 active record accepted with both helper fields absent"
+      ],
+      "socket": "/run/blindpass-helper-identity/identity.sock:0660:root:blindpass-login",
+      "parent": "0750:root:blindpass-login",
+      "proof": "Private one-use 64-hex challenge, separate Root hash-only helper book, maximum16 tickets; helper transport starts a maximum5s BOOTTIME proof window",
+      "binding": "Actual retained kernel pidfd, dedicated non-root UID, installed helper template; exact manager unit/invocation persisted before source bytes",
+      "delivery": "VerifiedPrivateHelper consumes connection and journals exact identity before source write; failed persistence/liveness/deadline prevents delivery",
+      "journalSchema": 3,
+      "legacy": "Schema2 preserves available metadata; unfinished records blocked, no invented helper/new login; older reader rollback requires matching journal backup",
+      "plaintext": "Root holds protected framed source until call/drop; private helper/Chromium consume it after proof/durable identity during bounded login; approved authentication endpoint consumes password after TLS decryption, with application-owned memory/retention. Workload receives only independently validated intentional copyable session. No forensic erasure guarantee",
+      "vm": {
+        "command": "./tests/browser-handoff/private-helper-vm.sh with pinned fleet image/disposable SSH key",
+        "result": "passed",
+        "runtimeBundleSha256": "b81699f01070e052db3deb5c9658e6bb4b2b7bb811ea0ae4ee84225aa663e715",
+        "releaseSha256": {
+          "blindpass-broker": "82b4165e2c56e1135b8465a7d7eac5db301eab57ac5581b0d4f2a31904b4630f",
+          "blindpass-private-helper-probe": "a4481b3e82adae59b022d99b762f8622f7359e46757af948546b82afdd51c7e9",
+          "blindpass-session-journal-probe": "5d287a75d50d9f290026f775254d0ffe1e3800b57aa78c6032609b3e25da121b",
+          "blindpass-browser-proxy-probe": "4ff1d21240754c3fe8b7926a4f70004fa8162ccd1aef517a48210e5dad284309",
+          "blindpass-runtime-identity-probe": "67f6ad70aa329994f21b5c742daede69901cfe212b9192dda6e64f5f52e5b6cc"
+        },
+        "helperProof": "Actual socket-activated worker reverse pidfd; sameUID wrong unit denied without burning legitimate ticket; replay denied; held proof invalid after exit; no source job in this portion",
+        "journalBeforeAuthentication": "Actual Root journal exact unit/invocation matched against running manager at HTTPS login",
+        "journalFailure": "Actual64KiB tmpfs ENOSPC after durable reservation and completed kernel proof; source delivery withheld, second website authentication zero; one-second test startup delay",
+        "helperOverrideMs": 2000,
+        "observedCleanupMs": 2143,
+        "activeHelperUnitsAfterSuccess": 0,
+        "disposableKeysOverlaysRemaining": 0,
+        "regressions": "Actual catalog, production broker MCP metadata/version2/ACK-restart, namespace/proxy/reverse-worker, stock2reads1reconnect, copied session401, cgroup/profile cleanup, SIGKILL and ENOSPC persistence",
+        "scope": "Actual helper transport/identity/journal with synthetic Root probe operation bindings. MCP portion no controller/source; browser lease synthetic. No production signed dispatch/reconciliation or complete AI client task",
+        "attempts": [
+          {
+            "result": "failed",
+            "runtimeBundleSha256": "d219edb51b604a8a3582908ebbdb3e2c4b22c14c8d9cba5a9e43ff1741b56d21",
+            "failure": "Identity checks passed, private helper probe returned unavailable: late optional fd4 adoption could steal an internal descriptor; captured inherited fd before internal opens then reran full gate"
+          },
+          {
+            "result": "passed",
+            "runtimeBundleSha256": "b81699f01070e052db3deb5c9658e6bb4b2b7bb811ea0ae4ee84225aa663e715"
+          }
+        ]
+      },
+      "sandboxAttempt": "Full broker test was mistakenly run restricted: actual Unix IPC denied and stalled; stopped exact test process and reran full host gate successfully. Restricted attempt not evidence",
+      "deployment": "Broker/helper socket handshake must upgrade together; broker snapshot remains5, controller database14; no manifest/lockfile/dependency change in this slice",
+      "remaining": [
+        "Production signed grant dispatch/current-authority coordination/outside supervisor",
+        "Integrated private-helper lost-login reply recovery and actual website/helper/browser reconciliation",
+        "Full60s deadline/suspend/production clocks and full managed Grafana session bounds",
+        "Owner retention/pruning, P04-D4/native restic/elicitation/fallback/Node24/actual Claude-Codex/inherited gates"
+      ],
+      "gates": {
+        "build": "pass",
+        "hostRootNpm": "pass;101 SPS skipped",
+        "serialLockedRust": "pass;four inherited ignored",
+        "allTargetClippy": "pass",
+        "helperBrowser": "13 pass",
+        "workerAndClient": "7 pass",
+        "fixtureAndNative": "17 pass",
+        "syntaxDiffLinks": "pass;114 valid relative links",
+        "pairedVaultPlans": "updated;one execution header each",
+        "disposableVmKeysOverlays": 0
+      }
+    },
+    "browserSupervisor": {
+      "date": "2026-10-01",
+      "scope": "Fixed production component executed by a Root test driver with a synthetic lease; not production signed-grant dispatch or website crash recovery",
+      "command": "node --test --test-isolation=none tests/browser-handoff/browser-supervisor.test.mjs tests/browser-handoff/browser-supervisor-worker.test.mjs",
+      "passed": 11,
+      "adjacentTransportCombinedPassed": 23,
+      "rootNpmHelperChannelPassed": 39,
+      "testFirst": {
+        "protocol": "Six-case no-op baseline reproduces behavioral failures on the approved host; restricted initial attempt reported generic test failure, not behavior evidence",
+        "worker": "Three stub baseline cases fail on the approved host before implementation",
+        "originalExpiry": "New behavior test fails because session BOOTTIME extends beyond original login expiry; implementation then passes all eleven cases"
+      },
+      "privateControl": "Fixed executable, Root, clean environment, inherited full-duplex fd3; normal stdout/stderr empty; no selectable path/target or accepted source credentials",
+      "publication": "Import produces private imported acknowledgement with no backend. Explicit Root publish creates operation-SHA256 path under fixed /run/blindpass-backends; Root700 directory and Root600 single-link socket. Opaque context handle is metadata, not authority",
+      "clock": "Strict bounded Linux /proc/uptime; suspend-aware BOOTTIME. Startup <=120s, delayed publication cannot renew it; session independently capped by configured maximum and original login expiry",
+      "plaintext": "Root private cookie frame and V8 import references only until forwarding/reference clearing; namespace Chromium deliberately retains the copyable session until closure/expiry. No source job or password is sent to the supervisor. No forensic memory erasure claim",
+      "vm": {
+        "command": "./tests/browser-handoff/private-helper-vm.sh with pinned fleet image/disposable SSH key",
+        "result": "passed",
+        "runtimeBundleSha256": "aa8f095c8b7e6c75c9c8d58ded69c1fc740c531a286cc8f9d80dcad7f8670c39",
+        "releaseSha256": {
+          "blindpass-broker": "82b4165e2c56e1135b8465a7d7eac5db301eab57ac5581b0d4f2a31904b4630f",
+          "blindpass-private-helper-probe": "a4481b3e82adae59b022d99b762f8622f7359e46757af948546b82afdd51c7e9",
+          "blindpass-session-journal-probe": "5d287a75d50d9f290026f775254d0ffe1e3800b57aa78c6032609b3e25da121b",
+          "blindpass-browser-proxy-probe": "b9f1f74ab1713d52796fa9921f3188232aec20d49f1ebea7a49260bd33d66510",
+          "blindpass-runtime-identity-probe": "67f6ad70aa329994f21b5c742daede69901cfe212b9192dda6e64f5f52e5b6cc"
+        },
+        "supervisorInvalidLaunch": "Root missing fd3, extra argument and DEBUG environment denied; exit64 and no normal output",
+        "importBeforePublication": "Actual protected backend absent after cookie import acknowledgement; explicit publication creates verified Root permissions; workload cannot read backend",
+        "stockClient": "Actual pinned tool; two report reads and one reconnect through supervisor backend and production Rust proxy",
+        "authorization": "Actual kernel-pidfd/unit/invocation checks; sameUID other unit and restarted invocation explicitly denied",
+        "normalStop": "Private backend directory removed; exact actual browser cgroup empty/profile removed; held proof invalid after exit; separately authenticated fixture account revoke copied cookie401",
+        "preparedParentEofCleanupMs": 60,
+        "preparedSupervisorSigkillCleanupMs": 50,
+        "lossScope": "Actual fresh prepared browsers without source or session import; no published-session revocation/recovery claim",
+        "helperOverrideMs": 2000,
+        "observedHelperCleanupMs": 2172,
+        "regressions": "Catalog, packaged MCP metadata/version2/ACK-restart (no controller/source), helper reverse identity/durable identity before authentication/ENOSPC source withholding, stock canary scans and journal SIGKILL/ENOSPC all pass",
+        "activeHelperUnitsAfterSuccess": 0,
+        "disposableKeysOverlaysRemaining": 0,
+        "attempts": [
+          {
+            "result": "failed",
+            "runtimeBundleSha256": "1ad48c98faf510a826b10b9ad7ae268299d55ca65b881f67708668d264112197",
+            "stage": "restarted-invocation",
+            "scope": "Reached successful actual stock task; new assertion did not separate earlier asynchronous connection outcomes"
+          },
+          {
+            "result": "failed",
+            "runtimeBundleSha256": "aa8f095c8b7e6c75c9c8d58ded69c1fc740c531a286cc8f9d80dcad7f8670c39",
+            "stage": "restarted-invocation",
+            "scope": "Ignored earlier close/revoke outcomes but still failed; exact old outcome not logged, no specific reset diagnosis claimed"
+          },
+          {
+            "result": "not executed",
+            "stage": "approval service",
+            "scope": "Automatic review reported exhausted workspace credits. User confirmed restoration; no bypass; approved retry ran"
+          },
+          {
+            "result": "passed",
+            "runtimeBundleSha256": "aa8f095c8b7e6c75c9c8d58ded69c1fc740c531a286cc8f9d80dcad7f8670c39",
+            "change": "Bounded drain of earlier close/revoke/reset outcomes still requires explicit replacement denial; full gate including loss probes passes"
+          }
+        ]
+      },
+      "remaining": [
+        "Production Root launch/signed-grant asynchronous dispatch with held original workload lease; current-authority/profile/journal checks before source/import/publication and during readiness",
+        "Actual website/helper/browser reconciliation including imported-session supervisor/broker crash and unknown-helper recovery; stale private backend cleanup and account blocking",
+        "Production deadlines/suspend/full30min managed Grafana VM profile, retention/pruning, P04-D4 provisioning/native restic, elicitation/ordered fallback, Node24, actual Claude/Codex and inherited/two-host gates"
+      ],
+      "gates": {
+        "build": "pass",
+        "rootNpm": "pass;101 SPS skipped",
+        "rustLockedSerialWorkspace": "pass;167 broker/50 core/13 relay;four inherited ignored",
+        "allTargetClippy": "pass",
+        "syntaxFormatDiff": "pass",
+        "pairedVaultPlans": "updated both product/test plans with one execution header each",
+        "relativeLinks": {
+          "checked": 121,
+          "missing": 0,
+          "scope": "Nine current repository guides/execution records"
+        }
+      }
+    },
+    "nativeSupervisorService": {
+      "date": "2026-10-01",
+      "scope": "Actual native private transport under two broker sandbox constraints, separate production Root supervisor service and stock browser/proxy with synthetic Root recipe/time/lease metadata; not signed runtime dispatch or website crash recovery",
+      "rustCommand": "cargo test -p blindpass-broker browser_supervisor --locked -- --test-threads=1",
+      "rustPassed": 7,
+      "jsSupervisorPassed": 12,
+      "ordinaryNpmHelperChannelPassed": 40,
+      "testFirst": {
+        "nativeFraming": "Three initial stub cases fail behaviorally then pass",
+        "socketSelection": "Old fd3-only selector fails the socket fd0 case then passes",
+        "sourceBinding": "Same origin/account but different Root source credential mapping reaches import IO and yields uncertain before fix; full prepared fingerprint check then rejects unavailable before any cookie bytes"
+      },
+      "activation": {
+        "path": "/run/blindpass-private/supervisor.sock",
+        "socket": "0600:root:root:nlink1",
+        "parent": "0700:root:root",
+        "transport": "Exact --socket/fd0 production activation or existing fixed private fd3 embedding; no selectable fd/path",
+        "outsideService": "Root, no capabilities, null stdout/stderr, 32min manager ceiling, 5s stop grace; Unix/application egress",
+        "brokerService": "Unchanged Unix-only networking/executable-memory denial; production dispatch not enabled",
+        "backendParent": "Shared tmpfiles-managed Root700 directory, never an instance RuntimeDirectory"
+      },
+      "nativeClient": "Root-only fixed path/owner/group/mode/single-link/stable-inode/Root peer; bounded4BE input64KiB/reply1024, strict duplicate/error/field/state validation, BOOTTIME IO; hint Debug redacted; independent kernel/profile/journal authority required",
+      "resourceBinding": "ApprovedSession retains full validation recipe fingerprint; import checks exact prepared recipe including resource/source/workload mapping before cookie serialization/IO. Hash algorithm and helper wire schema unchanged",
+      "plaintext": "Native Root and V8 briefly consume private approved cookie/challenge frames; buffers/references cleared after IO without forensic-erasure claim. Namespace Chromium intentionally retains copyable session. Source password does not enter native supervisor client/outside Node supervisor",
+      "vm": {
+        "result": "passed",
+        "command": "./tests/browser-handoff/private-helper-vm.sh with pinned image/disposable key",
+        "runtimeBundleSha256": "5bde1b9035f8ab4a931c6ea20e57750f96bd9e6cdba4082ac4001be19890b133",
+        "releaseSha256": {
+          "blindpass-broker": "3f061e69338849ae735ebde8683fbdb829a6c3fe11fec7851fa4a76eef29ddb4",
+          "blindpass-private-helper-probe": "e6bba8434beb78dc3c491aad4ddfcd83198e0b36cd67f44cd87ee139c95ab595",
+          "blindpass-session-journal-probe": "dcb60b69a6f03934cd3a9a61aa78a5e23b34b75bdf1340592006164c2c440c07",
+          "blindpass-browser-proxy-probe": "2b6ee110b87b5c8937fe5160fb444c3e268081e08350aa5b79e39e82c31912bb",
+          "blindpass-runtime-identity-probe": "ecf5a801061c64dac9a698094720586dea2c7381e2c0c71000446236a7a5cf44",
+          "blindpass-browser-supervisor-probe": "541b54b559d77874262754dcae0f917ae93f324c5bd7cb522f23b815682284ae"
+        },
+        "nativeSandbox": "Actual AF_UNIX-only/MemoryDenyWriteExecute caller; INET socket creation and RW-to-RX mprotect functionally denied before actual prepare/proof/import/publication/stock task/stop",
+        "outsideSupervisor": "Actual installed socket activation, Root CapEff zero and null normal outputs",
+        "stock": "Actual pinned stock2reads/1reconnect, kernel sameUID wrong unit and restarted invocation explicitly denied; copied session401 after separate fixture admin revoke; normal backend/cgroup/profile cleanup and canary scans pass",
+        "preparedEofCleanupMs": 60,
+        "preparedSigkillCleanupMs": 60,
+        "faultScope": "Embedding prepared browsers only, no source or imported session; not lost website-session recovery",
+        "helperOverrideMs": 2000,
+        "helperObservedCleanupMs": 2170,
+        "regressions": "Catalog, production broker MCP metadata/version2/ACK-restart with no controller/source, helper proof/durable identity before auth/ENOSPC withholding, journal SIGKILL/ENOSPC all pass",
+        "activeHelpersSupervisorsNativeCallersAfterSuccess": 0,
+        "remainingDisposableKeysOverlays": 0,
+        "attempts": [
+          {
+            "result": "passed before final resource-binding fix",
+            "runtimeBundleSha256": "d0ddd6b6d4d6667c0878f41d72b67c36443c9f7ad1055f346a1eadc8093d3b9d",
+            "limits": "Template Service directives produced ignored verify warnings; final socket selection removes them. This run is historical, not current resource-binding proof"
+          },
+          {
+            "result": "passed",
+            "runtimeBundleSha256": "5bde1b9035f8ab4a931c6ea20e57750f96bd9e6cdba4082ac4001be19890b133",
+            "scope": "Final full resource binding and warning-free socket templates, native caller/Root service/actual stock component gate"
+          }
+        ]
+      },
+      "remaining": [
+        "Production signed grant asynchronous dispatch and retained original workload lease; usable Root account revocation before source",
+        "Current-authority, kernel profile and durable browser journal gates before source/import/publication and readiness",
+        "Imported-session crash/restart website/helper/browser reconciliation, uncertain account blocking and stale private backend recovery",
+        "Full independent clocks/deadlines/suspend/30min managed Grafana VM profile; retention/pruning; P04-D4/native restic; elicitation/ordered fallback; Node24/actual Claude-Codex; small commits/all inherited/two-host/pilot gates"
+      ],
+      "gates": {
+        "build": "pass",
+        "rootNpm": "pass;101 SPS skipped",
+        "serialLockedRustWorkspace": "pass;174 broker/50 core/13 relay;four inherited ignored",
+        "allTargetClippy": "pass",
+        "vm": "pass",
+        "pairedVaultExecution": "both product/test plans updated; original requirements remain open",
+        "diffSyntaxLinks": {
+          "result": "pass",
+          "relativeLinks": 126,
+          "missing": 0,
+          "scope": "Nine current guides/execution records"
+        }
+      }
+    },
+    "administratorRevocation": {
+      "scenarioIds": [
+        "P05-RV01",
+        "P05-RV02",
+        "P05-RV03",
+        "P05-RV04",
+        "P05-RV05",
+        "P05-RV06"
+      ],
+      "javascript": {
+        "command": "node --test tests/browser-handoff/session-revoker.test.mjs",
+        "passed": 5,
+        "scope": "Strict profiles; actual pinned HTTPS nondestructive preflight, session/account copied-cookie401; worker ordering/clearing/deadlines/uncertainty; no header before verified TLS, no redirect follow, actual lost cleanup reply after one request"
+      },
+      "native": {
+        "command": "cargo test -p blindpass-broker session_revoker --lib --locked -- --test-threads=1",
+        "passed": 5,
+        "scope": "Fixed typed private framing/full recipe+operation; duplicate/extra/oversized/lost replies; invalid admin before bytes; cleanup after short source-window expiry; EOF cannot authorize source"
+      },
+      "preparationAndImporter": {
+        "passed": 4,
+        "scope": "Missing revocation config; missing/malformed/expired custody before source copy/reservation; strict profile and fingerprint mapping; exact managed user ID before cookie import"
+      },
+      "redEvidence": {
+        "missingAdminPreparation": "Behavioral failure against previous implementation; preparation returned instead of denial",
+        "managedUserBinding": "Behavioral acceptance of user3 under configured user2, fixed before import",
+        "javascript": "Two no-op implementation stub cases failed before implementation",
+        "initialNativeStub": "Unix socket EPERM in restricted runner; not claimed as passing host/behavioral evidence"
+      },
+      "managedGrafana": {
+        "application": "Grafana OSS13.2.3 managed Generic OAuth Viewer",
+        "passed": 1,
+        "privateBackend": "Actual disposable Unix backend via trusted host test adapter; not production fixed-path Root manager ownership",
+        "establishedExternalAccount": "Actual setup OAuth login then exact user ID mapping before operation; preflight precedes subsequent operation source login",
+        "failedPreflightCredentialAccepts": 0,
+        "publicAssertedIdentity": 401,
+        "copiedCookieAfterBoundLogout": 401,
+        "attempts": [
+          {
+            "result": "failed",
+            "setup": "Administrator-created local user",
+            "limit": "Old test harness10s killed worker; no suitability claim"
+          },
+          {
+            "result": "failed",
+            "setup": "Same local user, explicit60s test budget",
+            "limit": "Helper returns uncertain around55s; exact provider cause unconfirmed"
+          },
+          {
+            "result": "passed",
+            "setup": "Actual established managed external account",
+            "durationMs": 4711
+          }
+        ]
+      },
+      "bounds": {
+        "preflightIoBoottimeMs": 5000,
+        "freshSourcePermissionMaxMs": 30000,
+        "freshSourcePermissionAlsoBoundToOriginalGrant": true,
+        "nativeRequestMaxBytes": 16384,
+        "nativeReplyMaxBytes": 1024,
+        "cleanupRequestBoottimeMs": 5000,
+        "rootRevokerBoottimeAndManagerMaxMs": 1920000,
+        "adminDeliveredCopyLifetime": "Private memory until close/failure/32min; custody expiry prevents new copies, not erasure of delivered copy"
+      },
+      "plaintext": {
+        "administratorConsumers": [
+          "Protected broker custody/preparation",
+          "Root revoker"
+        ],
+        "helperBrowserModelNormalOutputJournalAdminCredential": "absent",
+        "sourceConsumers": "Broker/helper/private authentication and selected approved endpoint",
+        "session": "Copyable bounded website session; revoker accepts only nonbearer handle/account",
+        "erasure": "Buffers/references cleared; no runtime forensic-erasure guarantee"
+      },
+      "vm": {
+        "command": "./tests/browser-handoff/private-helper-vm.sh",
+        "result": "passed",
+        "runtimeBundleSha256": "2bb5b8de32de86be7bcee81a578163860ee41836758cf4c7e5f53af6b0bfb865",
+        "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+        "platform": "Ubuntu24.04/systemd255.4-1ubuntu8.17/kernel6.8.0-139/QEMU11.1.1/Node26.10.0",
+        "nativeReleaseSha256": {
+          "blindpass-broker": "c77870e7f87e996f5c70b97c97112b29226e6bff33df4d11db82cc3df678aa72",
+          "blindpass-private-helper-probe": "dda7db7d2efeecf96f7af9580f38357a7f86991b8831201583f3a35aed5d0ab1",
+          "blindpass-session-journal-probe": "8ecf7548fa2332d134fc739395ccd9773180a65b36fdeb9e6e13385458eabf6f",
+          "blindpass-browser-proxy-probe": "774152f60b9a182ed52b449f77fdc06862fe6fdfee83f023016d1901b9bd9f6f",
+          "blindpass-runtime-identity-probe": "8cb973ed6d85381fa4009fda8acfc364aa82c23009a06e27de10f462555e22a4",
+          "blindpass-browser-supervisor-probe": "267c17c81a01b861b1403ad125f68742067f3326bf344a4411764a1d520e508a"
+        },
+        "actualNativeInetSocket": "denied",
+        "actualNativeRwToRx": "denied",
+        "revokerEffectiveCapabilities": "zero",
+        "privateSocket": "Root0600 underRoot0700, nlink1",
+        "preflightPreservesExistingCookie": true,
+        "sessionCopiedCookieAfterRevoke": 401,
+        "accountCopiedCookieAfterRevoke": 401,
+        "badAdminAdditionalAuthentications": 0,
+        "journalCanaries": "absent",
+        "sourceGuardCallback": "Actual held helper reverse kernel proof + durable exact helper identity, then callback denial; source withheld and no second authentication; synthetic Root test-driver gate, not signed authority",
+        "helperOverrideMs": 2000,
+        "helperObservedCleanupMs": 2141,
+        "preparedBrowserEofCleanupMs": 60,
+        "preparedBrowserSigkillCleanupMs": 50,
+        "preparedFaultScope": "No source/session imported; not website-session crash recovery",
+        "stockToolReads": 2,
+        "stockToolReconnects": 1,
+        "wrongUnitAndRestartedInvocation": "denied by actual kernel proxy",
+        "regressions": "Actual ENOSPC withholding, journal SIGKILL/ENOSPC, production packaged MCP version2/ACK-restart metadata and browser proof/proxy gates all pass",
+        "activeHelperSupervisorRevokerNativeUnitsAfterSuccess": 0,
+        "remainingTemporaryVmAndKeyDirectories": 0,
+        "attempts": [
+          {
+            "result": "passed",
+            "runtimeBundleSha256": "e6279016eedf003200c33be1d18ad312f86f28ac38bc53394b1196a9ae2ce008",
+            "scope": "Before unified verified Unix connector and new source callback probe"
+          },
+          {
+            "result": "passed",
+            "runtimeBundleSha256": "2bb5b8de32de86be7bcee81a578163860ee41836758cf4c7e5f53af6b0bfb865",
+            "scope": "Final source/client/worker/service/probe checks"
+          }
+        ]
+      },
+      "gates": {
+        "build": "pass",
+        "rootNpm": "pass;45 helper/channel,101 SPS skipped",
+        "serialLockedRustWorkspace": "pass;183 broker/50 core/13 relay;four inherited ignored",
+        "allTargetClippy": "pass",
+        "vm": "pass",
+        "relativeLinks": {
+          "checked": 130,
+          "missing": 0,
+          "scope": "Nine current guides/execution records"
+        },
+        "pairedVaultPlans": "both product/test plans updated with one execution header each; original requirements remain open"
+      },
+      "remaining": [
+        "Production asynchronous dispatch and original accepted workload pidfd; manager/profile/durable browser identity/current signed authority through source/import/publication/readiness",
+        "Actual helper stop before logout + exact browser termination + account release reconciliation; startup unknown-helper/stale backend recovery",
+        "Durable relay/result lifecycle before async IO; retention/pruning; independent clocks/suspend/full30min managed VM soak",
+        "P04-D4/native restic; elicitation/ordered fallback; Node24/complete Claude-Codex; small slices and all inherited/two-host/pilot gates"
+      ]
+    },
+    "originalWorkloadLease": {
+      "scenarioIds": [
+        "P05-OW01",
+        "P05-OW02",
+        "P05-OW03",
+        "P05-OW04",
+        "P05-OW05",
+        "P05-OW06"
+      ],
+      "production": {
+        "capture": "Actual SO_PEERPIDFD at fresh admission before reply",
+        "capacity": 16,
+        "restore": "Metadata only; no reconstructed pidfd",
+        "retryStatus": "Never attach replacement process",
+        "ack": "Retains original lease",
+        "revalidation": "Held original pidfd; bounded GetUnitByPIDFD/current invocation outside broker mutex",
+        "sweepMs": 100,
+        "exit": "Local durable cancel despite missing time/full outbox; storage failure stays fenced"
+      },
+      "regression": {
+        "withoutGuardExit": 101,
+        "restored": "pass",
+        "snapshotCorrection": "Persist final original typed binding before restart round-trip",
+        "initialRestrictedSuite": "Stopped because host Unix socket access was unavailable; not host evidence"
+      },
+      "newBrokerCases": 5,
+      "brokerSuite": {
+        "passed": 188,
+        "command": "cargo test -p blindpass-broker --locked --lib -- --test-threads=1"
+      },
+      "vm": {
+        "result": "pass",
+        "runnerOwner": "local-kvm-p05-helper-20260930",
+        "qemu": "11.1.1",
+        "systemd": "255.4-1ubuntu8.17",
+        "kernel": "6.8.0-139-generic",
+        "node": "26.10.0",
+        "archiveSha256": "53f3babd464d355c0e94f8ec6b2a9fddedc9bed9225c691b63efc1e092af9b72",
+        "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+        "originalExitCancellationMs": 86,
+        "sameUidUnitInvocationReplacement": "denied",
+        "restartRebinding": "denied",
+        "ackRetainsLease": "verified",
+        "managerRevalidation": "verified",
+        "sourceProvisioned": false,
+        "scope": "Actual original process lease; no complete browser coordinator/controller/application roundtrip",
+        "existingRegressions": "passed",
+        "helperOverrideCleanupMs": 2155,
+        "preparedSupervisorEofMs": 60,
+        "preparedSupervisorCrashMs": 60,
+        "attempts": [
+          {
+            "result": "failed",
+            "scope": "New disposable issuer fixture passed null for absent optional approval field; strict schema rejects null"
+          },
+          {
+            "result": "pass",
+            "correction": "Omit absent optional approval_reference"
+          }
+        ],
+        "releaseBinariesSha256": {
+          "blindpass-broker": "19d95302f0046c333c32097b911d994c6816e9e7efd0db947869ce165ec3b895",
+          "blindpass-private-helper-probe": "b5ec761c8ba587068bde27eaa2d311d283890da39688bd5050a2f8bba45f2f46",
+          "blindpass-session-journal-probe": "2a5dd1d0cf419677049346ff6853285444a3efb83c3004b381cb071ef369b74f",
+          "blindpass-browser-proxy-probe": "36728d4ecb34e66290a6743c318095aefb8095229bba7fdf43c6adf8f6d569c7",
+          "blindpass-runtime-identity-probe": "dead58bf1ae65217102c73987bfe240c36377d71e18bd1308e6705a290945d4b",
+          "blindpass-browser-supervisor-probe": "096f47327c83e34b03ab683963ea4656948104d8f327b49ac2fe30e29a720ed5"
+        },
+        "temporaryVmDirectoriesAfterExit": 0,
+        "temporaryKeyDirectoriesAfterExit": 0
+      },
+      "gates": {
+        "build": "pass",
+        "npm": {
+          "result": "pass",
+          "helperChannelCases": 45,
+          "mcpCases": 34,
+          "serviceGatedSkips": 101
+        },
+        "rustWorkspace": {
+          "result": "pass",
+          "command": "cargo test --workspace --locked -- --test-threads=1",
+          "brokerCases": 188,
+          "coreCases": 50,
+          "relayMainCases": 13,
+          "ignored": 4,
+          "ignoredScopes": [
+            "Three offscreen Quickshell checks",
+            "PostgreSQL outage check"
+          ],
+          "backendScope": "Default SQLite controller checks; no new PostgreSQL-specific rerun"
+        },
+        "workspaceClippy": "pass",
+        "diffSyntaxLinks": {
+          "result": "pass",
+          "relativeLinks": 136,
+          "missing": 0,
+          "scope": "Nine current guides/execution records; URL-escaped filenames resolved"
+        }
+      },
+      "open": "Asynchronous source/handoff and immutable result lifecycle; actual browser profile/journal/current authority; cleanup/recovery/pruning/clocks/soak; provisioning/native/client/fallback and every original inherited/pilot gate"
+    },
+    "asynchronousHelperResults": {
+      "scenarioIds": [
+        "P05-AT01",
+        "P05-AT02",
+        "P05-AT03",
+        "P05-AT04",
+        "P05-AT05",
+        "P05-AT06",
+        "P05-AT07"
+      ],
+      "transport": {
+        "api": "prepare_helper_exchange then PreparedHelperExchange.execute outside journal/state locks",
+        "source": "Sealed single-use journal permission and actual helper pidfd; original process/current authority/admin readiness during source writes",
+        "response": "Original process/current authority and journal permission during bounded response reads; helper normal exit is not cleanup proof",
+        "pollMs": 250,
+        "journalDropOrFailedPersistence": "Withdraws permission permanently",
+        "lifetimeLock": "Duplicated original flock file; retained until detached permission drops",
+        "sourceLifetime": "Root protected job memory through single exchange; helper/Chromium memory through private runtime; no forensic erasure claim"
+      },
+      "result": {
+        "code": "browser_session_closed",
+        "keys": "Deterministic distinct result/audit pair, original durable close time",
+        "authority": "Matching unfenced Closed journal binding; runtime owner is withdrawn before publish; trusted real cleanup still coordinator-owned",
+        "ackRestart": "Provisional ACK independent; final exact replay and partial ACK retain immutable canonical bodies",
+        "revoked": "Confirmed cleanup retained; late uncertain event cannot regress result or version",
+        "grantClock": "Consumed browser executing state no longer becomes uncertain solely at short grant expiry; native expiry unchanged",
+        "mcp": "closed completed metadata only; not actual useful-task evidence"
+      },
+      "compatibility": {
+        "brokerSnapshot": 5,
+        "change": "Locally verified completed browser closure enum added; pre-change v5 broker rejects this value; rollback needs matching protected-state backup",
+        "journal": 3,
+        "controllerDatabase": 14,
+        "signedClosureProtocol": "unchanged",
+        "dependencies": "unchanged",
+        "packageBoundaries": "unchanged"
+      },
+      "redEvidence": {
+        "httpFinalResult": "Behaviorally failed before browser_session_closed acceptance",
+        "consumedBrowserGrantExpiry": "Actual 1-second grant expiry changed executing to uncertain before fix",
+        "revokedResultOrdering": "Actual signed late uncertain event overwrote browser_session_closed after revocation; exit101 before fix",
+        "mcpCompletion": "Valid completion was rejected before parser extension",
+        "journalAndProducer": "Initial missing-API compilation failures; not behavioral evidence"
+      },
+      "newBrokerCases": 9,
+      "gates": {
+        "build": "pass",
+        "npm": {
+          "result": "pass",
+          "mcpCases": 35,
+          "helperChannelCases": 45,
+          "spsServiceGatedSkips": 101,
+          "firstAttempt": "Failed stale malformed-reply test still expected valid completed outcome to be rejected; changed to extra private field and unknown outcome; full rerun passes"
+        },
+        "rustWorkspace": {
+          "result": "pass",
+          "command": "cargo test --workspace --locked -- --test-threads=1",
+          "brokerCases": 197,
+          "coreCases": 50,
+          "relayMainCases": 13,
+          "ignored": 4,
+          "ignoredScopes": [
+            "Three offscreen Quickshell checks",
+            "PostgreSQL outage check"
+          ],
+          "totalExecuted": 446
+        },
+        "controllerHttp": {
+          "sqliteBrowserCases": 15,
+          "postgresBrowserCases": 15,
+          "postgresOtherSuites": {
+            "fleet_browser_intents": 11,
+            "fleet_approvals": 7,
+            "fleet_channel": 3,
+            "fleet_lifecycle": 4
+          },
+          "result": "pass"
+        },
+        "workspaceClippy": "pass",
+        "diffSyntaxLinks": {
+          "relativeLinks": 134,
+          "missing": [],
+          "normalLogCanaryHits": {
+            "0": 0,
+            "1": 0,
+            "2": 0
+          }
+        }
+      },
+      "vm": {
+        "result": "pass",
+        "runnerOwner": "local-kvm-p05-helper-20260930",
+        "qemu": "11.1.1",
+        "systemd": "255.4-1ubuntu8.17",
+        "kernel": "6.8.0-139-generic",
+        "node": "26.10.0",
+        "archiveSha256": "bb4b866a7076134fd9a45fa779fa4f1eccbfca299ac1c7189ff2bbc83dfa72cb",
+        "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+        "detachedSourcePermission": "Actual reverse pidfd proof and durable exact helper identity; journal withdrawal withheld source; no second authentication",
+        "existingRegressions": "passed",
+        "originalExitCancellationMs": 110,
+        "helperOverrideCleanupMs": 2147,
+        "preparedSupervisorEofMs": 60,
+        "preparedSupervisorCrashMs": 50,
+        "temporaryVmDirectoriesAfterExit": 0,
+        "temporaryKeyDirectoriesAfterExit": 0,
+        "scope": "Root disposable sealed-channel component; no production asynchronous coordinator or integrated controller/browser task",
+        "releaseBinariesSha256": {
+          "blindpass-broker": "71e306fc342a6b41912bd272f2ece8e25d8c5c371f89e4f902d3dd9d0776eafd",
+          "blindpass-private-helper-probe": "1c0a6e08508cbb89e2c26f52495019bfbdde14d6edd94512704d1fee8112c034",
+          "blindpass-session-journal-probe": "02326b8845e4c30463deb770744e9ef844254fa3b83f71826e8febabf515dbc7",
+          "blindpass-browser-proxy-probe": "353439662e269c3f6be4e803edc3cce0f8719b9f19bd960dc5e8e4766990d5c6",
+          "blindpass-runtime-identity-probe": "9c8e2c0d9f86646835c0fadf915f1a18cf817d8835795e6749ea1b1faf3b8544",
+          "blindpass-browser-supervisor-probe": "24f81e571873cd2de7b5683406d6a3d317bfed9d8fa7fac628e9f6dae5e37501"
+        }
+      },
+      "open": "Production dispatch, browser kernel/manager/profile and durable identity before import, ready authority, actual ordered cleanup/recovery/pruning, independent clocks/full30min managed VM soak, fleet provisioning/native restic, elicitation/fallback, Node24, actual Claude/Codex tasks, slice commits and all original inherited/two-host/pilot gates"
+    },
+    "productionCoordinatorResults": {
+      "scope": "Actual signed-fixture broker/runtime coordinator and complete systemd regression; not actual controller/node/AI-client workflow or P05 acceptance",
+      "journalSchema": 4,
+      "brokerSnapshotSchema": 5,
+      "controllerDatabaseSchema": 14,
+      "hostBroker": {
+        "passed": 216,
+        "behavioralRed": "Wrong request lease withdrawn before exact journal correlation fix",
+        "legacySchema3": "Confirmed cleanup reports without inferred owner"
+      },
+      "rustWorkspace": {
+        "passed": 465,
+        "ignored": 4,
+        "summaries": 50,
+        "logSha256": "9c961828630364bc3769f2a5050937320392cd2b4f8cca13cb73896957cea967"
+      },
+      "clippy": {
+        "allTargets": true,
+        "locked": true,
+        "warningsDenied": true,
+        "passed": true,
+        "logSha256": "3ff76d48306e561e6fda27b4e7579281e0f8019ccd059e1b73a766c958a90714"
+      },
+      "npm": {
+        "passed": true,
+        "mcpCases": 36,
+        "helperChannelCases": 60,
+        "spsSkipped": 101,
+        "logSha256": "edf51b9a82668137384366a62fd73cbf435b629e47a5aa5820cf0d705474c93e"
+      },
+      "systemctlPipe": {
+        "cases": 12,
+        "behavioralRed": "Process exit preceding stdout drain returns empty metadata; pipe-close green"
+      },
+      "journalSelection": {
+        "cases": 3,
+        "scope": "Pure matching checks; exact nested operation and unique new record"
+      },
+      "vm": {
+        "result": "pass",
+        "logSha256": "a626b297aff3a790d592397e1667bfc024d2c883e9a11871ba4d8e4fed1fef53",
+        "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+        "runtimeBundleSha256": "391200e3c0dc70a4972cf8a7e83d0eafd96dd6b66a53c0357830fc61ce718d00",
+        "systemd": "255.4-1ubuntu8.17",
+        "kernel": "6.8.0-139-generic",
+        "node": "26.10.0",
+        "qemu": "11.1.1",
+        "originalExitCancellationMs": 109,
+        "helperDeadlineOverrideMs": 2000,
+        "helperCleanupMs": 2144,
+        "preparedSupervisorEofMs": 70,
+        "preparedSupervisorCrashMs": 60,
+        "signedFixtureIssuer": true,
+        "actualSigkillAndRestart": true,
+        "stockReads": 2,
+        "stockReconnects": 1,
+        "logins": 2,
+        "recoveryRelogins": 0,
+        "copiedCookieAfterCancel": 401,
+        "copiedCookieAfterRestart": 401,
+        "laterComponentRegressions": "all executed and passed",
+        "canaryScan": "generated source/admin/cookie absent",
+        "releaseBinarySha256": {
+          "blindpass-broker": "48a88b744c1c077ea4f6215d24fabc8df01f1d2fd3cc8d5cdbbea46eaab8be46",
+          "blindpass-provision": "6da1c1a05e667de3e617f01bc08647371db61b2649695f46951955a23b470f94",
+          "blindpass-private-helper-probe": "3a45c164dcdab7332f44ec946c12ad4a6bbaca706863e133551df5f95357f319",
+          "blindpass-session-journal-probe": "fdb330e9c6072d32e1a4c9c1cef8ecc8920f95621e48843b7c0e12ef06c17ddd",
+          "blindpass-browser-proxy-probe": "cdec79a9ce15a8db050bc53d4197db2c9da7e9635b671df965a7b55bca806985",
+          "blindpass-runtime-identity-probe": "afb1a9ee3de2e6cf8e79d98823e45a9e0eecc4579d455061ccbdb5760fc5ee5d",
+          "blindpass-browser-supervisor-probe": "83235d1d344ddacfa1c4999005f14a4dfa12deda55861494dedf2961bbc424ba"
+        },
+        "releaseSourceLimit": "VM binaries precede only equivalent schema version range-pattern Clippy edit"
+      },
+      "cleanup": {
+        "ownedVmDirectories": 0,
+        "ownedKeyDirectories": 0
+      },
+      "remaining": [
+        "P05-PC08 actual controller/node workflow",
+        "P04-D4 fleet provisioning",
+        "HPKE key custody suspend bound",
+        "owner/withdrawal retention",
+        "full managed application lifetime/suspend",
+        "useful Claude/Codex tasks",
+        "elicitation/ordered fallback",
+        "Node24",
+        "reviewed real native restic backup/restore",
+        "small reviewed commits",
+        "all original inherited/two-host/pilot acceptance"
+      ]
+    },
+    "recipientKeyCustodyResults": {
+      "scope": "Suspend-aware ephemeral HPKE recipient-key component plus full Node26 signed-fixture systemd regressions; not P04-D4 fleet provisioning or complete website lifetime",
+      "corePassed": 53,
+      "behavioralRedCases": 3,
+      "newCases": [
+        "elapsed BOOTTIME withdraws key",
+        "clock failure withdraws all keys",
+        "lifetime overflow returns error"
+      ],
+      "latestRustWorkspace": {
+        "passed": 468,
+        "ignored": 4,
+        "summaries": 51,
+        "logSha256": "a340371bd4a680afc44f96f4f9978f7a66f16404cc331460b64b1cb625079282"
+      },
+      "latestClippy": {
+        "passed": true,
+        "allTargets": true,
+        "logSha256": "d42767b46c3d158b3fbbfba4b416c2ebaa8f5973e589f613a1cab9920efadaee"
+      },
+      "vmNode26": {
+        "passed": true,
+        "node": "26.10.0",
+        "actualRtcSuspendSeconds": 6,
+        "keyTtlMs": 3000,
+        "boottimeElapsedMs": 6817,
+        "runnableElapsedMs": 309,
+        "expiredOpen": "denied",
+        "liveControl": "opened",
+        "replay": "denied",
+        "generatedDummyPlaintextOutput": "none",
+        "logSha256": "80fc6e32a95c4618aee54db0c3e14f5baf7c1a48b1e2e864980a465f9b3c29bc",
+        "runtimeBundleSha256": "391200e3c0dc70a4972cf8a7e83d0eafd96dd6b66a53c0357830fc61ce718d00",
+        "latestProbeBinaryHashes": "Pending authoritative final-profile inventory; later equivalent byte-slice style edit not separately hashed for this run"
+      },
+      "node24": {
+        "officialVersion": "24.21.0",
+        "archiveSha256": "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6",
+        "officialRelease": "https://nodejs.org/en/blog/release/v24.21.0",
+        "buildPassed": true,
+        "npmPassed": true,
+        "helperPassed": 13,
+        "mcpCases": 36,
+        "helperChannelCases": 60,
+        "spsSkipped": 101,
+        "fullVm": {
+          "passed": true,
+          "frozenDriver": true,
+          "logSha256": "2e1b175e9aaf3c24c77ad78b9096269416ab7ff0c1605e7a2cc10df402e19513",
+          "runtimeBundleSha256": "a54503c4334bb9bbd291adc0fb51ff193d513bb5df10f64b93842d8ecb72c1b1",
+          "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+          "node": "24.21.0",
+          "systemd": "255.4-1ubuntu8.17",
+          "kernel": "6.8.0-139-generic",
+          "actualRtcSuspendSeconds": 6,
+          "keyTtlMs": 3000,
+          "boottimeElapsedMs": 6901,
+          "runnableElapsedMs": 101,
+          "expiredKey": "denied",
+          "liveControl": "opened",
+          "replay": "denied",
+          "sourceOutput": "none",
+          "originalExitCancellationMs": 91,
+          "helperOverrideCleanupMs": 2197,
+          "preparedSupervisorEofMs": 60,
+          "preparedSupervisorCrashMs": 60,
+          "signedCoordinatorCancellationAndSigkillRecovery": "passed",
+          "stockReads": 2,
+          "stockReconnects": 1,
+          "recoveryRelogins": 0,
+          "normalCanaryScan": "passed",
+          "upstreamNodeLicense": "Full runtime/LICENSE byte comparison passed before VM launch",
+          "scope": "Actual signed-fixture broker/runtime and all combined components; not actual controller/node or useful AI-client workflow",
+          "releaseBinarySha256": {
+            "blindpass-broker": "114aa2df05faf9c99534adf50aadeb4231843aa62c0b934ce037bb6a3947b7e7",
+            "blindpass-provision": "2284ef1f2e3c1d5908717241dd928b4c50373c8377057d043f4a135f1d42cfab",
+            "blindpass-private-helper-probe": "83fc856a36fd994d3bef235c69e806e3344bc8aa7fa5f36c3a29f575f51dfb7f",
+            "blindpass-session-journal-probe": "53f5b21709c406231881c8604d8a6a19544d2d347eb783740e9742b1dc763217",
+            "blindpass-browser-proxy-probe": "cde9600e7a8144567e3f564fb09a3a5c7228233ace498aeafc4325c471c37a4b",
+            "blindpass-runtime-identity-probe": "48c4fd18c8d282a8203c60ad8d797f18ac7bcf274dc4774a4cafe791746996e3",
+            "blindpass-browser-supervisor-probe": "1c8fac4fa27c76010701f86faf74de4d2ae853d49f1e8ba33d6b713a518f6dc4",
+            "blindpass-custody-clock-probe": "9f4455ee73a83be2e17b6f09c28eb2f44a06881edeede119d06153a8c6393238"
+          },
+          "cleanup": {
+            "ownedVmDirectories": 0,
+            "ownedKeyDirectories": 0,
+            "ownedFrozenDriverDirectories": 0
+          }
+        },
+        "invalidatedFirstVm": "All first-guest components passed, but live Bash script editing caused accidental replay and overall exit70; not counted as a passing gate"
+      },
+      "remaining": [
+        "Actual controller/node/AI-client workflow",
+        "full independent Source/grant/website lifetime/suspend/clock tests",
+        "all original native/two-host/inherited gates"
+      ]
+    },
+    "nodeEngineProfiles": {
+      "range": "^24.21.0 || ^26.10.0",
+      "workspaceManifests": 13,
+      "nonEngineLockMetadataIdentical": true,
+      "graphCheckLogSha256": "5ed17f8a1549529b11180f7a911cbff3fa24de5261caa48eaa5f145afef79bd7",
+      "behavioralRedCases": 2,
+      "declarationCasesPassedOnBothProfiles": 2,
+      "ciPinnedProfiles": [
+        "24.21.0",
+        "26.10.0"
+      ],
+      "remoteCiExecuted": false,
+      "postMetadataLocal": {
+        "node26": {
+          "buildPassed": true,
+          "npmPassed": true,
+          "mcpCases": 36,
+          "helperChannelCases": 60,
+          "spsSkipped": 101,
+          "buildLogSha256": "004a971dfa3853f38b7c71a16b4647b36e75390221b7370f3a7df882f5a3eaba",
+          "npmLogSha256": "f71c478bfd3ce24ec5588d989fd8defb23c3c6aa9fd91895362d0aa5989d3af3"
+        },
+        "node24": {
+          "buildPassed": true,
+          "npmPassed": true,
+          "mcpCases": 36,
+          "helperChannelCases": 60,
+          "spsSkipped": 101,
+          "buildLogSha256": "9989c2751bce5b88a9db431d4e3230cdcb451a8f88502bedfca5c6f75708dc3b",
+          "npmLogSha256": "a512da63131bf747f027a4bf99b78195917cd173870d5c0e2172d9273cc95879"
+        }
+      }
+    },
+    "actualFleetBrowserPreparation": {
+      "scenarioId": "P05-PC08",
+      "scope": "Opt-in disposable SQLite controller, actual enrollment/issuer pin/policy/approval, unprivileged real node relay, HPKE custody and browser lifecycle; actual AI clients/two hosts excluded",
+      "command": "BLINDPASS_P05_FLEET_BROWSER=1 ./tests/browser-handoff/private-helper-vm.sh",
+      "driverCasesPassed": 10,
+      "empty204BehavioralRed": "Successful password change rejected as JSON; accepted without response-body reflection after fix",
+      "vmAttempts": [
+        {
+          "attempt": 1,
+          "result": "failed",
+          "stage": "controller-start",
+          "safeCause": "setup stage not yet retained; no enrollment or browser workflow claim"
+        },
+        {
+          "attempt": 2,
+          "result": "failed",
+          "stage": "controller-start/password",
+          "safeCause": "Private test client parsed empty204 successful body as JSON"
+        },
+        {
+          "attempt": 3,
+          "result": "failed",
+          "stage": "policy-and-workload",
+          "safeCause": "Driver expected a fixture 32-hex workload ID instead of the real controller UUID"
+        },
+        {
+          "attempt": 4,
+          "result": "failed",
+          "stage": "login-outside-lock",
+          "safeCause": "Marker covers reply staging after the private call; the two same-stage waits did not establish zero login attempts or initial journal failure"
+        },
+        {
+          "attempt": 5,
+          "result": "failed",
+          "stage": "login-outside-lock",
+          "safeCause": "Fixed helper_reply_failed code=uncertain; authentication count not yet independently recorded"
+        },
+        {
+          "attempt": 6,
+          "result": "failed",
+          "stage": "login-outside-lock/provisional-controller-result",
+          "loginPosts": 1,
+          "verifiedLoginPosts": 1,
+          "observerFailed": false,
+          "safeCause": "Driver held login waiting for uncertain; actual controller contract maps the provisional result to executing. The held login timed out; no completed workflow claim"
+        },
+        {
+          "attempt": 7,
+          "result": "passed",
+          "logSha256": "db80beb326c89e55a19852d5af2349be17e84a85e43d3db373355567b4ef779f"
+        }
+      ],
+      "latestVm": "Actual controller/node full combined profiles passed on Node26.10.0 and Node24.21.0",
+      "dependenciesAdded": false,
+      "journalSelectionCasesPassed": 6,
+      "automaticIntentIdBehavioralRed": "SHA-256 operation ID rejected by the fixture-only selector; bounded exact identifier matching green",
+      "node24Host": {
+        "buildPassed": true,
+        "npmPassed": true,
+        "mcpCases": 36,
+        "helperChannelCases": 73,
+        "spsSkipped": 101,
+        "scope": "Final current driver including controller state predicates",
+        "logSha256": "456932016f2ae5be0b6627128eeec35c11edbf9fbc91a3b0c75a92f6a99581b2"
+      },
+      "latestRust": {
+        "passed": 468,
+        "ignored": 4,
+        "summaries": 51,
+        "logSha256": "b6873f256deb48596eda19de45be6c5cbb9462b3647b7b2e501adda8b0039d20",
+        "scope": "After fixed helper status diagnostic; current Rust source unchanged"
+      },
+      "latestClippy": {
+        "passed": true,
+        "logSha256": "518625fecf17079cb8bc686d4610cc746d858bdddd4aec61935a8f3496f3646c",
+        "scope": "After removing redundant unit expression in fixed diagnostic"
+      },
+      "controllerStateBehavioralRed": "Driver expected uncertain/completed only; executing provisional and revoked-with-confirmed-cleanup regressions fail before correction",
+      "node26Host": {
+        "buildPassed": true,
+        "npmPassed": true,
+        "mcpCases": 36,
+        "helperChannelCases": 73,
+        "spsSkipped": 101,
+        "logSha256": "66f6ff5f5a263d68e5ab64cf91ce6cd931e50e21c4894aae6ccf706692c05ef2"
+      },
+      "executedProfiles": [
+        {
+          "node": "26.10.0",
+          "controller": "SQLite actual disposable controller",
+          "nodeRelay": "Actual unprivileged systemd service",
+          "enrollmentIssuerPinPolicyApproval": "verified through real APIs",
+          "sourceProvisioning": "Actual HPKE CLI; not P04-D4 fleet GUI",
+          "originalWorkload": "Kernel unit/invocation-bound stock browser driver; not AI client",
+          "privateHelperIdentityBeforeAuthentication": "durable and independently observed on both POSTs",
+          "browserIdentityBeforeImport": "durable",
+          "heldLoginProvisionalControllerStatus": "executing/result_uncertain; response released without holding broker lock",
+          "stockReportReads": 2,
+          "stockReconnects": 1,
+          "loginPosts": 2,
+          "verifiedLoginPosts": 2,
+          "recoveryRelogins": 0,
+          "copiedCookieBeforeClosure": 200,
+          "copiedCookieAfterCancel": 401,
+          "copiedCookieAfterBrokerSigkillRestart": 401,
+          "controllerCancellation": "revoked/browser_session_closed",
+          "controllerRecovery": "confirmed browser_session_closed",
+          "requestReplayAfterRestart": "original response; no login",
+          "normalSourceAdminSessionCanaries": "absent from scanned output/journal",
+          "runtimeBundleSha256": "cb3fd2680375dc729d869a1327b03ea05c95c91770fde9a1d4186ccd8df353f8",
+          "logSha256": "db80beb326c89e55a19852d5af2349be17e84a85e43d3db373355567b4ef779f",
+          "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+          "systemd": "255.4-1ubuntu8.17",
+          "kernel": "6.8.0-139-generic",
+          "releaseSha256": {
+            "blindpass-broker": "8e086a2612e7acbf2f9e84e8e5d545f23e0e156984b47724e4bc005da6c9aa8a",
+            "blindpass-provision": "9d7a1b5043279f3ebe3e3a8a09954bc159cb6abae90264bc2c6b326bb9947f12",
+            "blindpass-private-helper-probe": "6db32eff7821ce1d5a6fe505761c9b02bb372297ad629ab50c20d71965c7ca46",
+            "blindpass-session-journal-probe": "596bbf406e6fb8f17a1af8914a5046631dad5e7fc352c53472c47ff8f7911f8b",
+            "blindpass-browser-proxy-probe": "3e759e3bbfc936813266e245924514b383548f498d534dd4ea4c59bee2af770d",
+            "blindpass-runtime-identity-probe": "d7ac28cddf8f534d3183e1322f60a7a0845e26ecf1683060c328be734fdbff3e",
+            "blindpass-browser-supervisor-probe": "932763a33d7bb1dc225ae10635faf6c9308e27de80c2e7bdcaeee312004f0c4b",
+            "blindpass-custody-clock-probe": "9f4455ee73a83be2e17b6f09c28eb2f44a06881edeede119d06153a8c6393238",
+            "blindpass-controller": "6fd326d1e3f27acde2b2d03e76db9fa4fe41f7d0b6a3fd856b5da1917df27b30",
+            "blindpass-node": "ec7d31244765a46e76af3b4d695da85962934858c46a1eb76f7d5da302e9837e"
+          },
+          "combinedRegressions": "All catalog/MCP/owner/helper/journal/revoker/runtime/stock/persistence components passed",
+          "helperOverrideCleanupMs": 2140,
+          "originalProcessExitMs": 111,
+          "preparedOnlySupervisorEofCleanupMs": 40,
+          "preparedOnlySupervisorCrashCleanupMs": 60,
+          "recipientKeySuspend": {
+            "actualRtcSeconds": 6,
+            "ttlMs": 3000,
+            "boottimeMs": 6202,
+            "runnableMs": 391,
+            "expiredDenied": true,
+            "liveOpened": true,
+            "replayDenied": true
+          },
+          "activeHelperUnitsAtEnd": 0,
+          "driverSourcesSha256": {
+            "tests/browser-handoff/fleet-browser-guest.mjs": "90fe08fc8516dd94055668a9ef7e7ba602996ccb845397b47dd4604be413b88f",
+            "tests/browser-handoff/fleet-controller-fixture.mjs": "11890c064d3caa2eafe151f63a4b6642de1897def2480f6d2b111b7a4a9348f6",
+            "tests/browser-handoff/guest-workload.mjs": "51b025cdd408d5a7cfcb831ad286b8c39cec1ddd94e51a929a90183e51fdb1c7",
+            "tests/browser-handoff/isolated-browser-agent.mjs": "0d9207508a906ac3fbae93b6a96b27f926147029c75b4dca0b5590d808dc9b32",
+            "tests/browser-handoff/coordinator-journal.mjs": "6bb6cf37d1ee8f759e094b367d9e6fe17eea1b9f8b2510d24155b560609fbcf9",
+            "tests/browser-handoff/private-helper-vm.sh": "6a8f8e0a277983c8bfd15e042071f806587addbacb51a32b3cc4875cbb69f067",
+            "tests/browser-handoff/private-helper-guest.sh": "0e22ec29dfa7277bc0d67cc3bee519bfc4450ed0e2e83251305a514ec0014669"
+          },
+          "limits": [
+            "Fixture website; managed Grafana integration not executed",
+            "Stock browser driver, not useful actual Claude/Codex task",
+            "Single host; no native backup/restore or two-host gate",
+            "No full deadline/Source/grant/website suspend and clock matrix",
+            "No P04-D4 GUI provisioning or inherited phase acceptance"
+          ],
+          "ownedOverlayDirectoryPresentAfterRun": false
+        },
+        {
+          "node": "24.21.0",
+          "controller": "SQLite actual disposable controller",
+          "nodeRelay": "Actual unprivileged systemd service",
+          "enrollmentIssuerPinPolicyApproval": "verified through real APIs",
+          "sourceProvisioning": "Actual HPKE CLI; not P04-D4 fleet GUI",
+          "originalWorkload": "Kernel unit/invocation-bound stock browser driver; not AI client",
+          "privateHelperIdentityBeforeAuthentication": "durable and independently observed on both POSTs",
+          "browserIdentityBeforeImport": "durable",
+          "heldLoginProvisionalControllerStatus": "executing/result_uncertain; response released without holding broker lock",
+          "stockReportReads": 2,
+          "stockReconnects": 1,
+          "loginPosts": 2,
+          "verifiedLoginPosts": 2,
+          "recoveryRelogins": 0,
+          "copiedCookieBeforeClosure": 200,
+          "copiedCookieAfterCancel": 401,
+          "copiedCookieAfterBrokerSigkillRestart": 401,
+          "controllerCancellation": "revoked/browser_session_closed",
+          "controllerRecovery": "confirmed browser_session_closed",
+          "requestReplayAfterRestart": "original response; no login",
+          "normalSourceAdminSessionCanaries": "absent from scanned output/journal",
+          "runtimeBundleSha256": "20d27c7775edb56f919a0938711d1d85db6ceea536efb587a7a38a3281ce1339",
+          "logSha256": "37c6cc0ee7b4a3a6e16ec74784b4c49ef3dbdec7cfd952eb139b5348532493e1",
+          "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+          "systemd": "255.4-1ubuntu8.17",
+          "kernel": "6.8.0-139-generic",
+          "releaseSha256": {
+            "blindpass-broker": "8e086a2612e7acbf2f9e84e8e5d545f23e0e156984b47724e4bc005da6c9aa8a",
+            "blindpass-provision": "9d7a1b5043279f3ebe3e3a8a09954bc159cb6abae90264bc2c6b326bb9947f12",
+            "blindpass-private-helper-probe": "6db32eff7821ce1d5a6fe505761c9b02bb372297ad629ab50c20d71965c7ca46",
+            "blindpass-session-journal-probe": "596bbf406e6fb8f17a1af8914a5046631dad5e7fc352c53472c47ff8f7911f8b",
+            "blindpass-browser-proxy-probe": "3e759e3bbfc936813266e245924514b383548f498d534dd4ea4c59bee2af770d",
+            "blindpass-runtime-identity-probe": "d7ac28cddf8f534d3183e1322f60a7a0845e26ecf1683060c328be734fdbff3e",
+            "blindpass-browser-supervisor-probe": "932763a33d7bb1dc225ae10635faf6c9308e27de80c2e7bdcaeee312004f0c4b",
+            "blindpass-custody-clock-probe": "9f4455ee73a83be2e17b6f09c28eb2f44a06881edeede119d06153a8c6393238",
+            "blindpass-controller": "6fd326d1e3f27acde2b2d03e76db9fa4fe41f7d0b6a3fd856b5da1917df27b30",
+            "blindpass-node": "ec7d31244765a46e76af3b4d695da85962934858c46a1eb76f7d5da302e9837e"
+          },
+          "combinedRegressions": "All catalog/MCP/owner/helper/journal/revoker/runtime/stock/persistence components passed",
+          "helperOverrideCleanupMs": 2145,
+          "originalProcessExitMs": 108,
+          "preparedOnlySupervisorEofCleanupMs": 60,
+          "preparedOnlySupervisorCrashCleanupMs": 60,
+          "recipientKeySuspend": {
+            "actualRtcSeconds": 6,
+            "ttlMs": 3000,
+            "boottimeMs": 6582,
+            "runnableMs": 100,
+            "expiredDenied": true,
+            "liveOpened": true,
+            "replayDenied": true
+          },
+          "activeHelperUnitsAtEnd": 0,
+          "driverSourcesSha256": {
+            "tests/browser-handoff/fleet-browser-guest.mjs": "90fe08fc8516dd94055668a9ef7e7ba602996ccb845397b47dd4604be413b88f",
+            "tests/browser-handoff/fleet-controller-fixture.mjs": "11890c064d3caa2eafe151f63a4b6642de1897def2480f6d2b111b7a4a9348f6",
+            "tests/browser-handoff/guest-workload.mjs": "51b025cdd408d5a7cfcb831ad286b8c39cec1ddd94e51a929a90183e51fdb1c7",
+            "tests/browser-handoff/isolated-browser-agent.mjs": "0d9207508a906ac3fbae93b6a96b27f926147029c75b4dca0b5590d808dc9b32",
+            "tests/browser-handoff/coordinator-journal.mjs": "6bb6cf37d1ee8f759e094b367d9e6fe17eea1b9f8b2510d24155b560609fbcf9",
+            "tests/browser-handoff/private-helper-vm.sh": "6a8f8e0a277983c8bfd15e042071f806587addbacb51a32b3cc4875cbb69f067",
+            "tests/browser-handoff/private-helper-guest.sh": "0e22ec29dfa7277bc0d67cc3bee519bfc4450ed0e2e83251305a514ec0014669"
+          },
+          "limits": [
+            "Fixture website; managed Grafana integration not executed",
+            "Stock browser driver, not useful actual Claude/Codex task",
+            "Single host; no native backup/restore or two-host gate",
+            "No full deadline/Source/grant/website suspend and clock matrix",
+            "No P04-D4 GUI provisioning or inherited phase acceptance"
+          ],
+          "driverNote": "Persistence fixture observed initial log-creation race diagnostic; ready/kill/recovery/ENOSPC assertions still passed",
+          "ownedOverlayDirectoryPresentAfterRun": false
+        }
+      ],
+      "ephemeralCleanup": {
+        "ownedVmDirectoriesRemaining": 0,
+        "ownedKeyDirectoriesRemaining": 0,
+        "ownedFrozenDriverDirectoriesRemaining": 0
+      }
+    },
+    "stockClientReadiness": {
+      "date": "2026-10-01",
+      "claudeCode": "2.1.286",
+      "codexCli": "0.159.3",
+      "claudeAuthenticated": true,
+      "codexAuthenticated": true,
+      "actualUsefulTasksExecuted": false,
+      "scope": "Actual versions/authentication and dummy MCP tool/model readiness only; no source/application session supplied, no broker/website/client acceptance task.",
+      "dummyMcpExecution": [
+        {
+          "client": "claude",
+          "version": "2.1.286 (Claude Code)",
+          "scope": "dummy MCP readiness, not broker/browser/phase acceptance",
+          "exitCode": 1,
+          "stdoutBytes": 0,
+          "stderrBytes": 286,
+          "answerIncludes12": false,
+          "events": [],
+          "sourceOrApplicationSessionSupplied": false
+        },
+        {
+          "client": "codex",
+          "version": "codex-cli 0.159.3",
+          "scope": "dummy MCP readiness, not broker/browser/phase acceptance",
+          "exitCode": 0,
+          "stdoutBytes": 946,
+          "stderrBytes": 39,
+          "answerIncludes12": true,
+          "events": [
+            {
+              "type": "initialize",
+              "protocol": "2025-06-18",
+              "form": true,
+              "url": true
+            },
+            {
+              "type": "read",
+              "count": 1
+            }
+          ],
+          "sourceOrApplicationSessionSupplied": false
+        },
+        {
+          "client": "claude",
+          "version": "2.1.286 (Claude Code)",
+          "scope": "dummy MCP readiness, not broker/browser/phase acceptance",
+          "exitCode": 0,
+          "stdoutBytes": 1828,
+          "stderrBytes": 0,
+          "answerIncludes12": true,
+          "diagnosticFlags": {
+            "config": false,
+            "restricted": false,
+            "permission": false,
+            "unknown option": false,
+            "authentication": false,
+            "credit": false,
+            "billing": false
+          },
+          "events": [
+            {
+              "type": "read",
+              "count": 1
+            }
+          ],
+          "sourceOrApplicationSessionSupplied": false
+        }
+      ],
+      "latestDummyMcpExecution": [
+        {
+          "client": "claude",
+          "version": "2.1.286 (Claude Code)",
+          "scope": "dummy MCP readiness, not broker/browser/phase acceptance",
+          "exitCode": 0,
+          "stdoutBytes": 1853,
+          "stderrBytes": 0,
+          "answerIncludes12": true,
+          "diagnosticFlags": {
+            "config": false,
+            "restricted": false,
+            "permission": false,
+            "unknown option": false,
+            "authentication": false,
+            "credit": false,
+            "billing": false
+          },
+          "events": [
+            {
+              "type": "request",
+              "protocol": "2026-07-28",
+              "form": true,
+              "url": true,
+              "urlElicitationPermitted": true
+            },
+            {
+              "type": "request",
+              "protocol": "2026-07-28",
+              "form": true,
+              "url": true,
+              "urlElicitationPermitted": true
+            },
+            {
+              "type": "request",
+              "protocol": "2026-07-28",
+              "form": true,
+              "url": true,
+              "urlElicitationPermitted": true
+            },
+            {
+              "type": "request",
+              "protocol": "2026-07-28",
+              "form": true,
+              "url": true,
+              "urlElicitationPermitted": true
+            },
+            {
+              "type": "request",
+              "protocol": "2026-07-28",
+              "form": true,
+              "url": true,
+              "urlElicitationPermitted": true
+            },
+            {
+              "type": "read",
+              "count": 1
+            }
+          ],
+          "sourceOrApplicationSessionSupplied": false,
+          "passed": true
+        },
+        {
+          "client": "codex",
+          "version": "codex-cli 0.159.3",
+          "scope": "dummy MCP readiness, not broker/browser/phase acceptance",
+          "exitCode": 0,
+          "stdoutBytes": 947,
+          "stderrBytes": 39,
+          "answerIncludes12": true,
+          "diagnosticFlags": {
+            "config": false,
+            "restricted": false,
+            "permission": false,
+            "unknown option": false,
+            "authentication": false,
+            "credit": false,
+            "billing": false
+          },
+          "events": [
+            {
+              "type": "initialize",
+              "protocol": "2025-06-18",
+              "form": true,
+              "url": true,
+              "urlElicitationPermitted": false
+            },
+            {
+              "type": "read",
+              "count": 1
+            }
+          ],
+          "sourceOrApplicationSessionSupplied": false,
+          "passed": true
+        }
+      ],
+      "latestDummyLogSha256": "52060ca36c60c584955ca124f9e367c3bf4dc5d0ee837fa8ad2db2229785469a",
+      "runnerSourcesSha256": {
+        "tests/browser-handoff/stock-client-readiness.py": "7e8d7cf82d5daf4919f0fc511ff80a05dee5935ca13611fd00b8878839a1be67",
+        "tests/browser-handoff/client-protocol-metadata.mjs": "b36577290401c592c30d7614b952701c8f60c919b626c077d749cc2bb33f8694"
+      },
+      "metadataCasesPassed": 4,
+      "metadataFirstRed": "Missing module in first test-first invocation; not a previous production behavioral bug",
+      "failureExitRegression": {
+        "failedStubClients": 2,
+        "priorRunnerExit": 0,
+        "finalRunnerExit": 1,
+        "scope": "Existing client failures must fail the readiness command; no real model or browser task in this stub regression"
+      },
+      "privateTemporaryProfilesRemaining": 0,
+      "actualApplicationTaskEvidence": "See checks.aiClientTransportFoundations.actualClaudeVm10 for the separate later authenticated task; this readiness snapshot remains historical."
+    },
+    "managedFleetBrowserPreparation": {
+      "scenarioId": "P05-PC12",
+      "application": "Existing selected Grafana OSS13.2.3 Generic OAuth Viewer",
+      "scope": "Actual controller/node/broker/helper/browser; one setup login separately counted; not AI clients or full deadline/lifetime matrix",
+      "driverCasesPassed": 4,
+      "oauthObserverBehavioralRed": "Prior behavior without observation accepted authentication but observed0 instead of1; current green in Node26 workspace",
+      "node26Host": {
+        "buildPassed": true,
+        "npmPassed": true,
+        "mcpCases": 36,
+        "helperChannelCases": 85,
+        "spsSkipped": 101,
+        "logSha256": "2ce17e3f8f759c6bddab125a817a9974fed054c14af0e83693c80937440bcfd8",
+        "previous77CaseLogSha256": "a1aee8917dff930bb44778b8f213461e698c6380a7b6b432ebec2aa4bf268ca7",
+        "log": "test-results/p05-client-readiness-npm26-85.log",
+        "previous78CaseLogSha256": "8523a183527abcae76acb9b1e2eda2a398c93e2a3117d0e09747620ce924da79",
+        "buildLog": "test-results/p05-client-readiness-build26-final.log",
+        "buildLogSha256": "0ff0534de57fc90da43506c69dfdb0a44f1f5a31a8f2ef4c2a34c18a73947db2",
+        "previous81CaseLogSha256": "e16da104fdd850258a1435b461432e08729c1ddd62d3b3be02cc1f860d18bc79",
+        "previousBuildLogSha256": "61a9f4b6328a376597f48c30c7265cf4b9ed306020aa21409321099fe8ba154e"
+      },
+      "node24Host": {
+        "npmPassed": true,
+        "mcpCases": 36,
+        "helperChannelCases": 85,
+        "spsSkipped": 101,
+        "logSha256": "3d660a61105455e57fa300c17c12521568e0d17aac6f21d5e42b45eba41c137a",
+        "priorFailedRun": "Existing DR-E08 heading wait failed during overlapping checks; serial full rerun passes; exact cause not established",
+        "previous77CaseLogSha256": "1bc3724470d52c3fffc49eaecfc51c2ff446e38e24fda26f00a6d446bb999732",
+        "log": "test-results/p05-client-readiness-npm24-85.log",
+        "previous78CaseLogSha256": "a4b72442bd75fe0fc27b8214262080438237e232782306e83125f3504b821ac6",
+        "buildPassed": true,
+        "buildLog": "test-results/p05-client-readiness-build24-final.log",
+        "buildLogSha256": "e3e5d7051c671fbf2960b94e9b877b30f676c102d137f123b984d97b0e8309ad",
+        "previous81CaseLogSha256": "dcfecdaaa52e15dbb96da543f6ba37c917df0fe9d6117db4553d01ff8c9c5ed2",
+        "previousBuildLogSha256": "c26b994c3dd2f8387cc70883e439bc656cfc47ac3472af07738b1fad042085f9"
+      },
+      "vm": "Complete selected managed controller/node lifecycle and combined regressions pass on both pinned Node24.21.0 and26.10.0; original full AI-client/lifetime/two-host/phase acceptance remains open.",
+      "dependencyVersionsChanged": false,
+      "upstreamNotices": {
+        "LICENSE": "0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0",
+        "NOTICE.md": "78cf8b70fbfde43dbc26e91f9b9039b52afcbc5ca0b5b3dcdfb226d275849ee4"
+      },
+      "vmAttempts": [
+        {
+          "attempt": 1,
+          "result": "failed",
+          "stage": "application-setup",
+          "logSha256": "6bae4b1f6c124ad1f34f1f4d660eb4725c963a9a422aa4f1342c0f43fdb818a7",
+          "scope": "No integrated managed lifecycle claim"
+        },
+        {
+          "attempt": 2,
+          "result": "failed",
+          "stage": "stock-task",
+          "loginPosts": 1,
+          "verifiedLoginPosts": 1,
+          "observerFailed": false,
+          "safeCause": "Actual enrollment/approval/private login/browser ready reached; report/transport/output assertions not yet separately diagnosed",
+          "logSha256": "ab7a17103c665cefe16aebe95e428a2d535bc6e872d7dfeaf80d2f00601a28c3"
+        },
+        {
+          "attempt": 3,
+          "result": "failed",
+          "stage": "application-setup/readiness",
+          "logSha256": "a14bc9551647bddfc0152361d835480b9b6b80cb3b200c828ebce3905fe67ba2",
+          "scope": "No enrollment or integrated operation established"
+        },
+        {
+          "attempt": 4,
+          "result": "failed",
+          "stage": "application-setup/readiness",
+          "processExit": "none before controlled cleanup",
+          "processSignal": "none before controlled cleanup",
+          "kernelOomEvents": 0,
+          "logSha256": "90289f775154efb1bd607a3fbc1e690b2398afaf27327ddaebabbd7857c55281",
+          "scope": "Live process and no kernel OOM; health response/version not independently retained in this run"
+        },
+        {
+          "attempt": 5,
+          "result": "failed",
+          "stage": "application-setup/readiness",
+          "processExit": "none before controlled cleanup",
+          "processSignal": "none before controlled cleanup",
+          "healthStatus": 0,
+          "expectedVersion": false,
+          "database": true,
+          "migrations": true,
+          "migrationComplete": true,
+          "httpListening": false,
+          "errorLines": 0,
+          "outputBytes": 249161,
+          "kernelOomEvents": 0,
+          "logSha256": "853f2fc64c4ad8f9a4fa8118357bbc11cd1ea3f0ba466fefe2abc4f311b46c4e",
+          "scope": "No listener observed within existing readiness bound; coarse startup flags do not identify the blocked subsystem."
+        },
+        {
+          "attempt": 6,
+          "result": "passed",
+          "node": "26.10.0",
+          "logSha256": "8a783680c43ab5ac6a97526d1c5e4d204938edf67df6bfb5020d870b51a828c2",
+          "scope": "Full selected managed controller/node lifecycle and combined runtime components; not phase acceptance"
+        }
+      ],
+      "processDiagnosticRegression": {
+        "passed": 1,
+        "logSha256": "2e9fcac5d91b1ed8e16de06ce540846775410e9569537a9e124e5e300ab3b04b",
+        "scope": "Dummy failed process exits37; code captured before cleanup; output and private canary withheld; exact health0/versionFalse safely retained"
+      },
+      "latestHostSuiteLimit": "Full Node24.21.0 and26.10.0 npm gates pass85 helper/channel and36 MCP cases;101 SPS service-gated skips remain unexecuted.",
+      "approvalServiceIncident": "One host regression rejected because workspace credits exhausted; after owner acknowledgement, exact check and subsequent VM runs executed through approval review. No current denial claim.",
+      "executedProfiles": [
+        {
+          "node": "26.10.0",
+          "result": "passed",
+          "exitCode": 0,
+          "controller": "Actual SQLite controller",
+          "nodeRelay": "Actual unprivileged enrolled node",
+          "application": "Grafana OSS13.2.3 managed OAuth external Viewer",
+          "bootstrapLogins": 1,
+          "operationLogins": 2,
+          "verifiedLoginPosts": 2,
+          "recoveryRelogins": 0,
+          "stockReportReads": 2,
+          "stockReconnects": 1,
+          "durableAccountMutations": 403,
+          "recoveryApi": 401,
+          "copiedSessionAfterCancel": 401,
+          "copiedSessionAfterBrokerSigkillRestart": 401,
+          "controllerClosure": "Actual signed node result confirms browser_session_closed",
+          "hpkeSource": "Actual local CLI; not P04-D4 GUI",
+          "fixedRootBackend": "0700 parent/0600 Unix backend; installed revoker path",
+          "helperIdentity": "Durable exact reverse kernel identity independently observed before both operation authentications",
+          "browserIdentity": "Durable verified identity before import",
+          "appState": "Disposable private Root /run tmpfs; app stays alive across broker SIGKILL; app/guest reboot untested",
+          "brokerRecoveryState": "Protected disk journal, retained across broker SIGKILL",
+          "normalCanaries": "Source/administrator/session absent from scanned output and journals",
+          "helperOverrideCleanupMs": 2115,
+          "originalProcessExitMs": 84,
+          "preparedOnlySupervisorEofCleanupMs": 60,
+          "preparedOnlySupervisorCrashCleanupMs": 50,
+          "recipientKeySuspend": {
+            "actualRtcSeconds": 6,
+            "ttlMs": 3000,
+            "boottimeMs": 6379,
+            "runnableMs": 89,
+            "expiredDenied": true,
+            "liveOpened": true,
+            "replayDenied": true
+          },
+          "activeHelperUnitsAtEnd": 0,
+          "ownedOverlayDirectoryPresentAfterRun": false,
+          "log": "test-results/p05-managed-fleet-vm6.log",
+          "logSha256": "8a783680c43ab5ac6a97526d1c5e4d204938edf67df6bfb5020d870b51a828c2",
+          "runtimeBundleSha256": "4a38f663084399391e86728d6a321e3988c584587517602b243d2d31b111d5c9",
+          "grafanaBundleSha256": "e9847b602622a2f76434c888d1683f8bcaca0b1bc17f0838bd737e61a0a9a868",
+          "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+          "releaseSha256": {
+            "blindpass-broker": "8e086a2612e7acbf2f9e84e8e5d545f23e0e156984b47724e4bc005da6c9aa8a",
+            "blindpass-provision": "9d7a1b5043279f3ebe3e3a8a09954bc159cb6abae90264bc2c6b326bb9947f12",
+            "blindpass-private-helper-probe": "6db32eff7821ce1d5a6fe505761c9b02bb372297ad629ab50c20d71965c7ca46",
+            "blindpass-session-journal-probe": "596bbf406e6fb8f17a1af8914a5046631dad5e7fc352c53472c47ff8f7911f8b",
+            "blindpass-browser-proxy-probe": "3e759e3bbfc936813266e245924514b383548f498d534dd4ea4c59bee2af770d",
+            "blindpass-runtime-identity-probe": "d7ac28cddf8f534d3183e1322f60a7a0845e26ecf1683060c328be734fdbff3e",
+            "blindpass-browser-supervisor-probe": "932763a33d7bb1dc225ae10635faf6c9308e27de80c2e7bdcaeee312004f0c4b",
+            "blindpass-custody-clock-probe": "9f4455ee73a83be2e17b6f09c28eb2f44a06881edeede119d06153a8c6393238",
+            "blindpass-controller": "6fd326d1e3f27acde2b2d03e76db9fa4fe41f7d0b6a3fd856b5da1917df27b30",
+            "blindpass-node": "ec7d31244765a46e76af3b4d695da85962934858c46a1eb76f7d5da302e9837e"
+          },
+          "driverSourcesSha256": {
+            "tests/browser-handoff/fleet-browser-guest.mjs": "3923b7029de3bc2e4f6facc8c5de7ca8da9a089d0709b2e9b4742e0c0e474e4b",
+            "tests/browser-handoff/fleet-controller-fixture.mjs": "11890c064d3caa2eafe151f63a4b6642de1897def2480f6d2b111b7a4a9348f6",
+            "tests/browser-handoff/guest-workload.mjs": "51b025cdd408d5a7cfcb831ad286b8c39cec1ddd94e51a929a90183e51fdb1c7",
+            "tests/browser-handoff/isolated-browser-agent.mjs": "426d84180d9294503b3ec4e9f522bfc1440bee615dd2e3d9406359e66d769aa9",
+            "tests/browser-handoff/coordinator-journal.mjs": "6bb6cf37d1ee8f759e094b367d9e6fe17eea1b9f8b2510d24155b560609fbcf9",
+            "tests/browser-handoff/private-helper-vm.sh": "781342dc0e82033c4113db6cd841b20876058bb2073a88f7caa9e57dd67db5f6",
+            "tests/browser-handoff/private-helper-guest.sh": "5a029f429bb29f5e0fe2aecbb097bb6c530aa0f23640de916906fc7861d6b379",
+            "tests/browser-handoff/guest-browser-profile.mjs": "fde3d89ca6b8a1a5e7e554581a09d8fef03d580af8afd36c95658a90d353ceba",
+            "tests/browser-handoff/managed-fleet-app.mjs": "26e8210bcc76e56199a448dcb20894df6bd1b4ae6368b6307ca6e62fac1fab38",
+            "tests/browser-handoff/managed-grafana.mjs": "73b013ea70153e069b0161f49af92c7d44ef287331b3d7052beb9f856765e44c",
+            "tests/browser-handoff/oauth-fixture.mjs": "ebaf9a940d727b78fb618fda6248ab7ca985b5798d4925a01eb50d1cd2cff574"
+          },
+          "limits": [
+            "No useful actual AI-client task",
+            "No full Source/grant/website/deadline/suspend/clock matrix",
+            "No application/guest reboot guarantee",
+            "No native backup/restore, two-host or inherited acceptance",
+            "No P04-D4 GUI provisioning"
+          ]
+        },
+        {
+          "node": "24.21.0",
+          "result": "passed",
+          "exitCode": 0,
+          "controller": "Actual SQLite controller",
+          "nodeRelay": "Actual unprivileged enrolled node",
+          "application": "Grafana OSS13.2.3 managed OAuth external Viewer",
+          "bootstrapLogins": 1,
+          "operationLogins": 2,
+          "verifiedLoginPosts": 2,
+          "recoveryRelogins": 0,
+          "stockReportReads": 2,
+          "stockReconnects": 1,
+          "durableAccountMutations": 403,
+          "recoveryApi": 401,
+          "copiedSessionAfterCancel": 401,
+          "copiedSessionAfterBrokerSigkillRestart": 401,
+          "controllerClosure": "Actual signed node result confirms browser_session_closed",
+          "hpkeSource": "Actual local CLI; not P04-D4 GUI",
+          "fixedRootBackend": "0700 parent/0600 Unix backend; installed revoker path",
+          "helperIdentity": "Durable exact reverse kernel identity independently observed before both operation authentications",
+          "browserIdentity": "Durable verified identity before import",
+          "appState": "Disposable private Root /run tmpfs; app stays alive across broker SIGKILL; app/guest reboot untested",
+          "brokerRecoveryState": "Protected disk journal, retained across broker SIGKILL",
+          "normalCanaries": "Source/administrator/session absent from scanned output and journals",
+          "helperOverrideCleanupMs": 2177,
+          "originalProcessExitMs": 111,
+          "preparedOnlySupervisorEofCleanupMs": 70,
+          "preparedOnlySupervisorCrashCleanupMs": 60,
+          "recipientKeySuspend": {
+            "actualRtcSeconds": 6,
+            "ttlMs": 3000,
+            "boottimeMs": 6687,
+            "runnableMs": 116,
+            "expiredDenied": true,
+            "liveOpened": true,
+            "replayDenied": true
+          },
+          "activeHelperUnitsAtEnd": 0,
+          "ownedOverlayDirectoryPresentAfterRun": false,
+          "log": "test-results/p05-managed-fleet-node24-vm3.log",
+          "logSha256": "25e5e7cdc4d553fe19b0c3260eb82b74a61ebf1ced082b0d6f0f87c47f3129cb",
+          "runtimeBundleSha256": "3ce8c82d094443d86f4188c7c9c82e3d4aac7840fa5ce59f295bc1c040eaecda",
+          "grafanaBundleSha256": "e9847b602622a2f76434c888d1683f8bcaca0b1bc17f0838bd737e61a0a9a868",
+          "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+          "releaseSha256": {
+            "blindpass-broker": "8e086a2612e7acbf2f9e84e8e5d545f23e0e156984b47724e4bc005da6c9aa8a",
+            "blindpass-provision": "9d7a1b5043279f3ebe3e3a8a09954bc159cb6abae90264bc2c6b326bb9947f12",
+            "blindpass-private-helper-probe": "6db32eff7821ce1d5a6fe505761c9b02bb372297ad629ab50c20d71965c7ca46",
+            "blindpass-session-journal-probe": "596bbf406e6fb8f17a1af8914a5046631dad5e7fc352c53472c47ff8f7911f8b",
+            "blindpass-browser-proxy-probe": "3e759e3bbfc936813266e245924514b383548f498d534dd4ea4c59bee2af770d",
+            "blindpass-runtime-identity-probe": "d7ac28cddf8f534d3183e1322f60a7a0845e26ecf1683060c328be734fdbff3e",
+            "blindpass-browser-supervisor-probe": "932763a33d7bb1dc225ae10635faf6c9308e27de80c2e7bdcaeee312004f0c4b",
+            "blindpass-custody-clock-probe": "9f4455ee73a83be2e17b6f09c28eb2f44a06881edeede119d06153a8c6393238",
+            "blindpass-controller": "6fd326d1e3f27acde2b2d03e76db9fa4fe41f7d0b6a3fd856b5da1917df27b30",
+            "blindpass-node": "ec7d31244765a46e76af3b4d695da85962934858c46a1eb76f7d5da302e9837e"
+          },
+          "driverSourcesSha256": {
+            "tests/browser-handoff/fleet-browser-guest.mjs": "3923b7029de3bc2e4f6facc8c5de7ca8da9a089d0709b2e9b4742e0c0e474e4b",
+            "tests/browser-handoff/fleet-controller-fixture.mjs": "11890c064d3caa2eafe151f63a4b6642de1897def2480f6d2b111b7a4a9348f6",
+            "tests/browser-handoff/guest-workload.mjs": "51b025cdd408d5a7cfcb831ad286b8c39cec1ddd94e51a929a90183e51fdb1c7",
+            "tests/browser-handoff/isolated-browser-agent.mjs": "426d84180d9294503b3ec4e9f522bfc1440bee615dd2e3d9406359e66d769aa9",
+            "tests/browser-handoff/coordinator-journal.mjs": "6bb6cf37d1ee8f759e094b367d9e6fe17eea1b9f8b2510d24155b560609fbcf9",
+            "tests/browser-handoff/private-helper-vm.sh": "781342dc0e82033c4113db6cd841b20876058bb2073a88f7caa9e57dd67db5f6",
+            "tests/browser-handoff/private-helper-guest.sh": "5a029f429bb29f5e0fe2aecbb097bb6c530aa0f23640de916906fc7861d6b379",
+            "tests/browser-handoff/guest-browser-profile.mjs": "fde3d89ca6b8a1a5e7e554581a09d8fef03d580af8afd36c95658a90d353ceba",
+            "tests/browser-handoff/managed-fleet-app.mjs": "26e8210bcc76e56199a448dcb20894df6bd1b4ae6368b6307ca6e62fac1fab38",
+            "tests/browser-handoff/managed-grafana.mjs": "73b013ea70153e069b0161f49af92c7d44ef287331b3d7052beb9f856765e44c",
+            "tests/browser-handoff/oauth-fixture.mjs": "ebaf9a940d727b78fb618fda6248ab7ca985b5798d4925a01eb50d1cd2cff574",
+            "tests/browser-handoff/isolated-browser-guest.mjs": "a3dc8cd9a0008dde2c75e5b77a0f07bd43325a02b2bd6b559ff3832de02e2c04",
+            "tests/browser-handoff/runtime-cleanup.mjs": "b397803c92bf6725e914020699cc13767c8f2975b110bfd75f2abe791ede65d2"
+          },
+          "limits": [
+            "No useful actual AI-client task",
+            "No full Source/grant/website/deadline/suspend/clock matrix",
+            "No application/guest reboot guarantee",
+            "No native backup/restore, two-host or inherited acceptance",
+            "No P04-D4 GUI provisioning"
+          ]
+        }
+      ],
+      "node24LaunchAttempt1": {
+        "result": "failed before guest launch",
+        "reason": "Pinned version guard: host PATH selected Node26 while Node24 was requested",
+        "logSha256": "ba1a56cc0dc32d5e1398024b83c73a3f0ab1199e3cf48a29430520bb1307182d",
+        "scope": "No Node24 managed runtime evidence"
+      },
+      "node24ManagedAttempt2": {
+        "result": "managed lifecycle passed; complete gate failed",
+        "logSha256": "3ac3191785dd961b24ea8c7a949425c9895e73b7503c5dc4e5152bb75271ed2c",
+        "applicationLifecycle": "Actual SQLite controller/enrolled node/HPKE/private helper/browser;2 operation logins/0 recovery, copied sessions401 after cancel and broker SIGKILL/restart; durable mutations403/recovery401;stock2 reads/1 reconnect",
+        "failedLaterStage": "isolated-browser-guest supervisor-loss",
+        "kernelOomEvents": 0,
+        "helperOverrideCleanupMs": 2143,
+        "originalProcessExitMs": 109,
+        "runtimeBundleSha256": "944ffece0b39606029a333d90185abbe24dfbe11dfaf1c5584ffe1e4028d2e64",
+        "ownedOverlayDirectoryPresentAfterRun": false,
+        "scope": "No combined Node24 managed VM pass; persistence/RTC checks after supervisor-loss did not execute"
+      },
+      "runtimeCleanupRegression": {
+        "scenarioId": "P05-PC13",
+        "passed": 3,
+        "behavioralRed": "Extracted previous immediate profile assertion fails3 actual in-process cases; corrected wait passes3",
+        "redLogSha256": "9019416dc1663a1655d13037cdd28f16c6f3b46abd4a0f894440f95af147ca65",
+        "greenLogSha256": "8f13f5652dd1812b04a6b1a6a8a173f63048fffd87e49dc29e4c7c37db674e27",
+        "deadlineMs": 5000,
+        "includesSupervisorExit": true,
+        "requires": "Both cgroup empty/absent and exact profile absent",
+        "scope": "Harness observation correction; complete Node24 managed VM rerun passes. Earlier failure cause remains unconfirmed."
+      },
+      "ephemeralCleanup": {
+        "ownedVmDirectoriesRemaining": 0,
+        "ownedKeyDirectoriesRemaining": 0,
+        "ownedFrozenDriverDirectoriesRemaining": 0
+      },
+      "latestDocumentQa": {
+        "relativeLinksChecked": 109,
+        "relativeLinksMissing": 0,
+        "guides": 8,
+        "syntax": "Changed Node/shell and Python runner compile pass",
+        "diffWhitespace": "git diff --check passes",
+        "obsidianRendered": "Not run"
+      }
+    },
+    "aiClientTransportFoundations": {
+      "date": "2026-10-01",
+      "scope": "protocol-only MIT exports and AGPL disposable Root/workload test transport; actual AI application task not established by these tests",
+      "protocolWrapper": {
+        "previousBaselinePassed": 3,
+        "newEmbeddingFirstRed": 2,
+        "currentPassed": 5,
+        "actualLegacyAndModernStdio": true
+      },
+      "pureTransportWorkerObserverPassed": 23,
+      "pythonFinalAnswerParserPassed": 2,
+      "node26": {
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "helperChannelPassed": 110,
+        "mcpPassed": 38,
+        "spsSkipped": 101
+      },
+      "node24NewSliceExecuted": true,
+      "logs": {
+        "p05-protocol-wrapper-host-first-red.log": "fe7433b7e58473e569888c175e2c87a24b3853121104febe59136298c8d67f07",
+        "p05-protocol-wrapper-host-green.log": "6f9530d98e8267c6f51061f085690a01525984fb877709f350d912bb06f76cd2",
+        "p05-ai-transport-red.log": "74869ecf793bd29ad803fd5b0d442e079a2c8aee369236dc9103c74b87f5b972",
+        "p05-ai-foundations-unit.log": "91ffa3910d928af485dc3057920170a87222534171f1944e4dd2c0d58e6ac504",
+        "p05-ai-result-green.log": "a6707d4eff38012da33ddc34bc6dc076a3b17151cfc9aef223c8790cbe64c3da",
+        "p05-ai-foundation-build26.log": "52ccffadf4ffa6b15037e152124fac898a95fb22901be2a69ddc9d5987fb0b51",
+        "p05-ai-foundation-npm26-final.log": "1d8138f89615376d54b7a09ef6016732c15b4225285f14e8b5e4ef7f6ebd846f",
+        "p05-ai-stock-diagnostic-red.log": "4cadd1ac071d659ca7d6ed1e77db0816f5257ecdda0d698a120ece3f4a49562b",
+        "p05-ai-stock-diagnostic-green.log": "fed78756a7eef3a5a078dade31289c0fc128b450f7368cca86a891b61451909b",
+        "p05-ai-private-temp-npm26.log": "369b7f7fa0f8d1ef19dd37effe620d0d0aa926e1d10eb95447b08ab042f32128",
+        "p05-ai-private-temp-npm26-host.log": "d1c8b39bfcfb83c2f95f59b07257903228218b69b4046676afba944f45ef9da0",
+        "p05-ai-private-temp-npm24-host.log": "c85c9e68136776b10b33731517883f451c13fdd5171c19fea0a9429c32484a22",
+        "p05-ai-private-temp-build26.log": "f815b1ba2ed6721baedf1e10e023e128bf85b26c84af27ef983b9041a1effa87",
+        "p05-ai-private-temp-python-result.log": "a6707d4eff38012da33ddc34bc6dc076a3b17151cfc9aef223c8790cbe64c3da",
+        "p05-ai-private-temp-python-task.log": "2152060db68c8cb55c43027191b4be9ee1acac98882d0b701f7fd5748d90d472",
+        "p05-claude-method-diagnostic.log": "9fe52b99df19bdda7d643b1a6e672e0ee69b829d1b8455540bcb51121dc6be4d",
+        "p05-ai-claude-vm7.log": "bd1194495c94d0c08adbafcd225e36f10c2eeff97977b9003299ef1e5e3de220",
+        "p05-ai-claude-vm7-inputs.json": "dd167545d7d6e0b7b323f8e2fe32f57d41e9faa47a254a8d3f8f9d6130bd9620",
+        "p05-ai-private-temp-build24.log": "7d1a92b2e8446434333fc25b7af8efdae9f91c57bd8942e60d9190476124d197",
+        "p05-ai-stock-notification-red.log": "a3c9cdef6f573dc149f263145c3461bad813bc31f392f2972069c1f9d8df8595",
+        "p05-ai-stock-notification-green.log": "7adcb3b4076b51f86bf4f8a0ef53e5f94ae4e4a19a8fa48ca543788cde03766f",
+        "p05-ai-claude-vm8.log": "f4f1092c5cdf9315ac00a6f8299ff2d082bc4598606757d6ac365a010b107ccd",
+        "p05-ai-claude-vm8-inputs.json": "24a7ac38a23114b69d9df286e96cef6b8991307cf72c858f0c064efe00f741e3",
+        "p05-ai-stock-notification-npm26-host.log": "b3d29a4f6cf37ea4fe5bceb015fe3842bdec739edfc50b42fe8ed6ec0fea88af",
+        "p05-ai-stock-notification-npm24-host.log": "c8d3e86840381b622f1cd641485e13d7a562dc797aeb4991e612a2358ddb6c45",
+        "p05-ai-claude-vm9.log": "4292c7df33385cfb0076874daad66c240cc04871bb22b4b8875e9ad53522a898",
+        "p05-ai-claude-vm9-inputs.json": "4d323b34539aef657d7e6a7f5967bd8988941c90fdfac6505f6508e9dc2205ad",
+        "p05-ai-reconnect-sequence-red.log": "babf653e74df4c3009e45f0c4a0b1e83b1468dc2947ee4d282640b3391efd62f",
+        "p05-ai-reconnect-sequence-green.log": "1b0e72e0056c12939006764c5ba6b5d8c9a54bcda94e7f7e71344b61fdc14edd",
+        "p05-ai-reconnect-python-task.log": "bd2607038f4c0f86e0ff53ef56802eed943c4d3cee10947ef9754c15f8ffc1c5",
+        "p05-ai-reconnect-python-result.log": "a6707d4eff38012da33ddc34bc6dc076a3b17151cfc9aef223c8790cbe64c3da",
+        "p05-ai-reconnect-npm26-host.log": "64a747997f10e8fb2e166f1358fd6aba63f7f9e7bb8dcaa3b2d120520179b1e0",
+        "p05-ai-reconnect-npm24-host.log": "21ab9ff83e5aae763c0864aa136bc1baf307dc8a3d954b876a98d3f560bce98a",
+        "p05-ai-claude-vm10.log": "95d1a051b857ff601bdf5168d8a63bb096c64aa237a599b22b440a54afb1ce65",
+        "p05-ai-claude-vm10-inputs.json": "b2f45c440abd16604775772289f502f53006c3b4e7625e59e677733014fa2937",
+        "p05-ai-codex-tool-profile-red.log": "cd1b78ac56a0530e7775ac6fc77b734866df5fbdf63fffb344b76dc1fcc273c5",
+        "p05-ai-codex-tool-profile-green.log": "2e5b2f0f5d00922571f90dbfe24a94b0f700f972211abe78f6a6f36441a16d19",
+        "p05-ai-codex-effective-tool-profile.log": "e10690d20d18ac439ff8f3b589179bfad2b9fcfe4266190788d9a873e186ed2a",
+        "p05-ai-codex-vm1.log": "b12e10a15ccfb943673d7a51b4c051410969b2e593cc9349a8d3c8f404225af4",
+        "p05-ai-codex-vm1-inputs.json": "27a92097770cffa692fa4b4b1e455bf432befe2968088b3201edc7adda00c579",
+        "p05-ai-codex-vm2.log": "2e9957e356fbf424949593bbc4d4a9b682d105bcc1b6c11a13c799d48942402c",
+        "p05-ai-codex-vm2-inputs.json": "a24fc2f1a44d7e3b81c9d6e3b39584a0286a5ba4e281b0223337fb198ab22d09",
+        "p05-ai-codex-vm3.log": "0fa250eed2a0fee4ae87915d5e9832914b89e7cba7625c52dc34b3a56d4f8cbc",
+        "p05-ai-codex-vm3-inputs.json": "fd4b5bd06955d6154d9ea87658428c8c3042d8489b43c8609a3d284722b0ecdb",
+        "p05-ai-setup-budget-red.log": "60bad214f5c5f131e9dd467af02dfc0df686387594592c25b1500d091799e3cc",
+        "p05-ai-setup-budget-green.log": "30d59610017bd25d7c8834ad227e5f5859e56f013cd7f485f4d96fabf579b4b8",
+        "p05-codex-config-parse-first-red.log": "5416565b44765663a367cb87c8ad2c703546d22fcbe655c0d3e2924b29d260f0",
+        "p05-ai-codex-config-red.log": "ff981c0804a5fcd429d383d4dbee51554e5974d5416920d021f14eb35576c72f",
+        "p05-ai-codex-config-green.log": "735fc7f2e517f944dc01ededa38b74ac3f68e61944cd289af21d9babd61ebadb",
+        "p05-codex-config-native-green.log": "ecaba45b42d7fbc17fae00e19243135e067dbf5dff358b190d3605e49767a48a"
+      },
+      "limitations": [
+        "Most initial new-module reds were missing-module failures, not prior production behavioral bugs.",
+        "The first restricted wrapper run timed out in all four stdio cases; approved host baseline distinguishes the two missing embedding cases.",
+        "The pending actual VM task cannot be inferred from doubles, source inspection or the earlier dummy readiness calls.",
+        "No dependencies, manifests, lockfile graph, package license boundary or phase acceptance changed in this slice."
+      ],
+      "initialSnapshot": {
+        "pureTransportWorkerObserverPassed": 19,
+        "pythonFinalAnswerParserPassed": 2,
+        "node26": {
+          "buildExitCode": 0,
+          "workspaceExitCode": 0,
+          "helperChannelPassed": 104,
+          "mcpPassed": 38,
+          "spsSkipped": 101
+        },
+        "node24NewSliceExecuted": false,
+        "logs": {
+          "p05-protocol-wrapper-host-first-red.log": "fe7433b7e58473e569888c175e2c87a24b3853121104febe59136298c8d67f07",
+          "p05-protocol-wrapper-host-green.log": "6f9530d98e8267c6f51061f085690a01525984fb877709f350d912bb06f76cd2",
+          "p05-ai-transport-red.log": "74869ecf793bd29ad803fd5b0d442e079a2c8aee369236dc9103c74b87f5b972",
+          "p05-ai-foundations-unit.log": "91ffa3910d928af485dc3057920170a87222534171f1944e4dd2c0d58e6ac504",
+          "p05-ai-result-green.log": "a6707d4eff38012da33ddc34bc6dc076a3b17151cfc9aef223c8790cbe64c3da",
+          "p05-ai-foundation-build26.log": "52ccffadf4ffa6b15037e152124fac898a95fb22901be2a69ddc9d5987fb0b51",
+          "p05-ai-foundation-npm26-final.log": "1d8138f89615376d54b7a09ef6016732c15b4225285f14e8b5e4ef7f6ebd846f",
+          "p05-ai-stock-diagnostic-red.log": "4cadd1ac071d659ca7d6ed1e77db0816f5257ecdda0d698a120ece3f4a49562b",
+          "p05-ai-stock-diagnostic-green.log": "fed78756a7eef3a5a078dade31289c0fc128b450f7368cca86a891b61451909b",
+          "p05-ai-private-temp-npm26.log": "369b7f7fa0f8d1ef19dd37effe620d0d0aa926e1d10eb95447b08ab042f32128",
+          "p05-ai-private-temp-npm26-host.log": "d1c8b39bfcfb83c2f95f59b07257903228218b69b4046676afba944f45ef9da0",
+          "p05-ai-private-temp-npm24-host.log": "c85c9e68136776b10b33731517883f451c13fdd5171c19fea0a9429c32484a22",
+          "p05-ai-private-temp-build26.log": "f815b1ba2ed6721baedf1e10e023e128bf85b26c84af27ef983b9041a1effa87",
+          "p05-ai-private-temp-python-result.log": "a6707d4eff38012da33ddc34bc6dc076a3b17151cfc9aef223c8790cbe64c3da",
+          "p05-ai-private-temp-python-task.log": "2152060db68c8cb55c43027191b4be9ee1acac98882d0b701f7fd5748d90d472",
+          "p05-claude-method-diagnostic.log": "9fe52b99df19bdda7d643b1a6e672e0ee69b829d1b8455540bcb51121dc6be4d",
+          "p05-ai-claude-vm7.log": "bd1194495c94d0c08adbafcd225e36f10c2eeff97977b9003299ef1e5e3de220",
+          "p05-ai-claude-vm7-inputs.json": "dd167545d7d6e0b7b323f8e2fe32f57d41e9faa47a254a8d3f8f9d6130bd9620"
+        }
+      },
+      "pythonBoundedHostRunnerPassed": 6,
+      "node24": {
+        "workspaceExitCode": 0,
+        "helperChannelPassed": 110,
+        "mcpPassed": 38,
+        "spsSkipped": 101,
+        "buildExitCode": 0
+      },
+      "actualClaudeProgress": {
+        "attempt": 7,
+        "result": "failed",
+        "stage": "browser_navigate",
+        "approval": true,
+        "actualHelperLoginPosts": 1,
+        "independentlyVerifiedHelperLoginPosts": 1,
+        "durableExactBrowserInvocationReady": true,
+        "reportRead": false,
+        "copyProbe": false,
+        "reconnect": false,
+        "cancelClosure": false,
+        "normalChannelCanaryDetected": false,
+        "limits": "No useful authenticated task or cleanup acceptance claim. Earlier failed attempts preserved in local logs."
+      },
+      "actualClaudeHandshakeProbe": {
+        "clientVersion": "2.1.286",
+        "methods": [
+          "server/discover",
+          "subscriptions/listen",
+          "server/discover",
+          "tools/list",
+          "tools/call"
+        ],
+        "scope": "actual dummy readiness metadata only; no authenticated application task"
+      },
+      "restrictedWorkspaceFailure": {
+        "exitCode": 1,
+        "signal": "SIGABRT",
+        "nodeVersion": "26.10.0",
+        "assertion": "env_->execution_async_id() == 0",
+        "scope": "coredumpctl confirms InternalCallbackScope::Close assertion during broker-client test; host rerun passes. Sandbox causation not established; no extracted core or system change."
+      },
+      "actualClaudeVm8": {
+        "result": "failed",
+        "stage": "browser_navigate",
+        "stockFailureCategory": "transport",
+        "actualHelperLoginPosts": 1,
+        "independentlyVerifiedHelperLoginPosts": 1,
+        "durableBrowserReady": true,
+        "reportRead": false,
+        "privateTemporaryDirectoryCorrectionVerified": false,
+        "normalChannelCanaryDetected": false,
+        "scope": "No useful task or closure acceptance; next standard-notification correction still pending actual VM result."
+      },
+      "actualClaudeVm9": {
+        "result": "failed",
+        "actualHelperLoginPosts": 1,
+        "independentlyVerifiedHelperLoginPosts": 1,
+        "durableBrowserReady": true,
+        "stockReportReads": 1,
+        "privateSessionCopyProbe200": true,
+        "stockReconnects": 1,
+        "failureTool": "browser_snapshot",
+        "failureCategory": "upstream",
+        "secondReportRead": false,
+        "cancelClosure": false,
+        "normalChannelCanaryDetected": false,
+        "scope": "Actual first report/copy/reconnect partial evidence only; no complete useful task or phase acceptance. Exact upstream cause not established."
+      },
+      "actualClaudeVm10": {
+        "result": "passed",
+        "combinedVmExitCode": 0,
+        "clientVersion": "2.1.286",
+        "nodeVersion": "26.10.0",
+        "actualMcpBrokerRequest": true,
+        "actualControllerApproval": true,
+        "actualNode": true,
+        "hpkeSource": true,
+        "setupLogins": 1,
+        "operationLogins": 1,
+        "stockReportReads": 2,
+        "stockReconnects": 1,
+        "parsedArtifacts": 12,
+        "copiedSessionAfterCancel": 401,
+        "exactRuntimeRemoved": true,
+        "rootTransportOtherUidDenied": true,
+        "normalSourceSessionCanaries": "absent",
+        "closureMs": 28790,
+        "hostProfileRemaining": false,
+        "runtimeBundleSha256": "cffb6e5d5e9f26f4cfd9e30d0cb57bd8a4d803a86f1cdfe133fae70f404e6f8c",
+        "scope": "Actual authenticated application task, API operator/local HPKE only; full phase gates remain. Actual second snapshot cause in VM9 not proven by later pass.",
+        "releaseBinariesSha256": {
+          "blindpass-broker": "8e086a2612e7acbf2f9e84e8e5d545f23e0e156984b47724e4bc005da6c9aa8a",
+          "blindpass-controller": "6fd326d1e3f27acde2b2d03e76db9fa4fe41f7d0b6a3fd856b5da1917df27b30",
+          "blindpass-node": "ec7d31244765a46e76af3b4d695da85962934858c46a1eb76f7d5da302e9837e",
+          "blindpass-provision": "9d7a1b5043279f3ebe3e3a8a09954bc159cb6abae90264bc2c6b326bb9947f12",
+          "blindpass-private-helper-probe": "6db32eff7821ce1d5a6fe505761c9b02bb372297ad629ab50c20d71965c7ca46",
+          "blindpass-session-journal-probe": "596bbf406e6fb8f17a1af8914a5046631dad5e7fc352c53472c47ff8f7911f8b",
+          "blindpass-browser-proxy-probe": "3e759e3bbfc936813266e245924514b383548f498d534dd4ea4c59bee2af770d",
+          "blindpass-runtime-identity-probe": "d7ac28cddf8f534d3183e1322f60a7a0845e26ecf1683060c328be734fdbff3e",
+          "blindpass-browser-supervisor-probe": "932763a33d7bb1dc225ae10635faf6c9308e27de80c2e7bdcaeee312004f0c4b",
+          "blindpass-custody-clock-probe": "9f4455ee73a83be2e17b6f09c28eb2f44a06881edeede119d06153a8c6393238"
+        }
+      },
+      "documentationChecks": {
+        "relativeLinksChecked": 33,
+        "missingLinks": 0,
+        "obsidianRendered": false,
+        "scope": "Modified repository guides/evidence only; vault append uses stable HTTPS link."
+      },
+      "actualCodexVm1": {
+        "result": "failed",
+        "combinedVmExitCode": 1,
+        "clientTaskExecuted": false,
+        "hostFailureStage": "guest-info",
+        "guestFailureStage": "browser-owner exit",
+        "actualHelperLoginPosts": 0,
+        "scope": "Readiness budget expires during guest preparation; later original-workload precheck fails before AI task entry. Exact owner failure cause not established. No Codex or authenticated application pass; no retry/gate waived."
+      },
+      "hostOwnedDisposablesRemaining": {
+        "keys": 0,
+        "drivers": 0,
+        "vmOverlays": 0
+      },
+      "actualCodexVm2": {
+        "result": "failed",
+        "clientVersion": "0.159.3",
+        "originalOwnerPrecheckPassed": true,
+        "originalExitMs": 110,
+        "clientExitCode": 1,
+        "normalMcpRequests": 0,
+        "actualHelperLoginPosts": 0,
+        "cause": "Reproduced invalid TOML environment map: JSON object interpreted as string. Corrected to fixed dotted environment keys; native config parser passes."
+      },
+      "actualCodexVm3": {
+        "result": "passed",
+        "combinedVmExitCode": 0,
+        "clientVersion": "0.159.3",
+        "nodeVersion": "26.10.0",
+        "actualMcpBrokerRequest": true,
+        "actualControllerApproval": true,
+        "actualNode": true,
+        "hpkeSource": true,
+        "setupLogins": 1,
+        "operationLogins": 1,
+        "stockReportReads": 2,
+        "stockReconnects": 1,
+        "parsedArtifacts": 12,
+        "copiedSessionAfterCancel": 401,
+        "exactRuntimeRemoved": true,
+        "rootTransportOtherUidDenied": true,
+        "normalSourceSessionCanaries": "absent",
+        "closureMs": 19710,
+        "hostProfileRemaining": false,
+        "runtimeBundleSha256": "cffb6e5d5e9f26f4cfd9e30d0cb57bd8a4d803a86f1cdfe133fae70f404e6f8c",
+        "scope": "Actual authenticated application task, API operator/local HPKE only; full phase gates remain. Requested tool disable flags do not establish complete adversarial host tool isolation."
+      }
+    },
+    "actualStockApplicationTasks": {
+      "date": "2026-10-01",
+      "claudePassed": true,
+      "codexPassed": true,
+      "actualUsefulTasksExecuted": true,
+      "scope": "Two separate disposable Node26.10.0/systemd255 managed Grafana tasks; API operator/local HPKE, no GUI/URL-elicitation/fallback/native/two-host/full lifetime acceptance.",
+      "claudeEvidence": "checks.aiClientTransportFoundations.actualClaudeVm10",
+      "codexEvidence": "checks.aiClientTransportFoundations.actualCodexVm3"
+    },
+    "nativeCandidateReview": {
+      "status": "block_pending_human_review",
+      "proposal": "docs/product/decisions/0007-p05-native-backup-dependency-review.md",
+      "grpc": "v1.84.0",
+      "grpcDeepOverall": 70,
+      "grpcDependencies": 42,
+      "crypto": "v0.57.0",
+      "cryptoDeepOverall": 74,
+      "cryptoDependencies": 4,
+      "candidateGraphResolved": false,
+      "binaryDownloadedInstalledExecuted": false,
+      "goToolchain": "go1.27.1",
+      "scope": "Public provenance and separate updated module scores only; pending isolated candidate preparation approval. Original release graphs remain blocked."
+    },
+    "deliveryRouting": {
+      "date": "2026-10-02",
+      "scenarioIds": [
+        "P05-DR01",
+        "P05-DR02",
+        "P05-DR03",
+        "P05-DR04",
+        "P05-DR05",
+        "P05-DR06",
+        "P05-DR07"
+      ],
+      "scope": "Trusted embedding router and actual SDK transport fixtures only; no production ledger/provider, stock-client UI privacy or GUI provisioning acceptance.",
+      "componentPassed": 14,
+      "actualSdkStdioPassed": 10,
+      "skipped": 0,
+      "legacyUrlRevision": "2025-11-25",
+      "modernContinuationImplemented": false,
+      "providerOrder": [
+        "url_elicitation",
+        "openclaw",
+        "telegram",
+        "local_open",
+        "operator_app"
+      ],
+      "deliveryBoundMs": 25000,
+      "originalKernelDeadlineRequired": true,
+      "durableLedgerRequired": true,
+      "productionDurableLedgerImplemented": false,
+      "externalMessagesSent": false,
+      "dependencyGraphChanged": false,
+      "rustSourceChanged": false,
+      "node26": {
+        "version": "26.10.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101,
+        "builtExportsPassed": 2
+      },
+      "node24": {
+        "version": "24.21.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101,
+        "builtExportsPassed": 2
+      },
+      "pythonHostRunnerPassed": 6,
+      "pythonFinalParserPassed": 2,
+      "restrictedStdio": {
+        "exitCode": 1,
+        "result": "first response timeouts",
+        "causeEstablished": false
+      },
+      "interruptedFirstDeadlineRun": {
+        "exitCode": 130,
+        "cause": "New field denied before a test fixture dispatch promise; known session interrupted. Targeted deadline red and updated bounded tests recorded."
+      },
+      "remaining": [
+        "Production durable ledger/reconciliation and permissions",
+        "Real ordered providers with authenticated operator GUI/ciphertext handoff",
+        "Reviewed stock-client URL UI/transcript consent/no-prefetch evidence",
+        "Modern input-required continuation",
+        "All original P05/inherited/two-host/native/lifetime/release gates"
+      ],
+      "sourceSha256": {
+        "packages/mcp-server/src/deliver.mjs": "ad35ca45d9be5f780e21c7c6ea20b479f4d9a5e2ace572f00ceda3c19e427b3d",
+        "packages/mcp-server/src/index.mjs": "b5222a4d70d981901fe41d02cbdfbbe3bd149b4d93ee9c409797dabd9eee2333",
+        "packages/openclaw-plugin/mcp-server.mjs": "d7ff442191ca44014ed21c4ea4a60812e71df7d4fe795acc209949806e1f223b",
+        "packages/mcp-server/tests/deliver.test.mjs": "9a6588974167e6b4aff26a6dfedc1332e61d53dbf39d87e0b784713989a82e99",
+        "packages/mcp-server/tests/delivery-stdio-fixture.mjs": "2460f4805f34c78afa835f5a27d3d49b38e6852faace64d645827b97968d66bd",
+        "packages/mcp-server/tests/delivery-stdio.test.mjs": "ddd5d641d2734dd3f7d06e80b563912ad3f32a09bbcfafa86cf5401b7f68020d"
+      },
+      "logsSha256": {
+        "p05-delivery-first-red.log": "ed34626a00cead966b919a69d440ea9a2d72f1ad41fe0f24adb56707e3db06af",
+        "p05-delivery-first-green.log": "8164c4ead28e142a725e7b25ca5a181a1a3895aac990bfb03041ee9bfd75af36",
+        "p05-delivery-clock-gate-red.log": "4bed511ce4a48060d00ce6c1607e03c7f73ed8abdd29c588a738e2b8ab4351ba",
+        "p05-delivery-clock-gate-green.log": "e82e1a170702a635229a98560bfb634636fd3af7edcaf5a0e20bdd795326d695",
+        "p05-delivery-deadline-red.log": "36d44cddf7f8f26c69873394bf099738fa142ba663b682d21d813e46e2cd2ed1",
+        "p05-delivery-deadline-target-red.log": "021529eddc6fefcdf758cce282d027e33964d87cff34e96cec5a9ac42b4f3e63",
+        "p05-delivery-deadline-green.log": "be21e29655cc944f41bf58fa48dc12c9220943f95101173843d3d8f7eaa2e5a1",
+        "p05-delivery-stdio-first.log": "6cb556a353bdf9a227ca0fa8445aa70b6fcc81259139d5034e01fa912826999a",
+        "p05-delivery-stdio-host-first.log": "a5eeecce2994288abb80e10de844631565163601cb5b100a7eef6c15367d8d61",
+        "p05-delivery-final-build26.log": "b328f61014cba60d6ca71f08e649f4ca2d5c8e3bc10aab0fcfb31c8610c7d4e4",
+        "p05-delivery-final-npm26-host.log": "8123bd66cc83b9c0fab0f375fa45e281f4c07c92907efd8a5d41e8b4857be858",
+        "p05-delivery-final-build24.log": "591de5304bf4a4837c051a2e3fbd56cab794216aa9cb2ed2bf5868df87c83bb7",
+        "p05-delivery-final-npm24-host.log": "12c3d7ff8ef59ff55cb5b2d2993915989f43113da45dfcc55fa7491d7c7afc31",
+        "p05-delivery-python-task.log": "6044d24f6e615d3a8f8ff0e4a20afa49367b8df5f09662c6f429983865d99774",
+        "p05-delivery-python-result.log": "a6707d4eff38012da33ddc34bc6dc076a3b17151cfc9aef223c8790cbe64c3da",
+        "p05-delivery-bundle-exports26.log": "a6caa8a8941c4f3f255d6ccf051f388f21f05dc74d8d5020880260d99dfab389",
+        "p05-delivery-bundle-exports24.log": "a6caa8a8941c4f3f255d6ccf051f388f21f05dc74d8d5020880260d99dfab389"
+      }
+    },
+    "fleetProvisioningContract": {
+      "date": "2026-10-02",
+      "scope": "Shared typed browser-source binding, component crypto and actual JavaScript-library-to-Rust interchange; no signed offer, real GUI/controller relay or broker custody admission.",
+      "rustContractPassed": 4,
+      "browserLibraryPassed": 5,
+      "crossLanguagePassedPerProfile": 7,
+      "aadDomain": "blindpass:fleet-browser-source:v1\\0",
+      "hpkeInfo": "empty",
+      "legacyExchangeAadChanged": false,
+      "node24": {
+        "version": "24.21.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 27,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101,
+        "crossLanguagePassed": 7
+      },
+      "node26": {
+        "version": "26.10.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 27,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101,
+        "crossLanguagePassed": 7
+      },
+      "rustWorkspace": {
+        "exitCode": 0,
+        "passed": 472,
+        "ignored": 4,
+        "backend": "default SQLite; PostgreSQL profile/outage not exercised",
+        "ignores": [
+          "three Quickshell/desktop cases",
+          "PostgreSQL outage/recovery"
+        ]
+      },
+      "clippyAllTargetsExitCode": 0,
+      "manifestLockfileGraphChanged": false,
+      "actualChromiumGui": false,
+      "signedBrokerOfferImplemented": false,
+      "controllerCiphertextRelayImplemented": false,
+      "brokerOneUseOfferCustodyImplemented": false,
+      "initialProbeFailure": "Fixture used maximum as exact decoded ciphertext length; initial negative successes are not crypto evidence. Corrected probe records actual open-stage denials.",
+      "restrictedBrowserResult": "File-only result; not counted as actual case execution. Host runs execute all cases.",
+      "remaining": [
+        "Authenticated signed broker offer and pinned identity verification",
+        "Scoped live operator input link/submit and atomic ciphertext relay",
+        "Original broker one-use key consumption and live cancellation/rotation/expiry fences",
+        "Actual GUI/current grant/source custody/canary/restart matrix",
+        "All original P05/native/two-host/inherited/owner/release gates"
+      ],
+      "sourcesSha256": {
+        "crates/blindpass-core/src/provisioning.rs": "e19882a42aef271595736501509117cbd4b3730608e9b0bd146be5f647ec00d7",
+        "crates/blindpass-core/tests/provisioning_binding.rs": "fc03bd8dab39936a05dd671dfea20801d1ad3948e0d436b64abf1e252a161333",
+        "crates/blindpass-core/examples/provisioning-hpke-probe.rs": "f7ee1c2fe031b0e90b5f1884b91d0920d4c992d088a2dda43668efbfe979c09f",
+        "packages/browser-ui/src/fleet-provisioning.js": "0cb076d40c0f2926d2cd93b55093653303d8a4b12c9959e2e9a97c8e81d38bf6",
+        "packages/browser-ui/tests/fleet-provisioning.test.mjs": "e7dca752a799d26db60d5548141052c56d8614250fbc65dadeb94f1572da98f4",
+        "packages/browser-ui/tests/fixtures/fleet-provisioning-v1.json": "dfcee24a1bd962f90d5d1c01e5d4f3f11541ec2c79ec9e9f496c642e150913ec",
+        "tests/browser-handoff/provisioning-hpke.test.mjs": "7ac52d8422637b78d0d8f16de6a64c0c8b741561315826b06c50638f1c7ddbe0"
+      },
+      "logsSha256": {
+        "p05-provisioning-core-first-red.log": "5028747d29646be60f7117558c8630f9c7842e06102ee443621550a392b2941a",
+        "p05-provisioning-browser-first-red.log": "f1dd113cbbebf1bc3fa7dbe18deba14c70e662dde0a1aacfcc3aa373cfdbe31b",
+        "p05-provisioning-core-first-green.log": "c35e9531f1b67591cd94c35566c73ebe00185f68c5b79f1a000616f926509326",
+        "p05-provisioning-core-green.log": "3d56dd7988928f2fd6f75f9af521e600c27fdb354143919dd7ac050b84720f4d",
+        "p05-provisioning-browser-first-green.log": "3e0d033b11a6f89f33019dc95428bf57de10b7bc2a199220e308732650af6368",
+        "p05-provisioning-browser-host-green.log": "e3e81ceb6be7d5f679f639b5b8f01ea49967378a6a81ae55bc56b5216415eb3f",
+        "p05-provisioning-browser-error-red.log": "16363956f26dfacc289ededccb17c81dbeb08dc69fc90cb6f69caa8358bea3e8",
+        "p05-provisioning-browser-error-green.log": "e00b02c998426b9022df29500a852c9fa3ea26e727131ff5e472468416a41634",
+        "p05-provisioning-cross-language-host.log": "87c76df0ad28067d0e04785eaa17bf09e7a541e761f5b746b129076aadf698ec",
+        "p05-provisioning-cross-language-final26.log": "f313ec9fed15f823ebd1a9085e51e766458fcd2bb288343511c5f26e9e363e86",
+        "p05-provisioning-cross-language-final24.log": "62223808231c15562310b3452ebbc6d558ee9dd689eec2ea81002c7dd1c7a63d",
+        "p05-provisioning-probe-fixed-build.log": "68bd012c404c189399f8a292eb2a277e8627854ea23b2087d20ffdc68ebbe069",
+        "p05-provisioning-rust-host.log": "77c3267458ebd03e68544a718f0a7b5b8167f0bab7cd74547164944ac80a5990",
+        "p05-provisioning-clippy.log": "c27e10baa375a0eaf16713256362226c88af927d9f59e786ed66fe6b1e2fa19b",
+        "p05-provisioning-build26.log": "e3188fb4725b329fb120a99d9fc47d00217ab14141c4de8ab1dcd43146179ab1",
+        "p05-provisioning-build24.log": "b43e55c4c87d8d2ce8f2b0c34024f2fe2b2e8f831da7a8516c2266ce1c4becca",
+        "p05-provisioning-npm26-host.log": "4d12d876f2bee990eee66abeaa5d6399be18ac503159547743d57ec84affd30b",
+        "p05-provisioning-npm24-host.log": "145eb0910d60369b109e65caea8be5c752e98adc5fab96975595f2bd71815d2e"
+      },
+      "sourceSnapshot": "Historical earlier binding slice; extended files have current hashes under fleetSignedRecipientOffer."
+    },
+    "fleetSignedRecipientOffer": {
+      "date": "2026-10-02",
+      "scope": "Shared signed recipient offer primitives, actual native/WebCrypto/HPKE interoperability and sandboxed Chromium crypto; no actual broker minting/operator GUI/relay/custody admission.",
+      "rustSignaturePassed": 3,
+      "browserSignaturePassed": 3,
+      "controllerAuthorityDenialPassed": 1,
+      "actualNativeSignaturePassedPerProfile": 8,
+      "actualChromiumCryptoPassedPerProfile": 1,
+      "combinedCryptoMatrixPassedPerProfile": 16,
+      "signatureDomain": "blindpass:fleet-document:v1\\0",
+      "kind": "recipient_offer",
+      "trustContext": "Independently trusted enrollment signing key, current authorized grant, node version and fixed destination; fixture only in harness.",
+      "node24": {
+        "version": "24.21.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 30,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101
+      },
+      "node26": {
+        "version": "26.10.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 30,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101
+      },
+      "rustWorkspace": {
+        "exitCode": 0,
+        "passed": 476,
+        "ignored": 4,
+        "backend": "default SQLite; PostgreSQL outage profile not exercised"
+      },
+      "clippyAllTargetsExitCode": 0,
+      "rustFormattingExitCode": 0,
+      "chromiumVersion": "145.0.7632.6",
+      "playwrightVersion": "1.58.2",
+      "chromiumSandbox": true,
+      "actualOperatorGui": false,
+      "productionBrokerOfferMinting": false,
+      "controllerRelay": false,
+      "oneUseOfferCustody": false,
+      "manifestLockfileGraphChangedInSlice": false,
+      "remaining": [
+        "Production broker offer creation from enrolled key/current grant/catalog/original workload",
+        "Authenticated operator scoped input link/metadata/submit",
+        "Durable atomic ciphertext relay and original one-use key consumption",
+        "Actual GUI cancellation/rotation/expiry/restart/replay/canary matrix",
+        "Full P05 stock delivery/native/two-host/lifetime/inherited acceptance/release gates"
+      ],
+      "sourcesSha256": {
+        "crates/blindpass-core/src/provisioning.rs": "5c37f64c77c622bb0735d98d69099acb2244b16422cda10179f76f3f3f0b612f",
+        "crates/blindpass-core/src/fleet.rs": "fe5775f2a1e8c41e3c175f09a1e37b22f4cd3a122f6e9d6c230c1c32dff2a3bf",
+        "crates/blindpass-core/tests/provisioning_signed_offer.rs": "deeff9ddafc145118f0e9ea9163f3c51abacca8ff448f589ef3e3f668124be5c",
+        "crates/blindpass-core/examples/provisioning-hpke-probe.rs": "9dd118f3ef6b0b36a11055fe70c14eac56c47acca84ddee651381cb00d3b9d39",
+        "crates/blindpass-broker/src/control.rs": "976cc08d92f72a2ae4c8e02128d1e4d3e201e816a1042c9f8e53878660bd86f0",
+        "packages/browser-ui/src/fleet-provisioning.js": "826583fc044d32d3acef05afd67a37862fd566a7bd171f56ff546d7378957fc8",
+        "packages/browser-ui/tests/fleet-provisioning-offer.test.mjs": "dc689a844838ddbd2bb5edb0393f2b02ba7c6c111f713b94987bdce925747e30",
+        "tests/browser-handoff/provisioning-offer-probe.mjs": "fc74d8041dc45bc5d5f02b98b77ee929e94c1f2389883c863c5a83fb1a6bc70f",
+        "tests/browser-handoff/provisioning-offer-interoperability.test.mjs": "f8e4484b236773b0140bee9c7b6a63502dc218d213ea5cade247a478d7e63357",
+        "tests/browser-handoff/provisioning-offer-chromium.test.mjs": "d57b0a61287e4fed3a79dbd28888b5e7fd367251ae9dcf0376dafd96d56b7955",
+        "tests/browser-handoff/provisioning-hpke.test.mjs": "7ac52d8422637b78d0d8f16de6a64c0c8b741561315826b06c50638f1c7ddbe0"
+      },
+      "logsSha256": {
+        "p05-signed-offer-core-red.log": "973342e267e4629dc5f06eb2249519116d8efb3aaeece1c90b362087d16abef3",
+        "p05-signed-offer-browser-red.log": "3e9b7e4dd873a9227c207c1b6d2fa2c6e4ede8017bf87dce316c730fc60a146a",
+        "p05-signed-offer-core-green.log": "dee56b870813c32f9a22f467b47f026bee8cf5765db8859dbbdb817a44e0902e",
+        "p05-signed-offer-browser-green.log": "5b7ea7812f704729962b7f5c2a3fe50363f2114c8c8db0e9de0059c0ed62dc1d",
+        "p05-signed-offer-probe-build.log": "29408db247cae181ef6a0773746b65ca39e3a7d84f4b0a73c5ba16288e4f6fd0",
+        "p05-signed-offer-final24.log": "6d31c4351942cdb1421990f62d1e8dc08683949ac8edd9ee5943cc424be255fb",
+        "p05-signed-offer-final26.log": "b9432a4bf77f020e3bdcc5b973a02db554e1512f52918438c90eaa639729100d",
+        "p05-signed-offer-build24.log": "e0574a3bbc8571d2e429242a319bf3ca447a8daa8c067b7a04234c678b248b62",
+        "p05-signed-offer-build26.log": "037e8526e879341edf06b9cf22504e932a954d1680e600257f72591c5c7e215c",
+        "p05-signed-offer-workspace24.log": "a36ca909e3075b6fd062560fd3457f18f623c4913da82f38fc550fd946e20a02",
+        "p05-signed-offer-workspace26.log": "64f924cad4c6be9eafcfbf4eaf13d447a44e900b6557562dbc107012e857618f",
+        "p05-signed-offer-controller-denial.log": "411b6f470c7e4790ab463a8a0030d93d10a16a5534e7d18e4a0114f1866cfb2c",
+        "p05-signed-offer-rust-final.log": "6b327d2237614321ccd83c14c9252768f3ff5dbcc7b16d173441e4eea06e3420",
+        "p05-signed-offer-rust-final.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "p05-signed-offer-clippy.log": "4d23ec63caf4dd81121a3c3d4f837b1dd229d3527d53869fafe756cfe2782fc4",
+        "p05-signed-offer-fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "sourceSnapshot": "Historical shared signature slice; extended receiver sources now have hashes under fleetBrokerProvisioning."
+    },
+    "fleetBrokerProvisioning": {
+      "date": "2026-10-02",
+      "scope": "Broker offer minting and controller-signed one-use Source admission in production Unix listener; host key/crypto/frame tests use fixture grant/time/original-workload authority. Live GUI/controller/node/kernel integration remains open.",
+      "brokerPassed": 11,
+      "coreDeliveryPassed": 2,
+      "maxOfferRecords": 16,
+      "defaultKeyLifetimeMs": 30000,
+      "configuredKeyLifetimeHonored": true,
+      "mintRetryRenewsKeyOrDeadline": false,
+      "successfulDeliveryRetryRewritesSource": false,
+      "signedDeliveryKind": "provisioning_delivery",
+      "maximumPlaintextBytes": 65536,
+      "maximumSignedFrameBytes": 131072,
+      "plaintextConsumers": "Operator browser and protected broker Source custody/private helper; no controller/node plaintext.",
+      "sourceLifetime": "Independent configured broker credential lifetime; volatile. No persistent/unattended guarantee.",
+      "pendingKeysAndReceiptsDurable": false,
+      "receiverRestartReconstructsKeysOrOriginalLease": false,
+      "brokerOfferMintingImplemented": true,
+      "oneUseReceiverImplemented": true,
+      "productionControlCommands": [
+        "BROWSER_OFFER",
+        "PROVISION_SOURCE"
+      ],
+      "actualOperatorGui": false,
+      "controllerScopedSubmit": false,
+      "durableCiphertextRelay": false,
+      "realSystemdProvisioningRun": false,
+      "rustWorkspace": {
+        "exitCode": 0,
+        "passed": 489,
+        "ignored": 4,
+        "backend": "default SQLite; PostgreSQL outage profile unexecuted"
+      },
+      "clippyAllTargetsExitCode": 0,
+      "rustFormattingExitCode": 0,
+      "node24": {
+        "version": "24.21.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 30,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101,
+        "explicitCryptoBrowserPassed": 16
+      },
+      "node26": {
+        "version": "26.10.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 30,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101,
+        "explicitCryptoBrowserPassed": 16
+      },
+      "dummySourceCanariesInGateLogs": "absent",
+      "manifestLockfileGraphChangedInSlice": false,
+      "remaining": [
+        "Controller verified offer ingestion and scoped operator link/metadata/submit transaction",
+        "Durable atomic ciphertext/signed delivery/receipt relay and reconciliation",
+        "Actual operator input page/app with independent trusted enrollment/context",
+        "Actual GUI/controller/node/kernel identity/cancellation/rotation/deadline/restart/replay/canary matrix",
+        "All original stock-client delivery/native/two-host/lifetime/retention/inherited acceptance/release gates"
+      ],
+      "sourcesSha256": {
+        "crates/blindpass-core/src/fleet.rs": "85f4b551bcf1fcfc90dd594e84bb0cd56503e401b165472a213e9a5162b5d10b",
+        "crates/blindpass-core/src/provisioning.rs": "1504f4ca8a847dd7d92a855b5733aea7231f8d396df5d883435497d35b66b67b",
+        "crates/blindpass-core/tests/provisioning_delivery.rs": "48f0514e7149c1fcabdf7397ad81a9f1d860254920b2f6208c801b2439eab8ea",
+        "crates/blindpass-broker/src/lib.rs": "d70b4e44aea2f8abaef361adbf0e454fbe40cf7e9c24275b70d938022cb089ec",
+        "crates/blindpass-broker/src/keys.rs": "c3f37169288b9e2d309a55979d151c5ab3af2ee2b6580b0fb16a995fc60988ee",
+        "crates/blindpass-broker/src/control.rs": "3d8e4fa9bf4f6f276f6bd502f028cb435e588ac8485335ece26720ab8fcba202",
+        "crates/blindpass-broker/src/provisioning.rs": "07ec0e65e0d7c3cddd58b256f53b37591325f5c76127b61fa4365aab1ce3676f",
+        "crates/blindpass-broker/src/provisioning_tests.rs": "534ab1ba75b08bfbc9d033088e3a10f8136a69ca48510c2857affa202e444b1e",
+        "crates/blindpass-core/examples/provisioning-hpke-probe.rs": "9dd118f3ef6b0b36a11055fe70c14eac56c47acca84ddee651381cb00d3b9d39",
+        "packages/browser-ui/src/fleet-provisioning.js": "826583fc044d32d3acef05afd67a37862fd566a7bd171f56ff546d7378957fc8"
+      },
+      "logsSha256": {
+        "p05-broker-offer-red.log": "43f5c9e4d7884fb3139341a3a1677fd1c99c9878aad4b60b036c48b3d86cae7f",
+        "p05-broker-offer-green.log": "eb8dfdb0bb3dcc8fe542741d9080ce33b79b59759b44e8d94d6b6a6c1dada8ae",
+        "p05-broker-offer-final.log": "9c7b65888cbbe2396c892c80ba5dcaac903f625e9c485a511472cf8271b5c314",
+        "p05-broker-offer-rust-final.log": "9f9b08ea29943abbe022242706c4ba28abdb9180b555d57b077b072cadb24205",
+        "p05-broker-offer-rust-final.exit": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+        "p05-broker-offer-clippy.log": "11b0e72f96a454c15e218ab7845b333673167a23573d03d856324666cd3f0bc3",
+        "p05-broker-offer-fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "p05-broker-offer-build24.log": "fd9ff202fb88539fb24af19824de349df1e7a414c88f82403f07abbdb83e5c9a",
+        "p05-broker-offer-build26.log": "ad88ceaecdc6582176f337cc1675e21300557d336272be4f2bd8e35bec501f46",
+        "p05-broker-offer-workspace24.log": "76ec26f7fb7b725829f0254d75202f575b54d7ad7e4259492b416a7ac4b878cb",
+        "p05-broker-offer-workspace26.log": "dfd9d5a9a0232a7853349da34b6fba73054156ca7b61d071a99736bd78f68ad4",
+        "p05-broker-offer-probe-build.log": "02db5a66fa0c60ca8618bd08aac556eac4f3ec863e8630a0d353dba6a0f6e126",
+        "p05-broker-offer-browser24.log": "baab9508530123c1dd5313c6999c3b3d4bbc4163986a08266730319373c35d57",
+        "p05-broker-offer-browser26.log": "d3cb593ca57fb99f0928d0a3a47fbd0c1764f508ca4b38e96bdc83280f0cfd51"
+      },
+      "sourceSnapshot": "Historical receiver slice; fleetControllerOffers records subsequent event-kind/controller changes."
+    },
+    "fleetControllerOffers": {
+      "date": "2026-10-02",
+      "scope": "Actual authenticated HTTP/database ingestion and independent administrator destinations. No Source, live GUI, automatic publication or ciphertext relay.",
+      "schemaVersion": 15,
+      "sqlitePassed": 11,
+      "postgresPassed": 11,
+      "postgresAffectedRegressionPassed": 71,
+      "rustWorkspace": {
+        "exitCode": 0,
+        "passed": 500,
+        "failed": 0,
+        "ignored": 4,
+        "backend": "default SQLite"
+      },
+      "clippyAllTargetsExitCode": 0,
+      "rustFormattingExitCode": 0,
+      "openapiPassed": 13,
+      "publicMetadataRetentionAfterExpiryMs": 604800000,
+      "pruneBatchCap": 1000,
+      "retentionExecutionScope": "one live/expired row and repeated pruning; not pressure/1000/10000 workflows",
+      "operatorGui": false,
+      "controllerScopedSubmit": false,
+      "automaticBrokerPublication": false,
+      "durableCiphertextRelay": false,
+      "realSystemdProvisioning": false,
+      "plaintextConsumers": "None in this public-offer ingestion slice. Future input browser and existing protected broker/helper consume Source under independent lifetime controls.",
+      "manifestLockfileGraphChangedInSlice": false,
+      "dummySourceCanariesInGateLogs": "absent",
+      "remaining": [
+        "Scoped named-operator link/metadata/submit with current authority/binding checks",
+        "Atomic signed ciphertext relay, automatic offer publication, node support and reconciliation",
+        "Actual GUI/systemd/client/cancellation/rotation/clock/suspend/lifetime/retention pressure and all original P05 gates",
+        "Native candidate approval, two-host/owner/inherited/release gates and small-slice commits"
+      ],
+      "sourcesSha256": {
+        "crates/blindpass-controller/src/store/provisioning.rs": "01692f55a6ab440934a551839fdbf8a1a46dc2dbd2daf03d43035fae7fb0cd48",
+        "crates/blindpass-controller/src/routes/provisioning.rs": "1505da97213c62a47af2180d70e6d7f5d5cb10947bbd9d2146211ce025892e06",
+        "crates/blindpass-controller/src/store/mod.rs": "961b3059bb33b663a2450d0ec2f6716dd00dcd94fdc6ff1163e289d532dcd13c",
+        "crates/blindpass-controller/src/store/fleet_lifecycle.rs": "0161d550e1bc91dbb3032f31ca43af785116ffcf0ae63d273f30155ffaaf4755",
+        "crates/blindpass-controller/src/routes/mod.rs": "3c9d6461052bf55faac28c1982c2f17da7c64a6996778198be0e1782825255fe",
+        "crates/blindpass-controller/src/routes/node.rs": "2f9d506e0fe18c0334afbf40f54f2c4ba840286de82608297a24bf05c1b2b7da",
+        "crates/blindpass-controller/src/store/migrations/sqlite/0015_provisioning_offers.sql": "29be7f12869449784e8208a44ae526ee8c54af4b1200102e4e7e5d0d6c634e64",
+        "crates/blindpass-controller/src/store/migrations/postgres/0015_provisioning_offers.sql": "29be7f12869449784e8208a44ae526ee8c54af4b1200102e4e7e5d0d6c634e64",
+        "crates/blindpass-controller/tests/fleet_provisioning_offers.rs": "53a683e6a98ee520c5c4ee0eba9388c46bbb91c9554c6dd77a527b6949779b1c",
+        "crates/blindpass-controller/tests/store_transitions.rs": "9a288f6c5fdbe7d57ccccbbb84e95f5184bc4acc860997e3766758caf0475b1a",
+        "crates/blindpass-controller/tests/security_perf_regressions.rs": "2e6768b71dd430cc9f3de23dc594fd2164f443e1671f5b1c968128e76ee37831",
+        "crates/blindpass-core/src/fleet.rs": "694af33882d60baecf7c861439973448b6cd11ccc56f9e11c56b6bbb4a74addc",
+        "docs/api/controller.openapi.yaml": "390dc1cc5bb1ddeaab1e91df83f1b10310676c722c2c7b3f76b8d24bbe530d7c",
+        "packages/contract-tests/src/generated/controller.d.ts": "bee64280d528d8ddbd798378c5d5b1dbdcc060158da8113865f414a60e6e9114",
+        "scripts/tests/controller-openapi.test.mjs": "c63c70a5b813d48dcaf546e965bc7a6256c12fbbba83ffe2946d52bdad8469e5",
+        ".github/workflows/ci-full.yml": "8a5e9779b94011c1facf073564abae5d10560b0adbdd249a292a23427fd1ae12"
+      },
+      "logsSha256": {
+        "p05-controller-offer-red.log": "94607a57c4cecd63fbd8ca0830c5790c6867a21f05d832fe311f3c92301f4ab0",
+        "p05-controller-offer-retention-red.log": "5edb05e60de0aaff64e49c1b70c4bd69645c7f2e5b6c7e949126b3ee0f5b0914",
+        "p05-controller-offer-rust-schema-red.log": "926c2f576f1566fb56cae154f671f8126cd06a28bf179ee9971d3b9222071dc7",
+        "p05-controller-offer-postgres-schema-red.log": "585240e96bd152a2ed981be61393c5ed1a90ffd54767b8ae04ce4146eb353a32",
+        "p05-controller-offer-postgres-enrollment-timeout.log": "68b9f0e3003e9a03810c2af47bf4d38b434e1f0d63ae14f64c204d14370d152d",
+        "p05-controller-offer-postgres-concurrent-diagnostic.log": "30d15d18b5b3a45ee83ac1c9480ca1ce62a1fd176819894dd898e3178f4a45d0",
+        "p05-controller-offer-openapi24.log": "d7c5cd31c4ff806a03b772c9ae0a2af8d6f57b50039914759a84a2bf7125491b",
+        "p05-controller-offer-sqlite.log": "bf633904bc3d62e9875f4817780a088588790f10ebf88a9ef0e138d18ffcb6bb",
+        "p05-controller-offer-postgres.log": "3d086a5ff58df2a16ce5c73ecd755e2c0452c0798eb59f0690f88fc52a1d3a15",
+        "p05-controller-offer-postgres-regression.log": "efd37aa5e6cce0ac6501eba3bba37de616cd6e929825648ae27cbfa1ceda4a0b",
+        "p05-controller-offer-rust.log": "b34e83104a2f96069ed5f96bab092f227547df78fc79bb66a93e78c5a595b5d6",
+        "p05-controller-offer-clippy.log": "533e61653cb4bf55f521a15f568220e7bc011e0da424355e8a455f6a0fdc8395",
+        "p05-controller-offer-fmt.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "p05-controller-offer-openapi-red.log": "c74ce5338618e7f5371df0a5897d1f1ed13c0ea5364e7ac1b5db9ff6e16db2d3",
+        "p05-controller-offer-openapi-version-red.log": "aac445a69b121942ba5e6ebde441fdbc3eea91aef52c6f966855bfeaca5a94a7",
+        "p05-controller-offer-openapi.log": "534d580f8a6c90f2fa74455d46c6f50aa8bf84e9b49389b2eccf1432499af4f6",
+        "p05-controller-offer-api-generated.log": "70fee1ff915f5c084a194bf301cbca7191f0da0e63801115e6ff04ef7a7f4a4d",
+        "p05-controller-offer-build24.log": "dbd35a677edc3081982deef0be7b7bbefa2ac88e455b4b1b76f486c5a1a4304f",
+        "p05-controller-offer-build26.log": "a1973cd38e0bcf01fb4c48dd62fd17402484666ea69a1a73b4063c288df12e39",
+        "p05-controller-offer-workspace24.log": "547860f773a9089db43356f379e32ccde1eb33ecfbc0bdf9b89a00664d6e08f7",
+        "p05-controller-offer-workspace26.log": "4febbd1cc9c861580bec424b77ebc339d2eeed5ea405032956f70b006578fe71"
+      },
+      "rustExitStatusSha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa",
+      "node24": {
+        "version": "24.21.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 30,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101
+      },
+      "node26": {
+        "version": "26.10.0",
+        "buildExitCode": 0,
+        "workspaceExitCode": 0,
+        "browserUiPassed": 30,
+        "mcpPassed": 62,
+        "helperChannelPassed": 110,
+        "spsSkipped": 101
+      }
+    }
+  },
+  "guest": {
+    "command": "./tests/browser-handoff/private-helper-vm.sh",
+    "runnerOwner": "local-kvm-p05-helper-20260930",
+    "imageSha256": "612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354",
+    "distribution": "Ubuntu 24.04",
+    "systemd": "255.4-1ubuntu8.17",
+    "kernel": "6.8.0-139-generic",
+    "qemu": "11.1.1",
+    "sandbox": true,
+    "globalUserNamespaceRestriction": 1,
+    "apparmor": "Exact root-owned Chromium userns permission; not full confinement",
+    "helperAccount": "blindpass-login",
+    "socketOtherUid": "denied",
+    "importedReport": 200,
+    "revokedCopy": 401,
+    "deadlineOverrideMs": 2000,
+    "observedCleanupMs": 2136,
+    "unitResult": "timeout",
+    "verifiedInvocationCgroup": "empty/removed",
+    "journalCanaries": "absent",
+    "activeHelperUnitsAfterSuccess": 0,
+    "ephemeralKeyOverlayCleanup": {
+      "keysRemaining": 0,
+      "overlaysRemaining": 0
+    },
+    "nativeBrokerCaller": "Rust, fixed root-only path, owner/mode/peer checks",
+    "runtimeBundleSha256": "94c0cde960d12b25a98fbdd1bb61b237d2bc6ba5819ab0aa2b061166502a70b4",
+    "sessionJournal": {
+      "killedWriter": "Actual SIGKILL; login handle preserved; retry blocked_uncertain",
+      "diskFull": "Actual ENOSPC on disposable 64KiB tmpfs; transitions fenced, durable intent preserved",
+      "directory": "0700:root",
+      "stateFile": "0600:root:nlink1",
+      "scope": "Persistence only, synthetic time and nonbearer handle; no actual broker or website recovery claim"
+    },
+    "nativeProbeSha256": {
+      "blindpass-broker": "42a5f3db69583d9fd8a27688269d525410686ee27255f8f8de5ed28d28198469",
+      "blindpass-private-helper-probe": "61ea4f1471150c313e775c517b6f4b2e9575359fd63ba089ab67f101117b6de3",
+      "blindpass-session-journal-probe": "e78e8f04b1412372480d1f861e5aa816fa65b45c290d2397ce9f255e8c4cebbc",
+      "blindpass-browser-proxy-probe": "c0e99501428ad5c4f20e82e6aecb33f2fefcd7c1e690a61634edd258d56c6ea4",
+      "blindpass-runtime-identity-probe": "228bc283f8b2629d02e093f652b5a8c40fb0b638950a4f025cd982562e072800"
+    },
+    "nativeProbeSha256Scope": "Exact final v5 retry/full-recipe-binding release artifacts in completed post-lint/owner-mode VM gate; component driver uses synthetic Root lease, no fleet retry/pre-cancel or production reconciliation",
+    "runtimeWorkerIdentity": {
+      "listener": "/run/blindpass-runtime/identity.sock:0660:root:blindpass-runtime",
+      "directory": "0750:root:blindpass-runtime",
+      "proof": "private random 64-hex challenge; Root hash-only book, one use, 15s BOOTTIME deadline, maximum 16 tickets",
+      "validWorker": "actual retained kernel pidfd and manager unit/invocation/UID",
+      "sameUidWrongUnit": "denied, legitimate worker subsequently succeeds",
+      "afterExit": "denied",
+      "cookieImport": "requires successful proof",
+      "scope": "Process identity component only; namespace/current grant/policy/journal verification remains coordinator responsibility"
+    },
+    "operationOwnershipVmScope": "Historical component gates use fixture/synthetic identities. 2026-10-01 packaged MCP metadata gate additionally proves actual production broker ACK/restart retry under kernel identity; no controller or signed runtime workflow.",
+    "recordScope": "Historical guest fields retained. Latest Root administrator gate/native revoker/service run is checks.administratorRevocation.vm; prior native-supervisor and component hashes remain historical."
+  },
+  "gates": {
+    "build": "pass: Root administrator revocation/source gate slice",
+    "npmTest": "pass: host workspace;45 helper/channel,34 MCP;101 SPS skipped",
+    "rustFmt": "pass",
+    "rustClippy": "pass: workspace locked all-targets -D warnings after revocation/source-gate/probe changes",
+    "rustWorkspaceTests": "pass: final locked serial host workspace;183 broker/50 core/13 relay;four inherited ignored",
+    "spsSkippedTests": 101,
+    "rustIgnoredTests": 4,
+    "parallelRustWorkspaceTests": "failed twice: existing CLI copied-executable ETXTBSY; serial gate passes",
+    "approvalService": "Initial workspace-credit review failure prevented execution; user approved retry; subsequent host review/execution succeeded",
+    "finalHelperChannelRecoveryCases": 45,
+    "nativeProbeRerun": 2,
+    "syntaxAndDiffWhitespace": "pass: Rust format, changed Node/shell syntax, JSON and git diff --check",
+    "relativeLinks": {
+      "checked": 130,
+      "missing": 0,
+      "scope": "Nine current guides/execution records after administrator gate"
+    },
+    "sandboxRuntimeProof": "UnixStream::pair EPERM; focused and full Rust gates pass on approved host. Restricted npm subprocess gate fails; complete host npm gate passes",
+    "sdkRestrictedSandbox": "Wrapper test subprocess produced no protocol output; approved host tests pass. Not counted as passing sandbox evidence",
+    "rootNpmTests": "pass: final host including45 helper/channel checks",
+    "recordScope": "Historical administrator-revocation slice; latest host/VM and client readiness results are checks.managedFleetBrowserPreparation and checks.stockClientReadiness."
+  },
+  "unexecuted": [
+    "Full production helper deadline (VM uses 2s override)",
+    "P05-PC08/PC12 full deadline/lifetime matrix and GUI/operator/client variants",
+    "P04-D4 fleet GUI provisioning and credential-handle custody/rotation",
+    "Actual reviewed native restic backup/restore",
+    "Production reviewed URL elicitation/ordered providers, durable delivery ledger and modern continuation",
+    "Actual Claude/Codex GUI URL-capable/unavailable/full variants; Node24 actual AI tasks",
+    "Full managed application Source/grant/session lifetime, suspend and clock matrix",
+    "Operation-owner retention/pruning and unknown/lost-login-reply integration",
+    "Full inherited/two-host/browser/pilot/owner acceptance and slice commits",
+    "Remote CI matrix execution"
+  ],
+  "namespaceGuestAttempts": [
+    {
+      "result": "failed",
+      "stage": "first stock tool task",
+      "verifiedBeforeFailure": [
+        "manager identity",
+        "separate dynamic UID",
+        "PrivateNetwork and distinct namespace",
+        "outside-loopback CDP denial",
+        "approved cookie import"
+      ],
+      "runtimeBundleSha256": "08262cdb06e3deccb35d95b54b8777588c02532ed535432eb34499f63f8c7e3f",
+      "helperCleanupOverrideMs": 2083
+    },
+    {
+      "result": "failed",
+      "stage": "stock-task-result-0",
+      "sanitizedDiagnostic": {
+        "isError": true,
+        "permissionDenied": true,
+        "connectionFailure": false,
+        "reportPresent": false
+      },
+      "helperCleanupOverrideMs": 2129
+    },
+    {
+      "result": "passed",
+      "change": "Private writable agent working directory/home/cache; additional artifact scans",
+      "helperCleanupOverrideMs": 2131,
+      "verified": [
+        "separate DynamicUser UID from helper/agent/root",
+        "PrivateNetwork plus actual different namespace",
+        "host-loopback CDP denial",
+        "other-UID Unix socket denial",
+        "agent cannot read browser profile",
+        "approved cookies imported into fresh sandboxed browser",
+        "actual stock tool report and reconnect",
+        "working-directory/home/cache/journal canaries and raw endpoints absent",
+        "copied session rejected after account-wide revoke",
+        "browser cgroup empty and profile removed",
+        "existing SIGKILL and ENOSPC journal probes passed"
+      ]
+    },
+    {
+      "result": "failed",
+      "stage": "persistent agent stop waiting for input EOF",
+      "scope": "Disposable driver bug; actual live process observed, only known disposable VM intentionally stopped; exit 255; no completed gate claim"
+    },
+    {
+      "result": "passed",
+      "change": "Agent stop closes stdin; bounded 120s agent unit; actual Rust invocation proxy replaces UID-only driver proxy",
+      "helperCleanupOverrideMs": 2053,
+      "verified": [
+        "retained kernel peer pidfd and manager unit/invocation",
+        "same-UID different unit denied before backend attachment despite claimed-unit header",
+        "same unit restarted invocation denied before backend attachment",
+        "two stock report reads and one reconnect within original invocation",
+        "all namespace/profile/sandbox/revoke/canary checks and SIGKILL/ENOSPC probes passed"
+      ]
+    },
+    {
+      "result": "passed",
+      "change": "Production fixed-catalog startup and unsafe configuration denials; all private helper/invocation proxy/stock tool/journal gates rerun with signed-contract release binaries",
+      "helperCleanupOverrideMs": 2140,
+      "scope": "Catalog startup and component runtime only; namespace driver still supplies a synthetic root lease"
+    },
+    {
+      "result": "passed",
+      "change": "Actual reverse worker pidfd proof, same-UID wrong-unit denial without burning ticket, proof before cookie import and held token denied after worker exit",
+      "helperCleanupOverrideMs": 2133,
+      "scope": "Root expected runtime metadata and synthetic proxy lease; all existing helper/catalog/proxy/stock/recovery component checks pass"
+    },
+    {
+      "result": "passed",
+      "change": "Final /run ownership and single-link socket guards staged; all reverse worker proof and existing component checks rerun",
+      "helperCleanupOverrideMs": 2146,
+      "scope": "No signed production runtime or full phase acceptance claim"
+    }
+  ],
+  "lastUpdated": "2026-10-02"
+}

@@ -136,7 +136,7 @@ async fn mint_token(
     .into_response()
 }
 
-fn client_ip(headers: &HeaderMap, peer: SocketAddr, state: &AppState) -> String {
+pub(crate) fn client_ip(headers: &HeaderMap, peer: SocketAddr, state: &AppState) -> String {
     if state.trusted_proxy_addresses.contains(&peer.ip()) {
         if state.test_mode && peer.ip().is_loopback() {
             if let Some(forwarded) = headers

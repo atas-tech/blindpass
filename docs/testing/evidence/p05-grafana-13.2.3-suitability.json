@@ -1,0 +1,21 @@
+{
+  "scenario": "P05-I01",
+  "candidate": "Grafana OSS",
+  "version": "13.2.3",
+  "archive_sha256": "6107ad27016296aac38e0d7ffa8753ab540b5541ad27e94790f771289d733235",
+  "date": "2026-09-30",
+  "profile": "HTTPS, local-password Viewer, configured 30m maximum",
+  "suitability": "rejected",
+  "observations": {
+    "emailEditable": true,
+    "ownProfileUpdateStatus": 200,
+    "ownPasswordChangeStatus": 200,
+    "postLogoutCopiedCookieStatus": 401
+  },
+  "notRun": [
+    "sustained activity past 30m",
+    "broker handler",
+    "stock-client workflow"
+  ],
+  "reason": "Viewer can change account/recovery email and password; reject before browser handler acceptance"
+}

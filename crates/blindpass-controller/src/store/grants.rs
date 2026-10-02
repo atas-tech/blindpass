@@ -2,8 +2,12 @@
 
 //! Durable grant issuance and metadata queries.
 
+use super::operation_approvals::{
+    closure_targets_postgres, closure_targets_sqlite, enqueue_closures_postgres,
+    enqueue_closures_sqlite,
+};
 use super::{
-    AuditDraft, Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
+    AuditDraft, Database, FleetSigner, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError,
     audit::{insert_audit_postgres, insert_audit_sqlite},
     authorization::{
         OperationRecord, enqueue_node_document_postgres, enqueue_node_document_sqlite,
@@ -223,10 +227,22 @@ impl Store {
         }
         match &self.database {
             Database::Sqlite(pool) => {
-                issue_operation_grants_sqlite(pool, &self.tenant_id, drafts).await
+                issue_operation_grants_sqlite(
+                    pool,
+                    &self.tenant_id,
+                    drafts,
+                    self.fleet_signer.as_ref(),
+                )
+                .await
             }
             Database::Postgres(pool) => {
-                issue_operation_grants_postgres(pool, &self.tenant_id, drafts).await
+                issue_operation_grants_postgres(
+                    pool,
+                    &self.tenant_id,
+                    drafts,
+                    self.fleet_signer.as_ref(),
+                )
+                .await
             }
         }
     }
@@ -315,7 +331,12 @@ impl Store {
         let result_code = body
             .get("result_code")
             .and_then(Value::as_str)
-            .filter(|value| matches!(*value, "marker_created" | "result_uncertain"))
+            .filter(|value| {
+                matches!(
+                    *value,
+                    "marker_created" | "browser_session_closed" | "result_uncertain"
+                )
+            })
             .ok_or(StoreError::InvalidInput("node result code"))?;
         let observed_at = body
             .get("observed_at_ms")
@@ -324,7 +345,7 @@ impl Store {
             .ok_or(StoreError::InvalidInput("node result time"))?;
         let _ =
             i64::try_from(observed_at).map_err(|_| StoreError::InvalidInput("node result time"))?;
-        if (status == "completed") != (result_code == "marker_created") {
+        if (status == "completed") != (result_code != "result_uncertain") {
             return Err(StoreError::InvalidInput("node result binding"));
         }
         let result_json = format!("{{\"result_code\":\"{result_code}\"}}");
@@ -334,7 +355,8 @@ impl Store {
             Database::Postgres(_) => (POSTGRES_NOW_MS, " FOR UPDATE OF g, o"),
         };
         let select_sql = format!(
-            "SELECT g.status AS grant_status, o.status AS operation_status, o.result_json
+            "SELECT g.status AS grant_status, g.action AS grant_action, g.mode AS grant_mode,
+                    o.status AS operation_status, o.result_json
              FROM grants g JOIN operations o ON o.id = g.operation_id AND o.tenant_id = g.tenant_id
              WHERE g.id = ? AND g.node_id = ? AND g.operation_id = ? AND g.tenant_id = ?{lock}"
         );
@@ -380,6 +402,13 @@ impl Store {
                     .map_err(StoreError::Database)?;
                 let existing_result: Option<String> =
                     row.try_get("result_json").map_err(StoreError::Database)?;
+                let grant_action: String =
+                    row.try_get("grant_action").map_err(StoreError::Database)?;
+                let grant_mode: String = row.try_get("grant_mode").map_err(StoreError::Database)?;
+                if !result_matches_grant(result_code, &grant_action, &grant_mode) {
+                    tx.rollback().await.map_err(StoreError::Database)?;
+                    return Err(StoreError::InvalidInput("node result binding"));
+                }
                 if !matches!(
                     grant_status.as_str(),
                     "issued" | "delivered" | "consumed" | "revoked" | "expired"
@@ -1189,6 +1218,7 @@ async fn issue_operation_grants_sqlite(
     pool: &sqlx::SqlitePool,
     tenant_id: &str,
     drafts: &[GrantIssueDraft],
+    signer: Option<&FleetSigner>,
 ) -> Result<GrantIssueOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
@@ -1232,6 +1262,29 @@ async fn issue_operation_grants_sqlite(
             sqlx::query("UPDATE operations SET status = 'denied', version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'requested'")
                 .bind(&context.operation.id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
         }
+        for context in &contexts {
+            if context.operation.requested_by.starts_with("workload:") {
+                let signer = signer.ok_or(StoreError::MissingState("browser denial issuer"))?;
+                let targets = closure_targets_sqlite(
+                    &mut tx,
+                    tenant_id,
+                    "o.id = ?",
+                    &[&context.operation.id],
+                )
+                .await?;
+                enqueue_closures_sqlite(&mut tx, Some(signer), &targets, "denied").await?;
+                let audit = AuditDraft {
+                    action: "fleet.operation_denied".to_owned(), actor_type: "workload".to_owned(),
+                    actor_id: Some(context.operation.workload_id.clone()), target_type: "operation".to_owned(),
+                    target_id: Some(context.operation.id.clone()),
+                    metadata: serde_json::json!({"target_type":"operation", "outcome":"authorization_changed",
+                        "node_id":context.operation.node_id, "workload_id":context.operation.workload_id,
+                        "policy_version":context.operation.policy_version, "broker_event_key":context.operation.broker_event_key})
+                        .as_object().expect("literal object").clone(),
+                };
+                insert_audit_sqlite(&mut tx, tenant_id, &audit).await?;
+            }
+        }
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(GrantIssueOutcome::Stale);
     }
@@ -1259,6 +1312,7 @@ async fn issue_operation_grants_postgres(
     pool: &sqlx::PgPool,
     tenant_id: &str,
     drafts: &[GrantIssueDraft],
+    signer: Option<&FleetSigner>,
 ) -> Result<GrantIssueOutcome, StoreError> {
     let mut tx = pool.begin().await.map_err(StoreError::Database)?;
     sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
@@ -1301,6 +1355,29 @@ async fn issue_operation_grants_postgres(
         for context in &contexts {
             sqlx::query("UPDATE operations SET status = 'denied', version = version + 1 WHERE id = $1 AND tenant_id = $2 AND status = 'requested'")
                 .bind(&context.operation.id).bind(tenant_id).execute(&mut *tx).await.map_err(StoreError::Database)?;
+        }
+        for context in &contexts {
+            if context.operation.requested_by.starts_with("workload:") {
+                let signer = signer.ok_or(StoreError::MissingState("browser denial issuer"))?;
+                let targets = closure_targets_postgres(
+                    &mut tx,
+                    tenant_id,
+                    "o.id = ?",
+                    &[&context.operation.id],
+                )
+                .await?;
+                enqueue_closures_postgres(&mut tx, Some(signer), &targets, "denied").await?;
+                let audit = AuditDraft {
+                    action: "fleet.operation_denied".to_owned(), actor_type: "workload".to_owned(),
+                    actor_id: Some(context.operation.workload_id.clone()), target_type: "operation".to_owned(),
+                    target_id: Some(context.operation.id.clone()),
+                    metadata: serde_json::json!({"target_type":"operation", "outcome":"authorization_changed",
+                        "node_id":context.operation.node_id, "workload_id":context.operation.workload_id,
+                        "policy_version":context.operation.policy_version, "broker_event_key":context.operation.broker_event_key})
+                        .as_object().expect("literal object").clone(),
+                };
+                insert_audit_postgres(&mut tx, tenant_id, &audit).await?;
+            }
         }
         tx.commit().await.map_err(StoreError::Database)?;
         return Ok(GrantIssueOutcome::Stale);
@@ -1366,6 +1443,9 @@ fn grant_matches_context(
         && now_ms.saturating_sub(issued_at) <= 60_000
         && context.operation.expires_at_ms > now_ms
         && expires_at > now_ms
+        && (!(context.operation.requested_by.starts_with("workload:")
+            && context.operation.decision == "allow")
+            || expires_at <= context.operation.expires_at_ms)
         && expires_at <= issued_at.saturating_add(ttl_ms)
         && expires_at <= issued_at.saturating_add(context.workload_ceiling.saturating_mul(1_000))
         && grant.id != grant.operation_id
@@ -1759,6 +1839,15 @@ pub(super) fn with_revocation_result(existing: Option<&str>, result_code: Option
 /// broker started execution without confirming it; `completed` is final.
 /// Returns the next status, result and whether it completes the operation,
 /// or `None` when the result changes nothing (replays, later evidence).
+fn result_matches_grant(code: &str, action: &str, mode: &str) -> bool {
+    match code {
+        "browser_session_closed" => action == "browser.session" && mode == "browser_session",
+        "marker_created" => action == "noop.marker" && matches!(mode, "file" | "socket"),
+        "result_uncertain" => true,
+        _ => false,
+    }
+}
+
 fn result_transition(
     status: &str,
     operation_status: &str,
@@ -1773,6 +1862,21 @@ fn result_transition(
         ("uncertain", "granted") => Some(("executing", result_json.to_owned(), false)),
         ("completed", "completed") | ("uncertain", "executing" | "completed" | "uncertain") => None,
         (_, "revoked") => {
+            // Revocation remains authoritative, while confirmed execution or
+            // cleanup evidence must not regress to a late provisional result.
+            let confirmed = existing_result
+                .and_then(|result| serde_json::from_str::<serde_json::Value>(result).ok())
+                .is_some_and(|result| {
+                    matches!(
+                        result
+                            .get("result_code")
+                            .and_then(serde_json::Value::as_str),
+                        Some("marker_created" | "browser_session_closed")
+                    )
+                });
+            if status == "uncertain" && confirmed {
+                return Ok(None);
+            }
             let merged = with_revocation_result(existing_result, Some(result_code));
             (existing_result != Some(merged.as_str())).then_some(("revoked", merged, false))
         }

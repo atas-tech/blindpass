@@ -1,4 +1,4 @@
-name: Disposable fleet VM (P01, P03)
+name: Disposable fleet VM (P01, P03, P05)
 
 on:
   workflow_dispatch:
@@ -91,3 +91,66 @@ jobs:
 
       - name: Run P03 two-guest VM harness on both backends
         run: ./tests/fleet/p03-vm.sh --backend both
+
+  # P05 helper/browser/MCP guest gates (private-helper-vm.sh). Same trusted KVM
+  # runner, pinned image and disposable SSH key as P01; the script builds the
+  # Rust probes, stages the pinned runtime bundle in a fresh guest and runs
+  # private-helper-guest.sh. Requires /dev/kvm and a self-hosted runner: it can
+  # not run on GitHub-hosted runners. Not dispatched from CI yet. Excluded
+  # because they need prerequisites this runner is not assumed to hold: the
+  # grafana-managed profile (P05_GRAFANA_HOME) and the stock Claude Code/Codex
+  # AI-client profiles (BLINDPASS_P05_AI_CLIENT).
+  p05:
+    name: P05 helper, browser and MCP guest gates (Node ${{ matrix.node-version }})
+    needs: p01
+    runs-on: [self-hosted, linux, x64, blindpass-kvm]
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      # One KVM runner and a fixed guest SSH port: run the profiles in turn.
+      max-parallel: 1
+      matrix:
+        node-version: ["26.10.0", "24.21.0"]
+    env:
+      BLINDPASS_FLEET_GUEST_IMAGE: ${{ vars.BLINDPASS_FLEET_GUEST_IMAGE }}
+      BLINDPASS_FLEET_GUEST_IMAGE_SHA256: ${{ vars.BLINDPASS_FLEET_GUEST_IMAGE_SHA256 }}
+      BLINDPASS_FLEET_SSH_KEY: ${{ vars.BLINDPASS_FLEET_SSH_KEY }}
+      BLINDPASS_FLEET_GUEST_USER: ${{ vars.BLINDPASS_FLEET_GUEST_USER }}
+      BLINDPASS_FLEET_RUNNER_OWNER: ${{ vars.BLINDPASS_FLEET_RUNNER_OWNER }}
+      # The script requires the host Node to equal this exact version.
+      BLINDPASS_P05_NODE_VERSION: ${{ matrix.node-version }}
+    steps:
+      - name: Check out reviewed revision
+        uses: actions/checkout@v4
+
+      - name: Verify trusted VM runner
+        run: |
+          set -eu
+          qemu-system-x86_64 --version
+          qemu-img --version
+          test -r /dev/kvm
+          test -w /dev/kvm
+          test -n "$BLINDPASS_FLEET_RUNNER_OWNER"
+          test -r "$BLINDPASS_FLEET_SSH_KEY"
+
+      - name: Set up pinned Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install lockfile dependencies
+        run: npm ci
+
+      # private-helper-vm.sh streams the Chromium headless shell from the
+      # Playwright cache and the packaged MCP bundle from packages/openclaw-plugin/dist.
+      - name: Install pinned Chromium and build the packaged bundle
+        run: |
+          npm exec --workspace=helpers/login -- playwright install chromium
+          npm run build
+
+      - name: Run P05 helper, browser, catalog, MCP and revoker guest gates
+        run: ./tests/browser-handoff/private-helper-vm.sh
+
+      - name: Run P05 controller and node browser workflow guest (PC08)
+        run: BLINDPASS_P05_FLEET_BROWSER=1 ./tests/browser-handoff/private-helper-vm.sh

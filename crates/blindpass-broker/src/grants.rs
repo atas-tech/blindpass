@@ -4,7 +4,7 @@
 
 use blindpass_core::custody::sha256;
 use blindpass_core::fleet::{
-    Grant, PolicySnapshot, Registration, Revocation, TimeReply, is_valid_opaque_id,
+    ConsumptionMode, Grant, PolicySnapshot, Registration, Revocation, TimeReply, is_valid_opaque_id,
 };
 use blindpass_core::identity::WorkloadAuthorization;
 use blindpass_core::signing::base64_url_encode;
@@ -22,6 +22,7 @@ const GRANT_JOURNAL_MAX_BYTES: u64 = 64 * 1024 * 1024;
 const GRANT_JOURNAL_MAX_RECORDS: usize = 1_000_000;
 const GRANT_REPLAY_RETENTION_MS: u64 = 24 * 60 * 60 * 1_000;
 const MAX_RETIRED_GRANTS: usize = 10_000;
+const MAX_ACCEPTED_GRANTS: usize = 10_000;
 /// A verified grant whose fate is already recorded; redelivery changes nothing.
 pub(crate) const GRANT_ALREADY_SETTLED: &str = "grant is already settled";
 const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -79,7 +80,12 @@ struct GrantJournal {
 #[derive(Debug, Default)]
 struct RevocationJournal {
     path: Option<PathBuf>,
+    acknowledged_path: Option<PathBuf>,
     tombstones: BTreeMap<String, u64>,
+    /// The first observed result is committed with the tombstone so a
+    /// restart can recover an outcome lost from a full queue.
+    outcomes: BTreeMap<String, (&'static str, u64)>,
+    acknowledged_outcomes: BTreeSet<String>,
     /// Tombstones in force in memory whose journal append has not succeeded.
     unpersisted: BTreeSet<String>,
 }
@@ -182,6 +188,19 @@ impl GrantVerifier {
         if let Some(revocations) = self.revocations.as_mut() {
             revocations.prune(controller_now_ms)?;
         }
+        let expired = self
+            .accepted
+            .iter()
+            .filter(|(_, accepted)| {
+                accepted.grant.expires_at_ms <= estimated_controller_ms
+                    || accepted.deadline_boottime_ms <= now_boottime_ms
+            })
+            .map(|(id, _)| id.clone())
+            .collect::<Vec<_>>();
+        for id in expired {
+            self.accepted.remove(&id);
+            self.retire(id, ConsumeDenial::Expired);
+        }
         self.highest_controller_time_ms = Some(highest_controller_time_ms);
         self.trusted_time = Some(TrustedTime {
             signed_controller_ms: controller_now_ms,
@@ -229,6 +248,7 @@ impl GrantVerifier {
         }
         if grant.node_id != node_id
             || grant.recipient_key_id != recipient_key_id
+            || grant.registration_version != registration.registration_version
             || grant.policy_version != policy.policy_version
             || registration.policy_version != grant.policy_version
             || grant.local_ceiling_seconds > policy.local_ceiling_seconds
@@ -269,6 +289,9 @@ impl GrantVerifier {
             .checked_add(remaining_ms.min(local_ceiling_ms))
             .filter(|deadline| *deadline > now_boottime_ms)
             .ok_or("grant has no safe local lifetime remaining")?;
+        if self.accepted.len() >= MAX_ACCEPTED_GRANTS {
+            return Err("broker grant capacity reached");
+        }
         self.accepted.insert(
             grant.id.clone(),
             AcceptedGrant {
@@ -320,6 +343,52 @@ impl GrantVerifier {
             now_boottime_ms,
         )
         .map(|accepted| accepted.grant.clone())
+    }
+    pub(crate) fn preview_consumption_deadline(
+        &self,
+        grant_id: &str,
+        authorization: &WorkloadAuthorization,
+        current_policy_version: u64,
+        now_boottime_ms: u64,
+    ) -> Result<(Grant, u64), ConsumeDenial> {
+        self.validate_consumption(
+            grant_id,
+            authorization,
+            current_policy_version,
+            now_boottime_ms,
+        )
+        .map(|accepted| (accepted.grant.clone(), accepted.deadline_boottime_ms))
+    }
+    /// Resolve only an exact signed browser request correlation. Multiple
+    /// grants for the same request fail closed rather than choosing one.
+    pub(crate) fn preview_request_grant(
+        &self,
+        key: &str,
+        authorization: &WorkloadAuthorization,
+        current_policy_version: u64,
+        now_boottime_ms: u64,
+    ) -> Option<Grant> {
+        let mut candidates = self.accepted.values().filter(|accepted| {
+            accepted.grant.request_event_key.as_deref() == Some(key)
+                && accepted.grant.mode == ConsumptionMode::BrowserSession
+                && accepted.grant.action == "browser.session"
+        });
+        let first = candidates.next()?;
+        if candidates.next().is_some() {
+            return None;
+        }
+        let mut consuming = authorization.clone();
+        consuming.operation = format!("consume:{}", first.grant.id);
+        self.preview_consumption(
+            &first.grant.id,
+            &consuming,
+            current_policy_version,
+            now_boottime_ms,
+        )
+        .ok()
+    }
+    pub(crate) fn matches_issuer_epoch(&self, epoch: u64) -> bool {
+        self.issuer_epoch == Some(epoch)
     }
 
     /// Check a consumption request and name the one reason it is denied.
@@ -434,13 +503,22 @@ impl GrantVerifier {
     /// Apply a signed revocation. The grant loses its authority in memory
     /// before the tombstone is written; a failed write returns an error so
     /// the relay retries, while the revocation stays in force.
-    pub(crate) fn revoke(&mut self, revocation: &Revocation) -> Result<(), &'static str> {
+    pub(crate) fn revoke(
+        &mut self,
+        revocation: &Revocation,
+        observed_at_ms: u64,
+    ) -> Result<(), &'static str> {
+        let outcome = self.revocation_outcome(&revocation.grant_id);
         if self.accepted.remove(&revocation.grant_id).is_some() {
             self.retire(revocation.grant_id.clone(), ConsumeDenial::Revoked);
         }
         self.revocations
             .get_or_insert_with(RevocationJournal::default)
-            .record(&revocation.grant_id, revocation.retain_until_ms)
+            .record(
+                &revocation.grant_id,
+                revocation.retain_until_ms,
+                Some((outcome, observed_at_ms)),
+            )
     }
 
     /// True when a tombstone for the grant is already in force.
@@ -450,8 +528,53 @@ impl GrantVerifier {
             .is_some_and(|journal| journal.tombstones.contains_key(grant_id))
     }
 
+    pub(crate) fn has_recorded_revocation_outcome(&self, grant_id: &str) -> bool {
+        self.revocations.as_ref().is_some_and(|journal| {
+            journal.outcomes.contains_key(grant_id)
+                && !journal.acknowledged_outcomes.contains(grant_id)
+        })
+    }
+
+    pub(crate) fn acknowledge_revocation_outcome(
+        &mut self,
+        grant_id: &str,
+    ) -> Result<(), &'static str> {
+        if let Some(journal) = self.revocations.as_mut() {
+            journal.acknowledge_outcome(grant_id)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn pending_revocation_outcomes_after(
+        &self,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Vec<(String, &'static str, u64)> {
+        self.revocations.as_ref().map_or_else(Vec::new, |journal| {
+            use std::ops::Bound::{Excluded, Unbounded};
+            let range = match after {
+                Some(cursor) => journal
+                    .outcomes
+                    .range::<str, _>((Excluded(cursor), Unbounded)),
+                None => journal.outcomes.range::<str, _>((Unbounded, Unbounded)),
+            };
+            range
+                .filter(|(id, _)| !journal.acknowledged_outcomes.contains(*id))
+                .take(limit)
+                .map(|(id, (outcome, observed_at_ms))| (id.clone(), *outcome, *observed_at_ms))
+                .collect()
+        })
+    }
+
     /// What a revocation applied now would change for this grant.
     pub(crate) fn revocation_outcome(&self, grant_id: &str) -> &'static str {
+        if let Some((outcome, _)) = self
+            .revocations
+            .as_ref()
+            .and_then(|journal| journal.outcomes.get(grant_id))
+        {
+            return outcome;
+        }
         if self.accepted.contains_key(grant_id) {
             "revoked_before_consumption"
         } else if self
@@ -463,6 +586,13 @@ impl GrantVerifier {
         } else {
             "not_received"
         }
+    }
+
+    pub(crate) fn revocation_observed_at_ms(&self, grant_id: &str) -> Option<u64> {
+        self.revocations
+            .as_ref()
+            .and_then(|journal| journal.outcomes.get(grant_id))
+            .map(|(_, observed_at_ms)| *observed_at_ms)
     }
 
     #[cfg(test)]
@@ -693,11 +823,15 @@ impl RevocationJournal {
     fn open(path: &Path) -> Result<Self, &'static str> {
         let mut journal = Self {
             path: Some(path.to_owned()),
+            acknowledged_path: Some(path.with_extension("acks")),
             ..Self::default()
         };
         let mut file = match open_private_for_recovery(path) {
             Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(journal),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                journal.read_acknowledgements()?;
+                return Ok(journal);
+            }
             Err(_) => return Err("grant revocation journal could not be opened safely"),
         };
         let metadata = file
@@ -715,17 +849,57 @@ impl RevocationJournal {
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
         {
-            let (id, retain_until) = parse_revocation_line(line)?;
+            let (id, retain_until, outcome) = parse_revocation_line(line)?;
             journal
                 .tombstones
                 .entry(id.to_owned())
                 .and_modify(|previous| *previous = (*previous).max(retain_until))
                 .or_insert(retain_until);
+            if let Some(outcome) = outcome {
+                journal.outcomes.entry(id.to_owned()).or_insert(outcome);
+            }
         }
         if journal.tombstones.len() > GRANT_JOURNAL_MAX_RECORDS {
             return Err("grant revocation journal exceeds its record bound");
         }
+        journal.read_acknowledgements()?;
         Ok(journal)
+    }
+
+    fn read_acknowledgements(&mut self) -> Result<(), &'static str> {
+        let path = self
+            .acknowledged_path
+            .as_ref()
+            .ok_or("grant revocation acknowledgement path is unavailable")?;
+        let mut file = match open_private_for_recovery(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(_) => return Err("grant revocation acknowledgements could not be opened safely"),
+        };
+        let metadata = file
+            .metadata()
+            .map_err(|_| "grant revocation acknowledgement metadata is unavailable")?;
+        if metadata.len() > GRANT_JOURNAL_MAX_BYTES {
+            return Err("grant revocation acknowledgements exceed their size bound");
+        }
+        let mut contents = Vec::with_capacity(metadata.len() as usize);
+        file.read_to_end(&mut contents)
+            .map_err(|_| "grant revocation acknowledgements could not be read")?;
+        truncate_torn_tail(&file, &mut contents)
+            .map_err(|_| "grant revocation acknowledgement torn record could not be truncated")?;
+        for line in contents
+            .split(|byte| *byte == b'\n')
+            .filter(|line| !line.is_empty())
+        {
+            let (id, _, outcome) = parse_revocation_line(line)?;
+            if outcome.is_some() {
+                return Err("grant revocation acknowledgement is malformed");
+            }
+            if self.outcomes.contains_key(id) {
+                self.acknowledged_outcomes.insert(id.to_owned());
+            }
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -738,13 +912,23 @@ impl RevocationJournal {
     /// Apply a tombstone in memory first, then make it durable. A failed
     /// write leaves the tombstone in force and marks it unpersisted so the
     /// caller can fence the broker and a later attempt can retry the write.
-    fn record(&mut self, grant_id: &str, retain_until_ms: u64) -> Result<(), &'static str> {
+    fn record(
+        &mut self,
+        grant_id: &str,
+        retain_until_ms: u64,
+        outcome: Option<(&'static str, u64)>,
+    ) -> Result<(), &'static str> {
         let raises_retention = self
             .tombstones
             .get(grant_id)
             .is_none_or(|existing| *existing < retain_until_ms);
         if !raises_retention && !self.unpersisted.contains(grant_id) {
             return Ok(());
+        }
+        if !self.tombstones.contains_key(grant_id)
+            && let Some(outcome) = outcome
+        {
+            self.outcomes.insert(grant_id.to_owned(), outcome);
         }
         if raises_retention {
             self.tombstones.insert(grant_id.to_owned(), retain_until_ms);
@@ -757,6 +941,53 @@ impl RevocationJournal {
 
     fn has_unpersisted(&self) -> bool {
         !self.unpersisted.is_empty()
+    }
+
+    fn acknowledge_outcome(&mut self, grant_id: &str) -> Result<(), &'static str> {
+        if !self.outcomes.contains_key(grant_id) || self.acknowledged_outcomes.contains(grant_id) {
+            return Ok(());
+        }
+        if let Some(path) = self.acknowledged_path.as_ref() {
+            let retain_until_ms = *self
+                .tombstones
+                .get(grant_id)
+                .ok_or("grant revocation tombstone is unavailable")?;
+            let line = revocation_line(grant_id, retain_until_ms, None);
+            let existed = match fs::symlink_metadata(path) {
+                Ok(_) => true,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                Err(_) => return Err("grant revocation acknowledgements could not be inspected"),
+            };
+            let mut file = open_private(path, true)
+                .map_err(|_| "grant revocation acknowledgements could not be opened")?;
+            let length = file
+                .metadata()
+                .map_err(|_| "grant revocation acknowledgement metadata is unavailable")?
+                .len();
+            if length.saturating_add(line.len() as u64) > GRANT_JOURNAL_MAX_BYTES {
+                return Err("grant revocation acknowledgements are full");
+            }
+            if file
+                .write_all(line.as_bytes())
+                .and_then(|()| file.sync_all())
+                .is_err()
+            {
+                let _ = file.set_len(length).and_then(|()| file.sync_all());
+                return Err("grant revocation acknowledgement could not be flushed");
+            }
+            if !existed {
+                let parent = path
+                    .parent()
+                    .ok_or("grant revocation acknowledgement directory is unavailable")?;
+                File::open(parent)
+                    .and_then(|directory| directory.sync_all())
+                    .map_err(
+                        |_| "grant revocation acknowledgement directory could not be synchronized",
+                    )?;
+            }
+        }
+        self.acknowledged_outcomes.insert(grant_id.to_owned());
+        Ok(())
     }
 
     fn retry_unpersisted(&mut self) -> Result<(), &'static str> {
@@ -779,8 +1010,11 @@ impl RevocationJournal {
             .path
             .as_ref()
             .ok_or("grant revocation journal path is unavailable")?;
-        let line =
-            format!("{{\"grant_id\":\"{grant_id}\",\"retain_until_ms\":{retain_until_ms}}}\n");
+        let line = revocation_line(
+            grant_id,
+            retain_until_ms,
+            self.outcomes.get(grant_id).copied(),
+        );
         let existed = match fs::symlink_metadata(path) {
             Ok(_) => true,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
@@ -824,6 +1058,7 @@ impl RevocationJournal {
         if pruned.len() == self.tombstones.len() {
             return Ok(());
         }
+        self.compact_acknowledgements(&pruned)?;
         let path = self
             .path
             .as_ref()
@@ -841,7 +1076,7 @@ impl RevocationJournal {
             .open(&temp)
             .map_err(|_| "grant revocation compaction file could not be created")?;
         for (id, retain_until) in &pruned {
-            let line = format!("{{\"grant_id\":\"{id}\",\"retain_until_ms\":{retain_until}}}\n");
+            let line = revocation_line(id, *retain_until, self.outcomes.get(id).copied());
             if file.write_all(line.as_bytes()).is_err() {
                 let _ = fs::remove_file(&temp);
                 return Err("grant revocation compaction could not be written");
@@ -857,8 +1092,51 @@ impl RevocationJournal {
         // The compacted file holds every retained tombstone, including any
         // whose earlier append failed.
         self.unpersisted.clear();
+        self.outcomes.retain(|id, _| pruned.contains_key(id));
+        self.acknowledged_outcomes
+            .retain(|id| pruned.contains_key(id));
         self.tombstones = pruned;
         Ok(())
+    }
+
+    fn compact_acknowledgements(
+        &self,
+        retained: &BTreeMap<String, u64>,
+    ) -> Result<(), &'static str> {
+        let Some(path) = self.acknowledged_path.as_ref() else {
+            return Ok(());
+        };
+        if self.acknowledged_outcomes.is_empty() && !path.exists() {
+            return Ok(());
+        }
+        let parent = path
+            .parent()
+            .ok_or("grant revocation acknowledgement directory is unavailable")?;
+        let sequence = TEMP_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp = parent.join(format!(".revocation-acks-{}-{sequence}.tmp", process_id()));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .mode(PRIVATE_FILE_MODE)
+            .custom_flags(NO_FOLLOW)
+            .open(&temp)
+            .map_err(|_| "grant revocation acknowledgement compaction could not start")?;
+        for id in &self.acknowledged_outcomes {
+            if let Some(retain_until_ms) = retained.get(id) {
+                let line = revocation_line(id, *retain_until_ms, None);
+                if file.write_all(line.as_bytes()).is_err() {
+                    let _ = fs::remove_file(&temp);
+                    return Err("grant revocation acknowledgement compaction could not be written");
+                }
+            }
+        }
+        if file.sync_all().is_err() || fs::rename(&temp, path).is_err() {
+            let _ = fs::remove_file(&temp);
+            return Err("grant revocation acknowledgement compaction could not be committed");
+        }
+        File::open(parent)
+            .and_then(|directory| directory.sync_all())
+            .map_err(|_| "grant revocation acknowledgement directory could not be synchronized")
     }
 }
 
@@ -994,7 +1272,18 @@ fn parse_journal_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
     Ok((id, expiry))
 }
 
-fn parse_revocation_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
+fn revocation_line(grant_id: &str, retain_until_ms: u64, outcome: Option<(&str, u64)>) -> String {
+    let outcome_field = outcome.map_or(String::new(), |(outcome, observed_at_ms)| {
+        format!(",\"outcome\":\"{outcome}\",\"observed_at_ms\":{observed_at_ms}")
+    });
+    format!(
+        "{{\"grant_id\":\"{grant_id}\",\"retain_until_ms\":{retain_until_ms}{outcome_field}}}\n"
+    )
+}
+
+type ParsedRevocation<'a> = (&'a str, u64, Option<(&'static str, u64)>);
+
+fn parse_revocation_line(line: &[u8]) -> Result<ParsedRevocation<'_>, &'static str> {
     let text = std::str::from_utf8(line).map_err(|_| "grant revocation journal is not UTF-8")?;
     let value = text
         .strip_prefix("{\"grant_id\":\"")
@@ -1006,12 +1295,32 @@ fn parse_revocation_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
     if !is_valid_opaque_id(id) {
         return Err("grant revocation id is malformed");
     }
+    let (retain_until, outcome) = match retain_until.split_once(",\"outcome\":\"") {
+        Some((retain_until, outcome)) => {
+            let (outcome, observed_at_ms) = outcome
+                .split_once("\",\"observed_at_ms\":")
+                .ok_or("grant revocation observation is malformed")?;
+            let observed_at_ms = observed_at_ms
+                .parse::<u64>()
+                .ok()
+                .filter(|value| *value > 0 && value.to_string() == observed_at_ms)
+                .ok_or("grant revocation observation is malformed")?;
+            let outcome = match outcome {
+                "revoked_before_consumption" => "revoked_before_consumption",
+                "already_consumed" => "already_consumed",
+                "not_received" => "not_received",
+                _ => return Err("grant revocation outcome is malformed"),
+            };
+            (retain_until, Some((outcome, observed_at_ms)))
+        }
+        None => (retain_until, None),
+    };
     let retain_until = retain_until
         .parse::<u64>()
         .ok()
         .filter(|value| *value > 0 && value.to_string() == retain_until)
         .ok_or("grant revocation retention is malformed")?;
-    Ok((id, retain_until))
+    Ok((id, retain_until, outcome))
 }
 
 pub(crate) fn boottime_ms() -> Result<u64, &'static str> {
@@ -1060,7 +1369,7 @@ fn process_id() -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{GrantJournal, GrantVerifier, RevocationJournal};
+    use super::{ConsumeDenial, GrantJournal, GrantVerifier, RevocationJournal};
     use blindpass_core::fleet::{ConsumptionMode, Grant, PolicySnapshot, Registration, TimeReply};
     use blindpass_core::identity::WorkloadAuthorization;
     use std::path::PathBuf;
@@ -1095,8 +1404,10 @@ mod tests {
             account: "worker".to_owned(),
             resource_id: "marker-a".to_owned(),
             recipient_key_id: "nd_node-a-1".to_owned(),
+            registration_version: 1,
             policy_version: 4,
             approval_reference: None,
+            request_event_key: None,
             action: "noop.marker".to_owned(),
             mode: ConsumptionMode::File,
             audience: "blindpass-node".to_owned(),
@@ -1756,6 +2067,105 @@ mod tests {
             .unwrap();
     }
 
+    #[test]
+    fn registration_change_cannot_reauthorize_a_replayed_grant_after_restart() {
+        let path = temporary_path();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        let grant = grant();
+        accept(&mut verifier, &grant);
+        verifier.revoke_workload(&grant.workload_id);
+        drop(verifier);
+
+        let mut restarted = stateful_verifier_with_fresh_time(&path);
+        let mut changed = registration();
+        changed.registration_version += 1;
+        assert!(
+            restarted
+                .accept_grant(
+                    grant.clone(),
+                    grant.id.as_bytes(),
+                    "nd_node-a",
+                    "nd_node-a-1",
+                    &policy(),
+                    &changed,
+                    2_100,
+                )
+                .is_err()
+        );
+        assert!(
+            restarted
+                .consume(&grant.id, &authorization_for(&grant), 4, 2_200)
+                .is_err()
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn expired_unconsumed_grants_leave_the_accepted_map() {
+        let path = temporary_path();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        let expired_grant = grant();
+        accept(&mut verifier, &expired_grant);
+        verifier.pending_time = Some(super::TimeChallenge {
+            value: "fresh".to_owned(),
+            sent_at_boottime_ms: 100_000,
+        });
+        let later = 1_800_000_100_000;
+        verifier
+            .accept_time_reply(
+                &TimeReply {
+                    node_id: "nd_node-a".to_owned(),
+                    challenge: "fresh".to_owned(),
+                    challenge_received_at_ms: later,
+                    controller_time_ms: later,
+                    issuer_epoch: 1,
+                },
+                "nd_node-a",
+                1,
+                100_001,
+            )
+            .unwrap();
+        assert!(verifier.accepted.is_empty());
+        assert_eq!(
+            verifier.consume(
+                &expired_grant.id,
+                &authorization_for(&expired_grant),
+                expired_grant.policy_version,
+                100_002,
+            ),
+            Err(ConsumeDenial::Expired)
+        );
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn accepted_grants_have_a_fixed_capacity() {
+        let path = temporary_path();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        for index in 0..super::MAX_ACCEPTED_GRANTS {
+            let mut next = grant();
+            next.id = format!("gr_{index:032x}");
+            next.operation_id = format!("op_{index:032x}");
+            accept(&mut verifier, &next);
+        }
+        let mut overflow = grant();
+        overflow.id = "gr_ffffffffffffffffffffffffffffffff".to_owned();
+        assert_eq!(
+            verifier.accept_grant(
+                overflow.clone(),
+                overflow.id.as_bytes(),
+                "nd_node-a",
+                "nd_node-a-1",
+                &policy(),
+                &registration(),
+                2_000,
+            ),
+            Err("broker grant capacity reached")
+        );
+        assert_eq!(verifier.accepted.len(), super::MAX_ACCEPTED_GRANTS);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
     fn authorization_for(grant: &Grant) -> WorkloadAuthorization {
         WorkloadAuthorization {
             node_id: grant.node_id.clone(),
@@ -1847,14 +2257,17 @@ mod tests {
         let revoked = numbered_grant(6);
         accept(&mut verifier, &revoked);
         verifier
-            .revoke(&blindpass_core::fleet::Revocation {
-                grant_id: revoked.id.clone(),
-                node_id: "nd_node-a".to_owned(),
-                reason: "operator".to_owned(),
-                revoked_at_ms: 1_800_000_000_000,
-                retain_until_ms: 1_800_604_800_000,
-                issuer_epoch: 1,
-            })
+            .revoke(
+                &blindpass_core::fleet::Revocation {
+                    grant_id: revoked.id.clone(),
+                    node_id: "nd_node-a".to_owned(),
+                    reason: "operator".to_owned(),
+                    revoked_at_ms: 1_800_000_000_000,
+                    retain_until_ms: 1_800_604_800_000,
+                    issuer_epoch: 1,
+                },
+                1_800_000_000_000,
+            )
             .unwrap();
         assert_eq!(
             verifier.consume(&revoked.id, &authorization_for(&revoked), 4, 2_100),
@@ -2243,7 +2656,11 @@ mod tests {
         let path = temporary_path();
         let mut journal = RevocationJournal::open(&path).unwrap();
         journal
-            .record("gr_0123456789abcdef0123456789abcdef", 1_800_604_800_000)
+            .record(
+                "gr_0123456789abcdef0123456789abcdef",
+                1_800_604_800_000,
+                None,
+            )
             .unwrap();
         let restored = RevocationJournal::open(&path).unwrap();
         assert!(restored.contains_at("gr_0123456789abcdef0123456789abcdef", 1_800_000_000_000));
@@ -2322,6 +2739,36 @@ mod tests {
 
         write_private(&path, format!("{durable}garbage\n").as_bytes());
         assert!(RevocationJournal::open(&path).is_err());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn revocation_acknowledgements_prune_with_expired_tombstones() {
+        let path = temporary_path();
+        let expired = "gr_0123456789abcdef0123456789abcdef";
+        let retained = "gr_1123456789abcdef0123456789abcdef";
+        let mut journal = RevocationJournal::open(&path).unwrap();
+        journal
+            .record(expired, 100, Some(("not_received", 1)))
+            .unwrap();
+        journal
+            .record(retained, 200, Some(("not_received", 1)))
+            .unwrap();
+        journal.acknowledge_outcome(expired).unwrap();
+        journal.acknowledge_outcome(retained).unwrap();
+        journal.prune(150).unwrap();
+        let restored = RevocationJournal::open(&path).unwrap();
+        assert!(!restored.tombstones.contains_key(expired));
+        assert!(restored.tombstones.contains_key(retained));
+        assert_eq!(restored.acknowledged_outcomes.len(), 1);
+        assert!(restored.acknowledged_outcomes.contains(retained));
+        assert_eq!(
+            std::fs::read_to_string(path.with_extension("acks"))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
         let _ = std::fs::remove_dir_all(path.parent().unwrap());
     }
 }

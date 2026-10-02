@@ -1,0 +1,25 @@
+{
+  "scenario": "P05-I01",
+  "candidate": "Grafana OSS",
+  "version": "13.2.3",
+  "archive_sha256": "6107ad27016296aac38e0d7ffa8753ab540b5541ad27e94790f771289d733235",
+  "date": "2026-09-30",
+  "profile": "Managed auth proxy, private Unix backend, separate Viewer organizations, 5m maximum configured",
+  "suitability": "rejected",
+  "observations": {
+    "spoofed_public_identity_header_status": 401,
+    "viewer_is_grafana_admin": false,
+    "viewer_is_external": true,
+    "viewer_role": "Viewer",
+    "separate_account_organizations": true,
+    "own_profile_update_status": 200
+  },
+  "not_run": [
+    "remaining durable actions after first prerequisite failure",
+    "managed profile UI restriction checks",
+    "server revocation",
+    "active session maximum",
+    "broker or stock-client workflow"
+  ],
+  "reason": "A valid profile/email update succeeds for an auth-proxy Viewer even though user metadata reports an external account; reject this profile"
+}

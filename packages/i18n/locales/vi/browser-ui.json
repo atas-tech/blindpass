@@ -140,5 +140,91 @@
     "label": "BlindPass / Nhập bí mật",
     "detail": "Một yêu cầu. Một lần chuyển giao mã hóa."
   },
-  "noscript": "Trang này cần JavaScript để mã hóa bí mật trước khi gửi."
+  "noscript": "Trang này cần JavaScript để mã hóa bí mật trước khi gửi.",
+  "fleet": {
+    "intro": {
+      "lead": "Cung cấp Source mà thao tác đã được phê duyệt này cần. Trình duyệt mã hóa Source cho broker trên node đích trước khi gửi.",
+      "step1Title": "Kiểm tra thao tác",
+      "step1Body": "Đối chiếu mục đích, workload và đích đến với thao tác bạn đã phê duyệt.",
+      "step2Title": "Nhập Source",
+      "step2Body": "Trang mã hóa dữ liệu bằng khóa dùng một lần của node.",
+      "step3Title": "Gửi một lần",
+      "step3Body": "Source đã mã hóa được chuyển đến broker của node một lần, trước khi đề nghị hết hạn.",
+      "boundary": "Broker của node có thể giải mã và sử dụng Source này, chỉ cho đích đến hiển thị. Bộ điều khiển không bao giờ thấy nội dung."
+    },
+    "card": {
+      "label": "Source cho thao tác đã phê duyệt"
+    },
+    "form": {
+      "secretLabel": "Giá trị Source",
+      "footnote": "Mã hóa trong trình duyệt cho broker của node. Bộ điều khiển chỉ lưu bản mã."
+    },
+    "footer": {
+      "detail": "Một thao tác đã phê duyệt. Một lần chuyển giao mã hóa."
+    },
+    "purposeLabel": "Mục đích thao tác",
+    "purposeHint": "Do workload đưa ra yêu cầu viết. BlindPass không xác minh nội dung này.",
+    "workloadLabel": "Workload",
+    "unitLabel": "Đơn vị dịch vụ đích",
+    "credentialLabel": "Thông tin xác thực đích",
+    "expiryLabel": "Đề nghị kết thúc",
+    "destinationHint": "Đã đối chiếu với hồ sơ của bộ điều khiển cho thao tác này. Nếu đích đến không phải điều bạn đã phê duyệt, hãy đóng trang này.",
+    "state": {
+      "loading": {
+        "title": "Đang kiểm tra yêu cầu Source",
+        "body": "Đang tải chi tiết thao tác và xác minh đề nghị chuyển giao mã hóa của node.",
+        "note": "Chỉ có thể nhập khi đề nghị đã được xác minh."
+      },
+      "submitting": {
+        "title": "Đang mã hóa và gửi",
+        "body": "Đang mã hóa Source cho broker của node và gửi bản mã.",
+        "note": "Hãy giữ trang này mở. Chỉ phản hồi của bộ điều khiển mới xác nhận đã nhận."
+      },
+      "submitted": {
+        "title": "Bạn đã hoàn tất.",
+        "body": "Bộ điều khiển đã nhận Source mã hóa để chuyển đến node. Bạn có thể đóng thẻ này.",
+        "bodyConfirmed": "Kết nối bị gián đoạn, nhưng kiểm tra lại cho thấy bộ điều khiển đã giữ biên nhận. Bạn có thể đóng thẻ này.",
+        "note": "Đã nhận không có nghĩa là đã chuyển đến hoặc đang được dùng. Broker của node vẫn cần chấp nhận trước khi đề nghị hết hạn."
+      },
+      "used": {
+        "title": "Đã được gửi.",
+        "body": "Thao tác này đã nhận một Source và không thể nhận thêm.",
+        "bodyConflict": "Thao tác này đã nhận một giá trị mã hóa khác, nên giá trị này không được lưu.",
+        "note": "Nếu cần thay đổi, hãy yêu cầu một thao tác mới. Trạng thái này không xác nhận broker đã chấp nhận."
+      },
+      "expired": {
+        "title": "Yêu cầu Source không còn khả dụng.",
+        "body": "Đề nghị hoặc thao tác đã kết thúc. Không thể gửi thêm qua liên kết này.",
+        "bodyWhileOpen": "Đề nghị đã kết thúc khi trang đang mở. Chưa có gì được gửi và ô nhập đã được xóa.",
+        "bodyOnSubmit": "Bộ điều khiển không còn nhận Source cho thao tác này. Không có gì được lưu.",
+        "note": "Hãy yêu cầu một thao tác mới, rồi mở liên kết Source của nó từ bảng điều khiển."
+      },
+      "invalid": {
+        "title": "Liên kết không khả dụng.",
+        "body": "Không thể mở yêu cầu Source này. Liên kết có thể bị thiếu hoặc đã bị thay đổi.",
+        "bodyOffer": "Đề nghị của node không khớp với hồ sơ của bộ điều khiển nên sẽ không có gì được mã hóa hay gửi.",
+        "bodyOrigin": "Bản trang này không do bộ điều khiển phục vụ nên không dùng được phiên người vận hành mà liên kết Source cần.",
+        "bodySubmit": "Bộ điều khiển từ chối liên kết này. Không có gì được lưu.",
+        "note": "Mở lại liên kết Source từ bảng điều khiển. Nếu vẫn lỗi, hãy yêu cầu một thao tác mới."
+      },
+      "auth": {
+        "title": "Đăng nhập bằng đúng người vận hành.",
+        "body": "Liên kết này chỉ dùng được cho người vận hành đã phê duyệt yêu cầu, đang đăng nhập bảng điều khiển.",
+        "note": "Đăng nhập bảng điều khiển bằng tài khoản đó, rồi kiểm tra lại. Chỉ nhập khi chi tiết xuất hiện.",
+        "action": "Kiểm tra lại",
+        "link": "Mở trang đăng nhập bảng điều khiển"
+      },
+      "unknown": {
+        "title": "Chưa xác nhận việc gửi.",
+        "body": "Kết nối bị gián đoạn trước khi bộ điều khiển phản hồi. Source có thể đã được nhận.",
+        "note": "Đừng gửi lại cho đến khi biết kết quả. Hãy kiểm tra lại, hoặc hỏi người vận hành đã phê duyệt yêu cầu.",
+        "bodyChecking": "Kết nối bị gián đoạn trước khi bộ điều khiển phản hồi. Đang kiểm tra xem đã có biên nhận chưa…",
+        "bodyPending": "Khi kiểm tra chưa thấy biên nhận, nên có thể chưa đến nơi, hoặc vẫn có thể đến sau.",
+        "bodyUnavailable": "Lần kiểm tra lại cũng không nhận được phản hồi. Source có thể đã được nhận.",
+        "bodyGone": "Liên kết không còn khả dụng nên không thể kiểm tra trạng thái. Source có thể đã hoặc chưa được nhận.",
+        "noteGone": "Đừng mặc định là thất bại. Hãy xem thao tác trong bảng điều khiển trước khi yêu cầu cái khác.",
+        "action": "Kiểm tra lại"
+      }
+    }
+  }
 }

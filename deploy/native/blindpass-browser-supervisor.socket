@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass Root-only browser supervisor activation
+
+[Socket]
+ListenStream=/run/blindpass-private/supervisor.sock
+SocketUser=root
+SocketGroup=root
+SocketMode=0600
+DirectoryMode=0700
+Accept=yes
+MaxConnections=16
+RemoveOnStop=yes
+# Accept=yes selects the matching supervisor@ instance automatically.
+
+[Install]
+WantedBy=sockets.target

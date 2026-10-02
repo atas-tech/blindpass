@@ -1,0 +1,45 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass Root browser outside-channel supervisor
+
+[Service]
+Type=exec
+User=root
+Group=root
+ExecStart=/usr/lib/blindpass/login/runtime/bin/node /usr/lib/blindpass/login/src/browser-supervisor-worker.mjs --socket
+StandardInput=socket
+StandardOutput=null
+StandardError=null
+Environment=HOME=/nonexistent
+Environment=PATH=/usr/bin:/bin
+UnsetEnvironment=NODE_OPTIONS NODE_PATH DEBUG PWDEBUG LD_PRELOAD LD_LIBRARY_PATH
+UMask=0077
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/blindpass-backends
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+# Network scope: AF_INET/AF_INET6 exist only for the one fixed application egress connection made by
+# createApprovedEgressConnector (helpers/login/src/browser-network.mjs). systemd cannot name that
+# destination statically: the application host:port comes from the administrator recipe at runtime.
+# The destination restriction is therefore enforced in code, not by this unit: tunnel frames carry no
+# host or port, the connector dials only the recipe origin and the namespace-side CONNECT proxy accepts
+# only that authority. This unit does NOT restrict IP destinations. An optional IPAddressDeny=any plus
+# IPAddressAllow= drop-in for the configured application address is described in
+# deploy/examples/browser-runtime.conf; it is not enabled here and has not been VM-verified.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitCORE=0
+RuntimeMaxSec=32min
+TimeoutStopSec=5s
+KillMode=control-group
+SendSIGKILL=yes
+# Node needs executable memory. Namespace Chromium is a separate non-root unit;
+# the broker keeps its existing Unix-only/executable-memory restrictions.

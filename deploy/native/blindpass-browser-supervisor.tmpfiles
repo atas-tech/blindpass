@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Shared parent is never owned as an instance RuntimeDirectory. Closing one
+# supervisor must not remove another operation's backend or private sockets.
+d /run/blindpass-backends 0700 root root -
+d /run/blindpass-runtime 0750 root blindpass-runtime -
+d /run/blindpass-helper-identity 0750 root blindpass-login -

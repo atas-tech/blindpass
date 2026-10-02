@@ -31,3 +31,20 @@ Auth responses include `preferred_locale`; registration and `PATCH /api/v2/auth/
 - [Self-hosting](../guides/self-hosting.md): API/frontend origins, state and proxy configuration.
 - [Current architecture](../architecture/README.md): provisioning and exchange boundaries.
 - [Proposed product specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md): new node/workload grants and browser sessions, not yet represented by this snapshot.
+
+
+## P05 independent source destination and offer API
+
+[Controller offer execution](../testing/evidence/p05-controller-offers-2026-10-02.md) adds versioned administrator-only
+node/resource Source destinations and atomic public signed-offer ingestion from
+current enrolled keys and retained original signed grants. Eleven actual HTTP
+cases pass on SQLite and PostgreSQL; 500 full Rust cases pass with four
+inherited ignores, and both pinned Node build/workspace gates pass with 101 SPS
+skips. Scoped operator Source submission, automatic offer publication, durable
+node ciphertext relay and actual GUI/systemd acceptance remain open.
+
+`GET`/`PUT /api/v3/nodes/{node_id}/source-bindings/{resource_id}` are mounted;
+`PUT` requires administrator cookie, Origin/CSRF and expected binding version.
+The authenticated node event kind `recipient_offer` carries an inner signed
+public offer. [OpenAPI](controller.openapi.yaml) and generated declarations
+include these surfaces. No Source or provisioning link is accepted here.

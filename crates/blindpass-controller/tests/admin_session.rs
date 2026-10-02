@@ -270,7 +270,13 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
         .expect("bind local HTTP test listener");
     let address = listener.local_addr().expect("resolve test address");
     let app: Router = build_app(config, Some(store.clone()));
-    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+    });
 
     let health = request(address, "GET", "/healthz", &[], None).await;
     assert_eq!(health.status, 200);
@@ -1278,7 +1284,13 @@ async fn forced_password_change_blocks_administration_until_completed() {
         .expect("bind local HTTP test listener");
     let address = listener.local_addr().expect("resolve test address");
     let app: Router = build_app(config, Some(store.clone()));
-    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+    let server = tokio::spawn(async move {
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+    });
 
     let login = request(
         address,
@@ -1499,7 +1511,13 @@ impl AdminServer {
             .expect("bind local HTTP test listener");
         let address = listener.local_addr().expect("resolve test address");
         let app: Router = build_app(config, Some(store.clone()));
-        let server = tokio::spawn(async move { axum::serve(listener, app).await });
+        let server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            )
+            .await
+        });
         Self {
             address,
             store,

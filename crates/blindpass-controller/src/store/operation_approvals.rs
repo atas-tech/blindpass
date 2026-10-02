@@ -782,14 +782,16 @@ macro_rules! expire {
             .map_err(StoreError::Database)?;
         }
         // The broker reports `uncertain` before consuming and `completed`
-        // after the effect. Past the grant deadline it can no longer confirm
-        // an execution, so an operation still executing is uncertain.
+        // after the effect. Native execution still unconfirmed past its grant
+        // deadline is uncertain. A consumed browser session has an independent
+        // website maximum; its closure/reconciliation result owns completion.
         summary.unconfirmed_operations = sqlx::query(&$convert(&format!(
             "UPDATE operations SET status = 'uncertain', result_json = ?,
                completed_at = {now}, version = version + 1
              WHERE tenant_id = ? AND status = 'executing' AND id IN (
                SELECT o.id FROM operations o JOIN grants g ON g.id = o.grant_id
                WHERE o.tenant_id = ? AND o.status = 'executing' AND g.expires_at <= {now}
+                 AND g.mode <> 'browser_session'
                ORDER BY g.expires_at, o.id LIMIT ?)",
             now = $now
         )))

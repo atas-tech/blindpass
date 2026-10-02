@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Ubuntu 24.04+ user namespace permission for this exact root-owned browser.
+# This supplies userns permission; it is not a full AppArmor confinement policy.
+abi <abi/4.0>,
+include <tunables/global>
+profile blindpass-login-chromium /usr/lib/blindpass/login/browsers/chromium_headless_shell-1208/chrome-headless-shell-linux64/chrome-headless-shell flags=(unconfined) {
+  userns,
+}

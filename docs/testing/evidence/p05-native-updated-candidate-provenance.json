@@ -1,0 +1,45 @@
+{
+  "date": "2026-10-01",
+  "scope": "Read-only upstream metadata; no binary downloaded, installed or executed; candidate graphs not resolved yet",
+  "goToolchain": {
+    "filename": "go1.27.1.linux-amd64.tar.gz",
+    "os": "linux",
+    "arch": "amd64",
+    "version": "go1.27.1",
+    "sha256": "63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445",
+    "size": 70553950,
+    "kind": "archive"
+  },
+  "sources": {
+    "restic/go.mod": {
+      "url": "https://raw.githubusercontent.com/restic/restic/v0.19.1/go.mod",
+      "sha256": "d166913ed4897cf69069ef5be090b2d79a857fc28328bb950e12655b5a54f176",
+      "bytes": 4894
+    },
+    "restic/go.sum": {
+      "url": "https://raw.githubusercontent.com/restic/restic/v0.19.1/go.sum",
+      "sha256": "e2d2bab6fc96eeaf53d9460af8b43e25d4c5c5de6c1aa6c1306550e6b62b26bc",
+      "bytes": 31974
+    },
+    "restic/LICENSE": {
+      "url": "https://raw.githubusercontent.com/restic/restic/v0.19.1/LICENSE",
+      "sha256": "6f08a01a9fab5b24e139a09f15cc24a73087c7bc09e3bacf099fdf2d767bf897",
+      "bytes": 1345
+    },
+    "rest-server/go.mod": {
+      "url": "https://raw.githubusercontent.com/restic/rest-server/v0.14.0/go.mod",
+      "sha256": "045dcdda938cef72446ace81d56b194a12c675a652d1cc946d85e65d38155d37",
+      "bytes": 943
+    },
+    "rest-server/go.sum": {
+      "url": "https://raw.githubusercontent.com/restic/rest-server/v0.14.0/go.sum",
+      "sha256": "6c7c48fb5465993c27e49726145921d91108c3ab37f4455231b05527fcc93b54",
+      "bytes": 4954
+    },
+    "rest-server/LICENSE": {
+      "url": "https://raw.githubusercontent.com/restic/rest-server/v0.14.0/LICENSE",
+      "sha256": "2378b9ecfa5f8942582364793de7bf46d6e0f603258479d8598a952c20f13b63",
+      "bytes": 1421
+    }
+  }
+}

@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass private login helper broker-only IPC
+
+[Socket]
+ListenStream=/run/blindpass-private/login.sock
+SocketUser=root
+SocketGroup=root
+SocketMode=0600
+DirectoryMode=0700
+Accept=yes
+MaxConnections=16
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

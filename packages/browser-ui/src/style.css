@@ -355,6 +355,31 @@ svg {
 .request-summary > .hint {
   margin-top: 0.35rem;
 }
+.request-summary[hidden] {
+  display: none;
+}
+.fleet-facts {
+  display: grid;
+  gap: var(--bp-space-4);
+  margin: var(--bp-space-6) 0 0;
+  padding: 1.1rem;
+  border: 1px solid var(--bp-color-line);
+  border-radius: var(--bp-radius-sm);
+  background: var(--bp-color-raised);
+}
+.fleet-facts dd {
+  margin: 0.15rem 0 0;
+  overflow-wrap: anywhere;
+}
+.fleet-facts .mono {
+  font-family: var(--bp-font-mono, ui-monospace, monospace);
+}
+.outcome-link {
+  text-decoration: none;
+}
+.outcome-link[hidden] {
+  display: none;
+}
 
 .confirmation {
   margin-top: var(--bp-space-6);

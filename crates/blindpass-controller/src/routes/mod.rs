@@ -10,9 +10,11 @@ pub(crate) mod agent_rate_limit;
 pub(crate) mod agents;
 pub(crate) mod auth;
 pub(crate) mod authorization;
+mod browser_intent;
 pub(crate) mod exchanges;
 pub(crate) mod fleet;
 pub(crate) mod node;
+mod provisioning;
 pub(crate) mod secrets;
 
 pub(crate) use admin_session::forced_password_change_gate;
@@ -36,6 +38,7 @@ pub(crate) fn admin_routes() -> Router<AppState> {
         .merge(admin_agents::routes())
         .merge(admin_policy::routes())
         .merge(fleet::routes())
+        .merge(provisioning::routes())
         .merge(authorization::routes())
 }
 

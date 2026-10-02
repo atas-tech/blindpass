@@ -124,6 +124,53 @@ pub fn resolve_peer(
     deadline: Instant,
     identity_lookup_delay: Duration,
 ) -> Result<PeerIdentity, OsIdentityError> {
+    Ok(resolve_live_peer(stream, deadline, identity_lookup_delay)?.identity)
+}
+
+/// A kernel peer identity whose pidfd stays owned for a long-lived channel.
+/// No raw PID or descriptor enters caller request/audit fields.
+pub struct LivePeer {
+    identity: PeerIdentity,
+    pidfd: OwnedFd,
+}
+
+impl LivePeer {
+    #[must_use]
+    pub fn identity(&self) -> &PeerIdentity {
+        &self.identity
+    }
+
+    pub fn ensure_alive(&self) -> Result<(), OsIdentityError> {
+        ensure_peer_alive(
+            self.pidfd.as_raw_fd(),
+            self.identity.unit.as_deref().expect("verified unit"),
+            self.identity
+                .invocation_id
+                .as_deref()
+                .expect("verified invocation"),
+        )
+    }
+    /// Re-resolve the current manager binding from this same held kernel pidfd.
+    /// A live process moving units/invocations cannot keep stale authority.
+    pub fn ensure_current(&self, deadline: Instant) -> Result<(), OsIdentityError> {
+        self.ensure_alive()?;
+        let (unit, invocation) = resolve_unit_and_invocation(self.pidfd.as_raw_fd(), deadline)?;
+        if self.identity.unit.as_deref() != Some(unit.as_str())
+            || self.identity.invocation_id.as_deref() != Some(invocation.as_str())
+        {
+            return Err(OsIdentityError::LookupFailed(
+                "peer manager binding changed",
+            ));
+        }
+        self.ensure_alive()
+    }
+}
+
+pub fn resolve_live_peer(
+    stream: &UnixStream,
+    deadline: Instant,
+    identity_lookup_delay: Duration,
+) -> Result<LivePeer, OsIdentityError> {
     let credentials = peer_credentials(stream.as_raw_fd())?;
     let pidfd = peer_pidfd(stream.as_raw_fd())?;
     if !identity_lookup_delay.is_zero() {
@@ -132,13 +179,16 @@ pub fn resolve_peer(
     }
     let (unit, invocation_id) = resolve_unit_and_invocation(pidfd.as_raw_fd(), deadline)?;
     ensure_peer_alive(pidfd.as_raw_fd(), &unit, &invocation_id)?;
-    Ok(PeerIdentity {
-        uid: credentials.uid,
-        gid: credentials.gid,
-        pidfd_supported: true,
-        unit: Some(unit),
-        invocation_id: Some(invocation_id),
-        account: Some(format!("uid:{}", credentials.uid)),
+    Ok(LivePeer {
+        identity: PeerIdentity {
+            uid: credentials.uid,
+            gid: credentials.gid,
+            pidfd_supported: true,
+            unit: Some(unit),
+            invocation_id: Some(invocation_id),
+            account: Some(format!("uid:{}", credentials.uid)),
+        },
+        pidfd,
     })
 }
 

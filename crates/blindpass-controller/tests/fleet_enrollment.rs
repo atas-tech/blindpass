@@ -417,9 +417,13 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
     let address = listener.local_addr().expect("resolve HTTP listener");
     let app_store = store.clone();
     let server = tokio::spawn(async move {
-        axum::serve(listener, build_app(config, Some(app_store)))
-            .await
-            .unwrap();
+        axum::serve(
+            listener,
+            build_app(config, Some(app_store))
+                .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+        )
+        .await
+        .unwrap();
     });
 
     let bootstrap = request(

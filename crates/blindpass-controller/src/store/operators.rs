@@ -3,6 +3,9 @@
 //! Local operator and browser-session state.
 
 use super::{Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, positive_milliseconds};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use blindpass_core::custody::sha256;
 use rand::{RngCore, rngs::OsRng};
 use sqlx::{Row, postgres::PgRow, sqlite::SqliteRow};
 
@@ -25,7 +28,7 @@ pub struct LocalSession {
     pub expires_at_ms: i64,
 }
 
-const SESSION_IDLE_MS: i64 = 12 * 60 * 60 * 1_000;
+pub(super) const SESSION_IDLE_MS: i64 = 12 * 60 * 60 * 1_000;
 
 /// Which transport a local session belongs to. Browser sessions are the
 /// cookie pair; desktop sessions are the approval app's bearer and refresh
@@ -400,7 +403,8 @@ impl Store {
             return Err(StoreError::InvalidInput("refresh hash"));
         }
         let ttl_ms = positive_milliseconds(ttl_seconds, "refresh TTL")?;
-        let session_id = new_uuid();
+        let session_id = random_token();
+        let session_hash = hash_session_token(&session_id)?;
         let csrf_secret = random_token();
         let created = match &self.database {
             Database::Sqlite(pool) => {
@@ -410,11 +414,11 @@ impl Store {
                     SELECT ?, id, ?, ?, '{kind}', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, NULL, ?, {SQLITE_NOW_MS}
                     FROM operators WHERE id = ? AND disabled_at IS NULL AND password_hash = ?");
                 sqlx::query(&insert)
-                    .bind(&session_id)
+                    .bind(&session_hash)
                     .bind(refresh_hash)
                     .bind(&csrf_secret)
                     .bind(ttl_ms)
-                    .bind(&session_id)
+                    .bind(&session_hash)
                     .bind(operator_id)
                     .bind(verified_password_hash)
                     .execute(pool)
@@ -433,11 +437,11 @@ impl Store {
                     FROM operators WHERE id = $6 AND disabled_at IS NULL AND password_hash = $7
                     FOR SHARE");
                 sqlx::query(&insert)
-                    .bind(&session_id)
+                    .bind(&session_hash)
                     .bind(refresh_hash)
                     .bind(&csrf_secret)
                     .bind(ttl_ms)
-                    .bind(&session_id)
+                    .bind(&session_hash)
                     .bind(operator_id)
                     .bind(verified_password_hash)
                     .execute(pool)
@@ -458,6 +462,7 @@ impl Store {
         session_id: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
         self.checkpoint_clock().await?;
+        let session_hash = hash_session_token(session_id)?;
         let kind = session_kind.as_str();
         let (sqlite_end, sqlite_live) = session_kind.access_bound("s.", SQLITE_NOW_MS);
         let (postgres_end, postgres_live) = session_kind.access_bound("s.", POSTGRES_NOW_MS);
@@ -474,11 +479,19 @@ impl Store {
                     AND o.disabled_at IS NULL"
                 );
                 let row = sqlx::query(&query)
-                    .bind(session_id)
+                    .bind(&session_hash)
                     .fetch_optional(pool)
                     .await
                     .map_err(StoreError::Database)?;
-                row.as_ref().map(local_session_from_sqlite).transpose()
+                row.as_ref()
+                    .map(local_session_from_sqlite)
+                    .transpose()
+                    .map(|session| {
+                        session.map(|mut session| {
+                            session.session_id = session_id.to_owned();
+                            session
+                        })
+                    })
             }
             Database::Postgres(pool) => {
                 let query = format!(
@@ -492,11 +505,19 @@ impl Store {
                     AND o.disabled_at IS NULL"
                 );
                 let row = sqlx::query(&query)
-                    .bind(session_id)
+                    .bind(&session_hash)
                     .fetch_optional(pool)
                     .await
                     .map_err(StoreError::Database)?;
-                row.as_ref().map(local_session_from_postgres).transpose()
+                row.as_ref()
+                    .map(local_session_from_postgres)
+                    .transpose()
+                    .map(|session| {
+                        session.map(|mut session| {
+                            session.session_id = session_id.to_owned();
+                            session
+                        })
+                    })
             }
         }
     }
@@ -596,7 +617,8 @@ impl Store {
             return Err(StoreError::InvalidInput("refresh hash"));
         }
         let ttl_ms = positive_milliseconds(ttl_seconds, "refresh TTL")?;
-        let new_session_id = new_uuid();
+        let new_session_id = random_token();
+        let new_session_hash = hash_session_token(&new_session_id)?;
         match &self.database {
             Database::Sqlite(pool) => {
                 // Take the writer lock before reading the refresh row. A
@@ -658,7 +680,7 @@ impl Store {
                     SELECT ?, ?, ?, ?, '{kind}', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, ?, ?, {SQLITE_NOW_MS}
                     WHERE EXISTS (SELECT 1 FROM operators WHERE id = ? AND disabled_at IS NULL)");
                 let inserted = sqlx::query(&insert)
-                    .bind(&new_session_id)
+                    .bind(&new_session_hash)
                     .bind(&operator_id)
                     .bind(new_refresh_hash)
                     .bind(&csrf_secret)
@@ -749,7 +771,7 @@ impl Store {
                     SELECT $1, $2, $3, $4, '{kind}', {POSTGRES_NOW_MS}, {POSTGRES_NOW_MS} + $5::BIGINT, $6, $7, {POSTGRES_NOW_MS}
                     WHERE EXISTS (SELECT 1 FROM operators WHERE id = $8 AND disabled_at IS NULL)");
                 let inserted = sqlx::query(&insert)
-                    .bind(&new_session_id)
+                    .bind(&new_session_hash)
                     .bind(&operator_id)
                     .bind(new_refresh_hash)
                     .bind(&csrf_secret)
@@ -777,6 +799,7 @@ impl Store {
         session_id: &str,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
+        let session_hash = hash_session_token(session_id)?;
         let kind = session_kind.as_str();
         let (_, sqlite_live) = session_kind.access_bound("", SQLITE_NOW_MS);
         let (_, postgres_live) = session_kind.access_bound("operator_sessions.", POSTGRES_NOW_MS);
@@ -788,7 +811,7 @@ impl Store {
                     AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}{sqlite_live}
                     AND EXISTS (SELECT 1 FROM operators o WHERE o.id = operator_id AND o.disabled_at IS NULL)");
                 sqlx::query(&query)
-                    .bind(session_id)
+                    .bind(&session_hash)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?
@@ -801,7 +824,7 @@ impl Store {
                     AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}{postgres_live}
                     AND EXISTS (SELECT 1 FROM operators o WHERE o.id = operator_sessions.operator_id AND o.disabled_at IS NULL)");
                 sqlx::query(&query)
-                    .bind(session_id)
+                    .bind(&session_hash)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?
@@ -817,6 +840,7 @@ impl Store {
         session_id: &str,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
+        let session_hash = hash_session_token(session_id)?;
         let kind = session_kind.as_str();
         let updated = match &self.database {
             Database::Sqlite(pool) => {
@@ -826,7 +850,7 @@ impl Store {
                       AND {SQLITE_NOW_MS} IS NOT NULL"
                 );
                 sqlx::query(&query)
-                    .bind(session_id)
+                    .bind(&session_hash)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?
@@ -839,7 +863,7 @@ impl Store {
                       AND {POSTGRES_NOW_MS} IS NOT NULL"
                 );
                 sqlx::query(&query)
-                    .bind(session_id)
+                    .bind(&session_hash)
                     .execute(pool)
                     .await
                     .map_err(StoreError::Database)?
@@ -857,6 +881,7 @@ impl Store {
         new_password_hash: &str,
     ) -> Result<bool, StoreError> {
         self.checkpoint_clock().await?;
+        let current_session_hash = hash_session_token(current_session_id)?;
         if new_password_hash.is_empty() {
             return Err(StoreError::InvalidInput("password hash"));
         }
@@ -888,7 +913,7 @@ impl Store {
                     AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}"
                 );
                 let current = sqlx::query(&live)
-                    .bind(current_session_id)
+                    .bind(&current_session_hash)
                     .bind(operator_id)
                     .fetch_optional(&mut *transaction)
                     .await
@@ -903,7 +928,7 @@ impl Store {
                 );
                 sqlx::query(&sql)
                     .bind(operator_id)
-                    .bind(current_session_id)
+                    .bind(&current_session_hash)
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
@@ -937,7 +962,7 @@ impl Store {
                     AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}"
                 );
                 let current = sqlx::query(&live)
-                    .bind(current_session_id)
+                    .bind(&current_session_hash)
                     .bind(operator_id)
                     .fetch_optional(&mut *transaction)
                     .await
@@ -952,7 +977,7 @@ impl Store {
                 );
                 sqlx::query(&sql)
                     .bind(operator_id)
-                    .bind(current_session_id)
+                    .bind(&current_session_hash)
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
@@ -1380,27 +1405,16 @@ async fn insert_operator_postgres(
 fn random_token() -> String {
     let mut bytes = [0_u8; 32];
     OsRng.fill_bytes(&mut bytes);
-    use base64::Engine;
-    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+    URL_SAFE_NO_PAD.encode(bytes)
 }
 
-fn new_uuid() -> String {
-    let mut bytes = [0_u8; 16];
-    OsRng.fill_bytes(&mut bytes);
-    bytes[6] = (bytes[6] & 0x0f) | 0x40;
-    bytes[8] = (bytes[8] & 0x3f) | 0x80;
-    let raw = bytes
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
-    format!(
-        "{}-{}-{}-{}-{}",
-        &raw[..8],
-        &raw[8..12],
-        &raw[12..16],
-        &raw[16..20],
-        &raw[20..]
-    )
+pub(super) fn hash_session_token(token: &str) -> Result<String, StoreError> {
+    if token.len() != 43 || URL_SAFE_NO_PAD.decode(token).is_err() {
+        return Err(StoreError::InvalidInput("session token"));
+    }
+    sha256(token.as_bytes())
+        .map(|digest| digest.iter().map(|byte| format!("{byte:02x}")).collect())
+        .map_err(|_| StoreError::InvalidInput("session token hash"))
 }
 
 fn local_operator_from_sqlite(row: &SqliteRow) -> Result<LocalOperator, StoreError> {

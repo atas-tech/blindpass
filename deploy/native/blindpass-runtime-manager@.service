@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass Root runtime metadata and termination instance
+[Service]
+Type=exec
+User=root
+Group=root
+ExecStart=/usr/lib/blindpass/login/runtime/bin/node /usr/lib/blindpass/login/src/runtime-manager-worker.mjs --socket
+StandardInput=socket
+StandardOutput=inherit
+StandardError=null
+Environment=HOME=/nonexistent
+Environment=PATH=/usr/bin:/bin
+UnsetEnvironment=NODE_OPTIONS NODE_PATH DEBUG PWDEBUG LD_PRELOAD LD_LIBRARY_PATH
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/run/blindpass-backends
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
+LimitCORE=0
+RuntimeMaxSec=32min
+TimeoutStopSec=5s
+KillMode=control-group
+SendSIGKILL=yes
+# CAP_SYS_PTRACE permits cross-UID namespace metadata; CAP_DAC_READ_SEARCH
+# permits traversal to metadata of the DynamicUser 0700 profile.
+# This private service accepts fixed managed unit identities, never PID/path,
+# source, administrator or session bytes. The native broker sandbox is unchanged.

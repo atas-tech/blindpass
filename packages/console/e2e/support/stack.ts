@@ -132,6 +132,21 @@ export class Stack {
     return stack;
   }
 
+  /** The private temporary directory holding the SQLite file (absent for PostgreSQL) and secrets. */
+  get dataDirectory(): string {
+    return this.tempDir;
+  }
+
+  /** Whether this stack's database is a PostgreSQL schema rather than a SQLite file. */
+  get usesPostgres(): boolean {
+    return this.dropSchema !== null;
+  }
+
+  /** The tail of the controller's own stdout/stderr, for leak scans. */
+  controllerLog(): string {
+    return this.controllerOutput;
+  }
+
   get adminSocket(): string {
     return path.join(this.tempDir, "admin.sock");
   }

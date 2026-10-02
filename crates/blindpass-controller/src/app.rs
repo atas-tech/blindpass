@@ -18,6 +18,7 @@ use serde_json::json;
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
 use tower_http::cors::{AllowHeaders, AllowMethods, AllowOrigin, CorsLayer, ExposeHeaders};
 use tower_http::limit::RequestBodyLimitLayer;
 use tower_http::request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer};
@@ -52,6 +53,7 @@ pub(crate) struct AppState {
     pub(crate) agent_exchange_rate_limit: u32,
     pub(crate) agent_token_rate_window_ms: u64,
     pub(crate) agent_rate_window_ms: u64,
+    pub(crate) login_hash_slots: Arc<Semaphore>,
 }
 
 #[derive(Serialize)]
@@ -139,6 +141,7 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         agent_exchange_rate_limit: config.agent_exchange_rate_limit(),
         agent_token_rate_window_ms: config.agent_token_rate_window_ms(),
         agent_rate_window_ms: config.agent_rate_window_ms(),
+        login_hash_slots: Arc::new(Semaphore::new(4)),
     };
 
     Router::new()

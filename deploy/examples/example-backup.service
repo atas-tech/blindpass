@@ -1,0 +1,96 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+#
+# P05.5 example: an ordinary systemd backup job (restic) that consumes its
+# repository password from the BlindPass broker through a systemd credential.
+# No MCP, agent or workload protocol is involved: the service only reads a file.
+#
+# NOT VERIFIED WITH REAL RESTIC. The restic and rest-server binaries are blocked
+# pending human review (docs/product/decisions/0007-p05-native-backup-dependency-review.md).
+# This unit has been checked with `systemd-analyze verify` only; the real
+# backup/restore acceptance (P05-I05, P05-E02) remains open.
+#
+# Install together with deploy/examples/native-backup-broker.conf, which maps
+# example-backup.service to the restic-password credential and selects the
+# password-file profile. Provision the password after every broker start (the
+# broker holds credentials in memory only; there is no unattended restart):
+#   printf '%s' "$REPOSITORY_PASSWORD" | blindpass-provision \
+#       --unit example-backup.service --credential restic-password
+# The value must be the exact password bytes: no trailing newline, no control
+# characters, no leading/trailing space, at most 1024 bytes. The broker refuses
+# anything else and keeps the previous value. Create the repository once, as the
+# operator, with the same bytes (restic init); this unit never creates it.
+#
+# Plaintext lifetime: the broker keeps the password in memory for the credential
+# lifetime (default 1 h, configurable with --credential-lifetime-seconds). A run
+# later than the lifetime after provisioning, or after a broker restart or reboot,
+# fails closed until re-provisioned. systemd
+# copies it into a private tmpfs for this unit's lifetime (%d, mode 0400, owned by
+# User=). restic may retain or copy it.
+[Unit]
+Description=BlindPass example restic backup with a broker-delivered repository password
+Requires=blindpass-broker.service
+After=blindpass-broker.service network-online.target
+Wants=network-online.target
+# Fail rather than run unattended with a stale or missing credential: systemd
+# aborts the start when LoadCredential cannot be read, before any ExecStartPre.
+
+[Service]
+Type=oneshot
+User=blindpass-backup
+Group=blindpass-backup
+Restart=no
+# Bounds the credential read, the repository check and the whole backup.
+# Raise it for a larger data set; never remove it.
+TimeoutStartSec=10min
+KillMode=control-group
+
+# The broker loader socket delivers the raw password bytes. systemd stages them
+# as a file in the unit's credential directory (%d).
+LoadCredential=restic-password:/run/blindpass/loader.sock
+Environment=RESTIC_PASSWORD_FILE=%d/restic-password
+# RESTIC_REPOSITORY (for example rest:http://backup.example.invalid:8000/repo)
+# comes from this optional root-owned file. It must not contain the password.
+EnvironmentFile=-/etc/blindpass/example-backup.env
+CacheDirectory=example-backup
+CacheDirectoryMode=0700
+Environment=RESTIC_CACHE_DIR=/var/cache/example-backup
+
+# Verify repository reachability and the delivered password before backing up.
+# `restic cat config` fails closed on a wrong password or an unreachable
+# repository and prints only the non-secret repository id and chunker settings.
+ExecStartPre=/usr/local/bin/restic cat config
+# The fixed source directory (read-only for this unit). The host tag keeps
+# snapshot selection deterministic for the harness restore comparison.
+ExecStart=/usr/local/bin/restic backup --host example-backup --tag blindpass-p05 /srv/example-backup-data
+# Restore and byte comparison are performed by tests/fleet/p05-backup.sh, not
+# by this unit.
+
+# Hardening: same block as deploy/native/blindpass-backup.service except as noted.
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+# ProtectSystem=strict leaves /srv/example-backup-data read-only; the source
+# directory must be readable by blindpass-backup.
+# MemoryDenyWriteExecute is deliberately NOT set here, unlike the Rust probe
+# units. It is not proven compatible with the Go runtime of the reviewed restic
+# binary, and a write-and-execute denial shows up as a runtime crash that
+# systemd-analyze cannot predict. Enable it only after a real restic backup,
+# restore and `restic key passwd` run under MemoryDenyWriteExecute=yes.
+LockPersonality=yes
+LimitCORE=0
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+UMask=0077
+# The repository is a remote rest-server, so IP sockets are required; the P01
+# probe units use AF_UNIX only. This permits any IP destination: pin the
+# repository with IPAddressDeny=any plus IPAddressAllow= in a local drop-in when
+# its address is stable. AF_NETLINK is intentionally not allowed; add it only if
+# a real run proves the resolver needs it.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6

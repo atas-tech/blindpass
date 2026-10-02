@@ -17,6 +17,7 @@ pub mod fleet;
 pub mod identity;
 pub mod policy;
 pub mod protocol;
+pub mod provisioning;
 pub mod secret;
 pub mod signing;
 

@@ -116,7 +116,7 @@ pub fn check_startup_clock(
 }
 
 #[cfg(target_os = "linux")]
-fn boottime_milliseconds() -> Result<i64, ClockError> {
+pub(crate) fn boottime_milliseconds() -> Result<i64, ClockError> {
     #[repr(C)]
     struct Timespec {
         tv_sec: c_long,
@@ -145,7 +145,7 @@ fn boottime_milliseconds() -> Result<i64, ClockError> {
 }
 
 #[cfg(not(target_os = "linux"))]
-fn boottime_milliseconds() -> Result<i64, ClockError> {
+pub(crate) fn boottime_milliseconds() -> Result<i64, ClockError> {
     Err(ClockError::Unavailable)
 }
 

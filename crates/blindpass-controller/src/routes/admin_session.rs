@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 use crate::app::AppState;
+use crate::routes::agents::client_ip;
 use crate::routes::auth::{constant_equal, hash_api_key, hash_refresh_token, verify_api_key};
-use crate::store::{LocalOperator, LocalSession, SessionKind, Store};
-use axum::extract::{Request, State};
+use crate::store::{LocalOperator, LocalSession, SessionKind, Store, StoreError};
+use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -14,6 +15,11 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::net::SocketAddr;
+
+const LOGIN_ACCOUNT_LIMIT: u32 = 10;
+const LOGIN_IP_LIMIT: u32 = 30;
+const LOGIN_WINDOW_MS: u64 = 60_000;
 
 pub(crate) const SESSION_COOKIE: &str = "bp_session";
 const REFRESH_COOKIE: &str = "bp_refresh";
@@ -60,12 +66,13 @@ struct ChangePasswordInput {
 
 async fn login(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(body): Json<LoginInput>,
 ) -> Response {
     match body.kind.as_deref() {
         None | Some("browser") => {}
-        Some("desktop") => return desktop_login(&state, &headers, &body).await,
+        Some("desktop") => return desktop_login(&state, &headers, peer, &body).await,
         Some(_) => {
             return admin_error(
                 StatusCode::BAD_REQUEST,
@@ -84,7 +91,7 @@ async fn login(
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
-    let operator = match verified_operator(store, &body).await {
+    let operator = match verified_operator(&state, store, &headers, peer, &body).await {
         Ok(operator) => operator,
         Err(response) => return *response,
     };
@@ -115,7 +122,10 @@ async fn login(
 }
 
 async fn verified_operator(
+    state: &AppState,
     store: &Store,
+    headers: &HeaderMap,
+    peer: SocketAddr,
     body: &LoginInput,
 ) -> Result<LocalOperator, Box<Response>> {
     let invalid = || {
@@ -125,15 +135,66 @@ async fn verified_operator(
             "invalid username or password",
         ))
     };
-    if body.username.trim().is_empty() || body.password.is_empty() {
+    if body.username.trim().is_empty() || body.password.is_empty() || body.password.len() > 1_024 {
         return Err(invalid());
+    }
+    let username = body.username.trim().to_ascii_lowercase();
+    let account_key = match blindpass_core::custody::sha256(username.as_bytes()) {
+        Ok(digest) => digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+        Err(_) => return Err(Box::new(unavailable())),
+    };
+    let ip = client_ip(headers, peer, state);
+    for (key, limit) in [
+        (format!("operator-login-ip:{ip}"), LOGIN_IP_LIMIT),
+        (
+            format!("operator-login-account:{account_key}"),
+            LOGIN_ACCOUNT_LIMIT,
+        ),
+    ] {
+        let window = match store.consume_rate_limit(&key, limit, LOGIN_WINDOW_MS).await {
+            Ok(window) => window,
+            Err(_) => return Err(Box::new(unavailable())),
+        };
+        if window.count > i64::from(limit) {
+            let mut response = admin_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "login_rate_limited",
+                "too many sign-in attempts; try again later",
+            );
+            if let Ok(value) = HeaderValue::from_str(&window.retry_after_seconds.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            return Err(Box::new(response));
+        }
     }
     let operator = match store.operator_by_username(body.username.trim()).await {
         Ok(Some(operator)) if operator.disabled_at_ms.is_none() => operator,
         Ok(_) => return Err(invalid()),
         Err(_) => return Err(Box::new(unavailable())),
     };
-    if !verify_api_key(&body.password, &operator.password_hash) {
+    let permit = match state.login_hash_slots.clone().try_acquire_owned() {
+        Ok(permit) => permit,
+        Err(_) => {
+            return Err(Box::new(admin_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "login_busy",
+                "sign-in is busy; try again later",
+            )));
+        }
+    };
+    let password = blindpass_core::secret::SecretBytes::from_slice(body.password.as_bytes());
+    let encoded_hash = operator.password_hash.clone();
+    let verified = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        std::str::from_utf8(password.as_bytes())
+            .is_ok_and(|password| verify_api_key(password, &encoded_hash))
+    })
+    .await
+    .map_err(|_| Box::new(unavailable()))?;
+    if !verified {
         return Err(invalid());
     }
     Ok(operator)
@@ -144,14 +205,19 @@ async fn verified_operator(
 /// never hold these tokens. Nothing is set as a cookie, so there is no
 /// ambient credential and no CSRF value. A temporary password is refused
 /// without creating a session; it is changed in the console.
-async fn desktop_login(state: &AppState, headers: &HeaderMap, body: &LoginInput) -> Response {
+async fn desktop_login(
+    state: &AppState,
+    headers: &HeaderMap,
+    peer: SocketAddr,
+    body: &LoginInput,
+) -> Response {
     if headers.contains_key(header::ORIGIN) {
         return desktop_origin_denied();
     }
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
-    let operator = match verified_operator(store, body).await {
+    let operator = match verified_operator(state, store, headers, peer, body).await {
         Ok(operator) => operator,
         Err(response) => return *response,
     };
@@ -262,11 +328,13 @@ pub(crate) async fn desktop_session(
     match store.touch_session(SessionKind::Desktop, token).await {
         Ok(true) => {}
         Ok(false) => return Err(expired()),
+        Err(StoreError::InvalidInput(_)) => return Err(expired()),
         Err(_) => return Err(unavailable()),
     }
     match store.session_by_id(SessionKind::Desktop, token).await {
         Ok(Some(session)) => Ok(session),
         Ok(None) => Err(expired()),
+        Err(StoreError::InvalidInput(_)) => Err(expired()),
         Err(_) => Err(unavailable()),
     }
 }

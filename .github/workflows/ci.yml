@@ -15,9 +15,13 @@ concurrency:
 
 jobs:
   lightweight:
-    name: Build and fast checks
+    name: Build and fast checks (Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ["24.21.0", "26.10.0"]
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -25,7 +29,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: ${{ matrix.node-version }}
           cache: npm
 
       - name: Install lockfile dependencies
@@ -34,8 +38,31 @@ jobs:
       - name: Build workspace
         run: npm run build
 
+      - name: Check Node runtime declarations
+        run: node --test scripts/tests/node-runtime.test.mjs
+
+      - name: Run default workspace tests
+        run: npm test
+
       - name: Check landing workflow demos
         run: npm run test:landing
+
+      # P05 helper library, private worker framing and actual Chromium fixture
+      # checks (chromiumSandbox: true, no root-only or VM prerequisites).
+      - name: Install Playwright Chromium for P05 helper checks
+        run: npm exec --workspace=helpers/login -- playwright install --with-deps chromium
+
+      # Ubuntu 24.04 runners restrict unprivileged user namespaces, which stops
+      # the Chromium sandbox the P05 tests require. Best effort: a missing key
+      # (other images) is ignored and a still-failing sandbox fails the tests.
+      - name: Allow the Chromium user-namespace sandbox
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
+      - name: Run P05 helper and fixture browser tests
+        run: |
+          npm run test:p05:helper
+          npm run test:p05:fixture
+          node --test --test-isolation=none tests/browser-handoff/private-login-pins.test.mjs
 
       - name: Check controller API and generated types
         run: |

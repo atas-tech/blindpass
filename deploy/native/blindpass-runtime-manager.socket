@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass private Root runtime management socket
+[Socket]
+ListenStream=/run/blindpass-private/manager.sock
+SocketMode=0600
+SocketUser=root
+SocketGroup=root
+DirectoryMode=0700
+Accept=yes
+MaxConnections=16
+RemoveOnStop=yes
+[Install]
+WantedBy=sockets.target

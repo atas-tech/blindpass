@@ -17,6 +17,14 @@ const FINGERPRINT_DOMAIN: &[u8] = b"blindpass:fleet-node-fingerprint:v1\0";
 const NODE_CHALLENGE_DOMAIN: &[u8] = b"blindpass:fleet-node-challenge:v1\0";
 const NODE_EVENT_DOMAIN: &[u8] = b"blindpass:fleet-node-event:v1\0";
 
+/// Largest canonical signed document the controller, node relay and broker
+/// control socket carry for every kind except `provisioning_delivery`.
+pub const MAX_NODE_DOCUMENT_BYTES: usize = 64 * 1024;
+/// A full 64 KiB Source seals into at most ~88 KiB of base64url ciphertext
+/// beside the signed binding, so only the dedicated delivery kind may use this
+/// larger cap.
+pub const MAX_PROVISIONING_DELIVERY_DOCUMENT_BYTES: usize = 128 * 1024;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentKind {
     Registration,
@@ -30,6 +38,8 @@ pub enum DocumentKind {
     OperationResult,
     AuditEvent,
     OperationClosed,
+    RecipientOffer,
+    ProvisioningDelivery,
 }
 
 /// Construct the exact message a newly generated node signing key must sign
@@ -148,7 +158,14 @@ pub fn node_event_message(
         || !idempotency_key
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
-        || !matches!(kind, "operation_request" | "operation_result" | "audit")
+        || !matches!(
+            kind,
+            "operation_request"
+                | "operation_result"
+                | "operation_cancel"
+                | "recipient_offer"
+                | "audit"
+        )
         || !matches!(body, Value::Object(_))
     {
         return Err(DocumentError::Invalid("node event binding"));
@@ -210,6 +227,16 @@ fn valid_sha256_hex(value: &str) -> bool {
 }
 
 impl DocumentKind {
+    /// Per-kind canonical document cap shared by every hop that frames signed
+    /// documents. Only the dedicated provisioning delivery has the larger cap.
+    #[must_use]
+    pub const fn max_document_bytes(self) -> usize {
+        match self {
+            Self::ProvisioningDelivery => MAX_PROVISIONING_DELIVERY_DOCUMENT_BYTES,
+            _ => MAX_NODE_DOCUMENT_BYTES,
+        }
+    }
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -224,6 +251,8 @@ impl DocumentKind {
             Self::OperationResult => "operation_result",
             Self::AuditEvent => "audit_event",
             Self::OperationClosed => "operation_closed",
+            Self::RecipientOffer => "recipient_offer",
+            Self::ProvisioningDelivery => "provisioning_delivery",
         }
     }
 
@@ -240,6 +269,8 @@ impl DocumentKind {
             "operation_result" => Self::OperationResult,
             "audit_event" => Self::AuditEvent,
             "operation_closed" => Self::OperationClosed,
+            "recipient_offer" => Self::RecipientOffer,
+            "provisioning_delivery" => Self::ProvisioningDelivery,
             _ => return None,
         })
     }
@@ -460,6 +491,19 @@ impl ConsumptionMode {
             _ => return None,
         })
     }
+}
+
+/// Implemented fleet action/mode pairs. Browser recipes and source selection
+/// remain local administrator configuration; this check grants no authority.
+#[must_use]
+pub fn supported_operation_binding(action: &str, mode: ConsumptionMode) -> bool {
+    matches!(
+        (action, mode),
+        (
+            "noop.marker",
+            ConsumptionMode::File | ConsumptionMode::Socket
+        ) | ("browser.session", ConsumptionMode::BrowserSession)
+    )
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -689,8 +733,12 @@ pub struct Grant {
     pub account: String,
     pub resource_id: String,
     pub recipient_key_id: String,
+    pub registration_version: u64,
     pub policy_version: u64,
     pub approval_reference: Option<String>,
+    /// Browser grants correlate with the broker-signed request event. Native
+    /// legacy grants omit this field to preserve their canonical wire format.
+    pub request_event_key: Option<String>,
     pub action: String,
     pub mode: ConsumptionMode,
     pub audience: String,
@@ -714,6 +762,7 @@ impl Grant {
                 "account",
                 "resource_id",
                 "recipient_key_id",
+                "registration_version",
                 "policy_version",
                 "action",
                 "mode",
@@ -723,7 +772,7 @@ impl Grant {
                 "expires_at_ms",
                 "local_ceiling_seconds",
             ],
-            &["approval_reference"],
+            &["approval_reference", "request_event_key"],
         )?;
         let mode = ConsumptionMode::parse(required_string(value, "mode")?)
             .ok_or(DocumentError::Invalid("consumption mode"))?;
@@ -737,6 +786,7 @@ impl Grant {
             account: required_string(value, "account")?.to_owned(),
             resource_id: required_string(value, "resource_id")?.to_owned(),
             recipient_key_id: required_string(value, "recipient_key_id")?.to_owned(),
+            registration_version: required_number(value, "registration_version")?,
             policy_version: required_number(value, "policy_version")?,
             approval_reference: value
                 .get("approval_reference")
@@ -745,6 +795,14 @@ impl Grant {
                         .as_str()
                         .map(str::to_owned)
                         .ok_or(DocumentError::Invalid("approval reference"))
+                })
+                .transpose()?,
+            request_event_key: value
+                .get("request_event_key")
+                .map(|key| {
+                    key.as_str()
+                        .map(str::to_owned)
+                        .ok_or(DocumentError::Invalid("request event key"))
                 })
                 .transpose()?,
             action: required_string(value, "action")?.to_owned(),
@@ -774,13 +832,17 @@ impl Grant {
         validate_account(&self.account)?;
         validate_token(&self.recipient_key_id, "recipient key id")?;
         validate_ceiling(self.local_ceiling_seconds)?;
-        if self.policy_version == 0
+        if self.registration_version == 0
+            || self.policy_version == 0
             || self.issuer_epoch == 0
             || self.issued_at_ms == 0
             || self.expires_at_ms <= self.issued_at_ms
             || self.expires_at_ms - self.issued_at_ms > 3_600_000
             || self.audience != "blindpass-node"
-            || self.action != "noop.marker"
+            || !supported_operation_binding(&self.action, self.mode)
+            || self.mode == ConsumptionMode::BrowserSession
+                && (self.expires_at_ms - self.issued_at_ms > 120_000
+                    || self.request_event_key.is_none())
         {
             return Err(DocumentError::Invalid("grant binding or lifetime"));
         }
@@ -827,6 +889,10 @@ impl Grant {
                 Value::String(self.recipient_key_id.clone()),
             ),
             (
+                "registration_version".to_owned(),
+                Value::Unsigned(self.registration_version),
+            ),
+            (
                 "resource_id".to_owned(),
                 Value::String(self.resource_id.clone()),
             ),
@@ -842,6 +908,13 @@ impl Grant {
                 "approval_reference".to_owned(),
                 Value::String(reference.clone()),
             ));
+        }
+        if let Some(key) = &self.request_event_key {
+            validate_opaque_id(key, "request event key")?;
+            if key.len() < 16 {
+                return Err(DocumentError::Invalid("request event key"));
+            }
+            fields.push(("request_event_key".to_owned(), Value::String(key.clone())));
         }
         Ok(Value::Object(fields))
     }
@@ -915,9 +988,92 @@ impl Revocation {
     }
 }
 
-/// Controller-signed notice that an operation will never receive a grant.
-/// The broker reports it to the requesting workload by its request event key;
-/// it carries no authority.
+/// A workload's intent to stop its own browser operation. No fresh controller
+/// timestamp is needed to stop local authority while the node is disconnected.
+/// The receiving controller supplies its own verified time for transitions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OperationCancellation {
+    pub node_id: String,
+    pub workload_id: String,
+    pub invocation_id: String,
+    pub request_event_key: String,
+}
+impl OperationCancellation {
+    pub fn from_value(value: &Value) -> Result<Self, DocumentError> {
+        expect_fields(
+            value,
+            &[
+                "node_id",
+                "workload_id",
+                "invocation_id",
+                "request_event_key",
+            ],
+            &[],
+        )?;
+        let request = Self {
+            node_id: required_string(value, "node_id")?.to_owned(),
+            workload_id: required_string(value, "workload_id")?.to_owned(),
+            invocation_id: required_string(value, "invocation_id")?.to_owned(),
+            request_event_key: required_string(value, "request_event_key")?.to_owned(),
+        };
+        request.to_value()?;
+        Ok(request)
+    }
+    pub fn to_value(&self) -> Result<Value, DocumentError> {
+        validate_opaque_id(&self.node_id, "node id")?;
+        validate_opaque_id(&self.workload_id, "workload id")?;
+        if !(self.invocation_id.len() == 32
+            && self
+                .invocation_id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)))
+            || !crate::protocol::is_valid_event_key(&self.request_event_key)
+        {
+            return Err(DocumentError::Invalid("operation cancellation binding"));
+        }
+        Ok(Value::Object(vec![
+            ("node_id".into(), Value::String(self.node_id.clone())),
+            (
+                "workload_id".into(),
+                Value::String(self.workload_id.clone()),
+            ),
+            (
+                "invocation_id".into(),
+                Value::String(self.invocation_id.clone()),
+            ),
+            (
+                "request_event_key".into(),
+                Value::String(self.request_event_key.clone()),
+            ),
+        ]))
+    }
+    /// Stable node/request key makes retries and controller creation races
+    /// reconcile to one cancellation, independently of transport timestamps.
+    pub fn event_key(&self) -> Result<String, DocumentError> {
+        self.to_value()?;
+        let message = canonical_domain_message(
+            b"blindpass:operation-cancel-key:v1\0",
+            &Value::Object(vec![
+                ("node_id".into(), Value::String(self.node_id.clone())),
+                (
+                    "request_event_key".into(),
+                    Value::String(self.request_event_key.clone()),
+                ),
+            ]),
+        )?;
+        let digest = sha256(&message)?;
+        Ok(format!(
+            "cancel_{}",
+            digest
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        ))
+    }
+}
+
+/// Controller-signed closure of a request. A cancellation also withdraws
+/// future handoff after grant issuance; website cleanup is a separate proof.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OperationClosed {
     pub node_id: String,
@@ -1289,7 +1445,21 @@ fn validate_document_body(
             PolicySnapshot::from_value(body)?;
         }
         DocumentKind::Grant => {
-            if Grant::from_value(body)?.issuer_epoch != envelope_epoch {
+            // Older signed grants did not bind a registration version. They
+            // must remain verifiable so brokers can durably discard them and
+            // advance a mixed-version relay inbox, but Grant::from_value
+            // still refuses to turn one into runtime authority.
+            let mut legacy_body;
+            let validated_body = if body.get("registration_version").is_none() {
+                legacy_body = body.clone();
+                if let Value::Object(fields) = &mut legacy_body {
+                    fields.push(("registration_version".to_owned(), Value::Unsigned(1)));
+                }
+                &legacy_body
+            } else {
+                body
+            };
+            if Grant::from_value(validated_body)?.issuer_epoch != envelope_epoch {
                 return Err(DocumentError::Invalid("grant issuer epoch"));
             }
         }
@@ -1321,6 +1491,20 @@ fn validate_document_body(
         DocumentKind::OperationClosed => {
             if OperationClosed::from_value(body)?.issuer_epoch != envelope_epoch {
                 return Err(DocumentError::Invalid("operation closure issuer epoch"));
+            }
+        }
+        DocumentKind::RecipientOffer => {
+            let binding = crate::provisioning::BrowserProvisioningBinding::from_value(body)
+                .map_err(|_| DocumentError::Invalid("recipient offer binding"))?;
+            if binding.node_key_version != envelope_epoch {
+                return Err(DocumentError::Invalid("recipient offer key epoch"));
+            }
+        }
+        DocumentKind::ProvisioningDelivery => {
+            let delivery = crate::provisioning::BrowserProvisioningDelivery::from_value(body)
+                .map_err(|_| DocumentError::Invalid("provisioning delivery binding"))?;
+            if delivery.binding.grant.issuer_epoch != envelope_epoch {
+                return Err(DocumentError::Invalid("provisioning delivery issuer epoch"));
             }
         }
         DocumentKind::OperationResult | DocumentKind::AuditEvent => {
@@ -1493,6 +1677,36 @@ mod tests {
     use crate::canon::{Value, canonicalize_json};
     use crate::signing::ed25519::Ed25519KeyPair;
 
+    #[test]
+    fn only_the_provisioning_delivery_kind_may_use_the_larger_document_cap() {
+        for name in [
+            "registration",
+            "policy_snapshot",
+            "grant",
+            "revocation",
+            "node_revocation",
+            "node_key_rotation",
+            "time_reply",
+            "application_ack",
+            "operation_result",
+            "audit_event",
+            "operation_closed",
+            "recipient_offer",
+        ] {
+            assert_eq!(
+                DocumentKind::parse(name).unwrap().max_document_bytes(),
+                65_536,
+                "{name}"
+            );
+        }
+        assert_eq!(
+            DocumentKind::ProvisioningDelivery.max_document_bytes(),
+            131_072
+        );
+        assert_eq!(super::MAX_NODE_DOCUMENT_BYTES, 64 * 1024);
+        assert_eq!(super::MAX_PROVISIONING_DELIVERY_DOCUMENT_BYTES, 128 * 1024);
+    }
+
     const KEY_ID: &str = "controller-1";
 
     fn issuer() -> Ed25519KeyPair {
@@ -1664,6 +1878,74 @@ mod tests {
         assert!(node_event_message("nd_node-a", "short", "audit", &body).is_err());
         assert!(
             node_event_message("nd_node-a", "event_1234567890", "untrusted_kind", &body,).is_err()
+        );
+    }
+
+    #[test]
+    fn cancellation_binding_and_stable_key_are_strict() {
+        let request = super::OperationCancellation {
+            node_id: "node-a".into(),
+            workload_id: "workload-a".into(),
+            invocation_id: "a".repeat(32),
+            request_event_key: "event_cancel_binding_0001".into(),
+        };
+        let body = request.to_value().unwrap();
+        assert_eq!(
+            super::OperationCancellation::from_value(&body).unwrap(),
+            request
+        );
+        let key = request.event_key().unwrap();
+        assert!(crate::protocol::is_valid_event_key(&key));
+        assert_eq!(key, request.clone().event_key().unwrap());
+        let mut changed = request.clone();
+        changed.node_id = "node-b".into();
+        assert_ne!(key, changed.event_key().unwrap());
+        changed = request.clone();
+        changed.request_event_key = "event_cancel_binding_0002".into();
+        assert_ne!(key, changed.event_key().unwrap());
+        for invocation in [
+            "",
+            "short",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "http://P05-CANARY",
+        ] {
+            changed = request.clone();
+            changed.invocation_id = invocation.into();
+            assert!(changed.to_value().is_err());
+        }
+        for raw in [
+            r#"{"node_id":"node-a","workload_id":"workload-a","invocation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","request_event_key":"short"}"#,
+            r#"{"node_id":"node-a","workload_id":"workload-a","invocation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","request_event_key":"event_cancel_binding_0001","url":"https://P05-CANARY"}"#,
+        ] {
+            assert!(
+                super::OperationCancellation::from_value(&super::parse_json(raw).unwrap()).is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn broker_cancellation_event_is_domain_bound() {
+        let body = super::parse_json(r#"{"node_id":"node-a","workload_id":"workload-a","invocation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","request_event_key":"event_cancel_00000001"}"#).unwrap();
+        let message = node_event_message(
+            "node-a",
+            "cancel_0000000000000001",
+            "operation_cancel",
+            &body,
+        )
+        .unwrap();
+        assert_ne!(
+            message,
+            node_event_message("node-a", "cancel_0000000000000001", "audit", &body).unwrap()
+        );
+        assert_ne!(
+            message,
+            node_event_message(
+                "node-b",
+                "cancel_0000000000000001",
+                "operation_cancel",
+                &body
+            )
+            .unwrap()
         );
     }
 
@@ -1841,6 +2123,66 @@ mod tests {
     }
 
     #[test]
+    fn browser_grant_canonical_signature_binds_request_resource_mode_and_deadline() {
+        let value = crate::canon::parse_json(r#"{"id":"grant-browser","operation_id":"operation-browser","node_id":"node-a","workload_id":"workload-a","invocation_id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","unit":"agent.service","account":"uid:1001","resource_id":"report-primary","recipient_key_id":"node-a-1","registration_version":1,"policy_version":1,"action":"browser.session","mode":"browser_session","audience":"blindpass-node","issuer_epoch":1,"issued_at_ms":1000,"expires_at_ms":121000,"local_ceiling_seconds":120,"request_event_key":"event_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}"#).unwrap();
+        let grant = Grant::from_value(&value).unwrap();
+        let signed = SignedEnvelope::sign(
+            DocumentKind::Grant,
+            grant.to_value().unwrap(),
+            KEY_ID,
+            1,
+            &issuer(),
+        )
+        .unwrap();
+        let encoded = signed.to_json().unwrap();
+        let parsed = SignedEnvelope::from_json(std::str::from_utf8(&encoded).unwrap()).unwrap();
+        assert!(parsed.verify(issuer().public_key(), KEY_ID, 1).unwrap());
+        assert_eq!(Grant::from_value(parsed.body()).unwrap(), grant);
+        for (old, new) in [
+            (
+                "event_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "event_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            ),
+            ("report-primary", "report-isolation"),
+            ("121000", "120000"),
+        ] {
+            let changed = std::str::from_utf8(&encoded).unwrap().replace(old, new);
+            let changed = SignedEnvelope::from_json(&changed).unwrap();
+            assert!(!changed.verify(issuer().public_key(), KEY_ID, 1).unwrap());
+        }
+        for change in [
+            (
+                "\"request_event_key\":\"event_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+                "\"request_event_key\":null",
+            ),
+            (
+                "\"request_event_key\":\"event_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+                "\"request_event_key\":\"bad.dot\"",
+            ),
+            (
+                "\"request_event_key\":\"event_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"",
+                "\"request_event_key\":\"short\"",
+            ),
+            ("\"browser_session\"", "\"file\""),
+            ("121000", "121001"),
+        ] {
+            let source = crate::canon::canonicalize_value(&value).unwrap();
+            let invalid = std::str::from_utf8(&source)
+                .unwrap()
+                .replace(change.0, change.1);
+            assert!(Grant::from_value(&crate::canon::parse_json(&invalid).unwrap()).is_err());
+        }
+        let Value::Object(mut fields) = value else {
+            panic!("object");
+        };
+        fields.retain(|(name, _)| name != "request_event_key");
+        assert!(
+            Grant::from_value(&Value::Object(fields)).is_err(),
+            "browser grants require exact request correlation"
+        );
+    }
+
+    #[test]
     fn typed_registrations_and_grants_enforce_pilot_bindings() {
         let registration = Registration {
             node_id: "node-a".to_owned(),
@@ -1876,8 +2218,10 @@ mod tests {
             account: "backup".to_owned(),
             resource_id: "resource-a".to_owned(),
             recipient_key_id: "node-a-1".to_owned(),
+            registration_version: 1,
             policy_version: 2,
             approval_reference: Some("oa_123".to_owned()),
+            request_event_key: None,
             action: "noop.marker".to_owned(),
             mode: ConsumptionMode::Socket,
             audience: "blindpass-node".to_owned(),
@@ -1887,6 +2231,9 @@ mod tests {
             local_ceiling_seconds: 60,
         };
         assert!(grant.to_value().is_ok());
+        let native = grant.to_value().unwrap();
+        assert!(native.get("request_event_key").is_none());
+        assert_eq!(Grant::from_value(&native).unwrap(), grant);
         let mut uid_grant = grant.clone();
         uid_grant.account = "uid:986".to_owned();
         assert!(uid_grant.to_value().is_ok());
@@ -1953,8 +2300,10 @@ mod tests {
             account: "backup".to_owned(),
             resource_id: "resource-a".to_owned(),
             recipient_key_id: "nd_a-1".to_owned(),
+            registration_version: 1,
             policy_version: 2,
             approval_reference: None,
+            request_event_key: None,
             action: "noop.marker".to_owned(),
             mode: ConsumptionMode::Socket,
             audience: "blindpass-node".to_owned(),

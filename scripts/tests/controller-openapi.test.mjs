@@ -179,7 +179,10 @@ test("controller OpenAPI declares secret-free readiness and the adopted CT19 rou
   assert.ok(schema.paths["/api/v3/capabilities"]?.get);
   assert.equal(schema.info["x-blindpass-ct19"], "adopted");
   assert.equal(schema.info["x-blindpass-legacy-route-count"], legacyMachineRoutes.length);
-  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, 12);
+  const store = await readFile(path.join(controllerSource, "store/mod.rs"), "utf8");
+  const version = Number(store.match(/pub const SCHEMA_VERSION: i64 = (\d+);/)?.[1]);
+  assert.ok(Number.isSafeInteger(version));
+  assert.equal(schema.components.schemas.CapabilitiesResponse.properties.schema_version.const, version);
   assert.ok(schema.components.schemas.CapabilitiesResponse.properties.api.items.enum.includes("fleet.v3"));
   assert.ok(schema.components.schemas.NodeSessionInput.required.includes("key_version"));
   assert.ok(schema.components.schemas.SignedDocument.properties.kind.enum.includes("node_key_rotation"));
@@ -329,6 +332,8 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
   assert.deepEqual(schema.components.schemas.NodeEvent.properties.kind.enum, [
     "operation_request",
     "operation_result",
+    "operation_cancel",
+    "recipient_offer",
     "audit"
   ]);
   for (const [route, pathItem] of Object.entries(schema.paths)) {
@@ -340,6 +345,22 @@ test("P03 OpenAPI defines the fleet and node channel contracts", async () => {
       assert.ok(parameters.some((parameter) => parameter.name === "X-CSRF-Token"), `${method.toUpperCase()} ${route} must declare the CSRF header`);
     }
   }
+});
+
+test("PV06-C01: fleet source binding contract requires administrator cookie and CSRF", async () => {
+  const schema = JSON.parse(await readFile(schemaPath, "utf8"));
+  const route = schema.paths["/api/v3/nodes/{node_id}/source-bindings/{resource_id}"];
+  assert.ok(route?.get);
+  assert.ok(route?.put);
+  assert.match(route.put.description, /administrator/);
+  assert.deepEqual(route.get.security, [{ adminSession: [] }]);
+  assert.deepEqual(route.put.security, [{ adminSession: [], csrfCookie: [] }]);
+  assert.deepEqual(schema.components.schemas.SourceBindingInput.required, ["source_unit", "credential", "expected_version"]);
+  assert.equal(schema.components.schemas.SourceBindingInput.additionalProperties, false);
+  assert.deepEqual(Object.keys(schema.components.schemas.SourceBinding.properties), ["node_id", "resource_id", "source_unit", "credential", "version", "updated_at"]);
+  assert.ok(route.put.responses["409"]);
+  assert.ok(schema.components.schemas.SignedDocument.properties.kind.enum.includes("recipient_offer"));
+  assert.ok(schema.components.schemas.SignedDocument.properties.kind.enum.includes("provisioning_delivery"));
 });
 
 test("test seed schema matches the exercised compatibility fixture response", async () => {

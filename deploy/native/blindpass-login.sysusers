@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+u blindpass-login - "BlindPass private browser authentication" /nonexistent /usr/sbin/nologin
+g blindpass-runtime -

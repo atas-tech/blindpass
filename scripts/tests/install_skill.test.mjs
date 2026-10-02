@@ -100,6 +100,10 @@ function installRoot(homeDir, agent) {
 
 async function assertInstallLayout(rootPath) {
     assert.equal(await pathExists(path.join(rootPath, "dist", "mcp-server.mjs")), true);
+    assert.equal(await pathExists(path.join(rootPath, "dist", "THIRD_PARTY_NOTICES.md")), true);
+    for (const name of ['modelcontextprotocol-server-LICENSE', 'modelcontextprotocol-core-LICENSE', 'zod-LICENSE']) {
+        assert.equal(await pathExists(path.join(rootPath, 'dist', 'licenses', name)), true);
+    }
     assert.equal(await pathExists(path.join(rootPath, "dist", "blindpass-resolver.mjs")), true);
     assert.equal(await pathExists(path.join(rootPath, "dist", "blindpass.mjs")), true);
     assert.equal(await pathExists(path.join(rootPath, "openclaw.plugin.json")), true);

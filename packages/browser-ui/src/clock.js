@@ -22,6 +22,31 @@ export function createDeadline({ expirySeconds, dateHeader, sentAt, receivedAt, 
   return { serverClock: true, expiresAt, remaining, expired: (now) => remaining(now) === 0 };
 }
 
+/**
+ * The fleet deadline from the controller's own milliseconds (`server_time_ms`
+ * sampled while it answered, and the offer's `expires_at_ms`). The whole round
+ * trip counts as already elapsed on the server, so the estimate never runs long,
+ * and elapsed time is the larger of monotonic and wall-clock time, so a
+ * suspended tab can't stretch it. `serverNow` is the same conservative reading
+ * of the controller's clock and is the only time the sealing step sees; the
+ * browser's wall clock alone is never used.
+ */
+export function createServerDeadline({ serverTimeMs, expiresAtMs, sentAt, receivedAt, perfAt }) {
+  const instant = (value) => Number.isSafeInteger(value) && value > 0;
+  if (!instant(serverTimeMs) || !instant(expiresAtMs) || expiresAtMs <= serverTimeMs) return null;
+  const roundTrip = Math.max(0, receivedAt - sentAt);
+  const atReceipt = serverTimeMs + roundTrip;
+  const elapsed = ({ perf, wall }) => Math.max(0, perf - perfAt, wall - receivedAt);
+  const remaining = (now) => Math.max(0, expiresAtMs - atReceipt - elapsed(now));
+  return {
+    serverClock: true,
+    expiresAt: new Date(expiresAtMs),
+    remaining,
+    serverNow: (now) => atReceipt + elapsed(now),
+    expired: (now) => remaining(now) === 0
+  };
+}
+
 export function formatRemaining(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
   const hours = Math.floor(total / 3600);

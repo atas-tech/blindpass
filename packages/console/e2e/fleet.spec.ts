@@ -195,6 +195,23 @@ test.describe("fleet against the controller", () => {
     await context.close();
   });
 
+  test("P05 browser session: an admin enables browser.session with a named approver; the controller stores exactly that rule and keeps the others", async ({ browser }) => {
+    const before = await admin.call<{ version: number; rules: Array<Record<string, unknown>> }>("GET", "/api/v3/policies");
+    const { context, page } = await signIn(browser, stack, ADMIN.username, ADMIN.password, { bypassCSP: true });
+    await page.goto(`${stack.consoleUrl}/policy/fleet`);
+    const group = page.getByRole("radiogroup", { name: "Decision for Browser session" });
+    await group.getByRole("radio", { name: "Needs approval" }).click();
+    await page.locator('[data-mode="browser_session"]').getByLabel("Approvers").fill("e2e-operator");
+    await page.locator('[data-mode="browser_session"]').getByLabel("Longest grant").fill("120");
+    await page.getByRole("button", { name: "Save fleet policy" }).click();
+    await expect(page.getByText(`Fleet policy saved as version ${before.body.version + 1}`)).toBeVisible();
+    expect(await axeViolations(page, ".main")).toEqual([]);
+    const after = await admin.call<{ version: number; rules: Array<Record<string, unknown>> }>("GET", "/api/v3/policies");
+    expect(after.body.rules.find((rule) => rule.mode === "browser_session")).toEqual({ id: "browser-session", action: "browser.session", mode: "browser_session", decision: "pending_approval", approval_required: true, max_ttl_seconds: 120, approver_ids: ["e2e-operator"] });
+    for (const rule of before.body.rules) expect(after.body.rules).toContainEqual(rule);
+    await context.close();
+  });
+
   test("DR-E02 / P04-I05: operators see empty grant and operation lists as empty; viewers are refused by UI and API alike", async ({ browser }) => {
     const operator = await signIn(browser, stack, "e2e-operator", operatorPassword);
     // The same names DR-E25 expects to be absent when fleet.v3 is off.

@@ -9,6 +9,10 @@ use super::{Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, pg};
 use sqlx::Row;
 
 const NODE_SESSION_TTL_MS: i64 = 15 * 60 * 1_000;
+/// Inbox bytes returned by one poll beyond the first document. The node
+/// transport bounds a response at 1 MiB, so up to eight 128 KiB Source
+/// deliveries must not be answered at once.
+const POLL_RESPONSE_BYTES: usize = 512 * 1024;
 
 /// Current node identity facts needed to issue or verify a stateless session
 /// challenge. Obtaining it is read-only and cannot disturb another handshake.
@@ -73,6 +77,37 @@ const CHANNEL_NODE_PREDICATE: &str = "n.id = ? AND n.tenant_id = ?
     ))";
 
 impl Store {
+    /// Check for undelivered work without acquiring a write lock during an
+    /// idle long poll. The delivery transaction rechecks this result.
+    pub async fn has_pending_node_inbox(
+        &self,
+        node_id: &str,
+        session_id: &str,
+    ) -> Result<bool, StoreError> {
+        self.checkpoint_clock().await?;
+        let sql = "SELECT EXISTS(SELECT 1 FROM node_inbox WHERE node_id = ? AND acked_at IS NULL)
+            FROM node_sessions WHERE id = ? AND node_id = ?";
+        match &self.database {
+            Database::Sqlite(pool) => sqlx::query_scalar::<_, i64>(sql)
+                .bind(node_id)
+                .bind(session_id)
+                .bind(node_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(StoreError::Database)?
+                .map(|value| value != 0)
+                .ok_or(StoreError::MissingState("node session")),
+            Database::Postgres(pool) => sqlx::query_scalar::<_, bool>(&pg(sql))
+                .bind(node_id)
+                .bind(session_id)
+                .bind(node_id)
+                .fetch_optional(pool)
+                .await
+                .map_err(StoreError::Database)?
+                .ok_or(StoreError::MissingState("node session")),
+        }
+    }
+
     /// Read the facts a stateless challenge binds for a node whose stored
     /// protocol, capabilities and current or staged key version match.
     pub async fn node_session_context(
@@ -430,13 +465,22 @@ impl Store {
                     .await
                     .map_err(StoreError::Database)?;
                 let mut documents = Vec::with_capacity(rows.len());
+                let mut response_bytes = 0_usize;
                 for row in &rows {
-                    documents.push(InboxDocument {
+                    let document = InboxDocument {
                         seq: row.try_get("seq").map_err(StoreError::Database)?,
                         envelope_json: row
                             .try_get("envelope_json")
                             .map_err(StoreError::Database)?,
-                    });
+                    };
+                    // Source deliveries may reach 128 KiB; a poll answer must
+                    // stay inside the node transport's response bound. Documents
+                    // left out stay unacknowledged and arrive on the next poll.
+                    response_bytes = response_bytes.saturating_add(document.envelope_json.len());
+                    if !documents.is_empty() && response_bytes > POLL_RESPONSE_BYTES {
+                        break;
+                    }
+                    documents.push(document);
                 }
                 if let Some(highest) = documents.iter().map(|document| document.seq).max() {
                     sqlx::query(&$convert(advance_sql))

@@ -9,7 +9,8 @@ use crate::store::{
     ApprovalDecisionOutcome, ApprovalRecord, AuditDraft, FleetPolicyRecord, GrantIssueDraft,
     GrantIssueOutcome, GrantRecord, GrantRevocationOutcome, OperationApprovalDraft,
     OperationApprovalRecord, OperationCancelOutcome, OperationCreateOutcome, OperationDecision,
-    OperationDecisionOutcome, OperationRecord, StoreError, WORKLOAD_UNIT_CONFLICT, WorkloadRecord,
+    OperationDecisionOutcome, OperationRecord, ProvisioningPhase, ProvisioningStatus, StoreError,
+    WORKLOAD_UNIT_CONFLICT, WorkloadRecord,
 };
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -22,7 +23,7 @@ use blindpass_core::canon::canonicalize_json;
 use blindpass_core::custody::sha256;
 use blindpass_core::fleet::{
     ConsumptionMode, DocumentKind, Grant, Registration, Revocation, SignedEnvelope,
-    is_valid_account_identifier,
+    is_valid_account_identifier, supported_operation_binding,
 };
 use serde::Deserialize;
 use serde_json::{Value as JsonValue, json};
@@ -93,18 +94,18 @@ struct PolicyInput {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct FleetRuleInput {
-    id: String,
-    action: String,
-    mode: String,
-    decision: String,
-    approval_required: bool,
-    max_ttl_seconds: u64,
+pub(super) struct FleetRuleInput {
+    pub(super) id: String,
+    pub(super) action: String,
+    pub(super) mode: String,
+    pub(super) decision: String,
+    pub(super) approval_required: bool,
+    pub(super) max_ttl_seconds: u64,
     /// Operator ids or usernames allowed to decide approvals this rule
     /// creates. Required and non-empty for `pending_approval`; empty
     /// otherwise.
     #[serde(default)]
-    approver_ids: Vec<String>,
+    pub(super) approver_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -586,8 +587,9 @@ async fn update_policy(
         if !valid_id(&rule.id)
             || !ids.insert(rule.id.as_str())
             || !subjects.insert((rule.action.as_str(), rule.mode.as_str()))
-            || rule.action != "noop.marker"
-            || !matches!(rule.mode.as_str(), "file" | "socket")
+            || !ConsumptionMode::parse(&rule.mode)
+                .is_some_and(|mode| supported_operation_binding(&rule.action, mode))
+            || rule.mode == "browser_session" && rule.max_ttl_seconds > 120
             || !matches!(
                 rule.decision.as_str(),
                 "allow" | "pending_approval" | "deny"
@@ -702,8 +704,9 @@ async fn create_operation(
         );
     };
     if !valid_id(&body.workload_id)
-        || body.action != "noop.marker"
-        || !matches!(body.mode.as_str(), "file" | "socket")
+        || !ConsumptionMode::parse(&body.mode)
+            .is_some_and(|mode| supported_operation_binding(&body.action, mode))
+        || body.mode == "browser_session" && body.ttl_seconds > 120
         || body.purpose.len() > 512
         || !valid_id(&body.resource_id)
         || !valid_id(&body.invocation_id)
@@ -1049,9 +1052,10 @@ async fn list_operations(
     headers: HeaderMap,
     Query(query): Query<OperationQuery>,
 ) -> Response {
-    if let Err(response) = require_fleet_operator(&state, &headers, false).await {
-        return response;
-    }
+    let session = match require_fleet_operator(&state, &headers, false).await {
+        Ok(session) => session,
+        Err(response) => return response,
+    };
     if query.status.as_deref().is_some_and(|status| {
         !matches!(
             status,
@@ -1114,7 +1118,14 @@ async fn list_operations(
                 .map(|record| cursor_for(record.created_at_ms, &record.id))
         })
         .flatten();
-    Json(json!({"items":records.iter().map(operation_body).collect::<Vec<_>>(),"next_cursor":next_cursor})).into_response()
+    let mut items = Vec::with_capacity(records.len());
+    for record in &records {
+        match operation_read_body(store, &session, record).await {
+            Ok(body) => items.push(body),
+            Err(_) => return unavailable(),
+        }
+    }
+    Json(json!({"items":items,"next_cursor":next_cursor})).into_response()
 }
 
 async fn get_operation(
@@ -1122,14 +1133,18 @@ async fn get_operation(
     Path(id): Path<String>,
     headers: HeaderMap,
 ) -> Response {
-    if let Err(response) = require_fleet_operator(&state, &headers, false).await {
-        return response;
-    }
+    let session = match require_fleet_operator(&state, &headers, false).await {
+        Ok(session) => session,
+        Err(response) => return response,
+    };
     let Some(store) = state.store.as_ref() else {
         return unavailable();
     };
     match store.operation_by_id(&id).await {
-        Ok(Some(record)) => Json(operation_body(&record)).into_response(),
+        Ok(Some(record)) => match operation_read_body(store, &session, &record).await {
+            Ok(body) => Json(body).into_response(),
+            Err(_) => unavailable(),
+        },
         Ok(None) => api_error(
             StatusCode::NOT_FOUND,
             "operation_not_found",
@@ -1929,13 +1944,40 @@ fn operation_body(record: &OperationRecord) -> JsonValue {
     })
 }
 
+/// An operation as the console reads it: the stored fields plus the
+/// secret-free Source collection state for the calling operator. The state is
+/// computed by the same authority checks the Source link route applies and
+/// carries no capability, key material, ciphertext or link.
+async fn operation_read_body(
+    store: &crate::store::Store,
+    session: &crate::store::LocalSession,
+    record: &OperationRecord,
+) -> Result<JsonValue, crate::store::StoreError> {
+    let mut body = operation_body(record);
+    // Only a browser operation with a grant can have anything to provide.
+    let status = if record.action == "browser.session"
+        && record.mode == "browser_session"
+        && record.grant_id.is_some()
+    {
+        store.provisioning_status(&record.id, session).await?
+    } else {
+        ProvisioningStatus::without_offer(ProvisioningPhase::NotApplicable)
+    };
+    body["provisioning"] = json!({
+        "state": status.phase.as_str(),
+        "offer_expires_at_ms": status.offer_expires_at_ms,
+        "can_provide": status.can_provide,
+    });
+    Ok(body)
+}
+
 #[derive(Debug, Clone, Copy)]
-enum GrantIssuanceError {
+pub(super) enum GrantIssuanceError {
     Stale,
     Unavailable,
 }
 
-async fn ensure_operation_grants(
+pub(super) async fn ensure_operation_grants(
     state: &AppState,
     operation_ids: &[String],
 ) -> Result<(), GrantIssuanceError> {
@@ -2000,9 +2042,15 @@ async fn ensure_operation_grants(
             .min(local_ceiling)
             .min(3600);
         let issued_at_ms = u64::try_from(now_ms).map_err(|_| GrantIssuanceError::Stale)?;
-        let expires_at_ms = issued_at_ms
+        let mut expires_at_ms = issued_at_ms
             .checked_add(ttl_seconds.saturating_mul(1_000))
             .ok_or(GrantIssuanceError::Stale)?;
+        if operation.requested_by.starts_with("workload:") && operation.decision == "allow" {
+            // Failed issuance/replay cannot renew the original allow deadline.
+            expires_at_ms = expires_at_ms.min(
+                u64::try_from(operation.expires_at_ms).map_err(|_| GrantIssuanceError::Stale)?,
+            );
+        }
         let grant = Grant {
             id: random_id("gr_"),
             operation_id: operation.id.clone(),
@@ -2013,9 +2061,22 @@ async fn ensure_operation_grants(
             account: workload.account,
             resource_id: operation.resource_id.clone(),
             recipient_key_id: format!("{}-{}", node.id, node.key_version),
+            registration_version: u64::try_from(workload.registration_version)
+                .map_err(|_| GrantIssuanceError::Stale)?,
             policy_version: u64::try_from(operation.policy_version)
                 .map_err(|_| GrantIssuanceError::Stale)?,
             approval_reference: operation.approval_id.clone(),
+            request_event_key: if operation.mode == "browser_session" {
+                Some(
+                    operation
+                        .broker_event_key
+                        .clone()
+                        .filter(|key| valid_id(key) && key.len() >= 16)
+                        .ok_or(GrantIssuanceError::Stale)?,
+                )
+            } else {
+                None
+            },
             action: operation.action.clone(),
             mode: ConsumptionMode::parse(&operation.mode).ok_or(GrantIssuanceError::Stale)?,
             audience: "blindpass-node".to_owned(),
@@ -2311,7 +2372,7 @@ fn validate_workload_fields(
     if !is_valid_account_identifier(account) {
         return Err("account mapping is invalid");
     }
-    if !matches!(mode, "file" | "socket") {
+    if ConsumptionMode::parse(mode).is_none() {
         return Err("consumption mode is unsupported");
     }
     if !(1..=3600).contains(&ceiling) {
@@ -2432,7 +2493,7 @@ fn valid_approver_ids(approver_ids: &[String], required: bool) -> bool {
 /// C1 CSI/OSC with their parameters), control characters, and invisible or
 /// bidirectional formatting characters that could disguise the text an
 /// approver reads.
-fn sanitize_purpose(value: &str) -> String {
+pub(super) fn sanitize_purpose(value: &str) -> String {
     let mut output = String::with_capacity(value.len().min(512));
     let mut chars = value.chars().peekable();
     while let Some(ch) = chars.next() {

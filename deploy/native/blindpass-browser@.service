@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass isolated workload browser instance
+
+[Service]
+Type=exec
+DynamicUser=yes
+SupplementaryGroups=blindpass-runtime
+ExecStart=/usr/lib/blindpass/login/runtime/bin/node /usr/lib/blindpass/login/src/browser-worker.mjs
+StandardInput=socket
+StandardOutput=inherit
+StandardError=null
+Environment=HOME=/nonexistent
+Environment=PATH=/usr/bin:/bin
+Environment=PLAYWRIGHT_BROWSERS_PATH=/usr/lib/blindpass/login/browsers
+UnsetEnvironment=NODE_OPTIONS NODE_PATH DEBUG PWDEBUG LD_PRELOAD LD_LIBRARY_PATH
+RuntimeDirectory=blindpass-browser-%i
+RuntimeDirectoryMode=0700
+UMask=0077
+PrivateNetwork=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectKernelModules=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+NoNewPrivileges=yes
+LimitCORE=0
+RuntimeMaxSec=30min
+TimeoutStopSec=5s
+KillMode=control-group
+SendSIGKILL=yes
+# V8/Chromium need executable memory and user namespaces for sandboxing.
+# The root broker must verify this unit's PID/cgroup/invocation/net namespace
+# and persist identity before import. Unit templates alone prove no isolation.

@@ -480,6 +480,12 @@
   color: var(--bp-color-lime);
 }
 
+/* A long identifier in the trail wraps instead of widening the whole page. */
+.breadcrumb [aria-current="page"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .breadcrumb .icon {
   color: var(--bp-color-dim);
 }
