@@ -48,6 +48,10 @@ struct Options {
 }
 
 fn run(arguments: Vec<String>) -> Result<(), String> {
+    if arguments.as_slice() == ["--version"] {
+        println!("blindpass-node {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let Some(command) = arguments.first().map(String::as_str) else {
         print_help();
         return Err("a command is required".to_owned());

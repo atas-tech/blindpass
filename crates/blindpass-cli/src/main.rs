@@ -15,8 +15,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_ADMIN_SOCKET: &str = "/run/blindpass-controller/admin.sock";
 
+mod keys;
+
 #[derive(Debug, Parser)]
-#[command(name = "blindpass", about = "Local Blindpass administration")]
+#[command(name = "blindpass", version, about = "Local Blindpass administration")]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -27,6 +29,8 @@ enum Command {
     Admin(AdminCommand),
     /// Apply controller database migrations and exit.
     Migrate,
+    /// Explicit controller key creation and private-file validation.
+    Keys(keys::KeysCommand),
 }
 
 #[derive(Debug, Args)]
@@ -150,6 +154,7 @@ fn main() -> ExitCode {
 fn run(cli: Cli) -> Result<(), String> {
     let admin = match cli.command {
         Command::Migrate => return run_migrate(),
+        Command::Keys(command) => return keys::run(command),
         Command::Admin(admin) => admin,
     };
     let AdminCommand { http, command } = admin;

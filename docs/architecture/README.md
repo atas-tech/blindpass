@@ -66,7 +66,8 @@ The controller validates its environment at startup and refuses to start on any 
 |---|---|
 | `BLINDPASS_LISTEN` | `127.0.0.1:3200`; an unspecified address such as `0.0.0.0` is refused outside test mode |
 | `BLINDPASS_PUBLIC_URL`, `BLINDPASS_UI_BASE_URL` | Required origins for signed links and the input page |
-| `BLINDPASS_DATABASE_URL_FILE` | Required file holding a `sqlite:` or `postgres://` URL; inline `BLINDPASS_DATABASE_URL` is accepted only in test mode |
+| `BLINDPASS_DATABASE_URL_FILE` | Required unless an explicit `BLINDPASS_DATA_DIR` supplies SQLite; private file holding a `sqlite:` or `postgres://` URL; inline `BLINDPASS_DATABASE_URL` is accepted only in test mode |
+| `BLINDPASS_KEYS_DIR`, `BLINDPASS_DATA_DIR` | P06 opt-in absolute private roots (0700, owned by the service account). The keys root resolves `root-secret`, `agent-jwt-secret` and `issuer-key`; individual file settings override them. An explicit data root provides the SQLite `controller.db` URL when no URL/file is set. Validation creates no state; see [release layout](../deploy/release-layout.md) |
 | `BLINDPASS_ROOT_SECRET_FILE`, `BLINDPASS_AGENT_JWT_SECRET_FILE` | Required key files of at least 32 bytes, unreadable by group and others |
 | `BLINDPASS_ISSUER_KEY_FILE` | Required in production; raw 32-byte Ed25519 seed, mode 0600. Its public key, key ID and persisted recovery epoch appear in `/api/v3/capabilities`. |
 | `BLINDPASS_AGENT_AUTH_PROVIDERS_JSON` | Optional external issuers. Each provider needs a `jwks_file`; `jwks_url` providers are refused. Issuers and audiences default to `gateway` and `sps`, tokens must carry `exp`, `iss` and `aud`, and expiry has no leeway |

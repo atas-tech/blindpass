@@ -4,6 +4,7 @@
 //! files and are never included in error messages or a `Debug` representation.
 
 use axum::http::Uri;
+use blindpass_core::deployment::{Directory, read_private_file};
 use blindpass_core::secret::SecretBytes;
 use blindpass_core::signing::ed25519::Ed25519KeyPair;
 use std::collections::BTreeMap;
@@ -133,10 +134,17 @@ impl Config {
         let ui_base_url = required(values, "BLINDPASS_UI_BASE_URL")?;
         validate_origin(ui_base_url, "BLINDPASS_UI_BASE_URL")?;
 
+        // Layout roots are explicit opt-ins. Legacy per-file configuration is
+        // retained; merely validating config never creates replacement state.
+        let keys_dir = private_directory(values, "BLINDPASS_KEYS_DIR")?;
+        let data_dir = private_directory(values, "BLINDPASS_DATA_DIR")?;
         let database_url = match (
             value(values, "BLINDPASS_DATABASE_URL"),
             value(values, "BLINDPASS_DATABASE_URL_FILE"),
         ) {
+            (None, None) if data_dir.is_some() => {
+                sqlite_layout_url(data_dir.as_deref().expect("explicit data directory"))
+            }
             (Some(_), Some(_)) | (None, None) => {
                 return Err(ConfigError::Invalid(
                     "exactly one of BLINDPASS_DATABASE_URL and BLINDPASS_DATABASE_URL_FILE",
@@ -157,17 +165,39 @@ impl Config {
             return Err(ConfigError::Invalid("BLINDPASS_DATABASE_URL"));
         }
 
+        let root_path = credential_path(
+            values,
+            keys_dir.as_deref(),
+            "BLINDPASS_ROOT_SECRET_FILE",
+            "root-secret",
+        );
+        let agent_path = credential_path(
+            values,
+            keys_dir.as_deref(),
+            "BLINDPASS_AGENT_JWT_SECRET_FILE",
+            "agent-jwt-secret",
+        );
+        let issuer_path = credential_path(
+            values,
+            keys_dir.as_deref(),
+            "BLINDPASS_ISSUER_KEY_FILE",
+            "issuer-key",
+        );
         let root_secret = read_secret_file(
-            required(values, "BLINDPASS_ROOT_SECRET_FILE")?,
+            root_path
+                .as_deref()
+                .ok_or(ConfigError::Missing("BLINDPASS_ROOT_SECRET_FILE"))?,
             "BLINDPASS_ROOT_SECRET_FILE",
             MIN_KEY_BYTES,
         )?;
         let agent_jwt_secret = read_secret_file(
-            required(values, "BLINDPASS_AGENT_JWT_SECRET_FILE")?,
+            agent_path
+                .as_deref()
+                .ok_or(ConfigError::Missing("BLINDPASS_AGENT_JWT_SECRET_FILE"))?,
             "BLINDPASS_AGENT_JWT_SECRET_FILE",
             MIN_KEY_BYTES,
         )?;
-        let issuer_keypair = match value(values, "BLINDPASS_ISSUER_KEY_FILE") {
+        let issuer_keypair = match issuer_path.as_deref() {
             Some(path) => {
                 let seed = read_secret_file(path, "BLINDPASS_ISSUER_KEY_FILE", 32)?;
                 if seed.as_bytes().len() != 32 {
@@ -580,14 +610,10 @@ where
 }
 
 fn read_text_file(path: &str, field: &'static str) -> Result<String, ConfigError> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let metadata = std::fs::metadata(path).map_err(|_| ConfigError::CredentialFile(field))?;
-    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
-        return Err(ConfigError::CredentialFile(field));
-    }
+    let contents = read_private_file(Path::new(path), 16 * 1024)
+        .map_err(|_| ConfigError::CredentialFile(field))?;
     let contents =
-        std::fs::read_to_string(Path::new(path)).map_err(|_| ConfigError::CredentialFile(field))?;
+        std::str::from_utf8(contents.as_bytes()).map_err(|_| ConfigError::CredentialFile(field))?;
     let trimmed = contents.trim();
     if trimmed.is_empty() {
         return Err(ConfigError::CredentialFile(field));
@@ -600,17 +626,54 @@ fn read_secret_file(
     field: &'static str,
     minimum: usize,
 ) -> Result<SecretBytes, ConfigError> {
-    use std::os::unix::fs::PermissionsExt;
-
-    let metadata = std::fs::metadata(path).map_err(|_| ConfigError::CredentialFile(field))?;
-    if !metadata.is_file() || metadata.permissions().mode() & 0o077 != 0 {
-        return Err(ConfigError::CredentialFile(field));
-    }
-    let contents = std::fs::read(path).map_err(|_| ConfigError::CredentialFile(field))?;
+    let contents =
+        read_private_file(Path::new(path), 4096).map_err(|_| ConfigError::CredentialFile(field))?;
     if contents.len() < minimum {
         return Err(ConfigError::CredentialFile(field));
     }
-    Ok(SecretBytes::new(contents))
+    Ok(contents)
+}
+
+fn private_directory(
+    values: &BTreeMap<String, String>,
+    field: &'static str,
+) -> Result<Option<PathBuf>, ConfigError> {
+    let Some(path) = value(values, field) else {
+        return Ok(None);
+    };
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(ConfigError::Invalid(field));
+    }
+    Directory::open_private(&path).map_err(|_| ConfigError::CredentialFile(field))?;
+    Ok(Some(path))
+}
+
+fn credential_path(
+    values: &BTreeMap<String, String>,
+    directory: Option<&Path>,
+    field: &'static str,
+    name: &str,
+) -> Option<String> {
+    value(values, field)
+        .map(str::to_owned)
+        .or_else(|| directory.map(|path| path.join(name).to_string_lossy().into_owned()))
+}
+
+fn sqlite_layout_url(directory: &Path) -> String {
+    use std::fmt::Write;
+    use std::os::unix::ffi::OsStrExt;
+    let path = directory.join("controller.db");
+    let mut url = String::from("sqlite://");
+    for byte in path.as_os_str().as_bytes() {
+        if byte.is_ascii_alphanumeric() || b"/-_.~".contains(byte) {
+            url.push(char::from(*byte));
+        } else {
+            write!(&mut url, "%{byte:02X}").expect("write to string");
+        }
+    }
+    url.push_str("?mode=rwc");
+    url
 }
 
 fn validate_origin(value: &str, field: &'static str) -> Result<(), ConfigError> {

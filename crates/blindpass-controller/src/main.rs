@@ -27,6 +27,23 @@ async fn main() -> ExitCode {
 
 async fn run(args: Vec<String>) -> Result<(), String> {
     match args.as_slice() {
+        [command] if command == "--build-info" => {
+            println!(
+                "{}",
+                serde_json::json!({
+                    "version": env!("CARGO_PKG_VERSION"),
+                    "schema_version": blindpass_controller::store::SCHEMA_VERSION,
+                    "protocol_version": blindpass_controller::PROTOCOL_VERSION,
+                    "console_embedded": blindpass_controller::embedded_ui::console_embedded(),
+                    "input_embedded": blindpass_controller::embedded_ui::input_embedded(),
+                })
+            );
+            Ok(())
+        }
+        [command] if command == "--version" || command == "-V" => {
+            println!("blindpass-controller {}", env!("CARGO_PKG_VERSION"));
+            Ok(())
+        }
         [command] if command == "check-config" => {
             Config::from_env().map_err(|error| error.to_string())?;
             println!("Controller configuration is valid.");

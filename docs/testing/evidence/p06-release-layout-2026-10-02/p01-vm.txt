@@ -1,0 +1,78 @@
+P01-HOST-ENV runner_owner=p06-start-verification-20261002 qemu=QEMU emulator version 11.1.1 qemu_img=qemu-img version 11.1.1 kvm=crw-rw-rw-:666 cloud_localds=<runner-tools>/cloud-localds tpm_mode=absent
+P01-HOST-BUILD rustc=rustc 1.98.1 (48a229cea 2026-09-01) (Arch Linux rust 1:1.98.1-1) cargo=cargo 1.98.1 (797e8a9bc 2026-08-05) (Arch Linux rust 1:1.98.1-1) openssl=3.6.4 systemd=261
+P01-PROVISIONED overlay=<disposable-p01-run>/image/guest-overlay.qcow2 seed=<disposable-p01-run>/image/seed.iso image_sha256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+   Compiling blindpass-core v0.1.0 (<repository>/crates/blindpass-core)
+   Compiling blindpass-controller v0.1.0 (<repository>/crates/blindpass-controller)
+   Compiling blindpass-broker v0.1.0 (<repository>/crates/blindpass-broker)
+   Compiling blindpass-node v0.1.0 (<repository>/crates/blindpass-node)
+   Compiling blindpass-cli v0.1.0 (<repository>/crates/blindpass-cli)
+    Finished `release` profile [optimized] target(s) in 2m 54s
+Warning: Permanently added '[127.0.0.1]:22242' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22242' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22242' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22242' (ED25519) to the list of known hosts.
+P01-GUEST-ENV os=ubuntu-24.04 kernel=6.8.0-139-generic systemd=255 pid1=systemd tpm=absent
+Creating group 'blindpass-workload' with GID 988.
+Creating group 'blindpass-node' with GID 987.
+Creating group 'blindpass-agent' with GID 986.
+Creating user 'blindpass-agent' (BlindPass registered workload) with UID 986 and GID 986.
+Creating group 'blindpass-consumer' with GID 985.
+Creating user 'blindpass-consumer' (BlindPass credential consumer) with UID 985 and GID 985.
+Creating group 'blindpass-backup' with GID 984.
+Creating user 'blindpass-backup' (BlindPass backup probe) with UID 984 and GID 984.
+Creating user 'blindpass-node' (BlindPass controller channel relay) with UID 987 and GID 987.
+P01-I06 canary scanner positive control: PASS
+P01-SOCKET-POLICY directory=751:0:0 loader=600:0:0 workload=660:0:988 provision=600:0:0
+P01-I05 non-root provisioning denied by socket mode: PASS
+P01-I05 unmapped provisioning destination denied: PASS
+P01-I05 live wrong-key, tampered, wrong-AAD and replay rejection: PASS
+P01-I02 registered non-root workload: PASS
+P01-I02 workload identity trace: PASS (identity peer role=workload uid=986 gid=988 pidfd=true unit=blindpass-workload.service invocation=f1c71db118254c0792d61f78ac456ed4)
+P01-I05 custody restart without key: PASS
+P01-I05 custody binding, expiry and one-use lifecycle: PASS
+P01-I02 non-root loader denied by socket boundary: PASS
+P01-I02 user-manager loader denied by socket boundary: PASS
+P01-I04 stalled loader closed without payload: PASS (STALL_DENIED elapsed_ms=2060 response=closed_without_payload, max=2500ms)
+P01-E01 systemd credential handoff to dedicated non-root consumer: PASS
+P01-I02 loader identity trace: PASS (identity peer role=systemd-credential uid=0 gid=0 pidfd=true unit=blindpass-consumer.service invocation=6504c4b3bf544e6eb0e04c8642122144 credential=api-key)
+P01-I01 systemd re-requested credential after consumer restart: PASS
+P01-I01 old captured pidfd denial: PASS (loader request denied: os_identity:peer_exited before unit lookup)
+READY
+P01-I01 lookup-after-exit denied old peer and replacement delivered: PASS (round=1 old_pid=2500 new_pid=2510)
+P01-I01 old captured pidfd denial: PASS (loader request denied: os_identity:peer_exited before unit lookup)
+READY
+P01-I01 lookup-after-exit denied old peer and replacement delivered: PASS (round=2 old_pid=2577 new_pid=2589)
+P01-E01 credential-consuming backup write/restore: PASS (initial_artifact_sha256=d05c3e0c2b04f8402a98fdaf6db490d612cd5daea7e7d88e8d1cbe9e017ca866)
+P01-I04 broker empty/partial/malformed/oversized/corrupt delivery: PASS
+P01-I01 stale workload invocation denied and re-registration required: PASS
+P01-I01 workload restart recovery only (round=1 old_pid=3646 new_pid=3655)
+P01-I01 workload restart recovery only (round=2 old_pid=3899 new_pid=3908)
+P01-I01 workload restart recovery only (round=3 old_pid=4039 new_pid=4048)
+P01-I02 DynamicUser workload identity and registration: PASS (uid=65187)
+P01-I02 fixed-account workload restored after DynamicUser profile: PASS
+Credential secret file '/var/lib/systemd/credential.secret' is not located on encrypted media, using anyway.
+P01-E02 native host-key delivery and non-root backup: PASS (initial_artifact_sha256=d05c3e0c2b04f8402a98fdaf6db490d612cd5daea7e7d88e8d1cbe9e017ca866)
+Credential secret file '/var/lib/systemd/credential.secret' is not located on encrypted media, using anyway.
+P01-E02 native host-key rotation changed backup bytes and restored: PASS (rotated_artifact_sha256=23e4e0f01dc591721c66764c36208e43eb152da845964431531c64da92962c00)
+P01-E02 native encrypted credstore missing-key recovery denial: PASS
+P01-I06 TPM-CAPABILITY status=19 result=partial_-firmware_-driver_+system_+subsystem_-libraries
+P01-I06 TPM-required custody profile: UNSUPPORTED (device absent; explicit tpm2 mode rejected; probe_status=19 available=yes)
+P01-I02 mismatched loader routing: PASS
+P01-I02 unregistered workload: PASS
+P01-I04 empty/partial/malformed/oversized consumer material: PASS
+P01-I06 core-artifact canary review: PASS (reports_inspected=1 coredumpctl=unavailable)
+P01-I06 initial canary absent from args/journals/runtime artifacts: PASS
+P01-E01 controlled restart rotation: PASS
+P01-E01 rotated credential changed backup bytes and restored: PASS (rotated_artifact_sha256=23e4e0f01dc591721c66764c36208e43eb152da845964431531c64da92962c00)
+P01-I06 rotated canary absent from args/journals/runtime artifacts: PASS
+P01-I03 system-bus API removal failed closed: PASS
+P01-I03 kernel socket-identity API removal failed closed: PASS
+Credential provisioned for blindpass-consumer.service
+P01-I05 live broker restart requires HPKE reprovisioning: PASS
+P01-I05 live broker HPKE provisioning and restart path: PASS
+Credential provisioned for blindpass-consumer.service
+P01-I05 live short-TTL HPKE key and credential expiry denial: PASS
+P01-I06 final canary scan after restart and short-TTL scenarios: PASS
+P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key.cred
+P01-GUEST-CLEANUP sockets_removed=yes units_removed=yes protected_material_retained=yes
+P01-VM-COMPLETE runner_owner=p06-start-verification-20261002 serial_log=<disposable-p01-run>/serial.log

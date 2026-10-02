@@ -32,6 +32,8 @@ The Rust controller implements the P02 API locally on SQLite and PostgreSQL but 
 | [Dashboard maintenance](architecture/dashboard-maintainability.md) | Existing style and shared translation conventions |
 | Dashboard redesign proposal | Maintained in the Obsidian vault; implemented by `packages/console` (P04). The old `packages/dashboard` is eligible for removal |
 | [Test setup](testing/README.md) | Actual scripts, service requirements and skipped-suite behavior |
+| [P06 execution record](testing/evidence/p06-release-layout-2026-10-02.md) | Key/layout, bookworm archive and prerequisite gates; complete deployment/recovery remains open |
+| [P06 release layout](deploy/release-layout.md) | Explicit private key/data roots and initialization, candidate controller/node archives, bookworm ELF baseline and artifact gates; deployment/recovery parity remains unfinished |
 | [P01 execution record](testing/p01-host-broker-evidence.md) | Portable broker checks, selected real-VM profile, teardown evidence and dated open/unsupported status |
 | [P02 execution record](testing/evidence/p02-controller-api-migration-rerun.md) | Rust controller gates on SQLite and PostgreSQL, the 2026-09-25 review fixes, coverage and open decisions |
 | [P03 execution record](testing/evidence/p03-fleet-authorization-execution.md) | Two-guest SQLite/PostgreSQL key rotation, reconnect and policy-cursor recovery, delayed-grant expiry audit, authorization, revocation and recovery evidence, with unrun scenarios stated explicitly |

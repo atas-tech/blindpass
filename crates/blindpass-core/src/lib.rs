@@ -13,6 +13,7 @@ pub mod canon;
 pub mod clock;
 pub mod custody;
 pub mod delivery;
+pub mod deployment;
 pub mod fleet;
 pub mod identity;
 pub mod policy;

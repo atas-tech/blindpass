@@ -73,3 +73,44 @@ jobs:
 
       - name: Check contract progress gate
         run: npm run test:contract-progress
+
+  p06-release-baseline:
+    name: P06 candidate artifacts (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            node-image: node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+            rust-image: rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            node-image: node:26.10.0-bookworm@sha256:838c3eef085968cb818717aeb58f0880be18afa10792df051d049501565f724e
+            rust-image: rust:1.98.1-bookworm@sha256:5b993f23fb69746405496e76f91e511d96c82b5b23304fd5d20b4a80a8b223ea
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Build at the bookworm baseline
+        run: |
+          docker build --file scripts/release/Dockerfile --target export \
+            --build-arg NODE_IMAGE='${{ matrix.node-image }}' \
+            --build-arg RUST_IMAGE='${{ matrix.rust-image }}' \
+            --output type=local,dest=/tmp/blindpass-p06-binaries .
+      - name: Inspect and package embedded controller candidate
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd binutils
+          scripts/release/build-tarballs.sh --profile controller --arch '${{ matrix.arch }}' \
+            --bin-dir /tmp/blindpass-p06-binaries --output-dir /tmp/blindpass-p06-release
+          scripts/release/checksums.sh /tmp/blindpass-p06-release
+          cd /tmp/blindpass-p06-release && sha256sum --check SHA256SUMS
+      - name: Test actual extracted archive and CLI
+        run: |
+          python3 tests/deployment/release-artifacts-test.py
+          python3 tests/deployment/release-archive.py --arch '${{ matrix.arch }}' \
+            --bin-dir /tmp/blindpass-p06-binaries
+      # Runtime matrix and node/helper archives are separate real-host gates.
+      # This job publishes no images/releases and confers no support guarantee.

@@ -18,6 +18,10 @@ fn main() {
 }
 
 fn run_from_args(args: Vec<String>) -> Result<(), String> {
+    if args.as_slice() == ["--version"] {
+        println!("blindpass-broker {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let mut config = BrokerConfig {
         delivery_fault: configured_delivery_fault()?,
         ..BrokerConfig::default()

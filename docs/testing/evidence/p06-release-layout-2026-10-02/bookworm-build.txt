@@ -1,0 +1,324 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 2.36kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#3 DONE 0.0s
+
+#4 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#4 DONE 0.0s
+
+#5 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 93.05kB 0.0s done
+#6 DONE 0.0s
+
+#7 [ui 2/4] WORKDIR /source
+#7 CACHED
+
+#8 [ui 3/4] COPY . .
+#8 DONE 0.2s
+
+#9 [ui 4/4] RUN npm ci && npm run build
+#9 1.198 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#9 20.87
+#9 20.87 added 312 packages, and audited 325 packages in 21s
+#9 20.87
+#9 20.87 73 packages are looking for funding
+#9 20.87   run `npm fund` for details
+#9 20.89
+#9 20.89 10 vulnerabilities (2 low, 2 moderate, 6 high)
+#9 20.89
+#9 20.89 To address all issues, run:
+#9 20.89   npm audit fix
+#9 20.89
+#9 20.89 Run `npm audit` for details.
+#9 20.89 npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+#9 20.89 npm warn install-scripts   esbuild@0.27.3 (postinstall: node install.js)
+#9 20.89 npm warn install-scripts
+#9 20.89 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+#9 20.89 npm notice
+#9 20.89 npm notice New major version of npm available! 11.19.1 -> 12.2.0
+#9 20.89 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#9 20.89 npm notice To update run: npm install -g npm@12.2.0
+#9 20.89 npm notice
+#9 21.02
+#9 21.02 > blindpass@0.1.0 build
+#9 21.02 > npm run build:i18n && npm run build --workspaces --if-present
+#9 21.02
+#9 21.11
+#9 21.11 > blindpass@0.1.0 build:i18n
+#9 21.11 > npm run build --workspace=@blindpass/i18n
+#9 21.11
+#9 21.23
+#9 21.23 > @blindpass/i18n@0.1.0 build
+#9 21.23 > tsc
+#9 21.23
+#9 22.17
+#9 22.17 > @blindpass/agent-skill@0.1.0 build
+#9 22.17 > tsc -p tsconfig.json
+#9 22.17
+#9 24.17
+#9 24.17 > @blindpass/browser-ui@0.1.0 build
+#9 24.17 > vite build && vite build --mode embedded
+#9 24.17
+#9 24.34 vite v7.3.6 building client environment for production...
+#9 24.41 transforming...
+#9 24.52 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#9 24.54 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#9 24.54 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#9 24.54 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+#9 24.54
+#9 24.54 "// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+#9 24.54
+#9 24.54 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 24.54 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+#9 24.54
+#9 24.54 "//   /* @__PURE__ */ oidNist(0x07),"
+#9 24.54
+#9 24.54 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 24.54 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+#9 24.54
+#9 24.54 "//   /* @__PURE__ */"
+#9 24.54
+#9 24.54 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 24.54 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+#9 24.54
+#9 24.54 "//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+#9 24.54
+#9 24.54 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 24.54 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+#9 24.54
+#9 24.54 "//   /* @__PURE__ */"
+#9 24.54
+#9 24.54 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 24.54 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+#9 24.54
+#9 24.54 "//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+#9 24.54
+#9 24.54 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 24.56 ../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+#9 24.56
+#9 24.56 "/* @__PURE__ */"
+#9 24.56
+#9 24.56 in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 24.78 ✓ 86 modules transformed.
+#9 24.83 rendering chunks...
+#9 24.88 computing gzip size...
+#9 24.88 dist/index.html                                    9.98 kB │ gzip:  2.32 kB
+#9 24.88 dist/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+#9 24.88 dist/assets/index-Blx-gcvB.css                    16.97 kB │ gzip:  4.29 kB
+#9 24.88 dist/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+#9 24.88 dist/assets/index-DbiCBHEa.js                    130.80 kB │ gzip: 38.22 kB
+#9 24.88 ✓ built in 514ms
+#9 25.04 vite v7.3.6 building client environment for embedded...
+#9 25.08 transforming...
+#9 25.19 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#9 25.20 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#9 25.20 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#9 25.21 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+#9 25.21
+#9 25.21 "// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+#9 25.21
+#9 25.21 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 25.21 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+#9 25.21
+#9 25.21 "//   /* @__PURE__ */ oidNist(0x07),"
+#9 25.21
+#9 25.21 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 25.21 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+#9 25.21
+#9 25.21 "//   /* @__PURE__ */"
+#9 25.21
+#9 25.21 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 25.21 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+#9 25.21
+#9 25.21 "//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+#9 25.21
+#9 25.21 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 25.21 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+#9 25.21
+#9 25.21 "//   /* @__PURE__ */"
+#9 25.21
+#9 25.21 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 25.21 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+#9 25.21
+#9 25.21 "//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+#9 25.21
+#9 25.21 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 25.23 ../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+#9 25.23
+#9 25.23 "/* @__PURE__ */"
+#9 25.23
+#9 25.23 in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#9 25.45 ✓ 86 modules transformed.
+#9 25.49 rendering chunks...
+#9 25.53 computing gzip size...
+#9 25.54 dist-embedded/index.html                                   10.00 kB │ gzip:  2.33 kB
+#9 25.54 dist-embedded/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+#9 25.54 dist-embedded/assets/index-CsPbKv2W.css                    16.97 kB │ gzip:  4.29 kB
+#9 25.54 dist-embedded/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+#9 25.54 dist-embedded/assets/index-Bol_NMIH.js                    130.81 kB │ gzip: 38.22 kB
+#9 25.54 ✓ built in 487ms
+#9 25.55
+#9 25.55 > @blindpass/console@0.1.0 build
+#9 25.55 > tsc --noEmit && vite build && node scripts/check-bundle.mjs
+#9 25.55
+#9 30.80 vite v7.3.6 building client environment for production...
+#9 30.83 transforming...
+#9 32.11 ✓ 136 modules transformed.
+#9 32.23 rendering chunks...
+#9 32.36 computing gzip size...
+#9 32.38 dist/index.html                              0.74 kB │ gzip:   0.38 kB
+#9 32.38 dist/assets/InterVariable-DxOIOTVw.woff2    90.90 kB
+#9 32.38 dist/assets/index-BIedOzTD.css              59.33 kB │ gzip:  10.55 kB
+#9 32.38 dist/assets/status-BrYlLUa7.js               0.15 kB │ gzip:   0.12 kB
+#9 32.38 dist/assets/events-DAm_YHLZ.js               0.30 kB │ gzip:   0.24 kB
+#9 32.38 dist/assets/validation-DQ6FMKO6.js           0.34 kB │ gzip:   0.22 kB
+#9 32.38 dist/assets/metadata-suhM9rdo.js             0.58 kB │ gzip:   0.34 kB
+#9 32.38 dist/assets/source-CCbCv4Kf.js               0.82 kB │ gzip:   0.39 kB
+#9 32.38 dist/assets/model-CptRzFhc.js                0.98 kB │ gzip:   0.46 kB
+#9 32.38 dist/assets/reveal-BKRVdsBV.js               1.00 kB │ gzip:   0.55 kB
+#9 32.38 dist/assets/dialog-Cfr1jBwQ.js               1.92 kB │ gzip:   0.85 kB
+#9 32.38 dist/assets/field-DLkuKEPR.js                1.97 kB │ gzip:   0.67 kB
+#9 32.38 dist/assets/exchange-timeline-CnltRhkd.js    2.51 kB │ gzip:   1.10 kB
+#9 32.38 dist/assets/change-password-CauJfWqx.js      2.60 kB │ gzip:   1.11 kB
+#9 32.38 dist/assets/common-7phvXdvY.js               3.12 kB │ gzip:   1.37 kB
+#9 32.38 dist/assets/login-Wg9N_2j2.js                3.22 kB │ gzip:   1.32 kB
+#9 32.38 dist/assets/settings-D3nH5Bq5.js             3.38 kB │ gzip:   1.31 kB
+#9 32.38 dist/assets/approvals-C-qEjgFR.js            3.85 kB │ gzip:   1.58 kB
+#9 32.38 dist/assets/setup-BTdXbNSq.js                4.40 kB │ gzip:   1.52 kB
+#9 32.38 dist/assets/grants-GpiU9MSO.js               5.42 kB │ gzip:   2.05 kB
+#9 32.38 dist/assets/audit-0KAmMx_X.js                5.60 kB │ gzip:   2.11 kB
+#9 32.38 dist/assets/fleet-policy-CZeeS5kK.js         6.34 kB │ gzip:   2.48 kB
+#9 32.38 dist/assets/agents-BD5F8Kcw.js               7.17 kB │ gzip:   2.50 kB
+#9 32.38 dist/assets/overview-Dh_KRXsR.js             7.64 kB │ gzip:   2.45 kB
+#9 32.38 dist/assets/enrollments-B2SoHFbq.js          8.43 kB │ gzip:   2.85 kB
+#9 32.38 dist/assets/operators-VwhJ9Zb_.js           10.23 kB │ gzip:   3.46 kB
+#9 32.38 dist/assets/nodes-4JpWiTbE.js               10.52 kB │ gzip:   3.06 kB
+#9 32.38 dist/assets/operations-SbUmKqri.js          11.24 kB │ gzip:   3.70 kB
+#9 32.38 dist/assets/workloads-CJwhNX0S.js           12.88 kB │ gzip:   3.97 kB
+#9 32.38 dist/assets/detail-CXYAJlKI.js              13.20 kB │ gzip:   3.84 kB
+#9 32.38 dist/assets/exchange-policy-B-6d60z0.js     17.38 kB │ gzip:   5.35 kB
+#9 32.38 dist/assets/index-BBTvxewk.js              481.13 kB │ gzip: 151.43 kB
+#9 32.39
+#9 32.39 (!) Some chunks are larger than 400 kB after minification. Consider:
+#9 32.39 - Using dynamic import() to code-split the application
+#9 32.39 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#9 32.39 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#9 32.39 ✓ built in 1.58s
+#9 32.46 assets/index-BBTvxewk.js  147.9 kB gzip
+#9 32.46 assets/index-BIedOzTD.css  10.3 kB gzip
+#9 32.46 initial route: 158.2 kB gzip (budget 250 kB)
+#9 32.46
+#9 32.46 > @blindpass/contract-tests@0.1.0 build
+#9 32.46 > tsc -p tsconfig.json --noEmit
+#9 32.46
+#9 33.72
+#9 33.72 > @blindpass/dashboard@0.1.0 build
+#9 33.72 > tsc --noEmit && vite build
+#9 33.72
+#9 37.85 vite v7.3.6 building client environment for production...
+#9 38.06 (node:225) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+#9 38.06 (Use `node --trace-deprecation ...` to show where the warning was created)
+#9 38.06 transforming...
+#9 38.09 Browserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+#9 38.09   npx update-browserslist-db@latest
+#9 38.09   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+#9 39.95 ✓ 1851 modules transformed.
+#9 40.16 rendering chunks...
+#9 40.17 computing gzip size...
+#9 40.18 dist/index.html                   1.18 kB │ gzip:   0.58 kB
+#9 40.18 dist/assets/index-CLLHCuqa.css   69.42 kB │ gzip:  10.26 kB
+#9 40.18 dist/assets/index-BVJRL2Wy.js   538.05 kB │ gzip: 152.51 kB
+#9 40.18
+#9 40.18 (!) Some chunks are larger than 500 kB after minification. Consider:
+#9 40.18 - Using dynamic import() to code-split the application
+#9 40.18 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#9 40.18 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#9 40.18 ✓ built in 2.33s
+#9 40.25
+#9 40.25 > @blindpass/gateway@0.1.0 build
+#9 40.25 > tsc -p tsconfig.json
+#9 40.25
+#9 41.08
+#9 41.08 > @blindpass/i18n@0.1.0 build
+#9 41.08 > tsc
+#9 41.08
+#9 41.96
+#9 41.96 > @blindpass/mcp-server@0.1.0 build
+#9 41.96 > node --check src/index.mjs
+#9 41.96
+#9 41.98
+#9 41.98 > @blindpass/openclaw-plugin@0.1.0 build
+#9 41.98 > bash ../../scripts/build_bundle.sh
+#9 41.98
+#9 41.99 [blindpass] building workspace dependencies for bundle inputs...
+#9 42.11
+#9 42.11 > @blindpass/gateway@0.1.0 build
+#9 42.11 > tsc -p tsconfig.json
+#9 42.11
+#9 43.01
+#9 43.01 > @blindpass/agent-skill@0.1.0 build
+#9 43.01 > tsc -p tsconfig.json
+#9 43.01
+#9 45.00 [blindpass] bundling plugin entrypoints with esbuild...
+#9 45.31
+#9 45.31   packages/openclaw-plugin/dist/blindpass.mjs  505.6kb
+#9 45.31
+#9 45.31 ⚡ Done in 95ms
+#9 45.68
+#9 45.68   packages/openclaw-plugin/dist/mcp-server.mjs  1.4mb ⚠️
+#9 45.68
+#9 45.68 ⚡ Done in 146ms
+#9 45.80 [blindpass] bundle staged in /source/packages/openclaw-plugin/dist
+#9 45.80
+#9 45.80 > @blindpass/sps-server@0.1.0 build
+#9 45.80 > tsc -p tsconfig.json && mkdir -p dist/db && cp -r src/db/migrations dist/db/
+#9 45.80
+#9 DONE 48.6s
+
+#10 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#10 CACHED
+
+#11 [binaries  3/10] WORKDIR /source
+#11 CACHED
+
+#12 [binaries  4/10] COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+#12 CACHED
+
+#13 [binaries  5/10] COPY crates ./crates
+#13 CACHED
+
+#14 [binaries  6/10] COPY --from=ui /source/packages/console/dist /source/packages/console/dist
+#14 CACHED
+
+#15 [binaries  7/10] COPY --from=ui /source/packages/browser-ui/dist-embedded /source/packages/browser-ui/dist-embedded
+#15 CACHED
+
+#16 [binaries  8/10] RUN cargo build --release --locked -p blindpass-controller -p blindpass-cli -p blindpass-node     -p blindpass-broker --bin blindpass-controller --bin blindpass --bin blindpass-node     --bin blindpass-broker --bin blindpass-provision --bin blindpass-credential-loader --bin blindpass-consumer     --bin blindpass-backup-probe --bin blindpass-workload-client
+#16 CACHED
+
+#17 [binaries  9/10] RUN target/release/blindpass-controller --build-info && target/release/blindpass --version     && target/release/blindpass-node --version && target/release/blindpass-broker --version
+#17 0.147 {"console_embedded":true,"input_embedded":true,"protocol_version":"blindpass-broker/0.1","schema_version":16,"version":"0.1.0"}
+#17 0.149 blindpass 0.1.0
+#17 0.150 blindpass-node 0.1.0
+#17 0.155 blindpass-broker 0.1.0
+#17 DONE 0.2s
+
+#18 [binaries 10/10] RUN mkdir /out && cp target/release/blindpass-controller target/release/blindpass     target/release/blindpass-node target/release/blindpass-broker target/release/blindpass-provision     target/release/blindpass-credential-loader target/release/blindpass-consumer     target/release/blindpass-backup-probe target/release/blindpass-workload-client /out/
+#18 DONE 0.4s
+
+#19 [export 1/1] COPY --from=binaries /out/ /
+#19 CACHED
+
+#20 exporting to client directory
+#20 copying files 30.71MB 0.1s done
+#20 DONE 0.1s

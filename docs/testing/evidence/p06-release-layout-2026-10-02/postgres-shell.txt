@@ -1,0 +1,37 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running tests/deployment_layout.rs (target/debug/deps/deployment_layout-ea65f9c6d37ab4e1)
+
+running 7 tests
+test p06_l01_explicit_layout_resolves_keys_and_sqlite_without_creating_state ... ok
+test p06_l02_explicit_credential_paths_override_layout_names ... ok
+test p06_l03_missing_exposed_and_linked_directories_fail_without_repair ... ok
+test p06_l04_relative_layout_roots_are_rejected ... ok
+test p06_l05_no_database_is_guessed_without_an_explicit_data_root ... ok
+test p06_l06_credential_links_and_unbounded_files_fail_with_sanitized_diagnostics ... ok
+test p06_l07_version_works_without_any_runtime_credentials ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/shell_config.rs (target/debug/deps/shell_config-6dbaae62acd0490c)
+
+running 16 tests
+test damaged_existing_schema_prevents_startup_without_recreation ... ok
+test environment_policy_is_validated_like_an_administrator_write ... ok
+test external_providers_must_name_a_jwks_file ... ok
+test inaccessible_production_database_prevents_startup_with_sanitized_error ... ok
+test migrate_command_initializes_database_without_starting_listener ... ok
+test missing_or_unsafe_production_credentials_fail_without_disclosing_contents ... ok
+test production_configuration_requires_a_private_issuer_seed ... ok
+test production_configuration_requires_file_backed_database_and_key_material ... ok
+test production_defaults_match_sps_and_test_overrides_are_bounded ... ok
+test production_shell_has_no_seed_route_or_test_override ... ok
+test readiness_fails_after_live_database_pool_disconnects ... ok
+test reconcile_clock_command_repairs_a_regressed_database_without_test_mode ... ok
+test seed_command_uses_test_fixture_and_rejects_production_mode ... ok
+test serving_clock_monitor_fences_running_regression_within_two_ticks ... ok
+test shell_exposes_liveness_readiness_and_ct19_capability_without_sensitive_details ... ok
+test test_overrides_are_rejected_unless_test_mode_is_explicit_and_nonproduction ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.21s
+
+P06 PostgreSQL fixture and disposable role removed

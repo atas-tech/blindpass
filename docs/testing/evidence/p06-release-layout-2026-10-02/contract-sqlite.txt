@@ -1,0 +1,12 @@
+
+> @blindpass/contract-tests@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 <repository>/packages/contract-tests
+
+
+ Test Files  7 passed (7)
+      Tests  40 passed (40)
+   Start at  17:52:19
+   Duration  65.69s (transform 1.40s, setup 0ms, import 2.31s, tests 77.52s, environment 1ms)
