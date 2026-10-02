@@ -49,10 +49,56 @@ the complete node archive, references from every shipped native unit to included
 executables, full notices, helper/MCP resolution and a real packaged sandboxed
 headless Chromium launch. It does not approve a browser task or consume a Source.
 
-Still required: installer/uninstaller VM tests; both Compose profiles and image
-inspection; consistent authenticated encrypted backups on both stores; stale
+Still required: complete native/Compose workflow parity; consistent
+authenticated encrypted backups on both stores; stale
 restore against live/offline brokers; external ownership and interrupted source
 fencing; protected upgrades/restore-only rollback; migration in both directions
 with fault injection; the three-profile and remote-controller common-workflow
 matrix; measured numerical bounds and inherited phase acceptance. P06-E05
 SQLite/PostgreSQL conversion is explicitly unsupported and never counted passed.
+
+## OCI and HTTPS edge candidates
+
+```sh
+cargo test -p blindpass-controller --test deployment_health --locked
+python3 tests/deployment/container-config-test.py
+docker build -f deploy/controller/Dockerfile -t blindpass-p06-controller:local .
+docker build -f tests/deployment/edge.Dockerfile -t blindpass-p06-edge:local tests/deployment
+tests/deployment/compose-up.sh --profile sqlite
+tests/deployment/compose-up.sh --profile postgres
+python3 tests/deployment/controller-sbom.py --archive /path/to/named-attested-image.tar
+```
+
+The first two gates cover H01/H02 and Compose/Unraid O09 configuration. The
+actual TLS script also covers H03's verified CA/name and refusal cases. The
+profile driver uses uniquely named disposable projects, private dummy keys,
+password/URL files and certificates, actual volume initialization, real
+process/mount checks, both shipped nginx/Caddy examples, untrusted network
+peer and forged-header denials, controller recreation, PostgreSQL outage and
+bounded Docker readiness. It captures bootstrap credentials only in memory;
+logs assert they never appear. It removes only its own containers, networks,
+volumes and private fixture files. Docker host access is required. It never
+installs a controller on the host or runs a broker container.
+
+O01 scans every exported image layer for the generated exposure canary and
+encoded private PEMs. The sole exception is a public self-test key inside the
+identical GnuTLS binary from the pinned official Debian base. It is digest-bound
+rather than a blanket skip for libraries or lower layers. The image also
+preserves available upstream npm/Cargo notices with path/hash inventories.
+
+O10 needs an attestation-capable Buildx driver and a named OCI export; the
+classic Docker driver cannot export attestations. Use the exact user-approved
+scanner and additive cataloger expression in the
+[controller image workflow](../../.github/workflows/build-and-push-images.yml).
+The verifier checks all OCI descriptor hashes, image/subject binding, the three
+SPDX documents, required OS packages, every Cargo registry lock entry and every
+non-optional npm lock entry. `--config-digest` additionally binds the artifact
+to the tested local image ID. Build-stage inventories include source/fixture
+and declared dependencies; they do not imply all packages execute at runtime.
+Local OCI attachment is separate from unexecuted GHCR publication/aarch64 CI.
+
+The [Compose guide](../../docs/deploy/compose-quickstart.md) documents credential
+consumers/lifetimes, explicit initialization, ingress and retained-state removal.
+Real Unraid GUI/pool/lifecycle checks, complete browser/native backup workflows,
+recovery/fencing/upgrade/migration and the full three-profile/remote matrix remain
+required. Selected Compose lifecycle checks do not establish P06 acceptance.

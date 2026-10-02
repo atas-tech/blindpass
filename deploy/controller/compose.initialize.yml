@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Explicit keys-only command; never part of an ordinary compose up.
+services:
+  keys-init:
+    profiles: [initialize]
+    image: ${BLINDPASS_CONTROLLER_IMAGE:-ghcr.io/atas-tech/blindpass-controller:0.1.0}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: 0
+    command: [keys, init, --directory, /keys]
+    volumes:
+      - blindpass-keys:/keys
+    network_mode: none
+volumes:
+  blindpass-keys: {}

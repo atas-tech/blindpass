@@ -1,0 +1,1 @@
+PASS P06-O10 bound OCI/SPDX attestation: 1 runtime manifest(s), 3 inventory document(s), 1671 unique package names

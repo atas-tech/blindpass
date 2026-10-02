@@ -39,6 +39,7 @@ def main():
         other_key = root / 'other.key'
         subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
                         '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost',
+                        '-addext', 'basicConstraints=critical,CA:FALSE',
                         '-keyout', str(key), '-out', str(cert)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(['openssl', 'genpkey', '-algorithm', 'RSA', '-pkeyopt', 'rsa_keygen_bits:2048',
                         '-out', str(other_key)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -117,6 +118,18 @@ def main():
                     except ConnectionResetError:
                         pass
                 print('PASS P06-T02 verified HTTPS readiness and embedded UI/CSP/HSTS; plaintext rejected', flush=True)
+                probe_env = {**env, 'BLINDPASS_HEALTH_CA_FILE': str(cert),
+                             'BLINDPASS_HEALTH_TLS_NAME': 'localhost'}
+                probe = subprocess.run([str(binary), 'healthcheck'], env=probe_env,
+                                       capture_output=True, timeout=3)
+                assert probe.returncode == 0 and not probe.stdout and not probe.stderr, 'verified readiness probe failed'
+                for changes in [{'BLINDPASS_HEALTH_TLS_NAME': 'wrong.invalid'},
+                                {'BLINDPASS_HEALTH_CA_FILE': str(bad_pem)}]:
+                    probe = subprocess.run([str(binary), 'healthcheck'], env={**probe_env, **changes},
+                                           capture_output=True, timeout=3)
+                    assert probe.returncode != 0 and not probe.stdout
+                    assert probe.stderr == b'blindpass-controller: readiness probe failed\n'
+                print('PASS P06-H03 actual TLS probe verifies CA and name; wrong trust/name fail safely', flush=True)
                 for expected in [401, 401, 401, 401, 401, 429]:
                     assert request(address, context, '/api/v2/agents/token', method='POST')[0] == expected, 'TLS lost transport-peer rate limiting'
 

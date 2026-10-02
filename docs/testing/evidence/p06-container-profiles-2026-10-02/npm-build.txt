@@ -1,0 +1,17 @@
+> @blindpass/i18n@0.1.0 build
+> @blindpass/agent-skill@0.1.0 build
+> @blindpass/browser-ui@0.1.0 build
+✓ built in 506ms
+✓ built in 451ms
+> @blindpass/console@0.1.0 build
+✓ built in 1.71s
+> @blindpass/contract-tests@0.1.0 build
+> @blindpass/dashboard@0.1.0 build
+✓ built in 2.55s
+> @blindpass/gateway@0.1.0 build
+> @blindpass/i18n@0.1.0 build
+> @blindpass/mcp-server@0.1.0 build
+> @blindpass/openclaw-plugin@0.1.0 build
+> @blindpass/gateway@0.1.0 build
+> @blindpass/agent-skill@0.1.0 build
+> @blindpass/sps-server@0.1.0 build

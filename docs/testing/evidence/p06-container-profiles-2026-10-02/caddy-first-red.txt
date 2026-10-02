@@ -1,0 +1,28 @@
+PASS P06-O01 image UID/layout/embedded UI/licenses/libraries; all exported layers scanned
+PASS P06-O02/O03 sqlite: explicit private initialization, no startup regeneration; ready 0.634s
+PASS P06-O04 sqlite: actual process UID/caps/NNP, private socket and mount write denials
+PASS P06-O05/O06/O08 sqlite nginx: real TLS/header overwrite/peer denial, backend failure/privacy and retained identity/admin
+edge startup diagnostic: {"level":"info","ts":1790957086.0400515,"msg":"using provided configuration","config_file":"/fixture/Caddyfile","config_adapter":"caddyfile"}
+{"level":"warn","ts":1790957086.0411875,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"warn","ts":1790957086.0417593,"logger":"caddyfile","msg":"Unnecessary header_up X-Forwarded-For: the reverse proxy's default behavior is to pass headers to the upstream"}
+{"level":"warn","ts":1790957086.0426354,"msg":"Caddyfile input is not formatted; run the 'caddy fmt' command to fix inconsistencies","adapter":"caddyfile","file":"/fixture/Caddyfile","line":6}
+{"level":"info","ts":1790957086.0431123,"msg":"redirected default logger","from":"stderr","to":"discard"}
+
+fixed readiness diagnostic: 403 {"error":"proxy_required"}
+Traceback (most recent call last):
+  File "[workspace]/tests/deployment/compose-up.py", line 275, in <module>
+    if __name__=='__main__': main()
+                             ~~~~^^
+  File "[workspace]/tests/deployment/compose-up.py", line 271, in main
+    profile_gate(args.profile,args.image,args.helper_image)
+    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "[workspace]/tests/deployment/compose-up.py", line 211, in profile_gate
+    edge_start(kind)
+    ~~~~~~~~~~^^^^^^
+  File "[workspace]/tests/deployment/compose-up.py", line 162, in edge_start
+    wait(serving,15,'HTTPS edge did not become ready')
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "[workspace]/tests/deployment/compose-up.py", line 44, in wait
+    assert time.monotonic()<expires, description
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: HTTPS edge did not become ready

@@ -41,3 +41,40 @@ Check `/healthz` and `/readyz`, including per-service results. Back up PostgreSQ
 If links point at the wrong page, check `SPS_UI_BASE_URL`. If frontends call the wrong API, rebuild with the correct `VITE_SPS_API_URL`. If browser requests fail, check exact CORS origins and HTTPS/cookie topology. If SPS cannot reach a backing service, check its configured container hostname, network and credentials.
 
 The [self-hosting guide](../guides/self-hosting.md) covers common configuration limits. New controller packaging and recovery support must pass [W2](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#sequence-and-gates) and the [deployment tests](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md#controller-packaging-persistence-and-migration).
+
+## Rust controller candidates (P06)
+
+The new [SQLite](../../deploy/unraid/blindpass-controller-sqlite.xml) and
+[PostgreSQL](../../deploy/unraid/blindpass-controller-postgres.xml) templates
+are separate from the retained SPS templates above. They select the versioned
+Rust controller candidate with embedded console/input page, UID/GID 10001,
+read-only root, dropped capabilities, no-new-privileges, disabled core dumps,
+private runtime tmpfs and read-only keys. They publish no host port and require
+a separately configured HTTPS edge on the `blindpass-edge` custom network.
+Set its exact trusted IP, both HTTPS authorities and protected certificate
+configuration. No Redis, broker container, Docker socket or systemd mount is
+part of these controller templates.
+
+Prepare private host state and key directories owned by `10001:10001`, mode
+`0700`, with key files mode `0600`. Use a direct local pool path such as the
+selected `/mnt/cache/appdata` path for SQLite; the `/mnt/user` FUSE share and
+network filesystems are not a verified SQLite profile. Initialize keys and
+schema explicitly before serving, following the command/credential contracts
+in the [Compose candidate guide](../deploy/compose-quickstart.md). Use one
+fixed chosen image/version and the same prepared mounts during initialization;
+key initialization alone needs a writable keys mount, while serving requires
+it read-only. Startup never generates keys or initializes the database.
+
+The PostgreSQL template describes only the controller. Supply a separately
+administered PostgreSQL 16 service on a private network and a private URL file
+at `/config/database.url` (UID 10001, mode `0600`, parent `0700`). Credentials
+are file inputs, not template/environment values. The existing legacy
+PostgreSQL template's development defaults do not configure this profile.
+Configure verified database TLS separately if the database crosses hosts.
+
+XML rendering and actual Docker/Compose behavior cannot establish Unraid GUI,
+pool-mount or lifecycle acceptance. Those checks require a real Unraid host.
+Registry tags and remote publishing also need separate execution evidence.
+Authenticated complete backup/recovery, external ownership/fencing and tested
+migration/upgrade runbooks remain P06 requirements. Preserve these candidates'
+state on removal; do not delete volumes or copy a live database as a migration.

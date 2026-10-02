@@ -2,19 +2,24 @@
 # Replace both authorities and PEMs; match controller public/UI origins.
 # BLINDPASS_PROXY_REQUIRED=1, BLINDPASS_TRUST_PROXY=127.0.0.1,::1
 # Use an already trusted certificate. ACME/account setup is an operator choice.
+# Literal authority headers work with Debian 12's Caddy 2.6 and newer releases.
 {
     admin off
     auto_https off
+    servers {
+        strict_sni_host
+    }
     log default {
         output discard
     }
 }
 
-(blindpass_controller) {
+https://blindpass.example {
+    tls /etc/caddy/blindpass/fullchain.pem /etc/caddy/blindpass/private-key.pem
     header Strict-Transport-Security "max-age=31536000"
     reverse_proxy 127.0.0.1:3200 {
-        header_up Host {args[0]}
-        header_up X-Forwarded-Host {args[0]}
+        header_up Host blindpass.example
+        header_up X-Forwarded-Host blindpass.example
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-For {http.request.remote.host}
         header_up -Forwarded
@@ -27,12 +32,20 @@
     }
 }
 
-https://blindpass.example {
-    tls /etc/caddy/blindpass/fullchain.pem /etc/caddy/blindpass/private-key.pem
-    import blindpass_controller blindpass.example
-}
-
 https://input.example {
     tls /etc/caddy/blindpass/fullchain.pem /etc/caddy/blindpass/private-key.pem
-    import blindpass_controller input.example
+    header Strict-Transport-Security "max-age=31536000"
+    reverse_proxy 127.0.0.1:3200 {
+        header_up Host input.example
+        header_up X-Forwarded-Host input.example
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-For {http.request.remote.host}
+        header_up -Forwarded
+        header_down -Strict-Transport-Security
+        transport http {
+            versions 1.1
+            dial_timeout 5s
+            response_header_timeout 40s
+        }
+    }
 }

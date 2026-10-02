@@ -1,0 +1,30 @@
+FE
+======================================================================
+ERROR: test_p06_o09_templates_preserve_separate_controller_profiles (__main__.Configuration.test_p06_o09_templates_preserve_separate_controller_profiles)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "[workspace]/tests/deployment/container-config-test.py", line 54, in test_p06_o09_templates_preserve_separate_controller_profiles
+    tree=ET.parse(ROOT/'deploy/unraid'/('blindpass-controller-'+profile+'.xml')).getroot()
+         ~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/xml/etree/ElementTree.py", line 1227, in parse
+    tree.parse(source, parser)
+    ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/xml/etree/ElementTree.py", line 570, in parse
+    source = open(source, "rb")
+FileNotFoundError: [Errno 2] No such file or directory: '[workspace]/deploy/unraid/blindpass-controller-sqlite.xml'
+
+======================================================================
+FAIL: test_p06_o09_each_profile_has_nonroot_private_mount_and_ingress_contract (__main__.Configuration.test_p06_o09_each_profile_has_nonroot_private_mount_and_ingress_contract)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "[workspace]/tests/deployment/container-config-test.py", line 26, in test_p06_o09_each_profile_has_nonroot_private_mount_and_ingress_contract
+    value=self.rendered(profile); service=value['services']['controller']
+  File "[workspace]/tests/deployment/container-config-test.py", line 21, in rendered
+    self.assertEqual(result.returncode,0,'Compose candidate failed to render')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : Compose candidate failed to render
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.043s
+
+FAILED (failures=1, errors=1)

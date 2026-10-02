@@ -1,0 +1,68 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+services:
+  controller:
+    image: ${BLINDPASS_CONTROLLER_IMAGE:-ghcr.io/atas-tech/blindpass-controller:0.1.0}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: 0
+    stop_grace_period: 10s
+    restart: unless-stopped
+    environment:
+      BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:-https://blindpass.example}
+      BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:-https://input.example}
+      BLINDPASS_PROXY_REQUIRED: "1"
+      BLINDPASS_TRUST_PROXY: ${BLINDPASS_TRUST_PROXY:?set the exact trusted HTTPS edge peer}
+      BLINDPASS_DATABASE_URL_FILE: /config/database.url
+    expose: ["3200"]
+    volumes:
+      - blindpass-data:/data
+      - blindpass-keys:/keys:ro
+      - type: bind
+        source: ${BLINDPASS_DATABASE_CONFIG_DIR:?set the private UID10001 database config directory}
+        target: /config
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      edge:
+        ipv4_address: ${BLINDPASS_CONTROLLER_IP:-172.29.6.2}
+      database: {}
+  postgres:
+    image: postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: blindpass
+      POSTGRES_DB: blindpass
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets: [postgres-password]
+    volumes:
+      - blindpass-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U blindpass -d blindpass"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    networks: [database]
+volumes:
+  blindpass-data: {}
+  blindpass-keys: {}
+  blindpass-postgres: {}
+secrets:
+  postgres-password:
+    file: ${BLINDPASS_POSTGRES_PASSWORD_FILE:?set the private PostgreSQL password file}
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${BLINDPASS_EDGE_SUBNET:-172.29.6.0/24}
+  database:
+    internal: true

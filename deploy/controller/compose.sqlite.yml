@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+services:
+  controller:
+    image: ${BLINDPASS_CONTROLLER_IMAGE:-ghcr.io/atas-tech/blindpass-controller:0.1.0}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: 0
+    stop_grace_period: 10s
+    restart: unless-stopped
+    environment:
+      BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:-https://blindpass.example}
+      BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:-https://input.example}
+      BLINDPASS_PROXY_REQUIRED: "1"
+      BLINDPASS_TRUST_PROXY: ${BLINDPASS_TRUST_PROXY:?set the exact trusted HTTPS edge peer}
+    expose: ["3200"]
+    volumes:
+      - blindpass-data:/data
+      - blindpass-keys:/keys:ro
+    tmpfs:
+      - /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    networks:
+      edge:
+        ipv4_address: ${BLINDPASS_CONTROLLER_IP:-172.29.6.2}
+volumes:
+  blindpass-data: {}
+  blindpass-keys: {}
+networks:
+  edge:
+    ipam:
+      config:
+        - subnet: ${BLINDPASS_EDGE_SUBNET:-172.29.6.0/24}

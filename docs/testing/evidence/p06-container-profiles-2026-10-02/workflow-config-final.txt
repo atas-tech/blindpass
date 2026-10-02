@@ -1,0 +1,4 @@
+PASS actual workspace version command returned 0.1.0
+PASS scanner CSV/YAML parsed the exact verified cataloger expression
+PASS all three legacy image job bodies unchanged
+PASS disposable Buildx builder/cache and profile resources removed; default builder and shared PostgreSQL/Redis retained

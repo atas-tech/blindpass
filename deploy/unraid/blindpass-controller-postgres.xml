@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>BlindPass Controller Postgres</Name>
+  <Repository>ghcr.io/atas-tech/blindpass-controller:0.1.0</Repository>
+  <Registry>https://ghcr.io</Registry>
+  <Network>blindpass-edge</Network>
+  <MyIP />
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/atas-tech/blindpass</Support>
+  <Project>https://github.com/atas-tech/blindpass</Project>
+  <Overview>P06 controller candidate with embedded console and input page. Explicit keys init and migration required before first start. Requires a separately configured HTTPS edge on this custom network. Complete backup/recovery and migration acceptance remain unfinished.</Overview>
+  <Category>Network:Web</Category>
+  <WebUI>https://blindpass.example</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/atas-tech/blindpass/main/deploy/unraid/blindpass-controller-postgres.xml</TemplateURL>
+  <Icon />
+  <ExtraParams>--user=10001:10001 --read-only --cap-drop=ALL --security-opt=no-new-privileges --ulimit=core=0 --stop-timeout=10 --tmpfs=/run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700</ExtraParams>
+  <PostArgs>serve</PostArgs>
+  <CPUset />
+  <Requires>Prepare private host directories owned by 10001:10001 with mode 0700; keys and database URL files mode 0600. Use a direct local pool path for SQLite, not /mnt/user or a network filesystem. Set exact HTTPS edge peer IP and configured public origins. No host port is published. PostgreSQL profile requires a separately administered PostgreSQL 16 service on a private network.</Requires>
+  <Config Name="Private data" Target="/data" Default="/mnt/cache/appdata/blindpass-controller/data" Mode="rw" Description="Direct local pool path; private UID/GID 10001 mode 0700. Retained on removal." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/blindpass-controller/data</Config>
+  <Config Name="Read-only keys" Target="/keys" Default="/mnt/cache/appdata/blindpass-controller/keys" Mode="ro" Description="Explicitly initialize root-secret, agent-jwt-secret and issuer-key; never generate on startup." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/blindpass-controller/keys</Config>
+  <Config Name="Public controller URL" Target="BLINDPASS_PUBLIC_URL" Default="https://blindpass.example" Mode="" Description="Exact HTTPS authority served by the edge." Type="Variable" Display="always" Required="true" Mask="false">https://blindpass.example</Config>
+  <Config Name="Input page URL" Target="BLINDPASS_UI_BASE_URL" Default="https://input.example" Mode="" Description="Exact HTTPS input page authority served by the edge." Type="Variable" Display="always" Required="true" Mask="false">https://input.example</Config>
+  <Config Name="Require HTTPS edge" Target="BLINDPASS_PROXY_REQUIRED" Default="1" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">1</Config>
+  <Config Name="Trusted edge peer" Target="BLINDPASS_TRUST_PROXY" Default="" Mode="" Description="Required exact edge container IP or canonical restricted CIDR; not a boolean or wildcard." Type="Variable" Display="always" Required="true" Mask="false" />
+  <Config Name="Protected database configuration" Target="/config" Default="/mnt/cache/appdata/blindpass-controller/config" Mode="ro" Description="Directory mode 0700 owned by 10001; database.url mode 0600. Contains database credentials; never inline in template." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/blindpass-controller/config</Config>
+  <Config Name="Database URL file" Target="BLINDPASS_DATABASE_URL_FILE" Default="/config/database.url" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">/config/database.url</Config>
+</Container>

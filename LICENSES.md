@@ -70,6 +70,17 @@ approval is for the P02 dependency proposal and its resolved Cargo graph. It doe
   `ring` and a bundled SQLite.
 - If package boundaries change materially, the licensing split should be reviewed again.
 
+### P06 controller OCI boundary
+
+The controller image embeds the AGPL console and MIT browser input/assets,
+retains their license texts and Inter's OFL notice, and includes the co-located
+AGPL administration CLI. It does not change package licensing or bundle a
+broker, browser or Node runtime. The separately user-approved pinned SBOM
+scanner is a build-time tool, not a runtime package; its exact review and
+remaining license/supply-chain signals are recorded in
+[decision 0009](docs/product/decisions/0009-p06-sbom-scanner-dependency-review.md).
+No npm/Cargo dependency version changes accompany this packaging slice.
+
 
 ### P05 MCP distribution boundary
 

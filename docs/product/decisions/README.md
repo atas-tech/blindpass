@@ -12,6 +12,7 @@ Decision records fix a direction that the [roadmap](https://github.com/tuthan/do
 | [0006 P05 browser runtime review](0006-p05-browser-runtime-review.md) | User-approved exact private-helper Playwright and stock Playwright MCP test profiles, with actual sandbox/isolation/client gates | Accepted 2026-09-30; phase/client gates retained |
 | [0007 P05 native backup dependency review](0007-p05-native-backup-dependency-review.md) | Exact restic/rest-server proposals fail the dependency guard; a fixed proposal needs review | Blocked 2026-10-01 |
 | [0008 P06 controller TLS adapter review](0008-p06-controller-tls-dependency-review.md) | User-approved ring-only Tokio adapter; existing rustls/ring versions retained | Accepted 2026-10-02; runtime gates retained |
+| [0009 P06 SBOM scanner review](0009-p06-sbom-scanner-dependency-review.md) | User-approved pinned build-time scanner after broad Socket and actual inventory review | Accepted 2026-10-02; local attachment and remote publication gates retained |
 
 **Status vocabulary.** *Proposed*: written, waiting on the named gate. *Accepted*: direction chosen; implementation still follows roadmap gates. *Superseded*: replaced by a later record and kept for history.
 

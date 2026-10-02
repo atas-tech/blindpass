@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "[workspace]/tests/deployment/controller-sbom.py", line 71, in <module>
+    verify(args.archive,args.config_digest)
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "[workspace]/tests/deployment/controller-sbom.py", line 63, in verify
+    assert expected in names, 'required runtime/build package missing: '+expected
+           ^^^^^^^^^^^^^^^^^
+AssertionError: required runtime/build package missing: tokio-rustls

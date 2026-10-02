@@ -1,0 +1,128 @@
+     Running unittests src/lib.rs (target/debug/deps/blindpass_broker-6db550adea3814d9)
+test result: ok. 298 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.14s
+     Running unittests src/bin/blindpass-backup-probe.rs (target/debug/deps/blindpass_backup_probe-6aeac0fba694fe3b)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/blindpass_broker-2cc4fdcf7edd5cdf)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-browser-proxy-probe.rs (target/debug/deps/blindpass_browser_proxy_probe-a1e598e97a118bec)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-browser-supervisor-probe.rs (target/debug/deps/blindpass_browser_supervisor_probe-8098d11d4e3c32ec)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-consumer.rs (target/debug/deps/blindpass_consumer-34d46712fc84b8d3)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-crash-probe.rs (target/debug/deps/blindpass_crash_probe-b74b8837d4c2da24)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-credential-loader.rs (target/debug/deps/blindpass_credential_loader-4ff2961ce56b74af)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-custody-clock-probe.rs (target/debug/deps/blindpass_custody_clock_probe-bfb1a8d21595c3c4)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-custody-probe.rs (target/debug/deps/blindpass_custody_probe-ba0aa43c3839eef2)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-private-helper-probe.rs (target/debug/deps/blindpass_private_helper_probe-79f34cb5afdeecfb)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-provision.rs (target/debug/deps/blindpass_provision-b8c3f273e1271711)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-runtime-identity-probe.rs (target/debug/deps/blindpass_runtime_identity_probe-19052fba246f9ed3)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-session-journal-probe.rs (target/debug/deps/blindpass_session_journal_probe-fab899333d3a7bfa)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-transport-probe.rs (target/debug/deps/blindpass_transport_probe-a486fe1dc608d50f)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/bin/blindpass-workload-client.rs (target/debug/deps/blindpass_workload_client-b8b78db7909ddaea)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.90s
+     Running unittests src/main.rs (target/debug/deps/blindpass-a9b547e8bd2af096)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/fleet_admin.rs (target/debug/deps/fleet_admin-70cc4b3dc5351b9e)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+     Running tests/keys.rs (target/debug/deps/keys-aeec928b3f46bad3)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+     Running tests/migrate.rs (target/debug/deps/migrate-9beb6f733d9136d5)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_controller-e28e5bf0bb37d821)
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.28s
+     Running unittests src/main.rs (target/debug/deps/blindpass_controller-95d91ce666e910b8)
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/admin_session.rs (target/debug/deps/admin_session-e0c8a0384fd4e15b)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.29s
+     Running tests/admin_socket.rs (target/debug/deps/admin_socket-0d83a9376cbde744)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s
+     Running tests/browser_cors.rs (target/debug/deps/browser_cors-9f489d47919454c0)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+     Running tests/deployment_health.rs (target/debug/deps/deployment_health-42fc349ccbbce98f)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.04s
+     Running tests/deployment_layout.rs (target/debug/deps/deployment_layout-de9dec643a25ab28)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/deployment_proxy.rs (target/debug/deps/deployment_proxy-23686e2832e26809)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
+     Running tests/deployment_startup.rs (target/debug/deps/deployment_startup-8fac269a2cd3308b)
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s
+     Running tests/desktop_app_e2e.rs (target/debug/deps/desktop_app_e2e-53842ed96f751c5c)
+test approval_app_follows_no_redirect_and_refuses_an_unverified_certificate ... ignored, runs the Quickshell approval app offscreen; needs quickshell, curl and openssl
+test approval_app_ipc_exposes_window_control_only ... ignored, runs the Quickshell approval app offscreen; needs quickshell
+test approval_app_signs_in_decides_restarts_and_signs_out ... ignored, runs the Quickshell approval app offscreen; needs quickshell, curl and openssl
+test result: ok. 0 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/desktop_session.rs (target/debug/deps/desktop_session-fec8c65a2b18ad80)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.26s
+     Running tests/embedded_ui.rs (target/debug/deps/embedded_ui-b72036849ac36a2e)
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+     Running tests/fleet_approvals.rs (target/debug/deps/fleet_approvals-4f857deff3e84f51)
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.31s
+     Running tests/fleet_audit.rs (target/debug/deps/fleet_audit-27999762d8c1eb17)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.34s
+     Running tests/fleet_browser_intents.rs (target/debug/deps/fleet_browser_intents-55d137d3a2f71283)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.15s
+     Running tests/fleet_browser_operations.rs (target/debug/deps/fleet_browser_operations-0b947e97e34db847)
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.27s
+     Running tests/fleet_channel.rs (target/debug/deps/fleet_channel-ba65d9bd8d826aef)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+     Running tests/fleet_clock.rs (target/debug/deps/fleet_clock-8bcad162643acefc)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.90s
+     Running tests/fleet_enrollment.rs (target/debug/deps/fleet_enrollment-2533fa55bf8e2622)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.65s
+     Running tests/fleet_events.rs (target/debug/deps/fleet_events-2c366d5026b2fe2a)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.10s
+     Running tests/fleet_lifecycle.rs (target/debug/deps/fleet_lifecycle-a12d0e841f7026b2)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+     Running tests/fleet_provisioning_offers.rs (target/debug/deps/fleet_provisioning_offers-0a467eabd0d315d7)
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.05s
+     Running tests/fleet_provisioning_state.rs (target/debug/deps/fleet_provisioning_state-1d6df8acbc47085a)
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 22.34s
+     Running tests/fleet_provisioning_submit.rs (target/debug/deps/fleet_provisioning_submit-7dada275acc6a9bd)
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 30.59s
+     Running tests/fleet_registry.rs (target/debug/deps/fleet_registry-7bb9569fbe62e0ff)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.49s
+     Running tests/fleet_roles.rs (target/debug/deps/fleet_roles-80d93efb52ee7eae)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.33s
+     Running tests/postgres_outage.rs (target/debug/deps/postgres_outage-4635ffb31be39a0b)
+test readiness_fails_during_postgres_outage_and_recovers_with_state_intact ... ignored, PostgreSQL only: set P02_TEST_POSTGRES_URL and run with --ignored
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/rate_limits.rs (target/debug/deps/rate_limits-cc04e83e99db4146)
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.22s
+     Running tests/security_perf_regressions.rs (target/debug/deps/security_perf_regressions-89d41de815e847a5)
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.23s
+     Running tests/shell_config.rs (target/debug/deps/shell_config-efce51387ad8da82)
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.57s
+     Running tests/store_transitions.rs (target/debug/deps/store_transitions-d177cb563893d5ee)
+test result: ok. 35 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.38s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_core-dd903b36c80cd40a)
+test result: ok. 59 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/hpke_interop.rs (target/debug/deps/hpke_interop-582782e428e33b1c)
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/provisioning_binding.rs (target/debug/deps/provisioning_binding-7271540ae4590f3f)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running tests/provisioning_delivery.rs (target/debug/deps/provisioning_delivery-d2aef90434dc2ada)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s
+     Running tests/provisioning_signed_offer.rs (target/debug/deps/provisioning_signed_offer-284e00c26566a7cf)
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_node-d714790b0bcb1017)
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running unittests src/main.rs (target/debug/deps/blindpass_node-71e2953defd066d8)
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+   Doc-tests blindpass_broker
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests blindpass_controller
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests blindpass_core
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+   Doc-tests blindpass_node
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

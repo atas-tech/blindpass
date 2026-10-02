@@ -1,0 +1,10 @@
+PASS P06-T01 invalid/incomplete/mismatched/unsafe TLS refuses before state access
+PASS P06-T02 verified HTTPS readiness and embedded UI/CSP/HSTS; plaintext rejected
+Traceback (most recent call last):
+  File "[workspace]/tests/deployment/controller-tls.py", line 171, in <module>
+    main()
+    ~~~~^^
+  File "[workspace]/tests/deployment/controller-tls.py", line 124, in main
+    assert probe.returncode == 0 and not probe.stdout and not probe.stderr, 'verified readiness probe failed'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: verified readiness probe failed

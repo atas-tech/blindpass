@@ -15,6 +15,8 @@ use std::path::Path;
 use std::process::ExitCode;
 use tokio::net::TcpListener;
 
+mod healthcheck;
+
 #[tokio::main]
 async fn main() -> ExitCode {
     match run(std::env::args().skip(1).collect()).await {
@@ -54,6 +56,7 @@ async fn run(args: Vec<String>) -> Result<(), String> {
             println!("Controller configuration is valid.");
             Ok(())
         }
+        [command] if command == "healthcheck" => healthcheck::run(),
         [command] if command == "migrate" => migrate().await,
         [command] if command == "reconcile-clock" => reconcile_clock().await,
         [command, flag, path] if command == "seed" && flag == "--fixture" => {
@@ -71,7 +74,7 @@ async fn run(args: Vec<String>) -> Result<(), String> {
         _ => {
             print_help();
             Err(
-                "expected `serve`, `migrate`, `reconcile-clock`, `seed --fixture <file>` or `check-config`"
+                "expected `serve`, `migrate`, `reconcile-clock`, `seed --fixture <file>`, `healthcheck` or `check-config`"
                     .to_owned(),
             )
         }
@@ -258,6 +261,6 @@ async fn shutdown_signal() {
 
 fn print_help() {
     println!(
-        "blindpass-controller <command>\n\nCommands:\n  serve                  Run the local controller\n  migrate                Apply database migrations and exit\n  reconcile-clock        Recover from a detected database clock regression\n  seed --fixture <file>  Seed a test-mode fixture\n  check-config           Validate configuration without starting the server"
+        "blindpass-controller <command>\n\nCommands:\n  serve                  Run the local controller\n  migrate                Apply database migrations and exit\n  reconcile-clock        Recover from a detected database clock regression\n  seed --fixture <file>  Seed a test-mode fixture\n  check-config           Validate configuration without starting the server\n  healthcheck            Probe local readiness with bounded, verified transport"
     );
 }

@@ -1,0 +1,29 @@
+   Compiling blindpass-controller v0.1.0 ([workspace]/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.50s
+     Running tests/deployment_health.rs (target/debug/deps/deployment_health-42fc349ccbbce98f)
+
+running 2 tests
+test p06_h02_false_redirect_malformed_oversized_and_stalled_readiness_fail ... FAILED
+test p06_h01_healthcheck_uses_only_loopback_readiness_without_key_config ... FAILED
+
+failures:
+
+---- p06_h02_false_redirect_malformed_oversized_and_stalled_readiness_fail stdout ----
+
+thread 'p06_h02_false_redirect_malformed_oversized_and_stalled_readiness_fail' (12064) panicked at crates/blindpass-controller/tests/deployment_health.rs:36:5:
+assertion failed: output.stdout.is_empty()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- p06_h01_healthcheck_uses_only_loopback_readiness_without_key_config stdout ----
+
+thread 'p06_h01_healthcheck_uses_only_loopback_readiness_without_key_config' (12063) panicked at crates/blindpass-controller/tests/deployment_health.rs:36:5:
+assertion failed: output.stdout.is_empty()
+
+
+failures:
+    p06_h01_healthcheck_uses_only_loopback_readiness_without_key_config
+    p06_h02_false_redirect_malformed_oversized_and_stalled_readiness_fail
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.01s
+
+error: test failed, to rerun pass `-p blindpass-controller --test deployment_health`

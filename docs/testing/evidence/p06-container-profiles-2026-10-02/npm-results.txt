@@ -1,0 +1,47 @@
+> @blindpass/agent-skill@0.1.0 test
+ Test Files  6 passed (6)
+      Tests  23 passed (23)
+> @blindpass/browser-ui@0.1.0 test
+ℹ tests 57
+ℹ pass 57
+ℹ fail 0
+ℹ skipped 0
+> @blindpass/console@0.1.0 test
+ Test Files  11 passed (11)
+      Tests  108 passed (108)
+> @blindpass/dashboard@0.1.0 test
+ Test Files  15 passed (15)
+      Tests  42 passed (42)
+> @blindpass/gateway@0.1.0 test
+ Test Files  2 passed (2)
+      Tests  9 passed (9)
+> @blindpass/i18n@0.1.0 test
+ℹ tests 3
+ℹ pass 3
+ℹ fail 0
+ℹ skipped 0
+> @blindpass/mcp-server@0.1.0 test
+ℹ tests 108
+ℹ pass 108
+ℹ fail 0
+ℹ skipped 0
+> @blindpass/openclaw-plugin@0.1.0 test
+> @blindpass/sps-server@0.1.0 test
+ Test Files  15 passed | 17 skipped (32)
+      Tests  80 passed | 101 skipped (181)
+ℹ tests 13
+ℹ pass 13
+ℹ fail 0
+ℹ skipped 0
+ℹ tests 2
+ℹ pass 2
+ℹ fail 0
+ℹ skipped 0
+ℹ tests 7
+ℹ pass 7
+ℹ fail 0
+ℹ skipped 0
+ℹ tests 147
+ℹ pass 147
+ℹ fail 0
+ℹ skipped 0
