@@ -127,6 +127,7 @@ fn party_json(party: &FulfillmentParty) -> JsonValue {
 /// A fulfillment as the console reads it. The two parties come from the signed
 /// terms once they exist; before approval they are the enrolled keys as they
 /// stand now, which is what an approver must verify and bind.
+#[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
 async fn body(store: &Store, record: &FulfillmentRecord) -> Result<JsonValue, Response> {
     let mut parties = None;
     let mut terms_bound = false;

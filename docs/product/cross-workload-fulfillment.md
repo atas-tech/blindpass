@@ -164,8 +164,31 @@ No provider adapter, scoped-credential issuance, brokered action, scheduler, acc
 approval, desktop-app approval or multi-recipient fan-out. The desktop approval app and the metadata widget do not show
 fulfillments; the console does.
 
+## Built behavior beyond the original contract
+
+| Topic | What exists |
+|---|---|
+| Approval | Binding is to the **displayed node fingerprints**: the approver returns both with the decision and a changed pair is `409 authorization_changed`. A rule's named approvers decide; the requester cannot (`approval_scope_denied`, or `self_approval_denied` when named). Grouped approval does not exist |
+| Repeat to one recipient | The recipient broker keeps a read credential for its normal lifetime, so a second fulfillment to the same recipient unit must carry `prior_fulfillment_id` of the one that placed it. Without it the broker fails the new fulfillment (`destination_busy`, or `destination_occupied` for a credential it did not receive through a fulfillment) and keeps the old credential |
+| `uncertain` | Reached from `available` at expiry (`no_recipient_result`). It keeps the recipient's single slot, deletes the payload and is never re-served; a late `stored` reconciles it to `expired` (`stored_not_consumed`) and a late `consumed` completes it. A result for a closed fulfillment is evidence only |
+| Clock skew | The controller accepts a node offer issued up to 30 s ahead of its own clock and refuses one further ahead. Brokers bind offers to their boot-time clock anchor, not wall time |
+| Revocation reach | Revoking while the recipient broker holds an **unread** credential removes it once the revocation is applied; reading first makes it a read credential, which no revocation recalls. Revoking a completed fulfillment changes nothing and still reports `provider_revocation: unsupported` |
+| Recipient broker restart | Custody is memory-only: a restart after `stored` loses the credential; the fulfillment closes `expired` and nothing resumes |
+| Feature off | With `BLINDPASS_FULFILLMENTS_ENABLED` unset or `0` the controller advertises `features.fleet_fulfillments: false`, refuses creation (`404 fulfillments_disabled`) and revokes every non-terminal fulfillment at startup with reason `feature_disabled`. Brokers keep their local flags; removing them is a separate, operator-owned step. The shipped Compose profiles do not pass the variable through |
+| Legacy v2 isolation | Only `store/fulfillments.rs`, schema registration in `store/mod.rs` and recovery invalidation in `store/recovery.rs` name `cross_fulfillments` or `cross_fulfillment_payloads`; a source-scan test (`p10_i01_fulfillment_state_is_unreachable_from_other_modules`) fails if another module does, so no `/api/v2` exchange code can read them. This is a convention check, not a database-role boundary: the v2 and fleet code share one pool and role |
+
 ## Implementation slices
 
-| Slice | State |
-|---|---|
-| 1 contract, verification | this document |
+| Slice | State | Commits |
+|---|---|---|
+| 1 contract, verification | done | `4fa9739` |
+| 2 core terms, one-use offer, signed documents | done | `4716dfc` |
+| 3 controller schema 20, store, API, `cross_workload` policy, node events, sweeps, recovery invalidation | done; controller suites on SQLite and PostgreSQL | `4ff8783`, `e326583`, `ff0f0db` |
+| 3 broker fulfillment book, control surface, startup ceilings, rotation | done; unit tests | `79bb90c`, `e813bb9`, `5eec90a` |
+| 3 node relay | done; real-broker event fixture | `cbf756a` |
+| 4 console Fulfillments page, fingerprint-bound approval, policy rule editor | done; component tests, no browser run | `8c34f23` |
+| 5 two-guest VM harness | done; both stores | `aefc3ec`, `a41354f` |
+| 6 documents, examples, execution record | done | `32b897e` and the [execution record](../testing/evidence/p10-cross-workload-fulfillment-2026-10-07.md) |
+
+Open (not code): the operator need, owner acceptance, hosted CI, any provider adapter, Compose pass-through of the flag,
+node key rotation in flight inside a VM, and a reply lost on a live connection inside a VM.
