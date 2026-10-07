@@ -35,7 +35,8 @@ echo "[blindpass] bundling plugin entrypoints with esbuild..."
 
 MCP_BUNDLE_METADATA=$(mktemp /tmp/blindpass-mcp-bundle-metadata.XXXXXXXX)
 RESOLVER_BUNDLE_METADATA=$(mktemp /tmp/blindpass-resolver-bundle-metadata.XXXXXXXX)
-trap 'rm -f -- "$MCP_BUNDLE_METADATA" "$RESOLVER_BUNDLE_METADATA"' EXIT
+MIGRATE_BUNDLE_METADATA=$(mktemp /tmp/blindpass-migrate-bundle-metadata.XXXXXXXX)
+trap 'rm -f -- "$MCP_BUNDLE_METADATA" "$RESOLVER_BUNDLE_METADATA" "$MIGRATE_BUNDLE_METADATA"' EXIT
 (cd "${ROOT_DIR}" && npx --yes esbuild "${PLUGIN_DIR}/mcp-server.mjs" \
   --bundle \
   --platform=node \
@@ -61,6 +62,17 @@ import { createRequire as blindpassCreateRequire } from "node:module"; const req
   --banner:js='#!/usr/bin/env node' \
   --outfile="${DIST_DIR}/blindpass-resolver.mjs")
 
+# P09: the OpenClaw credential migration CLI. The bin source starts with its own shebang, which esbuild
+# keeps, so no banner is added. It bundles the vendored credential matrix and encrypted-store.mjs only.
+(cd "${ROOT_DIR}" && npx --yes esbuild "${PLUGIN_DIR}/bin/blindpass-openclaw-migrate" \
+  --bundle \
+  --platform=node \
+  --format=esm \
+  --target=node20 \
+  --minify \
+  --metafile="${MIGRATE_BUNDLE_METADATA}" \
+  --outfile="${DIST_DIR}/blindpass-openclaw-migrate.mjs")
+
 cat > "${DIST_DIR}/index.mjs" <<'EOF'
 export { default } from "./blindpass.mjs";
 export * from "./blindpass.mjs";
@@ -70,9 +82,9 @@ node "${ROOT_DIR}/scripts/strip-sps-default.mjs" "${PLUGIN_DIR}/openclaw.plugin.
 cp "${PLUGIN_DIR}/LICENSE" "${DIST_DIR}/LICENSE"
 cp "${ROOT_DIR}/packages/mcp-server/THIRD_PARTY_NOTICES.md" "${DIST_DIR}/THIRD_PARTY_NOTICES.md"
 cp -R "${ROOT_DIR}/packages/mcp-server/licenses" "${DIST_DIR}/licenses"
-node "${ROOT_DIR}/scripts/bundle-mcp-notices.mjs" "$MCP_BUNDLE_METADATA" "$RESOLVER_BUNDLE_METADATA" "$DIST_DIR"
+node "${ROOT_DIR}/scripts/bundle-mcp-notices.mjs" "$MCP_BUNDLE_METADATA" "$RESOLVER_BUNDLE_METADATA" "$MIGRATE_BUNDLE_METADATA" "$DIST_DIR"
 cp -R "${PLUGIN_DIR}/skills/blindpass" "${DIST_DIR}/skills/blindpass"
 
-chmod +x "${DIST_DIR}/mcp-server.mjs" "${DIST_DIR}/blindpass-resolver.mjs"
+chmod +x "${DIST_DIR}/mcp-server.mjs" "${DIST_DIR}/blindpass-resolver.mjs" "${DIST_DIR}/blindpass-openclaw-migrate.mjs"
 
 echo "[blindpass] bundle staged in ${DIST_DIR}"

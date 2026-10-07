@@ -167,6 +167,7 @@ async function testMcpNpmPackagingAndRuntimeHandshake() {
             "mcp-server": "./dist/mcp-server.mjs",
             "blindpass-mcp-server": "./dist/mcp-server.mjs",
             "blindpass-resolver": "./dist/blindpass-resolver.mjs",
+            "blindpass-openclaw-migrate": "./dist/blindpass-openclaw-migrate.mjs",
         });
 
         const packDryRun = await runCommand("npm", ["pack", "--json", "--dry-run"], {

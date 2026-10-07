@@ -123,6 +123,7 @@ async function testReleaseMetadataSyncAndStagedNpmContract() {
             "mcp-server": "./dist/mcp-server.mjs",
             "blindpass-mcp-server": "./dist/mcp-server.mjs",
             "blindpass-resolver": "./dist/blindpass-resolver.mjs",
+            "blindpass-openclaw-migrate": "./dist/blindpass-openclaw-migrate.mjs",
         });
 
         const expectedFiles = [

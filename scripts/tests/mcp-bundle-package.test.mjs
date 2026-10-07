@@ -101,7 +101,7 @@ test('P07-D3: the staged package.json is a deliberate public bundle package', as
     assert.equal(m.license, 'MIT');
     assert.equal(m.type, 'module');
     // `npx @blindpass/mcp-server` runs the bin named like the unscoped package when the bins differ.
-    assert.deepEqual(m.bin, { 'mcp-server': './dist/mcp-server.mjs', 'blindpass-mcp-server': './dist/mcp-server.mjs', 'blindpass-resolver': './dist/blindpass-resolver.mjs' });
+    assert.deepEqual(m.bin, { 'mcp-server': './dist/mcp-server.mjs', 'blindpass-mcp-server': './dist/mcp-server.mjs', 'blindpass-resolver': './dist/blindpass-resolver.mjs', 'blindpass-openclaw-migrate': './dist/blindpass-openclaw-migrate.mjs' });
     // Contributor instructions (AGENTS.md) and client config examples that default to an unverified endpoint stay out.
     assert.deepEqual(m.files, ['dist', 'SKILL.md', 'openclaw.plugin.json', 'scripts', 'LICENSE', 'README.md']);
     assert.deepEqual(m.publishConfig, { access: 'public', provenance: true });
@@ -118,7 +118,7 @@ test('P07-D3: the staged package.json is a deliberate public bundle package', as
     }
     const dry = JSON.parse(run('npm', ['pack', '--json', '--dry-run', '--ignore-scripts'], { cwd: s.dir }).stdout)[0].files.map((f) => f.path);
     assert.ok(!dry.some((p) => p.startsWith('.release/') || p === 'AGENTS.md' || p.startsWith('agents/')), 'a guard or contributor file is packed');
-    assert.ok(dry.includes('dist/mcp-server.mjs') && dry.includes('dist/blindpass-resolver.mjs') && dry.includes('LICENSE'));
+    assert.ok(dry.includes('dist/mcp-server.mjs') && dry.includes('dist/blindpass-resolver.mjs') && dry.includes('dist/blindpass-openclaw-migrate.mjs') && dry.includes('LICENSE'));
   } finally { await s.cleanup(); }
 });
 
@@ -188,7 +188,21 @@ test('P07-D3: both declared bins run from the stage with no node_modules', async
     assert.equal(resolver.status, 0, resolver.out);
     assert.doesNotMatch(resolver.out, /ERR_MODULE_NOT_FOUND|Cannot find module/);
     assert.match(resolver.stderr, /Usage: blindpass-resolver/);
-    for (const bin of ['mcp-server.mjs', 'blindpass-resolver.mjs']) {
+    // P09: the migration CLI is a third bin; it prints its usage on stdout and, on an empty private config
+    // directory, reports no credentials without writing anything.
+    const migrate = run(process.execPath, [path.join(s.dir, 'dist/blindpass-openclaw-migrate.mjs'), '--help'], { cwd: s.dir });
+    assert.equal(migrate.status, 0, migrate.out);
+    assert.doesNotMatch(migrate.out, /ERR_MODULE_NOT_FOUND|Cannot find module/);
+    assert.match(migrate.stdout, /Usage: blindpass-openclaw-migrate/);
+    const empty = await mkdtemp(path.join(tmpdir(), 'blindpass-migrate-empty-'));
+    try {
+      await chmod(empty, 0o700);
+      const dry = run(process.execPath, [path.join(s.dir, 'dist/blindpass-openclaw-migrate.mjs'), '--dry-run', '--config-dir', empty], { cwd: s.dir });
+      assert.equal(dry.status, 0, dry.out);
+      assert.match(dry.stdout, /No credential fields were found/);
+      assert.deepEqual(await readdir(empty), [], 'the dry run wrote into the config directory');
+    } finally { await rm(empty, { recursive: true, force: true }); }
+    for (const bin of ['mcp-server.mjs', 'blindpass-resolver.mjs', 'blindpass-openclaw-migrate.mjs']) {
       assert.equal((await readFile(path.join(s.dir, 'dist', bin), 'utf8')).split('\n')[0], '#!/usr/bin/env node', `${bin} lacks a node shebang`);
     }
   } finally { await s.cleanup(); }
@@ -207,6 +221,13 @@ test('P07-D3: a fresh build_bundle.sh run writes bins that start on their own, w
     const help = run(process.execPath, [path.join(out, 'blindpass-resolver.mjs'), '--help'], { cwd: parent });
     assert.equal(help.status, 0, help.out);
     assert.match(help.stderr, /Usage: blindpass-resolver/);
+    // P09: the migration bin is bundled too and runs from a directory with none of the plugin sources next to it.
+    const migrateBundle = await readFile(path.join(out, 'blindpass-openclaw-migrate.mjs'), 'utf8');
+    assert.equal(migrateBundle.split('\n')[0], '#!/usr/bin/env node');
+    assert.ok(!/from\s*["']\.\.?\//.test(migrateBundle), 'the migration bin still imports a sibling file');
+    const migrateHelp = run(process.execPath, [path.join(out, 'blindpass-openclaw-migrate.mjs'), '--help'], { cwd: parent });
+    assert.equal(migrateHelp.status, 0, migrateHelp.out);
+    assert.match(migrateHelp.stdout, /Usage: blindpass-openclaw-migrate/);
     const inventory = JSON.parse(await readFile(path.join(out, 'licenses/bundle-packages.json'), 'utf8'));
     const bundled = new Set(inventory.map((entry) => entry.name));
     for (const name of ['@modelcontextprotocol/server', '@hpke/core', 'hpke-js', 'jose', 'zod']) assert.ok(bundled.has(name), `${name} must be bundled`);
@@ -450,7 +471,7 @@ test('P07-E01/R02: the packed bundle installs outside the repository and its bin
       const tarball = path.join(out, (await readdir(out)).find((n) => n.endsWith('.tgz')));
       const verify = run(process.execPath, [VERIFY, tarball, '--sbom', path.join(out, 'bundle.cdx.json')], { timeout: 240_000 });
       assert.equal(verify.status, 0, verify.out);
-      for (const line of [/pack check OK/, /install OK: 1 package/, /bin links OK: mcp-server, blindpass-mcp-server, blindpass-resolver/, /bin mcp-server OK/, /initialize OK/, /tools\/list OK: 6 tool/, /tools\/call OK/, /bin blindpass-mcp-server OK/, /bin blindpass-resolver OK/, /npx default executable OK/, /sbom OK: bundle SBOM written: 19 component/, /candidate verified outside the repository/]) {
+      for (const line of [/pack check OK/, /install OK: 1 package/, /bin links OK: mcp-server, blindpass-mcp-server, blindpass-resolver, blindpass-openclaw-migrate/, /bin mcp-server OK/, /initialize OK/, /tools\/list OK: 6 tool/, /tools\/call OK/, /bin blindpass-mcp-server OK/, /bin blindpass-resolver OK/, /bin blindpass-openclaw-migrate OK/, /npx default executable OK/, /sbom OK: bundle SBOM written: 19 component/, /candidate verified outside the repository/]) {
         assert.match(verify.stdout, line);
       }
     } finally { await rm(out, { recursive: true, force: true }); await s.cleanup(); }

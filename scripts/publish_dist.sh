@@ -196,6 +196,7 @@ ensure_dist_artifacts() {
     "${DIST_DIR}/index.mjs"
     "${DIST_DIR}/mcp-server.mjs"
     "${DIST_DIR}/blindpass-resolver.mjs"
+    "${DIST_DIR}/blindpass-openclaw-migrate.mjs"
     "${DIST_DIR}/openclaw.plugin.json"
     "${DIST_DIR}/skills/blindpass/SKILL.md"
     "${DIST_DIR}/LICENSE"
@@ -262,7 +263,8 @@ generate_dist_package_json() {
     "bin": {
         "mcp-server": "./dist/mcp-server.mjs",
         "blindpass-mcp-server": "./dist/mcp-server.mjs",
-        "blindpass-resolver": "./dist/blindpass-resolver.mjs"
+        "blindpass-resolver": "./dist/blindpass-resolver.mjs",
+        "blindpass-openclaw-migrate": "./dist/blindpass-openclaw-migrate.mjs"
     },
     "files": [
         "dist",
@@ -324,7 +326,7 @@ prepare_stage_layout() {
 
   generate_dist_package_json "$stage/package.json"
 
-  chmod +x "$stage/scripts/install_skill.sh" "$stage/dist/mcp-server.mjs" "$stage/dist/blindpass-resolver.mjs"
+  chmod +x "$stage/scripts/install_skill.sh" "$stage/dist/mcp-server.mjs" "$stage/dist/blindpass-resolver.mjs" "$stage/dist/blindpass-openclaw-migrate.mjs"
 }
 
 sync_stage_to_repo() {

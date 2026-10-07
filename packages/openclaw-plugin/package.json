@@ -5,6 +5,9 @@
     "license": "MIT",
     "type": "module",
     "main": "index.mjs",
+    "bin": {
+        "blindpass-openclaw-migrate": "./bin/blindpass-openclaw-migrate"
+    },
     "scripts": {
         "build": "bash ../../scripts/build_bundle.sh",
         "install:skill": "bash ../../scripts/install_skill.sh",

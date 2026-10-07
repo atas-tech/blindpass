@@ -18,7 +18,7 @@
 // the result must be isError with the text "Operation failed" and nothing else. That proves the tool
 // path runs and fails closed; it does not prove a secret delivery (that is the VM and stock-client work).
 import { spawn, spawnSync } from 'node:child_process';
-import { accessSync, constants, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -162,6 +162,23 @@ try {
     // No store or key exists on a clean host: the read must fail closed with the fixed message and no value.
     else if (read.status !== 0 || JSON.stringify(readBody?.values) !== '{}' || readBody?.errors?.__request__?.message !== 'Managed store read failed.') fail(`blindpass-resolver store read: ${read.stdout.slice(0, 160)} ${read.stderr.slice(0, 120)}`);
     else note('bin blindpass-resolver OK: --help prints usage; a bad protocol version is rejected; a read with no store returns values {} and "Managed store read failed."');
+
+    // P09: the migration CLI starts from the installed package with no sibling files; on an empty private
+    // directory the dry run reports no credentials and writes nothing.
+    {
+      const migrate = bin('blindpass-openclaw-migrate');
+      const usage = runOnce(migrate, ['--help'], '');
+      if (usage.status !== 0 || !/^Usage: blindpass-openclaw-migrate/.test(usage.stdout)) fail(`blindpass-openclaw-migrate --help: exit ${usage.status}, ${usage.stdout.slice(0, 120)} ${usage.stderr.slice(0, 120)}`);
+      else {
+        const empty = mkdtempSync(path.join(tmpdir(), 'blindpass-migrate-empty-'));
+        try {
+          chmodSync(empty, 0o700);
+          const dry = runOnce(migrate, ['--dry-run', '--config-dir', empty], '');
+          if (dry.status !== 0 || !/No credential fields were found/.test(dry.stdout) || readdirSync(empty).length !== 0) fail(`blindpass-openclaw-migrate --dry-run: exit ${dry.status}, ${dry.stdout.slice(0, 120)} ${dry.stderr.slice(0, 120)}`);
+          else note('bin blindpass-openclaw-migrate OK: --help prints usage; --dry-run on an empty private directory reports no credentials and writes nothing');
+        } finally { rmSync(empty, { recursive: true, force: true }); }
+      }
+    }
 
     // npm chooses the default executable (the bin named like the package) exactly as it does for `npx @blindpass/mcp-server`.
     const npx = await driveMcp('npx', 'npx', ['--yes', '--offline', `file:${tarball}`], { strictStderr: false });
