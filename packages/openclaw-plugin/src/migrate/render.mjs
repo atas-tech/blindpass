@@ -41,6 +41,10 @@ export function renderPlanText(plan) {
         }
     }
 
+    if (plan.store) {
+        lines.push("");
+        lines.push(`Store: ${plan.store.state}${plan.store.state === "ready" ? `, key backup ${plan.store.backupPending ? "NOT acknowledged" : "acknowledged"}` : ""}${plan.store.reason ? ` (${printable(plan.store.reason)})` : ""}`);
+    }
     if (plan.residual.length > 0) {
         lines.push("");
         lines.push("Residual plaintext (this tool does not change these files):");

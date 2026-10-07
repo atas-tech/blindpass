@@ -97,12 +97,23 @@ pattern) and are derived from the config path. `openclaw secrets apply --dry-run
 
 ## Key and store availability (P09-D5)
 
-Dry run never creates a key, `.sops.yaml` or store and never calls `openclaw` or the resolver. Mutation requires: `sops`
->= 3.9.0 and `age-keygen` on `PATH` (verified against sops 3.13.3 / age 1.3.2), an existing store that decrypts with its
-key, and `bootstrap_backup_pending` cleared. Creating a store/key is the distinct `--init-store` action. Clearing the
-pending flag is the distinct `--ack-backup <key backup file>` action, which first proves the backup can decrypt a dummy
-value for the store's recipient: an acknowledgement alone is not evidence that the key can be restored. A missing or wrong
-key fails preflight before any file changes; there is no plaintext fallback.
+Dry run never creates a key, `.sops.yaml` or store and never calls `openclaw` or the resolver. By default it runs no
+program at all; when the operator names a store with `--store`, it additionally runs `sops --decrypt` (read-only) to report
+the store state, whether the key decrypts it, the `bootstrap_backup_pending` flag and name conflicts as warnings.
+
+Mutation requires: `sops` >= 3.9.0 and `age-keygen` on `PATH` (verified against sops 3.13.3 / age 1.3.2), an existing store
+that decrypts with its key, and `bootstrap_backup_pending` cleared. A missing or wrong key fails preflight as
+`key-unavailable` before any file changes; there is no plaintext fallback. Restoring the correct key file and rerunning is
+the recovery path.
+
+- `--init-store` creates the store, key and `.sops.yaml` if missing. It is the only action that generates a key, and it
+  never runs as a side effect of `--apply`.
+- `--ack-backup <key backup file>` clears the pending flag, and only after proving the backup works. The backup file must be
+  an absolute, non-symlink regular file owned by the user, not readable by group or others, containing an age identity,
+  and not the live key file itself. Then `sops --decrypt` of the real store is run with **only** that file as the key
+  (minimal environment, no ambient key variables, no default key file); success proves the backup can restore the store.
+  This is stronger than the dummy round trip the plan names, because it uses the actual ciphertext. An acknowledgement
+  without that result is never recorded; the key material is never read into output, journal or logs.
 
 ## Journal, backups and rollback (P09-D4)
 
@@ -182,6 +193,6 @@ verifies by authenticated behaviour, not by that exit code.
 | 1 | This contract, vendored matrix, fixtures, registry/classifier/dotenv | done |
 | 2 | Safe filesystem layer, inventory, dry run, output rules | done (hermetic: P09-I01) |
 | 3 | Key preflight, backup/import/native rewrite, journal, rollback | done (hermetic: P09-I02, every stage killed and resumed or rolled back; real-runtime interruption is slice 5) |
-| 4 | Key recovery and acknowledgement | not started |
+| 4 | Key recovery and acknowledgement | done (hermetic: P09-I03; real sops/age check is slice 5) |
 | 5 | Reload, authenticated use on a real installation | not started |
 | 6 | Packaging, operator docs, rollback rehearsal | not started |

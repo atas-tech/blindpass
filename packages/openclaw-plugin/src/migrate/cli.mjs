@@ -9,7 +9,7 @@ import {
     printable, renderMigrationText, renderPlanJson, renderPlanText, renderRollbackText, renderStatusText,
 } from "./render.mjs";
 import { UnsafePathError } from "./safe-fs.mjs";
-import { initStore } from "./store.mjs";
+import { acknowledgeKeyBackup, initStore } from "./store.mjs";
 
 export const EXIT = Object.freeze({ OK: 0, FAILED: 1, USAGE: 2, REFUSED: 3 });
 
@@ -19,6 +19,8 @@ Modes (exactly one is required; nothing is ever changed implicitly):
   --dry-run              Masked inventory of the OpenClaw credentials this tool can migrate.
                          Creates no file, key, store or lock and runs no other program.
   --init-store           Create the SOPS/age store and key if missing (a distinct, explicit setup step).
+  --ack-backup <file>    Prove the key backup <file> can decrypt the store, then clear the
+                         bootstrap_backup_pending flag that blocks --apply.
   --apply                Back up, import into the store, rewrite openclaw.json through the native
                          \`openclaw secrets apply\`, verify. Resumes an interrupted run.
   --status               Show the migration journal (stages, backup location, residual files).
@@ -29,6 +31,7 @@ Options:
   --config-dir <path>    Absolute path of the OpenClaw state directory (contains openclaw.json).
                          No symlinks; owned by the current user; not group/other writable.
   --store <path>         Absolute path of the encrypted store (default <config-dir>/blindpass/secrets.enc.json).
+                         With --dry-run, naming a store also reports its key and backup state (read-only).
   --resolver-command <p> Absolute path of the blindpass-resolver executable. It must be a real file
                          (not a symlink), owned by you and not group/other writable (OpenClaw's rule).
   --openclaw-bin <path>  Absolute path of the openclaw executable (release ${PINNED_RELEASES.at(-1)}).
@@ -44,6 +47,7 @@ class UsageError extends Error { }
 
 const MODES = { "--dry-run": "dry-run", "--init-store": "init-store", "--apply": "apply", "--status": "status", "--rollback": "rollback", "--reload": "reload" };
 const VALUE_FLAGS = {
+
     "--config-dir": "configDir",
     "--store": "storePath",
     "--resolver-command": "resolverCommand",
@@ -53,7 +57,8 @@ const VALUE_FLAGS = {
     "--provider-alias": "providerAlias",
 };
 // --config-dir is validated by the safe filesystem layer (relative-path refusal, exit 3).
-const ABSOLUTE = new Set(["storePath", "resolverCommand", "openclawBin"]);
+const flagName = (field) => (field === "backupPath" ? "--ack-backup" : Object.keys(VALUE_FLAGS).find((name) => VALUE_FLAGS[name] === field));
+const ABSOLUTE = new Set(["storePath", "resolverCommand", "openclawBin", "backupPath"]);
 const REQUIRED = {
     "dry-run": ["configDir"],
     apply: ["configDir", "resolverCommand", "openclawBin"],
@@ -61,6 +66,7 @@ const REQUIRED = {
     status: ["configDir"],
     reload: ["configDir", "openclawBin"],
     "init-store": [],
+    "ack-backup": ["backupPath"],
 };
 
 function parseArgs(argv) {
@@ -75,6 +81,14 @@ function parseArgs(argv) {
             modes.push(MODES[arg]);
         } else if (arg === "--json") {
             options.json = true;
+        } else if (arg === "--ack-backup") {
+            modes.push("ack-backup");
+            const value = argv[i + 1];
+            if (value === undefined || value.startsWith("--")) {
+                throw new UsageError("--ack-backup needs a value");
+            }
+            options.backupPath = value;
+            i += 1;
         } else if (Object.hasOwn(VALUE_FLAGS, arg)) {
             const value = argv[i + 1];
             if (value === undefined || value.startsWith("--")) {
@@ -90,26 +104,28 @@ function parseArgs(argv) {
         throw new UsageError("choose exactly one mode");
     }
     const mode = modes[0];
+    const explicitStore = options.storePath !== undefined;
     for (const field of REQUIRED[mode]) {
         if (!options[field]) {
-            const flag = Object.keys(VALUE_FLAGS).find((name) => VALUE_FLAGS[name] === field);
-            throw new UsageError(`${flag} is required with --${mode}`);
+            throw new UsageError(`${flagName(field)} is required with --${mode}`);
         }
     }
     for (const field of ABSOLUTE) {
         if (options[field] !== undefined && !path.isAbsolute(options[field])) {
-            throw new UsageError(`--${Object.keys(VALUE_FLAGS).find((name) => VALUE_FLAGS[name] === field).slice(2)} must be an absolute path`);
+            throw new UsageError(`${flagName(field)} must be an absolute path`);
         }
     }
     if (options.migrationId !== undefined && (mode !== "rollback" || !isMigrationId(options.migrationId))) {
         throw new UsageError("--migration-id must be a migration id and is only valid with --rollback");
     }
-    if (mode === "init-store" && !options.storePath && !options.configDir) {
-        throw new UsageError("--store or --config-dir is required with --init-store");
+    if ((mode === "init-store" || mode === "ack-backup") && !options.storePath && !options.configDir) {
+        throw new UsageError(`--store or --config-dir is required with --${mode}`);
     }
     if (!options.storePath && options.configDir && path.isAbsolute(options.configDir)) {
         options.storePath = path.join(options.configDir, "blindpass", "secrets.enc.json");
     }
+    // The dry run only reads a store the operator names; the default location is not assumed.
+    options.checkStore = explicitStore;
     return { mode, options };
 }
 
@@ -118,7 +134,12 @@ async function execute(mode, options, io) {
     const emit = (value, text) => stdout.write(options.json ? `${JSON.stringify(value, null, 2)}\n` : text);
     switch (mode) {
         case "dry-run": {
-            const { plan } = await runDryRun({ configDir: options.configDir, release: options.release, providerAlias: options.providerAlias });
+            const { plan } = await runDryRun({
+                configDir: options.configDir,
+                release: options.release,
+                providerAlias: options.providerAlias,
+                storePath: options.checkStore ? options.storePath : undefined,
+            });
             stdout.write(options.json ? renderPlanJson(plan) : renderPlanText(plan));
             return;
         }
@@ -128,6 +149,14 @@ async function execute(mode, options, io) {
                 ? `Store created at ${printable(options.storePath)} with a new age key (${printable(result.ageKeyPath)}).\nBack up that key file, then run --ack-backup <key backup file> before --apply.\n`
                 : `Store already exists at ${printable(options.storePath)}; nothing was created.\n`;
             emit({ created: result.created, storePath: options.storePath }, text);
+            return;
+        }
+        case "ack-backup": {
+            const result = await acknowledgeKeyBackup({ storePath: options.storePath, backupPath: options.backupPath });
+            const text = result.updated
+                ? "Key backup acknowledged: the backup key was shown to decrypt the store on its own, and the bootstrap_backup_pending flag is cleared. --apply is now allowed.\n"
+                : `Nothing changed: ${result.reason === "already-acknowledged" ? "the key backup was already acknowledged" : printable(result.reason ?? "no update")}.\n`;
+            emit(result, text);
             return;
         }
         case "apply": {

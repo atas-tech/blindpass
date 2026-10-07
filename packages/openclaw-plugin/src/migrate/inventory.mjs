@@ -7,6 +7,7 @@ import { storeNameFor } from "./names.mjs";
 import { REDACTED, renderPlanJson, renderPlanText } from "./render.mjs";
 import { enumerateConfigTargets, loadRegistry } from "./registry.mjs";
 import { UnsafePathError, openTrustedRoot } from "./safe-fs.mjs";
+import { describeStore } from "./store.mjs";
 
 export { renderPlanJson, renderPlanText };
 
@@ -309,11 +310,18 @@ export async function collectInventory({ dir, configDir, release, providerAlias 
     return { plan, migratable, configSha256, envSha256, config: configValue };
 }
 
-export async function runDryRun({ configDir, release, providerAlias, uid }) {
+// `storePath` is optional and explicit: only when the operator names a store does the dry run read it
+// (`sops --decrypt`, read-only) to report key availability, the backup-pending flag and name conflicts.
+export async function runDryRun({ configDir, release, providerAlias, uid, storePath }) {
     loadRegistry(release);
     const dir = await openTrustedRoot(configDir, uid === undefined ? {} : { uid });
     try {
-        const { plan } = await collectInventory({ dir, configDir, release, providerAlias });
+        const { plan, migratable } = await collectInventory({ dir, configDir, release, providerAlias });
+        if (storePath) {
+            const { store, warnings } = await describeStore({ storePath, migratable });
+            plan.store = store;
+            plan.warnings = [...new Set([...plan.warnings, ...warnings])].sort(compare);
+        }
         return { plan };
     } finally {
         await dir.close();
