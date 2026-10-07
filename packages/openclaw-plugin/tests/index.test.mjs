@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { EventEmitter, once } from "node:events";
-import { mkdtemp, readFile as readFileFs, rm, writeFile as writeFileFs } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { mkdtemp, readdir, readFile as readFileFs, rm, writeFile as writeFileFs } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { PassThrough } from "node:stream";
@@ -109,7 +110,7 @@ function createExecChild(run) {
 
     setImmediate(async () => {
         try {
-            const result = await run();
+            const result = await run(child);
             if (result?.stdout) {
                 child.stdout.write(result.stdout);
             }
@@ -130,6 +131,46 @@ function createExecChild(run) {
     return child;
 }
 
+async function readChildStdin(child) {
+    const chunks = [];
+    for await (const chunk of child.stdin) {
+        chunks.push(Buffer.from(chunk));
+    }
+    return Buffer.concat(chunks).toString("utf8");
+}
+
+// Mirrors two checks the real tools make that the original mock skipped: sops
+// resolves a creation rule from the (override) file name, and age rejects an
+// identity file with any line that is not a comment or an AGE-SECRET-KEY.
+function assertRealSopsCreationRule(args, spawnOptions) {
+    const overrideIndex = args.indexOf("--filename-override");
+    const override = overrideIndex >= 0 ? args[overrideIndex + 1] : args[args.length - 1];
+    const configPath = spawnOptions?.env?.SOPS_CONFIG;
+    if (!configPath) {
+        throw new Error("error loading config: no matching creation rules found");
+    }
+    const config = readFileSync(configPath, "utf8");
+    const regexLine = config.split(/\r?\n/).find((line) => line.includes("path_regex:"));
+    const regex = regexLine?.split("path_regex:")[1]?.trim().replace(/^'|'$/g, "");
+    const relative = path.relative(path.dirname(configPath), override);
+    if (!regex || !new RegExp(regex).test(relative)) {
+        throw new Error("error loading config: no matching creation rules found");
+    }
+}
+
+function assertRealAgeIdentityFile(spawnOptions) {
+    const identityPath = spawnOptions?.env?.SOPS_AGE_KEY_FILE;
+    if (!identityPath) {
+        return;
+    }
+    for (const line of readFileSync(identityPath, "utf8").split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("AGE-SECRET-KEY-")) {
+            throw new Error("failed to parse 'SOPS_AGE_KEY_FILE' age identities: unknown identity type");
+        }
+    }
+}
+
 function createSopsPassthroughExecHarness(options = {}) {
     const agePublicKey = options.agePublicKey ?? "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqx4n2w";
     const ageSecretKey = options.ageSecretKey ?? "AGE-SECRET-KEY-1QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ";
@@ -140,6 +181,7 @@ function createSopsPassthroughExecHarness(options = {}) {
     const state = {
         calls: [],
         encryptCallCount: 0,
+        encryptedPayloads: [],
     };
 
     const maybeDelay = async (ms) => {
@@ -150,26 +192,30 @@ function createSopsPassthroughExecHarness(options = {}) {
         }
     };
 
-    const execFileFn = (file, args = []) => createExecChild(async () => {
+    const execFileFn = (file, args = [], spawnOptions = {}) => createExecChild(async (child) => {
         state.calls.push({ file, args: [...args] });
 
         if (file === "sops" && args[0] === "--version") {
             return { stdout: "sops 3.9.0\n", exitCode: 0 };
         }
 
-        if (file === "sops" && args[0] === "--encrypt") {
+        if (file === "sops" && args[0] === "encrypt") {
             state.encryptCallCount += 1;
             if (failEncryptOnCallNumbers.has(state.encryptCallCount)) {
                 throw new Error(`simulated encrypt failure on call ${state.encryptCallCount}`);
             }
             await maybeDelay(encryptDelayMs);
-            const plainPath = args[args.length - 1];
-            const payload = await readFileFs(plainPath, "utf8");
+            assertRealSopsCreationRule(args, spawnOptions);
+            assert.ok(args.every((arg) => !arg.startsWith("/") || arg === args[args.indexOf("--filename-override") + 1]),
+                "plaintext must reach sops on stdin: no input file argument");
+            const payload = await readChildStdin(child);
+            state.encryptedPayloads.push(payload);
             return { stdout: payload, exitCode: 0 };
         }
 
         if (file === "sops" && args[0] === "--decrypt") {
             await maybeDelay(decryptDelayMs);
+            assertRealAgeIdentityFile(spawnOptions);
             const storePath = args[args.length - 1];
             const payload = await readFileFs(storePath, "utf8");
             return { stdout: payload, exitCode: 0 };
@@ -187,8 +233,10 @@ function createSopsPassthroughExecHarness(options = {}) {
         }
 
         if (file === "age-keygen") {
+            // Real age-keygen prints "Public key:" on stderr when stdout is not a terminal.
             return {
                 stdout: `# created: 2026-04-17T00:00:00Z\n# public key: ${agePublicKey}\n${ageSecretKey}\n`,
+                stderr: `Public key: ${agePublicKey}\n`,
                 exitCode: 0,
             };
         }
@@ -2200,6 +2248,73 @@ async function testManagedStoreAutoBootstrapCreatesArtifacts() {
     }
 }
 
+async function testManagedStoreBootstrapMatchesRealSopsAndAge() {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "blindpass-real-tools-"));
+    const storePath = path.join(tempRoot, "blindpass", "secrets.enc.json");
+    const harness = createSopsPassthroughExecHarness();
+    const canary = "P09-CANARY-store-argv-0001";
+
+    try {
+        await persistManagedSecret({
+            name: "real.tools.secret",
+            value: Buffer.from(canary, "utf8"),
+            env: { ...process.env, BLINDPASS_AUTO_PERSIST: "true", BLINDPASS_STORE_PATH: storePath },
+            execFileFn: harness.execFileFn,
+            stderr: { write() { } },
+        });
+
+        const ageKeyText = await readFileFs(path.join(path.dirname(storePath), ".age-key.txt"), "utf8");
+        for (const line of ageKeyText.split(/\r?\n/).filter(Boolean)) {
+            assert.match(line, /^(#|AGE-SECRET-KEY-)/, "key file must contain only age identity lines");
+        }
+
+        const encryptCall = harness.state.calls.find((call) => call.args[0] === "encrypt");
+        assert.ok(encryptCall.args.includes("--filename-override"));
+        assert.equal(encryptCall.args[encryptCall.args.indexOf("--filename-override") + 1], storePath);
+        assert.ok(!harness.state.calls.some((call) => call.args.join(" ").includes(canary)), "plaintext must not be on argv");
+        assert.ok(harness.state.encryptedPayloads.some((payload) => payload.includes(canary)));
+        const legacyTempDir = path.join(os.tmpdir(), "blindpass-store");
+        for (const name of await readdir(legacyTempDir).catch(() => [])) {
+            const leftover = await readFileFs(path.join(legacyTempDir, name), "utf8").catch(() => "");
+            assert.ok(!leftover.includes(canary), "no plaintext temp file may hold the secret");
+        }
+
+        const store = await readManagedSecretStore({
+            env: { ...process.env, BLINDPASS_STORE_PATH: storePath },
+            execFileFn: harness.execFileFn,
+        });
+        assert.equal(store.document.secrets["real.tools.secret"].value, canary);
+    } finally {
+        await rm(tempRoot, { recursive: true, force: true });
+    }
+}
+
+async function testManagedStoreRejectsOldSopsWithoutStdinEncrypt() {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "blindpass-old-sops-"));
+    const storePath = path.join(tempRoot, "blindpass", "secrets.enc.json");
+    const harness = createSopsPassthroughExecHarness();
+    const oldSops = (file, args = [], spawnOptions = {}) => (file === "sops" && args[0] === "--version"
+        ? createExecChild(async () => ({ stdout: "sops 3.8.1\n", exitCode: 0 }))
+        : harness.execFileFn(file, args, spawnOptions));
+
+    try {
+        await assert.rejects(
+            () => storeManagedSecret({
+                name: "old.sops",
+                value: Buffer.from("v", "utf8"),
+                storePath,
+                env: { ...process.env, BLINDPASS_STORE_PATH: storePath },
+                execFileFn: oldSops,
+                stderr: { write() { } },
+            }),
+            /requires sops 3\.9\.0 or newer/,
+        );
+        assert.ok(!harness.state.calls.some((call) => call.args[0] === "encrypt"));
+    } finally {
+        await rm(tempRoot, { recursive: true, force: true });
+    }
+}
+
 async function testManagedStoreReminderAndBackupAckFlow() {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "blindpass-managed-store-reminder-"));
     const storePath = path.join(tempRoot, "blindpass", "secrets.enc.json");
@@ -2669,6 +2784,14 @@ const tests = [
     {
         name: "managed store auto-bootstrap creates artifacts and pending-backup metadata",
         run: testManagedStoreAutoBootstrapCreatesArtifacts,
+    },
+    {
+        name: "managed store bootstrap matches real sops creation rules and age identity files",
+        run: testManagedStoreBootstrapMatchesRealSopsAndAge,
+    },
+    {
+        name: "managed store refuses a sops without the stdin encrypt subcommand",
+        run: testManagedStoreRejectsOldSopsWithoutStdinEncrypt,
     },
     {
         name: "managed store emits backup reminders and supports env acknowledgment",

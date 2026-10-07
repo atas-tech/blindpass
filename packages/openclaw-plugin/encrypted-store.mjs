@@ -1,4 +1,4 @@
-import { access, mkdir, open, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, open, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -270,12 +270,35 @@ async function withStoreWriteLock(storePath, options, action) {
     }
 }
 
+const MIN_SOPS_VERSION = [3, 9, 0];
+
+function sopsVersionIsSupported(versionText) {
+    const match = /(\d+)\.(\d+)\.(\d+)/.exec(String(versionText ?? ""));
+    if (!match) {
+        return true;
+    }
+    const found = match.slice(1, 4).map(Number);
+    for (let i = 0; i < MIN_SOPS_VERSION.length; i += 1) {
+        if (found[i] !== MIN_SOPS_VERSION[i]) {
+            return found[i] > MIN_SOPS_VERSION[i];
+        }
+    }
+    return true;
+}
+
 async function ensureSopsAvailable(execFileFn) {
+    let versionOutput;
     try {
-        await runCommand(execFileFn, "sops", ["--version"], { timeoutMs: 5000 });
+        versionOutput = await runCommand(execFileFn, "sops", ["--version"], { timeoutMs: 5000 });
     } catch (err) {
         throw new Error(
             "BLINDPASS_AUTO_PERSIST=true requires the `sops` CLI on PATH. Install sops or set BLINDPASS_AUTO_PERSIST=false."
+        );
+    }
+    // Encryption uses the `sops encrypt` subcommand so the plaintext can arrive on stdin.
+    if (!sopsVersionIsSupported(versionOutput.stdout)) {
+        throw new Error(
+            `The managed store requires sops ${MIN_SOPS_VERSION.join(".")} or newer; upgrade the \`sops\` CLI on PATH.`
         );
     }
 }
@@ -343,9 +366,18 @@ async function ensureAgeIdentityFile(storePath, execFileFn) {
     }
 
     let generationOutput = "";
+    let identityText = "";
     try {
         const { stdout, stderr } = await runCommand(execFileFn, "age-keygen", [], { timeoutMs: 10000 });
         generationOutput = `${stdout}\n${stderr}`;
+        // age-keygen prints a "Public key:" line on stderr when stdout is not a terminal. It is
+        // not valid identity-file syntax and makes sops reject the whole file, so keep only the
+        // comment and AGE-SECRET-KEY lines that stdout carries.
+        identityText = stdout
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter((line) => line.startsWith("#") || line.startsWith("AGE-SECRET-KEY-"))
+            .join("\n");
     } catch (err) {
         throw new Error(
             "SOPS bootstrap requires `age-keygen` on PATH to generate .age-key.txt for BlindPass managed store.",
@@ -357,7 +389,10 @@ async function ensureAgeIdentityFile(storePath, execFileFn) {
         throw new Error("age-keygen output did not contain a usable age identity and public key.");
     }
 
-    await writeFile(ageKeyPath, `${generationOutput.trim()}\n`, { mode: 0o600 });
+    if (!parseAgeMaterial(identityText).secretLine) {
+        throw new Error("age-keygen output did not contain a usable age identity and public key.");
+    }
+    await writeFile(ageKeyPath, `${identityText}\n`, { mode: 0o600, flag: "wx" });
 
     return {
         ageKeyPath,
@@ -447,32 +482,55 @@ async function writeEncryptedStore(storePath, data, execFileFn) {
 }
 
 async function writeEncryptedStoreWithEnv(storePath, data, execFileFn, env = process.env) {
-    const storeDir = path.dirname(storePath);
+    const resolvedStorePath = path.resolve(storePath);
+    const storeDir = path.dirname(resolvedStorePath);
     await mkdir(storeDir, { recursive: true });
 
-    const tempRoot = await mkdir(path.join(os.tmpdir(), "blindpass-store"), { recursive: true }).then(() =>
-        path.join(os.tmpdir(), "blindpass-store", `tmp-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`)
-    );
-    const plainPath = `${tempRoot}.plain.json`;
-    const encryptedPath = `${storePath}.tmp`;
+    const encryptedPath = `${resolvedStorePath}.tmp`;
+    const plaintext = JSON.stringify(data, null, 2);
+    let privateDir = null;
 
     try {
-        await writeFile(plainPath, JSON.stringify(data, null, 2), { mode: 0o600 });
-        const commandEnv = await deriveSopsCommandEnv(storePath, env);
+        const commandEnv = await deriveSopsCommandEnv(resolvedStorePath, env);
+        // The store's .sops.yaml creation rule matches the store file name, so sops needs
+        // --filename-override: the input is not the store file. The plaintext document reaches
+        // sops on stdin (`sops encrypt` with no path: `/dev/stdin` cannot be opened when the
+        // child's stdin is a socket) and never touches argv or disk. Only Windows, where this
+        // is unverified, goes through a file in a private (0700) directory removed afterwards.
+        let inputPath = null;
+        let stdin = plaintext;
+        if (process.platform === "win32") {
+            privateDir = await mkdtemp(path.join(os.tmpdir(), "blindpass-store-"));
+            inputPath = path.join(privateDir, "plain.json");
+            await writeFile(inputPath, plaintext, { mode: 0o600 });
+            stdin = null;
+        }
         const { stdout } = await runCommand(
             execFileFn,
             "sops",
-            ["--encrypt", "--input-type", "json", "--output-type", "json", plainPath],
+            [
+                "encrypt",
+                "--filename-override",
+                resolvedStorePath,
+                "--input-type",
+                "json",
+                "--output-type",
+                "json",
+                ...(inputPath ? [inputPath] : []),
+            ],
             {
                 timeoutMs: 20000,
                 commandEnv,
+                stdin,
             },
         );
 
         await writeFile(encryptedPath, stdout, { mode: 0o600 });
-        await rename(encryptedPath, storePath);
+        await rename(encryptedPath, resolvedStorePath);
     } finally {
-        await rm(plainPath, { force: true }).catch(() => { });
+        if (privateDir) {
+            await rm(privateDir, { recursive: true, force: true }).catch(() => { });
+        }
         await rm(encryptedPath, { force: true }).catch(() => { });
     }
 }
