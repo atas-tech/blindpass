@@ -120,7 +120,7 @@ controller ─fulfillment_authorization(side=recipient)─▶ recipient node →
 recipient broker ─fulfillment_offer─▶ controller (validates against the terms)
 controller ─fulfillment_authorization(side=issuer, offer)─▶ issuer node → broker: verify both, open own custody, seal, sign
 issuer broker ─fulfillment_submit─▶ controller: verify signature, store payload (idempotent), queue delivery   [status available]
-controller ─fulfillment_delivery─▶ recipient node → broker: verify controller + issuer signatures, open once, store  
+controller ─fulfillment_delivery─▶ recipient node → broker: verify controller + issuer signatures, open once, store
 recipient broker ─fulfillment_result(stored)─▶ controller: delete payload                                   [recipient_consumed]
 recipient unit reads the credential through the loader ─fulfillment_result(consumed)─▶ controller            [completed]
 ```
