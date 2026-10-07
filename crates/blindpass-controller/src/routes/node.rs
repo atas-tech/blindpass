@@ -849,6 +849,33 @@ async fn apply_node_event(
             Err(error) => Err(EventFailure::from_applied(&error)),
         };
     }
+    if matches!(
+        event.kind.as_str(),
+        "fulfillment_offer" | "fulfillment_submit" | "fulfillment_result"
+    ) {
+        // The offer and submission envelopes and the result are checked against
+        // the stored terms and the enrolled key in the same transaction that
+        // applies them. A disabled controller applies nothing.
+        if !state.fulfillments_enabled {
+            return Err(EventFailure::Rejected);
+        }
+        return match store
+            .record_fulfillment_event(
+                &claims.node_id,
+                &event.idempotency_key,
+                &event.kind,
+                body_json,
+                &body_hash,
+            )
+            .await
+        {
+            Ok(NodeEventInsert::Inserted) => Ok(true),
+            Ok(NodeEventInsert::Duplicate) => Ok(false),
+            Ok(NodeEventInsert::Conflict) => Err(EventFailure::Conflict),
+            Err(StoreError::MissingState("fulfillment issuer")) => Err(EventFailure::Unavailable),
+            Err(error) => Err(EventFailure::from_applied(&error)),
+        };
+    }
     let applied = match event.kind.as_str() {
         "operation_result" => {
             store

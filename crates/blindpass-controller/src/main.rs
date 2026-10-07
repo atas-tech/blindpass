@@ -235,6 +235,7 @@ async fn serve() -> Result<(), String> {
     let admin_store = sweep_store.clone();
     let clock_task = store.spawn_clock_monitor();
     let audit_retention_days = config.audit_retention_days();
+    let fulfillments_enabled = config.fulfillments_enabled();
     let sweep_task = tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(30));
         loop {
@@ -273,8 +274,31 @@ async fn serve() -> Result<(), String> {
                 Ok(_) => {}
                 Err(_) => tracing::warn!("fleet expiry sweep failed"),
             }
+            match sweep_store.expire_fulfillments(fulfillments_enabled).await {
+                Ok(summary)
+                    if summary.expired + summary.uncertain + summary.failed + summary.revoked
+                        > 0 =>
+                {
+                    tracing::info!(
+                        expired = summary.expired,
+                        uncertain = summary.uncertain,
+                        failed = summary.failed,
+                        revoked = summary.revoked,
+                        "closed cross-workload fulfillments"
+                    );
+                }
+                Ok(_) => {}
+                Err(_) => tracing::warn!("fulfillment expiry sweep failed"),
+            }
             if sweep_store.prune_fleet_state().await.is_err() {
                 tracing::warn!("fleet retention sweep failed");
+            }
+            if sweep_store
+                .prune_fulfillments(audit_retention_days)
+                .await
+                .is_err()
+            {
+                tracing::warn!("fulfillment retention sweep failed");
             }
         }
     });

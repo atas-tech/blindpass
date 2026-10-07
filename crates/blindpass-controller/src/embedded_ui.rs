@@ -33,6 +33,7 @@ const CONSOLE_SECTIONS: &[&str] = &[
     "change-password",
     "enrollments",
     "forgot-password",
+    "fulfillments",
     "grants",
     "login",
     "members",

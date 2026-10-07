@@ -13,6 +13,7 @@ pub(crate) mod authorization;
 mod browser_intent;
 pub(crate) mod exchanges;
 pub(crate) mod fleet;
+mod fulfillments;
 pub(crate) mod node;
 mod provisioning;
 pub(crate) mod recovery;
@@ -40,6 +41,7 @@ pub(crate) fn admin_routes() -> Router<AppState> {
         .merge(admin_policy::routes())
         .merge(fleet::routes())
         .merge(provisioning::routes())
+        .merge(fulfillments::routes())
         .merge(authorization::routes())
 }
 

@@ -90,6 +90,24 @@ struct WorkloadUpdateInput {
 struct PolicyInput {
     expected_version: i64,
     rules: Vec<FleetRuleInput>,
+    /// P10 cross-workload rules. Omitted keeps the stored rules; an empty
+    /// array removes them, which denies every cross-workload fulfillment.
+    #[serde(default)]
+    cross_workload: Option<Vec<CrossRuleInput>>,
+}
+
+/// One explicit issuer-to-recipient allowance. Selectors are workload ids with
+/// no wildcard; a pair that matches no rule is denied.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CrossRuleInput {
+    id: String,
+    issuer_workload_ids: Vec<String>,
+    recipient_workload_ids: Vec<String>,
+    decision: String,
+    max_ttl_seconds: u64,
+    #[serde(default)]
+    approver_ids: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -613,16 +631,50 @@ async fn update_policy(
         }
         canonical_rules.push(canonical);
     }
-    let document = json!({"rules":canonical_rules});
+    let Some(store) = state.store.as_ref() else {
+        return unavailable();
+    };
+    let cross_workload = match &body.cross_workload {
+        Some(rules) => match canonical_cross_rules(rules) {
+            Some(rules) => rules,
+            None => {
+                return api_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_policy_rule",
+                    "cross-workload rule is invalid; name explicit workload ids, a TTL of 1 to 600 seconds and, for pending_approval, approver_ids",
+                );
+            }
+        },
+        None => match store.fleet_policy().await {
+            Ok(current) if current.version == body.expected_version => {
+                match serde_json::from_str::<JsonValue>(&current.document_json)
+                    .ok()
+                    .and_then(|document| document.get("cross_workload").cloned())
+                {
+                    Some(JsonValue::Array(rules)) => rules,
+                    _ => Vec::new(),
+                }
+            }
+            Ok(_) => {
+                return api_error(
+                    StatusCode::CONFLICT,
+                    "policy_changed",
+                    "policy version is stale",
+                );
+            }
+            Err(_) => return unavailable(),
+        },
+    };
+    let mut document = json!({"rules":canonical_rules});
+    if !cross_workload.is_empty() {
+        document["cross_workload"] = JsonValue::Array(cross_workload);
+    }
     let document_json = match canonicalize_json(&document.to_string())
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
     {
         Some(value) => value,
         None => return unavailable(),
-    };
-    let Some(store) = state.store.as_ref() else {
-        return unavailable();
     };
     let Some(issuer) = state.issuer_keypair.as_ref() else {
         return api_error(
@@ -2264,13 +2316,63 @@ fn workload_body(record: &WorkloadRecord) -> JsonValue {
     })
 }
 
+/// Validate and canonicalize cross-workload rules. `None` when any rule is
+/// malformed, duplicated or contradictory.
+fn canonical_cross_rules(rules: &[CrossRuleInput]) -> Option<Vec<JsonValue>> {
+    if rules.len() > 64 {
+        return None;
+    }
+    let mut ids = std::collections::HashSet::new();
+    let mut canonical = Vec::with_capacity(rules.len());
+    for rule in rules {
+        let distinct_ids = |list: &[String]| {
+            let mut seen = std::collections::HashSet::new();
+            (1..=16).contains(&list.len())
+                && list
+                    .iter()
+                    .all(|id| valid_id(id) && seen.insert(id.as_str()))
+        };
+        if !valid_id(&rule.id)
+            || !ids.insert(rule.id.as_str())
+            || !distinct_ids(&rule.issuer_workload_ids)
+            || !distinct_ids(&rule.recipient_workload_ids)
+            || !matches!(
+                rule.decision.as_str(),
+                "allow" | "pending_approval" | "deny"
+            )
+            || !(1..=600).contains(&rule.max_ttl_seconds)
+            || !valid_approver_ids(&rule.approver_ids, rule.decision == "pending_approval")
+        {
+            return None;
+        }
+        let mut issuers = rule.issuer_workload_ids.clone();
+        let mut recipients = rule.recipient_workload_ids.clone();
+        issuers.sort();
+        recipients.sort();
+        let mut entry = json!({
+            "id": rule.id, "issuer_workload_ids": issuers,
+            "recipient_workload_ids": recipients, "decision": rule.decision,
+            "max_ttl_seconds": rule.max_ttl_seconds
+        });
+        if !rule.approver_ids.is_empty() {
+            entry["approver_ids"] = json!(rule.approver_ids);
+        }
+        canonical.push(entry);
+    }
+    Some(canonical)
+}
+
 fn policy_body(policy: FleetPolicyRecord) -> Response {
     let document: JsonValue = match serde_json::from_str(&policy.document_json) {
         Ok(document) => document,
         Err(_) => return unavailable(),
     };
     let rules = document.get("rules").cloned().unwrap_or_else(|| json!([]));
-    Json(json!({"version":policy.version,"rules":rules,"updated_at":policy.updated_at_ms,"updated_by":policy.updated_by})).into_response()
+    let cross_workload = document
+        .get("cross_workload")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    Json(json!({"version":policy.version,"rules":rules,"cross_workload":cross_workload,"updated_at":policy.updated_at_ms,"updated_by":policy.updated_by})).into_response()
 }
 
 async fn signed_registration(
@@ -2427,7 +2529,7 @@ async fn require_approval_operator(
 }
 
 #[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
-async fn require_fleet_operator(
+pub(super) async fn require_fleet_operator(
     state: &AppState,
     headers: &HeaderMap,
     unsafe_method: bool,
@@ -2443,7 +2545,7 @@ async fn require_fleet_operator(
     Ok(operator)
 }
 
-fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
+pub(super) fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
     headers
         .get("idempotency-key")
         .and_then(|value| value.to_str().ok())
@@ -2455,13 +2557,13 @@ fn idempotency_key(headers: &HeaderMap) -> Option<&str> {
         })
 }
 
-fn digest_hex(value: &[u8]) -> Option<String> {
+pub(super) fn digest_hex(value: &[u8]) -> Option<String> {
     sha256(value)
         .ok()
         .map(|digest| digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-fn json_hash(value: &JsonValue) -> Option<String> {
+pub(super) fn json_hash(value: &JsonValue) -> Option<String> {
     let canonical = canonical_json_string(value)?;
     digest_hex(canonical.as_bytes())
 }
@@ -2550,7 +2652,7 @@ fn invisible_format_character(ch: char) -> bool {
     )
 }
 
-fn valid_id(value: &str) -> bool {
+pub(super) fn valid_id(value: &str) -> bool {
     !value.is_empty()
         && value.len() <= 128
         && value
@@ -2559,7 +2661,7 @@ fn valid_id(value: &str) -> bool {
 }
 
 #[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
-fn require_if_match(headers: &HeaderMap, expected_version: i64) -> Result<(), Response> {
+pub(super) fn require_if_match(headers: &HeaderMap, expected_version: i64) -> Result<(), Response> {
     let Some(header) = headers
         .get("if-match")
         .and_then(|value| value.to_str().ok())
@@ -2592,7 +2694,7 @@ fn require_if_match(headers: &HeaderMap, expected_version: i64) -> Result<(), Re
     Ok(())
 }
 
-fn parse_cursor(value: Option<&str>) -> Result<Option<(i64, String)>, ()> {
+pub(super) fn parse_cursor(value: Option<&str>) -> Result<Option<(i64, String)>, ()> {
     let Some(value) = value else {
         return Ok(None);
     };
@@ -2604,11 +2706,11 @@ fn parse_cursor(value: Option<&str>) -> Result<Option<(i64, String)>, ()> {
     Ok(Some((created_at, id.to_owned())))
 }
 
-fn cursor_for(created_at: i64, id: &str) -> String {
+pub(super) fn cursor_for(created_at: i64, id: &str) -> String {
     format!("{created_at}~{id}")
 }
 
-fn random_id(prefix: &str) -> String {
+pub(super) fn random_id(prefix: &str) -> String {
     use rand::{RngCore, rngs::OsRng};
     let mut bytes = [0_u8; 16];
     OsRng.fill_bytes(&mut bytes);

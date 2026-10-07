@@ -138,7 +138,7 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3" | "fleet.v3">;
       "version": string;
-      "schema_version": 19;
+      "schema_version": 20;
       "setup_required": boolean;
       "issuer_pub"?: string;
       "issuer_kid"?: string;
@@ -146,6 +146,7 @@ export interface components {
       "features": {
         "browser_status": true;
         "fleet_authorization": boolean;
+        "fleet_fulfillments": boolean;
       };
       "limits": components["schemas"]["CapabilitiesLimits"];
     };
@@ -285,6 +286,68 @@ export interface components {
       "local_ceiling_seconds"?: number;
       "expected_version": number;
     };
+    "FulfillmentParty": {
+      "workload_id": string;
+      "node_id": string;
+      "unit"?: string;
+      "credential": string;
+      "key_version"?: number;
+      "registration_version"?: number;
+      "fingerprint"?: string;
+    };
+    "Fulfillment": {
+      "id": string;
+      "status": "awaiting_approval" | "approved" | "offered" | "available" | "recipient_consumed" | "completed" | "denied" | "revoked" | "expired" | "failed" | "uncertain";
+      "version": number;
+      "mode": "reencrypt";
+      "issuer": components["schemas"]["FulfillmentParty"];
+      "recipient": components["schemas"]["FulfillmentParty"];
+      "parties_bound": boolean;
+      "requested_by": string;
+      "purpose": string;
+      "untrusted_fields": Array<string>;
+      "policy_version": number;
+      "rule_id": string;
+      "decision": "allow" | "pending_approval" | "deny";
+      "approval": {
+        "status": "not_required" | "pending" | "approved" | "rejected";
+        "approver_ids": Array<string>;
+        "decided_by": string | null;
+        "decided_at": number | null;
+      };
+      "prior_fulfillment_id"?: string | null;
+      "ttl_seconds": number;
+      "terms_digest"?: string | null;
+      "failure_code"?: string | null;
+      "revocation_reason"?: string | null;
+      "delivery_revoked_at"?: number | null;
+      "provider_revocation": "not_attempted" | "unsupported" | "confirmed" | "failed";
+      "created_at": number;
+      "expires_at": number;
+      "approved_at"?: number | null;
+      "offered_at"?: number | null;
+      "available_at"?: number | null;
+      "stored_at"?: number | null;
+      "completed_at"?: number | null;
+      "closed_at"?: number | null;
+    };
+    "FulfillmentList": {
+      "items": Array<components["schemas"]["Fulfillment"]>;
+      "next_cursor": string | null;
+    };
+    "FulfillmentCreateInput": {
+      "issuer_workload_id": string;
+      "recipient_workload_id": string;
+      "issuer_credential": string;
+      "recipient_credential": string;
+      "purpose": string;
+      "prior_fulfillment_id"?: string;
+    };
+    "FulfillmentDecisionInput": {
+      "expected_version": number;
+      "issuer_fingerprint"?: string;
+      "recipient_fingerprint"?: string;
+    };
     "FleetPolicyRule": {
       "id": string;
       "action": "noop.marker" | "browser.session";
@@ -294,15 +357,25 @@ export interface components {
       "max_ttl_seconds": number;
       "approver_ids"?: Array<string>;
     };
+    "CrossWorkloadRule": {
+      "id": string;
+      "issuer_workload_ids": Array<string>;
+      "recipient_workload_ids": Array<string>;
+      "decision": "allow" | "pending_approval" | "deny";
+      "max_ttl_seconds": number;
+      "approver_ids"?: Array<string>;
+    };
     "FleetPolicy": {
       "version": number;
       "rules": Array<components["schemas"]["FleetPolicyRule"]>;
+      "cross_workload": Array<components["schemas"]["CrossWorkloadRule"]>;
       "updated_at": number;
       "updated_by": string;
     };
     "FleetPolicyInput": {
       "expected_version": number;
       "rules": Array<components["schemas"]["FleetPolicyRule"]>;
+      "cross_workload"?: Array<components["schemas"]["CrossWorkloadRule"]>;
     };
     "OperationApprovalScope": {
       "tenant_id": string;
@@ -3441,6 +3514,315 @@ export interface operations {
   };
   security: ReadonlyArray<readonly ["adminSession", "csrfCookie"] | readonly ["desktopBearer"]>;
   };
+  "listFulfillments": {
+  parameters: {
+    path: never;
+    query: {
+      "status"?: "awaiting_approval" | "approved" | "offered" | "available" | "recipient_consumed" | "completed" | "denied" | "revoked" | "expired" | "failed" | "uncertain";
+      "cursor"?: string;
+      "limit"?: number;
+    };
+    header: never;
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["FulfillmentList"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession"]>;
+  };
+  "createFulfillment": {
+  parameters: {
+    path: never;
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "Idempotency-Key": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["FulfillmentCreateInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Fulfillment"];
+      };
+    };
+    "201": {
+      content: {
+        "application/json": components["schemas"]["Fulfillment"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "getFulfillment": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Fulfillment"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession"]>;
+  };
+  "revokeFulfillment": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+    };
+    cookie: never;
+  };
+  requestBody: never;
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Fulfillment"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "approveFulfillment": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "If-Match": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["FulfillmentDecisionInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Fulfillment"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "428": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
+  "rejectFulfillment": {
+  parameters: {
+    path: {
+      "id": string;
+    };
+    query: never;
+    header: {
+      "X-CSRF-Token": string;
+      "Origin": string;
+      "If-Match": string;
+    };
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": components["schemas"]["FulfillmentDecisionInput"];
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": components["schemas"]["Fulfillment"];
+      };
+    };
+    "400": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "401": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "404": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "409": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "428": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "503": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+  };
+  security: ReadonlyArray<readonly ["adminSession", "csrfCookie"]>;
+  };
   "listFleetGrants": {
   parameters: {
     path: never;
@@ -4117,6 +4499,20 @@ export interface paths {
   };
   "/api/v3/approvals/{id}/reject": {
     post?: operations["rejectFleetOperations"];
+  };
+  "/api/v3/fulfillments": {
+    get?: operations["listFulfillments"];
+    post?: operations["createFulfillment"];
+  };
+  "/api/v3/fulfillments/{id}": {
+    get?: operations["getFulfillment"];
+    delete?: operations["revokeFulfillment"];
+  };
+  "/api/v3/fulfillments/{id}/approve": {
+    post?: operations["approveFulfillment"];
+  };
+  "/api/v3/fulfillments/{id}/reject": {
+    post?: operations["rejectFulfillment"];
   };
   "/api/v3/grants": {
     get?: operations["listFleetGrants"];

@@ -53,6 +53,7 @@ pub struct Config {
     allowed_origins: Vec<String>,
     trusted_proxy_peers: Vec<TrustedProxy>,
     proxy_required: bool,
+    fulfillments_enabled: bool,
     tls_config: Option<Arc<tokio_rustls::rustls::ServerConfig>>,
     body_limit_bytes: usize,
     agent_token_rate_limit: u32,
@@ -327,6 +328,13 @@ impl Config {
             Some("1") => true,
             Some(_) => return Err(ConfigError::Invalid("BLINDPASS_PROXY_REQUIRED")),
         };
+        // P10 cross-workload fulfillment is off unless an operator opts in. A
+        // restart with the flag cleared closes every live fulfillment.
+        let fulfillments_enabled = match value(values, "BLINDPASS_FULFILLMENTS_ENABLED") {
+            None | Some("0") => false,
+            Some("1") => true,
+            Some(_) => return Err(ConfigError::Invalid("BLINDPASS_FULFILLMENTS_ENABLED")),
+        };
         let trusted_proxy_peers = value(values, "BLINDPASS_TRUST_PROXY")
             .unwrap_or("")
             .split(',')
@@ -547,6 +555,7 @@ impl Config {
             allowed_origins,
             trusted_proxy_peers,
             proxy_required,
+            fulfillments_enabled,
             tls_config,
             body_limit_bytes,
             agent_token_rate_limit,
@@ -655,6 +664,11 @@ impl Config {
     #[must_use]
     pub fn proxy_required(&self) -> bool {
         self.proxy_required
+    }
+
+    #[must_use]
+    pub fn fulfillments_enabled(&self) -> bool {
+        self.fulfillments_enabled
     }
 
     #[must_use]

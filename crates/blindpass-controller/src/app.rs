@@ -58,6 +58,7 @@ pub(crate) struct AppState {
     pub(crate) agent_rate_window_ms: u64,
     pub(crate) abuse_limits: crate::config::AbuseLimits,
     pub(crate) session_absolute_seconds: u64,
+    pub(crate) fulfillments_enabled: bool,
     pub(crate) login_hash_slots: Arc<Semaphore>,
     ownership: Option<Arc<crate::recovery_authority::ProcessOwnership>>,
     pub(crate) recovery_slots: Arc<Semaphore>,
@@ -167,6 +168,7 @@ struct CapabilitiesLoginLimits {
 struct CapabilitiesFeatures {
     browser_status: bool,
     fleet_authorization: bool,
+    fleet_fulfillments: bool,
 }
 
 pub fn build_app(config: Config, store: Option<Store>) -> Router {
@@ -277,6 +279,7 @@ fn build_app_inner(
         agent_rate_window_ms: config.agent_rate_window_ms(),
         abuse_limits: config.abuse_limits(),
         session_absolute_seconds: config.session_absolute_seconds(),
+        fulfillments_enabled: config.fulfillments_enabled(),
         login_hash_slots: Arc::new(Semaphore::new(4)),
         recovery_slots: Arc::new(Semaphore::new(4)),
         ownership,
@@ -687,6 +690,7 @@ async fn capabilities(State(state): State<AppState>) -> Response {
         features: CapabilitiesFeatures {
             browser_status: BROWSER_STATUS_ADOPTED,
             fleet_authorization: state.issuer_keypair.is_some(),
+            fleet_fulfillments: state.issuer_keypair.is_some() && state.fulfillments_enabled,
         },
         limits: CapabilitiesLimits {
             login: CapabilitiesLoginLimits {
