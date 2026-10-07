@@ -1029,7 +1029,7 @@ def service_python(code):
 def native_upgrade():
     """P06-N10: forward upgrade with an automatic verified pre-upgrade backup.
     The same verified binaries are repacked as 0.1.1; the older schema is a real
-    schema-18 database made by removing the schema-19 tables and marker."""
+    schema-18 database made by removing the schema-19 and schema-20 tables and marker."""
     global case
     case = 'N10'
     unit = 'blindpass-controller-upgrade.service'
@@ -1060,9 +1060,9 @@ def native_upgrade():
     run(['systemctl','start',unit],success=False)
     assert not (DATA/'pre-upgrade-backups').exists()
     fence()
-    # Make the stored schema genuinely older (18): schema 19 only adds two tables.
+    # Make the stored schema genuinely older (18): schemas 19 and 20 only add tables.
     service_python('import sqlite3; c=sqlite3.connect("/var/lib/blindpass/controller/controller.db"); '
-                   '[c.execute("DROP TABLE "+t) for t in ("controller_recovery_intents","controller_recovery_reports")]; '
+                   '[c.execute("DROP TABLE "+t) for t in ("cross_fulfillment_payloads","cross_fulfillments","controller_recovery_intents","controller_recovery_reports")]; '
                    'c.execute("UPDATE controller_meta SET schema_version=18 WHERE id=1"); c.commit(); '
                    'c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()')
     version = lambda: int(service_python('import sqlite3; print(sqlite3.connect("file:/var/lib/blindpass/controller/controller.db?mode=ro",uri=True)'
@@ -1077,7 +1077,7 @@ def native_upgrade():
         saved.rename(target)
     run(['systemctl','start',unit])
     assert show('Result',unit) == 'success' and show('ExecMainStatus',unit) == '0'
-    assert version() == 19
+    assert version() == 20
     backups = sorted((DATA/'pre-upgrade-backups').iterdir())
     assert len(backups) == 1 and re.fullmatch(r'pre-upgrade-\d{13}-v18',backups[0].name)
     archives = list(backups[0].glob('*.bpbackup')); assert len(archives) == 1

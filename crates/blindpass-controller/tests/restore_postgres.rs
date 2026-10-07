@@ -54,6 +54,8 @@ impl Fixture {
         if let Some(version) = schema_version {
             // Shape the source as an older schema, as a pre-upgrade backup captures it.
             for (introduced, table) in [
+                (20, "cross_fulfillment_payloads"),
+                (20, "cross_fulfillments"),
                 (19, "controller_recovery_intents"),
                 (19, "controller_recovery_reports"),
                 (18, "controller_recovery_snapshots"),

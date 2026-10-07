@@ -1204,6 +1204,8 @@ async fn transition_readiness(address: SocketAddr) -> Option<u16> {
 /// Tables introduced after each schema version, newest first, so an initialized
 /// current database can be turned into a genuine older-schema database.
 const NEWER_TABLES: &[(i64, &str)] = &[
+    (20, "cross_fulfillment_payloads"),
+    (20, "cross_fulfillments"),
     (19, "controller_recovery_intents"),
     (19, "controller_recovery_reports"),
     (18, "controller_recovery_snapshots"),

@@ -287,10 +287,10 @@ def profile_gate(profile, image, helper, scenario='profile'):
             def upgrade(success=True): return compose('--profile','upgrade','run','--rm','controller-upgrade',success=success,timeout=300)
             compose('stop','controller')
             # The previous holder is gone but its record is still active: no migration yet.
-            upgrade(success=False); assert schema()==19
+            upgrade(success=False); assert schema()==20
             fence()
             data_python('import sqlite3; c=sqlite3.connect("/data/controller.db"); '
-                        '[c.execute("DROP TABLE "+t) for t in ("controller_recovery_intents","controller_recovery_reports")]; '
+                        '[c.execute("DROP TABLE "+t) for t in ("cross_fulfillment_payloads","cross_fulfillments","controller_recovery_intents","controller_recovery_reports")]; '
                         'c.execute("UPDATE controller_meta SET schema_version=18 WHERE id=1"); c.commit(); '
                         'c.execute("PRAGMA wal_checkpoint(TRUNCATE)"); c.close()',write=True)
             assert schema()==18
@@ -342,9 +342,9 @@ def profile_gate(profile, image, helper, scenario='profile'):
                     'print(json.dumps({d.name:[f.name for f in d.iterdir()] for d in r.iterdir()} if r.exists() else {}))').stdout)
             compose('stop','controller')
             # The previous holder is gone but its record is still active: no migration yet.
-            upgrade(success=False); assert schema()==19
+            upgrade(success=False); assert schema()==20
             fence()
-            sql('DROP TABLE controller_recovery_intents, controller_recovery_reports; UPDATE controller_meta SET schema_version=18 WHERE id=1')
+            sql('DROP TABLE cross_fulfillment_payloads, cross_fulfillments, controller_recovery_intents, controller_recovery_reports; UPDATE controller_meta SET schema_version=18 WHERE id=1')
             assert schema()==18
             # Without the protected key the older schema is never touched.
             recovery_move('signing.pem','held.pem')

@@ -185,6 +185,14 @@ impl Fixture {
             }
             tx.commit().await.unwrap();
         }
+        if schema < 20 {
+            for table in ["cross_fulfillment_payloads", "cross_fulfillments"] {
+                sqlx::query(&format!("DROP TABLE {table}"))
+                    .execute(&pool)
+                    .await
+                    .unwrap();
+            }
+        }
         if schema < 19 {
             for table in ["controller_recovery_intents", "controller_recovery_reports"] {
                 sqlx::query(&format!("DROP TABLE {table}"))

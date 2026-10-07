@@ -154,6 +154,8 @@ async fn seed(h: &Harness) {
     h.execute("INSERT INTO operation_approvals (id,tenant_id,operation_ids_json,requester_summary_json,verified_identity_json,rule_id,status,expires_at,idempotency_key,created_at) VALUES ('P06_FLEET_APPROVAL',?,'[]','{}','{}','P06_DUMMY_RULE','pending',9999999999999,'P06_DUMMY_IDEMPOTENCY',1)",vec![tenant.into()]).await;
     h.execute("INSERT INTO fleet_provisioning_offers (id,tenant_id,node_id,operation_id,grant_id,source_binding_version,offer_json,issued_at,expires_at,created_at) VALUES ('P06_OFFER',?,'P06_NODE','P06_OP_0','P06_GRANT_0',1,'{}',1,9999999999999,1)",vec![tenant.into()]).await;
     h.execute("INSERT INTO fleet_provisioning_links (id,tenant_id,node_id,operation_id,grant_id,offer_id,operator_id,idempotency_hash,expires_at,created_at) VALUES ('P06_LINK',?,'P06_NODE','P06_OP_0','P06_GRANT_0','P06_OFFER','dummy','P06_DUMMY_HASH',9999999999999,1)",vec![tenant.into()]).await;
+    h.execute("INSERT INTO cross_fulfillments (id,tenant_id,issuer_workload_id,recipient_workload_id,issuer_node_id,recipient_node_id,issuer_credential,recipient_credential,mode,requested_by,purpose,policy_version,rule_id,decision,approver_ids_json,approval_status,ttl_seconds,terms_digest,status,idempotency_key,request_hash,created_at,expires_at) VALUES ('P10_FULFILLMENT',?,'P06_WORKLOAD','P06_WORKLOAD','P06_NODE','P06_NODE','dummy','dummy','reencrypt','dummy','dummy',1,'P06_DUMMY_RULE','allow','[]','not_required',60,'P06_DUMMY_DIGEST','available','P06_DUMMY_IDEMPOTENCY','P06_DUMMY_HASH',1,9999999999999)",vec![tenant.into()]).await;
+    h.execute("INSERT INTO cross_fulfillment_payloads (fulfillment_id,tenant_id,submit_json,ciphertext_digest,created_at) VALUES ('P10_FULFILLMENT',?,'{}','P06_DUMMY_DIGEST',1)",vec![tenant.into()]).await;
     h.execute("INSERT INTO fleet_provisioning_receipts (link_id,tenant_id,node_id,grant_id,offer_id,operator_id,ciphertext_digest,delivery_digest,submitted_at,expires_at) VALUES ('P06_LINK',?,'P06_NODE','P06_GRANT_0','P06_OFFER','dummy','P06_DUMMY_DIGEST','P06_DUMMY_DIGEST',1,9999999999999)",vec![tenant.into()]).await;
 }
 
@@ -172,6 +174,7 @@ async fn assert_invalidated(f: &Fixture) {
         "node_inbox",
         "fleet_provisioning_links",
         "fleet_provisioning_offers",
+        "cross_fulfillment_payloads",
     ] {
         assert_eq!(
             f.h.scalar_i64(&format!("SELECT COUNT(*) FROM {table}"), vec![])
@@ -180,6 +183,15 @@ async fn assert_invalidated(f: &Fixture) {
             "{table}"
         );
     }
+    assert_eq!(
+        f.h.scalar_i64(
+            "SELECT COUNT(*) FROM cross_fulfillments WHERE status='revoked' AND revocation_reason='recovery' AND delivery_revoked_at IS NOT NULL",
+            vec![]
+        )
+        .await,
+        1,
+        "live fulfillments end on recovery and keep their lineage"
+    );
     assert_eq!(
         f.h.scalar_i64(
             "SELECT issuer_epoch FROM controller_meta WHERE id=1",
@@ -308,6 +320,7 @@ async fn p06_ri01_atomic_invalidation_and_quarantine_cover_all_restored_authorit
     let summary = status.summary.unwrap();
     assert_eq!(summary.operations, 10);
     assert_eq!(summary.grants, 10);
+    assert_eq!(summary.fulfillments, 1);
     assert_eq!(summary.nodes, 1);
     assert_eq!(summary.reviews, 9);
     assert_invalidated(&f).await;
