@@ -829,6 +829,7 @@ fn broker_document_response_succeeded(response: &[u8]) -> bool {
             b"OK document_discarded grant_expired\n"
                 | b"OK document_discarded grant_settled\n"
                 | b"OK document_discarded grant_rejected\n"
+                | b"OK document_discarded fulfillment_rejected\n"
         )
 }
 
@@ -1205,6 +1206,14 @@ mod tests {
         ));
         assert!(broker_document_response_succeeded(
             b"OK document_discarded grant_rejected\n"
+        ));
+        // P10: a signed fulfillment document the broker can never apply is
+        // acknowledged so it cannot wedge the inbox behind it.
+        assert!(broker_document_response_succeeded(
+            b"OK document_discarded fulfillment_rejected\n"
+        ));
+        assert!(!broker_document_response_succeeded(
+            b"OK document_discarded fulfillment_rejecte\n"
         ));
         assert!(!broker_document_response_succeeded(
             b"OK document_discarded unsupported\n"

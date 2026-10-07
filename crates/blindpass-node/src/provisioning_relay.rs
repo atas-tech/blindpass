@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-//! Automatic Source provisioning relay steps. The node handles only signed
+//! Automatic Source provisioning and fulfillment relay steps. The node handles only signed
 //! public documents and HPKE ciphertext: it never holds a recipient private
 //! key, a Source plaintext or a signing key, and it never alters bytes the
 //! broker signed. Every log line is a fixed `&'static str`, so no document,
@@ -35,6 +35,12 @@ pub(crate) const LOG_DELIVERY_UNUSABLE: &str =
     "node relay: a provisioning delivery could not be forwarded safely; acknowledging it";
 pub(crate) const LOG_BROKER_UNAVAILABLE: &str =
     "node relay could not reach the local broker control socket";
+pub(crate) const LOG_FULFILLMENT_DENIED: &str =
+    "node relay: the broker declined to publish an event for a fulfillment authorization";
+pub(crate) const LOG_FULFILLMENT_MALFORMED: &str =
+    "node relay: the broker returned a malformed fulfillment event";
+pub(crate) const LOG_FULFILLMENT_CONFLICT: &str =
+    "node relay: a different fulfillment event is already queued for that fulfillment";
 
 /// Result of one inbox document step that may be acknowledged to the controller.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -51,6 +57,15 @@ pub(crate) enum StepOutcome {
     DeliveryAlreadyProvisioned,
     /// Un-appliable delivery acknowledged so it cannot wedge the inbox.
     DeliveryDropped,
+    /// A fulfillment authorization was relayed and the broker's signed offer or
+    /// submission event queued.
+    FulfillmentEventQueued,
+    /// A fulfillment authorization was relayed; its event was already requested
+    /// by this process.
+    FulfillmentEventAlreadyRequested,
+    /// A fulfillment authorization was relayed; the broker declined or returned
+    /// an unusable event, which is acknowledged rather than retried.
+    FulfillmentEventSkipped,
 }
 
 /// A broker answer distinguishing an explicit refusal from an unreachable broker.
@@ -199,6 +214,116 @@ fn request_offer(
     }
 }
 
+/// The fulfillment id and the event the broker publishes for it, for an
+/// authorization document only: the recipient side yields the one-use offer, the
+/// issuer side the sealed submission. Anything else yields none.
+fn fulfillment_authorization(envelope: &Value) -> Option<(&str, &'static str, &'static str)> {
+    if envelope.get("kind")?.as_str()? != DocumentKind::FulfillmentAuthorization.as_str() {
+        return None;
+    }
+    let body = envelope.get("body")?;
+    let id = body.get("terms")?.get("fulfillment_id")?.as_str()?;
+    if !crate::valid_identifier(id) {
+        return None;
+    }
+    match body.get("side")?.as_str()? {
+        "recipient" => Some((id, "fulfillment_offer", "fo_")),
+        "issuer" => Some((id, "fulfillment_submit", "fs_")),
+        _ => None,
+    }
+}
+
+/// Strictly parse `FULFILL_EVENT <len>\n<canonical json>\n` for exactly one event
+/// of `kind` for `fulfillment_id`. The returned event is the broker's value
+/// unchanged, so its canonical bytes equal the broker's payload.
+fn parse_fulfillment_event(
+    response: &[u8],
+    fulfillment_id: &str,
+    kind: &str,
+    prefix: &str,
+) -> Option<NodeEvent> {
+    let newline = response.iter().position(|byte| *byte == b'\n')?;
+    let digits = std::str::from_utf8(&response[..newline])
+        .ok()?
+        .strip_prefix("FULFILL_EVENT ")?;
+    if digits.is_empty() || digits.starts_with('0') || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let length: usize = digits.parse().ok()?;
+    let payload = response[newline + 1..].strip_suffix(b"\n")?;
+    if length == 0 || length != payload.len() || length > MAX_OFFER_EVENT_BYTES {
+        return None;
+    }
+    let value = parse_json(std::str::from_utf8(payload).ok()?).ok()?;
+    if canonicalize_value(&value).ok()? != payload {
+        return None;
+    }
+    let event = NodeEvent::from_value(&value).ok()?;
+    let digest = sha256(fulfillment_id.as_bytes()).ok()?;
+    let key = format!(
+        "{prefix}{}",
+        digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    );
+    if event.kind != kind || event.idempotency_key != key {
+        return None;
+    }
+    // The event body is the broker-signed envelope; it must be of the same kind
+    // and name the same fulfillment.
+    let signed = &event.body;
+    (signed.get("kind")?.as_str()? == kind
+        && signed.get("body")?.get("fulfillment_id")?.as_str()? == fulfillment_id)
+        .then_some(event)
+}
+
+fn request_fulfillment_event(
+    socket: &Path,
+    outbox: &mut Outbox,
+    published: &mut HashSet<String>,
+    log: &mut dyn FnMut(&'static str),
+    (fulfillment_id, kind, prefix): (&str, &'static str, &'static str),
+) -> Result<StepOutcome, ChannelError> {
+    let remembered = format!("{kind}:{fulfillment_id}");
+    if published.contains(&remembered) {
+        return Ok(StepOutcome::FulfillmentEventAlreadyRequested);
+    }
+    let request = format!("FULFILL_EVENT {fulfillment_id}\n").into_bytes();
+    match broker_exchange(socket, &request) {
+        BrokerReply::Unavailable => {
+            log(LOG_BROKER_UNAVAILABLE);
+            Err(ChannelError::Retryable)
+        }
+        BrokerReply::Refused => {
+            remember(published, &remembered);
+            log(LOG_FULFILLMENT_DENIED);
+            Ok(StepOutcome::FulfillmentEventSkipped)
+        }
+        BrokerReply::Reply(mut reply) => {
+            let event = parse_fulfillment_event(&reply, fulfillment_id, kind, prefix);
+            wipe(&mut reply);
+            let Some(event) = event else {
+                remember(published, &remembered);
+                log(LOG_FULFILLMENT_MALFORMED);
+                return Ok(StepOutcome::FulfillmentEventSkipped);
+            };
+            match outbox.insert_batch(vec![event]) {
+                Ok(()) => {
+                    remember(published, &remembered);
+                    Ok(StepOutcome::FulfillmentEventQueued)
+                }
+                Err(crate::outbox::KEY_REUSED) => {
+                    remember(published, &remembered);
+                    log(LOG_FULFILLMENT_CONFLICT);
+                    Ok(StepOutcome::FulfillmentEventSkipped)
+                }
+                Err(_) => Err(ChannelError::Retryable),
+            }
+        }
+    }
+}
+
 /// A controller-signed delivery enters the broker only through
 /// PROVISION_SOURCE. A document the broker cannot apply is acknowledged, not
 /// retried, so it cannot block revocations queued behind it.
@@ -257,6 +382,13 @@ pub(crate) fn process_inbox_document(
     }
     let response =
         crate::relay_document_response(socket, envelope).map_err(|_| ChannelError::Retryable)?;
+    // Only an authorization the broker applied has an offer or submission to
+    // publish; a discarded one has nothing left to do.
+    if let Some(target) = fulfillment_authorization(envelope)
+        && response == b"OK document_applied fulfillment_authorization\n"
+    {
+        return request_fulfillment_event(socket, outbox, published, log, target);
+    }
     match browser_grant_id(envelope) {
         // Only a live accepted grant can receive an offer; a discarded or
         // settled one has nothing left to provision.
@@ -894,6 +1026,416 @@ mod tests {
                 );
             }
             assert!(!line.contains(CANARY));
+        }
+    }
+
+    // ---- P10 cross-workload fulfillment ----
+
+    const FULFILLMENT_ID: &str = "ful_0123456789abcdefABCDEF";
+    /// Events the real broker's FULFILL_EVENT minted for `FULFILLMENT_ID` (dummy
+    /// credential, throwaway keys) and the issuer-side authorization they answer.
+    const REAL: &str = include_str!("../testdata/p10-real-broker-events.txt");
+
+    fn real(label: &str) -> String {
+        REAL.lines()
+            .find_map(|line| line.strip_prefix(&format!("{label} ")))
+            .unwrap()
+            .to_owned()
+    }
+
+    fn fulfillment_key(prefix: &str, id: &str) -> String {
+        let digest = sha256(id.as_bytes()).unwrap();
+        format!(
+            "{prefix}{}",
+            digest
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        )
+    }
+
+    fn framed(json: &[u8]) -> Vec<u8> {
+        let mut reply = format!("FULFILL_EVENT {}\n", json.len()).into_bytes();
+        reply.extend_from_slice(json);
+        reply.push(b'\n');
+        reply
+    }
+
+    fn authorization_envelope(id: &str, side: &str) -> Value {
+        parse_json(&format!(
+            r#"{{"v":1,"kind":"fulfillment_authorization","kid":"ed25519-test","epoch":1,"body":{{"side":"{side}","terms":{{"fulfillment_id":"{id}"}}}},"sig":"{}"}}"#,
+            base64_url_encode(&[3; 64])
+        ))
+        .unwrap()
+    }
+
+    /// A synthetic broker event with the real shape, for the cases a real broker
+    /// never produces.
+    fn event_json(id: &str, kind: &str, key: &str, variant: &str) -> Vec<u8> {
+        let event = parse_json(&format!(
+            r#"{{"body":{{"v":1,"kind":"{kind}","kid":"nd_test-1","epoch":1,"body":{{"fulfillment_id":"{id}","offer_id":"fo_{variant}"}},"sig":"{}"}},"broker_signature":"{}","idempotency_key":"{key}","kind":"{kind}"}}"#,
+            base64_url_encode(&[5; 64]),
+            base64_url_encode(&[6; 64]),
+        ))
+        .unwrap();
+        canonicalize_value(&event).unwrap()
+    }
+
+    fn offer_json(variant: &str) -> Vec<u8> {
+        event_json(
+            FULFILLMENT_ID,
+            "fulfillment_offer",
+            &fulfillment_key("fo_", FULFILLMENT_ID),
+            variant,
+        )
+    }
+
+    /// A broker that applies every document and answers FULFILL_EVENT with `reply`.
+    fn fulfilling_broker(reply: Vec<u8>) -> FakeBroker {
+        FakeBroker::start(
+            &directory(),
+            Box::new(move |command, _| {
+                if command.starts_with("FULFILL_EVENT ") {
+                    reply.clone()
+                } else if command.starts_with("RELAY ") {
+                    b"OK document_applied fulfillment_authorization\n".to_vec()
+                } else {
+                    b"ERR invalid_control_command\n".to_vec()
+                }
+            }),
+        )
+    }
+
+    #[test]
+    fn p10_n01_real_broker_events_are_queued_byte_for_byte_for_both_sides() {
+        let mut rig = Rig::new();
+        let (offer, submit) = (real("OFFER").into_bytes(), real("SUBMIT").into_bytes());
+        let recipient_side = fulfilling_broker(framed(&offer));
+        assert_eq!(
+            rig.step(
+                &recipient_side.socket,
+                &authorization_envelope(FULFILLMENT_ID, "recipient")
+            ),
+            Ok(StepOutcome::FulfillmentEventQueued)
+        );
+        let issuer_side = fulfilling_broker(framed(&submit));
+        let authorization = parse_json(&real("AUTH")).unwrap();
+        assert_eq!(
+            rig.step(&issuer_side.socket, &authorization),
+            Ok(StepOutcome::FulfillmentEventQueued)
+        );
+        assert_eq!(
+            rig.step(&issuer_side.socket, &authorization),
+            Ok(StepOutcome::FulfillmentEventAlreadyRequested)
+        );
+        let queued = rig.outbox.first_batch(10);
+        assert_eq!(queued.len(), 2);
+        for (event, expected, kind, prefix) in [
+            (&queued[0], &offer, "fulfillment_offer", "fo_"),
+            (&queued[1], &submit, "fulfillment_submit", "fs_"),
+        ] {
+            assert_eq!(
+                &canonicalize_value(&event.to_value()).unwrap(),
+                expected,
+                "the node must publish the broker's event byte for byte"
+            );
+            assert_eq!(event.kind, kind);
+            assert_eq!(
+                event.idempotency_key,
+                fulfillment_key(prefix, FULFILLMENT_ID)
+            );
+        }
+        // The document went through RELAY first, canonical, and only then the event
+        // request, which carries nothing but the fulfillment id.
+        let requests = issuer_side.requests.lock().unwrap();
+        assert!(requests[0].0.starts_with("RELAY "));
+        assert_eq!(requests[0].1, canonicalize_value(&authorization).unwrap());
+        assert_eq!(requests[1].0, format!("FULFILL_EVENT {FULFILLMENT_ID}"));
+        // The repeat is relayed again (the broker applies it idempotently) but the
+        // event is not requested a second time.
+        assert_eq!(requests.len(), 3);
+        assert!(requests[2].0.starts_with("RELAY "));
+        assert!(rig.logs.is_empty());
+    }
+
+    #[test]
+    fn p10_n02_only_an_applied_authorization_asks_for_an_event() {
+        let mut rig = Rig::new();
+        // A document the broker discarded as unappliable is acknowledged without
+        // asking for anything to publish.
+        let discarding = FakeBroker::start(
+            &directory(),
+            Box::new(|_, _| b"OK document_discarded fulfillment_rejected\n".to_vec()),
+        );
+        assert_eq!(
+            rig.step(
+                &discarding.socket,
+                &authorization_envelope(FULFILLMENT_ID, "recipient")
+            ),
+            Ok(StepOutcome::Relayed)
+        );
+        assert_eq!(discarding.commands(), ["RELAY"]);
+        // Deliveries, revocations and other documents never trigger one.
+        let broker = fulfilling_broker(framed(&offer_json("fixed")));
+        for kind in [
+            "fulfillment_delivery",
+            "fulfillment_revocation",
+            "fulfillment_offer",
+            "fulfillment_submit",
+            "registration",
+        ] {
+            assert_eq!(
+                rig.step(&broker.socket, &other_envelope(kind)),
+                Ok(StepOutcome::Relayed),
+                "{kind}"
+            );
+        }
+        // An authorization that names no usable fulfillment or side asks nothing.
+        for envelope in [
+            authorization_envelope(FULFILLMENT_ID, "somebody"),
+            authorization_envelope("bad id", "recipient"),
+            authorization_envelope("bad/id", "issuer"),
+            other_envelope("fulfillment_authorization"),
+        ] {
+            assert_eq!(
+                rig.step(&broker.socket, &envelope),
+                Ok(StepOutcome::Relayed)
+            );
+        }
+        assert!(
+            broker.commands().iter().all(|command| command == "RELAY"),
+            "{:?}",
+            broker.commands()
+        );
+        assert!(rig.outbox.first_batch(10).is_empty());
+        assert!(rig.logs.is_empty());
+    }
+
+    #[test]
+    fn p10_n03_anything_but_the_exact_brokers_event_is_skipped_never_queued() {
+        let id = FULFILLMENT_ID;
+        let offer_key = fulfillment_key("fo_", id);
+        let good = offer_json("fixed");
+        let spaced = String::from_utf8(good.clone())
+            .unwrap()
+            .replacen("{\"body\"", "{ \"body\"", 1)
+            .into_bytes();
+        let mut cases: Vec<(&str, Vec<u8>, &'static str)> = vec![
+            (
+                "refused",
+                b"ERR fulfillment_denied\n".to_vec(),
+                LOG_FULFILLMENT_DENIED,
+            ),
+            (
+                "the other side's kind",
+                framed(&event_json(
+                    id,
+                    "fulfillment_submit",
+                    &fulfillment_key("fs_", id),
+                    "x",
+                )),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+            (
+                "a kind that is not a fulfillment event",
+                framed(&event_json(id, "audit", &offer_key, "x")),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+            (
+                "the wrong event key",
+                framed(&event_json(
+                    id,
+                    "fulfillment_offer",
+                    &fulfillment_key("fo_", "ful_ffffffffffffffffffffff"),
+                    "x",
+                )),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+            (
+                "another fulfillment's body",
+                framed(&event_json(
+                    "ful_ffffffffffffffffffffff",
+                    "fulfillment_offer",
+                    &offer_key,
+                    "x",
+                )),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+            (
+                "non-canonical bytes",
+                framed(&spaced),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+            (
+                "a length that does not match",
+                [
+                    format!("FULFILL_EVENT {}\n", good.len() + 1).into_bytes(),
+                    good.clone(),
+                    b"\n".to_vec(),
+                ]
+                .concat(),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+            (
+                "a padded length",
+                [
+                    format!("FULFILL_EVENT 0{}\n", good.len()).into_bytes(),
+                    good.clone(),
+                    b"\n".to_vec(),
+                ]
+                .concat(),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+            (
+                "the browser frame",
+                [
+                    format!("OFFER_EVENT {}\n", good.len()).into_bytes(),
+                    good.clone(),
+                    b"\n".to_vec(),
+                ]
+                .concat(),
+                LOG_FULFILLMENT_MALFORMED,
+            ),
+        ];
+        cases.push((
+            "an empty event",
+            b"FULFILL_EVENT 0\n\n".to_vec(),
+            LOG_FULFILLMENT_MALFORMED,
+        ));
+        for (name, reply, log) in cases {
+            let mut rig = Rig::new();
+            let broker = fulfilling_broker(reply);
+            let envelope = authorization_envelope(id, "recipient");
+            assert_eq!(
+                rig.step(&broker.socket, &envelope),
+                Ok(StepOutcome::FulfillmentEventSkipped),
+                "{name}"
+            );
+            assert_eq!(rig.logs, [log], "{name}");
+            assert!(rig.outbox.first_batch(10).is_empty(), "{name}");
+            // The decision is remembered, so the broker is not asked again.
+            assert_eq!(
+                rig.step(&broker.socket, &envelope),
+                Ok(StepOutcome::FulfillmentEventAlreadyRequested),
+                "{name}"
+            );
+            assert_eq!(
+                broker
+                    .commands()
+                    .iter()
+                    .filter(|command| *command == "FULFILL_EVENT")
+                    .count(),
+                1,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn p10_n04_an_unreachable_or_confused_broker_is_retried_not_skipped() {
+        let mut rig = Rig::new();
+        let envelope = authorization_envelope(FULFILLMENT_ID, "recipient");
+        // No trailing newline: the answer is not a complete broker reply.
+        let truncated = fulfilling_broker(b"FULFILL_EVENT 5\nabcde".to_vec());
+        assert_eq!(
+            rig.step(&truncated.socket, &envelope),
+            Err(ChannelError::Retryable)
+        );
+        assert_eq!(rig.logs, [LOG_BROKER_UNAVAILABLE]);
+        // It was not remembered: the next attempt asks again and succeeds.
+        let working = fulfilling_broker(framed(&offer_json("fixed")));
+        assert_eq!(
+            rig.step(&working.socket, &envelope),
+            Ok(StepOutcome::FulfillmentEventQueued)
+        );
+        assert_eq!(rig.outbox.first_batch(10).len(), 1);
+        // A broker that cannot even apply the document leaves it unacknowledged.
+        let mut gone = fulfilling_broker(Vec::new());
+        gone.shut_down();
+        assert_eq!(
+            rig.step(
+                &gone.socket,
+                &authorization_envelope(FULFILLMENT_ID, "issuer")
+            ),
+            Err(ChannelError::Retryable)
+        );
+    }
+
+    #[test]
+    fn p10_n05_a_different_event_for_a_queued_key_is_a_conflict_not_a_replacement() {
+        let mut rig = Rig::new();
+        let envelope = authorization_envelope(FULFILLMENT_ID, "recipient");
+        let first = fulfilling_broker(framed(&offer_json("first")));
+        assert_eq!(
+            rig.step(&first.socket, &envelope),
+            Ok(StepOutcome::FulfillmentEventQueued)
+        );
+        // A restart forgets the in-memory set but keeps the durable outbox.
+        rig.published.clear();
+        let second = fulfilling_broker(framed(&offer_json("second")));
+        assert_eq!(
+            rig.step(&second.socket, &envelope),
+            Ok(StepOutcome::FulfillmentEventSkipped)
+        );
+        assert_eq!(rig.logs, [LOG_FULFILLMENT_CONFLICT]);
+        let queued = rig.outbox.first_batch(10);
+        assert_eq!(queued.len(), 1);
+        assert_eq!(
+            canonicalize_value(&queued[0].to_value()).unwrap(),
+            offer_json("first"),
+            "first bytes win"
+        );
+        // The exact same event again is idempotent.
+        rig.published.clear();
+        assert_eq!(
+            rig.step(&first.socket, &envelope),
+            Ok(StepOutcome::FulfillmentEventQueued)
+        );
+        assert_eq!(rig.outbox.first_batch(10).len(), 1);
+    }
+
+    #[test]
+    fn p10_n07_fulfillment_log_lines_are_fixed_text_and_never_carry_ids_or_bodies() {
+        let mut rig = Rig::new();
+        let all = [
+            LOG_FULFILLMENT_DENIED,
+            LOG_FULFILLMENT_MALFORMED,
+            LOG_FULFILLMENT_CONFLICT,
+            LOG_BROKER_UNAVAILABLE,
+        ];
+        let denied_id = "ful_P10DENIEDCANARY000000";
+        let malformed_id = "ful_P10MALFORMEDCANARY00";
+        let denying = fulfilling_broker(b"ERR fulfillment_denied\n".to_vec());
+        rig.step(
+            &denying.socket,
+            &authorization_envelope(denied_id, "recipient"),
+        )
+        .unwrap();
+        let garbled = fulfilling_broker(framed(CANARY.as_bytes()));
+        rig.step(
+            &garbled.socket,
+            &authorization_envelope(malformed_id, "issuer"),
+        )
+        .unwrap();
+        let truncated = fulfilling_broker(b"FULFILL_EVENT 5\nabcde".to_vec());
+        rig.step(
+            &truncated.socket,
+            &authorization_envelope(FULFILLMENT_ID, "recipient"),
+        )
+        .unwrap_err();
+        assert_eq!(
+            rig.logs,
+            [
+                LOG_FULFILLMENT_DENIED,
+                LOG_FULFILLMENT_MALFORMED,
+                LOG_BROKER_UNAVAILABLE
+            ]
+        );
+        for line in rig.logs.iter().chain(all.iter()) {
+            assert!(all.contains(line), "only fixed lines may be emitted");
+            for forbidden in [CANARY, denied_id, malformed_id, FULFILLMENT_ID, "ful_"] {
+                assert!(!line.contains(forbidden), "{line}");
+            }
         }
     }
 }

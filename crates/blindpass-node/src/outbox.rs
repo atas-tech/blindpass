@@ -61,6 +61,9 @@ impl NodeEvent {
                         | "operation_cancel"
                         | "recipient_offer"
                         | "audit"
+                        | "fulfillment_offer"
+                        | "fulfillment_submit"
+                        | "fulfillment_result"
                 )
             })
             .ok_or("node event kind is malformed")?;
@@ -391,6 +394,52 @@ mod tests {
         drop(outbox);
         let restored = Outbox::open(&directory).unwrap();
         assert_eq!(restored.first_batch(10), vec![offer]);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn p10_n06_fulfillment_events_are_accepted_persist_and_unknown_kinds_stay_refused() {
+        let directory = directory();
+        let mut queued = Vec::new();
+        for (kind, key) in [
+            (
+                "fulfillment_offer",
+                "fo_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            ),
+            (
+                "fulfillment_submit",
+                "fs_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            ),
+            (
+                "fulfillment_result",
+                "fr_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            ),
+        ] {
+            let mut item = event(key);
+            item.kind = kind.into();
+            assert_eq!(NodeEvent::from_value(&item.to_value()).unwrap(), item);
+            queued.push(item);
+        }
+        for refused in [
+            "fulfillment_offers",
+            "fulfillment_deliver",
+            "fulfillment",
+            "fulfillment_authorization",
+        ] {
+            let mut other = queued[0].clone();
+            other.kind = refused.into();
+            assert!(
+                NodeEvent::from_value(&other.to_value()).is_err(),
+                "{refused}"
+            );
+        }
+        let mut outbox = Outbox::open(&directory).unwrap();
+        outbox.insert_batch(queued.clone()).unwrap();
+        drop(outbox);
+        // A broker result that the outbox could not reload would wedge the relay at
+        // startup, so the persisted form must round-trip too.
+        let restored = Outbox::open(&directory).unwrap();
+        assert_eq!(restored.first_batch(10), queued);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
