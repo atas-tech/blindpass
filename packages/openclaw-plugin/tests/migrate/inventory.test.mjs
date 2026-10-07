@@ -253,3 +253,20 @@ test("P09-I01 refuses an unreviewed release", opts, async () => {
         await rm(base, { recursive: true, force: true });
     }
 });
+
+test("P09-I01 a residual file too large to search is reported as skipped, never as clean", opts, async () => {
+    const secret = makeCanary("big");
+    const { base, dir } = await makeConfigDir({
+        config: { gateway: { auth: { mode: "token", token: secret } } },
+        // Over the 1 MiB bound: the canary sits at the very end where a partial read would miss it.
+        extra: { "openclaw.json.bak": `${"x".repeat(1024 * 1024 + 16)}${secret}` },
+    });
+    try {
+        const { plan } = await runDryRun({ configDir: dir, release: RELEASE });
+        assert.ok(plan.warnings.includes("residual-scan-skipped: openclaw.json.bak (too-large)"), plan.warnings.join("|"));
+        assert.deepEqual(plan.residual, []);
+        assertNoLeak(assert, renderPlanJson(plan) + renderPlanText(plan), [secret], "plan");
+    } finally {
+        await rm(base, { recursive: true, force: true });
+    }
+});

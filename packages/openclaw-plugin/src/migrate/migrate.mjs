@@ -392,7 +392,7 @@ async function importStage(ctx, dir, journal) {
         return { name: target.ref.id, value, source: `openclaw.json:${target.path}` };
     });
     await importEntries({ storePath: ctx.storePath, entries, migrationId: journal.state.migrationId });
-    await verifyViaResolver({ resolverCommand: ctx.resolverCommand, storePath: ctx.storePath, entries });
+    await verifyViaResolver({ resolverCommand: ctx.resolverCommand, storePath: ctx.storePath, entries, providerAlias: ctx.providerAlias });
     await journal.setImported(entries.map((entry) => entry.name), ctx.now());
 }
 

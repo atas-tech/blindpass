@@ -113,8 +113,8 @@ export async function importEntries({ storePath, entries, migrationId }) {
 
 // Runs the resolver command exactly as OpenClaw will (absolute path, PATH-only environment, protocol
 // v1 on stdin) and compares what it returns with the values we imported, in memory only.
-export async function verifyViaResolver({ resolverCommand, storePath, entries }) {
-    const request = JSON.stringify({ protocolVersion: 1, provider: "blindpass", ids: entries.map((entry) => entry.name) });
+export async function verifyViaResolver({ resolverCommand, storePath, entries, providerAlias = "blindpass" }) {
+    const request = JSON.stringify({ protocolVersion: 1, provider: providerAlias, ids: entries.map((entry) => entry.name) });
     const { code, stdout } = await new Promise((resolve, reject) => {
         const child = spawn(resolverCommand, ["--store", path.resolve(storePath)], {
             env: { PATH: process.env.PATH ?? "" },

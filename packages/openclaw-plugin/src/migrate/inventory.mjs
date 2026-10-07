@@ -68,8 +68,13 @@ export async function scanResidual(dir, values, warnings, { includeEnv = false }
     const residual = [];
     const scan = async (target, label, name) => {
         try {
-            const { file } = await readBounded(target, name).then((result) => (result.file ? result : { file: null }));
-            if (file && values.some((value) => containsValue(file.bytes, value))) {
+            const read = await readBounded(target, name);
+            if (read.state === "unsupported") {
+                // A file too large to search is never reported clean.
+                warnings.push(`residual-scan-skipped: ${label} (${read.reason})`);
+                return;
+            }
+            if (values.some((value) => containsValue(read.file.bytes, value))) {
                 residual.push({ file: label, reason: "holds-copy-of-migratable-value" });
             }
         } catch (error) {
