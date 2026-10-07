@@ -1,0 +1,6 @@
+{
+  "gateway": { "auth": { "mode": "token", "token": "P09-CANARY-GW-AAAA1111" } },
+  "models": { "providers": { "mockai": { "baseUrl": "http://127.0.0.1:18080/v1", "apiKey": "P09-CANARY-MODEL-BBBB2222", "api": "openai-completions", "models": [ { "id": "mock-1", "name": "Mock 1" } ] } } },
+  "skills": { "entries": { "demo": { "apiKey": "P09-CANARY-SKILL-CCCC3333" } } },
+  "channels": { "telegram": { "botToken": "P09-CANARY-TG-DDDD4444" } }
+}

@@ -1,0 +1,11 @@
+{
+  "version": 1, "protocolVersion": 1,
+  "providerUpserts": { "blindpass": { "source": "exec", "command": "/opt/blindpass/blindpass-resolver.mjs", "args": ["--store", "/home/blindpass/.openclaw/blindpass/secrets.enc.json"], "passEnv": ["PATH"], "jsonOnly": true } },
+  "scrubEnv": false, "scrubAuthProfilesForProviderTargets": false,
+  "targets": [
+    { "type": "gateway.auth.token", "path": "gateway.auth.token", "ref": { "source": "exec", "provider": "blindpass", "id": "gateway.auth.token" } },
+    { "type": "models.providers.apiKey", "path": "models.providers.mockai.apiKey", "providerId": "mockai", "ref": { "source": "exec", "provider": "blindpass", "id": "models.providers.mockai.apiKey" } },
+    { "type": "skills.entries.apiKey", "path": "skills.entries.demo.apiKey", "ref": { "source": "exec", "provider": "blindpass", "id": "skills.entries.demo.apiKey" } },
+    { "type": "channels.telegram.botToken", "path": "channels.telegram.botToken", "ref": { "source": "exec", "provider": "blindpass", "id": "channels.telegram.botToken" } }
+  ]
+}

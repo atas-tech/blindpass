@@ -1,0 +1,73 @@
+{
+  "gateway": {
+    "auth": {
+      "mode": "token",
+      "token": {
+        "source": "exec",
+        "provider": "blindpass",
+        "id": "gateway.auth.token"
+      }
+    }
+  },
+  "models": {
+    "providers": {
+      "mockai": {
+        "baseUrl": "http://127.0.0.1:18080/v1",
+        "apiKey": {
+          "source": "exec",
+          "provider": "blindpass",
+          "id": "models.providers.mockai.apiKey"
+        },
+        "api": "openai-completions",
+        "models": [
+          {
+            "id": "mock-1",
+            "name": "Mock 1"
+          }
+        ]
+      }
+    }
+  },
+  "skills": {
+    "entries": {
+      "demo": {
+        "apiKey": {
+          "source": "exec",
+          "provider": "blindpass",
+          "id": "skills.entries.demo.apiKey"
+        }
+      }
+    }
+  },
+  "channels": {
+    "telegram": {
+      "botToken": {
+        "source": "exec",
+        "provider": "blindpass",
+        "id": "channels.telegram.botToken"
+      }
+    }
+  },
+  "secrets": {
+    "providers": {
+      "blindpass": {
+        "source": "exec",
+        "command": "/opt/blindpass/blindpass-resolver.mjs",
+        "args": [
+          "--store",
+          "/home/blindpass/.openclaw/blindpass/secrets.enc.json"
+        ],
+        "passEnv": [
+          "PATH"
+        ],
+        "jsonOnly": true
+      }
+    }
+  },
+  "meta": {
+    "migrations": {
+      "modelPolicyAllowlist": true
+    },
+    "lastTouchedVersion": "2026.8.35"
+  }
+}
