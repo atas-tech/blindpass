@@ -15,6 +15,7 @@ pub mod custody;
 pub mod delivery;
 pub mod deployment;
 pub mod fleet;
+pub mod fulfillment;
 pub mod identity;
 pub mod open_flags;
 pub mod policy;

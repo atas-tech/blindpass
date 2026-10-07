@@ -40,6 +40,11 @@ pub enum DocumentKind {
     OperationClosed,
     RecipientOffer,
     ProvisioningDelivery,
+    FulfillmentAuthorization,
+    FulfillmentDelivery,
+    FulfillmentRevocation,
+    FulfillmentOffer,
+    FulfillmentSubmit,
 }
 
 /// Construct the exact message a newly generated node signing key must sign
@@ -165,6 +170,9 @@ pub fn node_event_message(
                 | "operation_cancel"
                 | "recipient_offer"
                 | "audit"
+                | "fulfillment_offer"
+                | "fulfillment_submit"
+                | "fulfillment_result"
         )
         || !matches!(body, Value::Object(_))
     {
@@ -224,13 +232,13 @@ pub fn is_valid_opaque_id(value: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
-fn valid_base64url_text(value: &str) -> bool {
+pub(crate) fn valid_base64url_text(value: &str) -> bool {
     value
         .bytes()
         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
 }
 
-fn valid_sha256_hex(value: &str) -> bool {
+pub(crate) fn valid_sha256_hex(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
@@ -264,6 +272,11 @@ impl DocumentKind {
             Self::OperationClosed => "operation_closed",
             Self::RecipientOffer => "recipient_offer",
             Self::ProvisioningDelivery => "provisioning_delivery",
+            Self::FulfillmentAuthorization => "fulfillment_authorization",
+            Self::FulfillmentDelivery => "fulfillment_delivery",
+            Self::FulfillmentRevocation => "fulfillment_revocation",
+            Self::FulfillmentOffer => "fulfillment_offer",
+            Self::FulfillmentSubmit => "fulfillment_submit",
         }
     }
 
@@ -282,6 +295,11 @@ impl DocumentKind {
             "operation_closed" => Self::OperationClosed,
             "recipient_offer" => Self::RecipientOffer,
             "provisioning_delivery" => Self::ProvisioningDelivery,
+            "fulfillment_authorization" => Self::FulfillmentAuthorization,
+            "fulfillment_delivery" => Self::FulfillmentDelivery,
+            "fulfillment_revocation" => Self::FulfillmentRevocation,
+            "fulfillment_offer" => Self::FulfillmentOffer,
+            "fulfillment_submit" => Self::FulfillmentSubmit,
             _ => return None,
         })
     }
@@ -1518,6 +1536,13 @@ fn validate_document_body(
                 return Err(DocumentError::Invalid("provisioning delivery issuer epoch"));
             }
         }
+        DocumentKind::FulfillmentAuthorization
+        | DocumentKind::FulfillmentDelivery
+        | DocumentKind::FulfillmentRevocation
+        | DocumentKind::FulfillmentOffer
+        | DocumentKind::FulfillmentSubmit => {
+            crate::fulfillment::validate_body(kind, body, envelope_epoch)?;
+        }
         DocumentKind::OperationResult | DocumentKind::AuditEvent => {
             if !matches!(body, Value::Object(_)) {
                 return Err(DocumentError::Invalid("body must be an object"));
@@ -1527,7 +1552,11 @@ fn validate_document_body(
     Ok(())
 }
 
-fn expect_fields(value: &Value, required: &[&str], optional: &[&str]) -> Result<(), DocumentError> {
+pub(crate) fn expect_fields(
+    value: &Value,
+    required: &[&str],
+    optional: &[&str],
+) -> Result<(), DocumentError> {
     let fields = value
         .as_object()
         .ok_or(DocumentError::Invalid("body must be an object"))?;
@@ -1545,21 +1574,21 @@ fn expect_fields(value: &Value, required: &[&str], optional: &[&str]) -> Result<
     Ok(())
 }
 
-fn required_string<'a>(value: &'a Value, name: &str) -> Result<&'a str, DocumentError> {
+pub(crate) fn required_string<'a>(value: &'a Value, name: &str) -> Result<&'a str, DocumentError> {
     value
         .get(name)
         .and_then(Value::as_str)
         .ok_or(DocumentError::Invalid("body string field"))
 }
 
-fn required_number(value: &Value, name: &str) -> Result<u64, DocumentError> {
+pub(crate) fn required_number(value: &Value, name: &str) -> Result<u64, DocumentError> {
     value
         .get(name)
         .and_then(Value::as_u64)
         .ok_or(DocumentError::Invalid("body integer field"))
 }
 
-fn validate_key_id(value: &str) -> Result<(), DocumentError> {
+pub(crate) fn validate_key_id(value: &str) -> Result<(), DocumentError> {
     if value.is_empty()
         || value.len() > 128
         || !value
@@ -1571,14 +1600,14 @@ fn validate_key_id(value: &str) -> Result<(), DocumentError> {
     Ok(())
 }
 
-fn validate_opaque_id(value: &str, label: &'static str) -> Result<(), DocumentError> {
+pub(crate) fn validate_opaque_id(value: &str, label: &'static str) -> Result<(), DocumentError> {
     if !is_valid_opaque_id(value) {
         return Err(DocumentError::Invalid(label));
     }
     Ok(())
 }
 
-fn validate_token(value: &str, label: &'static str) -> Result<(), DocumentError> {
+pub(crate) fn validate_token(value: &str, label: &'static str) -> Result<(), DocumentError> {
     if value.is_empty()
         || value.len() > 128
         || !value
@@ -1590,7 +1619,7 @@ fn validate_token(value: &str, label: &'static str) -> Result<(), DocumentError>
     Ok(())
 }
 
-fn validate_unit(value: &str) -> Result<(), DocumentError> {
+pub(crate) fn validate_unit(value: &str) -> Result<(), DocumentError> {
     if value.is_empty()
         || value.len() > 255
         || !value.ends_with(".service")

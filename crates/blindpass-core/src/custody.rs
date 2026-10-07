@@ -857,6 +857,18 @@ impl EphemeralCustody {
         ciphertext: &[u8],
         aad: &[u8],
     ) -> Result<SecretBytes, CryptoError> {
+        self.open_once_with_info(recipient_id, enc, ciphertext, &[], aad)
+    }
+
+    /// As [`Self::open_once`] for a sender that bound a non-empty HPKE `info`.
+    pub fn open_once_with_info(
+        &mut self,
+        recipient_id: &str,
+        enc: &[u8],
+        ciphertext: &[u8],
+        info: &[u8],
+        aad: &[u8],
+    ) -> Result<SecretBytes, CryptoError> {
         self.purge_expired();
         let entry = self
             .entries
@@ -865,7 +877,7 @@ impl EphemeralCustody {
         if !entry.current() {
             return Err(CryptoError::OpenSsl("recipient key missing or expired"));
         }
-        let plaintext = entry.key_pair.open(enc, ciphertext, aad)?;
+        let plaintext = entry.key_pair.open_with_info(enc, ciphertext, info, aad)?;
         // Suspension during the cryptographic call cannot renew provisioning
         // authority or place late plaintext into the broker registry.
         if !entry.current() {
