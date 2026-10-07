@@ -34,6 +34,8 @@ export interface StackOptions {
   /** Start with no administrator so /setup is reachable. */
   fresh?: boolean;
   fleet?: boolean;
+  /** Turn on cross-workload fulfillment (BLINDPASS_FULFILLMENTS_ENABLED=1); off by default as in production. */
+  fulfillments?: boolean;
   approvalTtlSeconds?: number;
   refreshTtlSeconds?: number;
   requestTtlSeconds?: number;
@@ -209,6 +211,7 @@ export class Stack {
       BLINDPASS_ROOT_SECRET_FILE: rootSecret,
       BLINDPASS_AGENT_JWT_SECRET_FILE: agentSecret,
       ...(options.fleet !== false ? { BLINDPASS_ISSUER_KEY_FILE: issuer } : {}),
+      ...(options.fulfillments ? { BLINDPASS_FULFILLMENTS_ENABLED: "1" } : {}),
       BLINDPASS_BODY_LIMIT_BYTES: "1048576",
       BLINDPASS_TRUST_PROXY: "127.0.0.1",
       BLINDPASS_SECRET_REGISTRY_JSON: JSON.stringify(registry),

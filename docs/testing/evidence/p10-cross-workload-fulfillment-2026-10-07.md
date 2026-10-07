@@ -66,6 +66,25 @@ Run on the changed schema-20 fixtures, each against its own generated authority 
 | `restore_postgres` | PostgreSQL | 6 passed |
 | `store_quiescence` | PostgreSQL | 4 passed (the first call omitted `--controller-backend postgres` and exited 2 on the driver's own argument check) |
 | `recovery_activation` | SQLite, PostgreSQL | 10 passed each |
+| `recovery_authority`, `recovery_authority_migration`, `recovery_receipts` | PostgreSQL authority | exit 0 each |
+| `legacy_authority` | SQLite, PostgreSQL | exit 0 each |
+| `deployment_startup` | n/a | exit 0 |
+| `fleet_provisioning_submit --filter p06_la05` | PostgreSQL | exit 0 |
+
+The last six rows were run after the first version of this record, as exit codes of the driver (each log is private to the run).
+
+## Console browser journeys (`packages/console/e2e/fulfillments.spec.ts`)
+
+Chromium against the real controller started by the e2e stack with `BLINDPASS_FULFILLMENTS_ENABLED=1`; both nodes are the JavaScript `FleetNode` fixture, so nothing is sealed, delivered or read in these runs (the VM harness covers that). 4 tests passed on the `vite preview` profile on SQLite, on the embedded-console profile on SQLite, and on the preview profile on PostgreSQL (a throwaway schema in the existing fixture):
+
+| Test | What it showed |
+|---|---|
+| P10-E01 GUI | The requester sends a request with an HTML-looking purpose; the requester's own review shows why they cannot decide and the approve and reject buttons are disabled; the named approver sees both enrolled fingerprints (compared without the console's grouping), the policy rule and the purpose as plain text (no injected element), approval is disabled until the confirmation is ticked, then the recipient node's inbox holds a `fulfillment_authorization` and the issuer node's does not (it waits for the recipient's offer) |
+| P10-E01 GUI revoke | Revoking asks for confirmation, states that anything already read cannot be recalled, ends the fulfillment, and the row makes no provider claim because nothing was stored yet |
+| P10-I01 GUI | The reversed pair is refused with the policy explanation; a viewer has no Fulfillments link, page or buttons |
+| P10-E02 GUI | With the controller flag off the console shows no Fulfillments link or request button |
+
+The spec's first runs failed twice on the spec's own assumptions (a disabled button asserted as absent; a grouped fingerprint and a provider note that is only shown after storage); the console code was not changed.
 
 ## Two-guest VM scenarios (`tests/fleet/p10-vm.py`)
 
@@ -113,7 +132,7 @@ production-mode controller fences its authority on stop, so restarts reactivate 
 ## Not executed and limits
 
 - **Need and acceptance.** No operator named a cross-workload need; the reference task uses dummy data. The phase is **not accepted**. Hosted CI has not run. Nothing is pushed or published.
-- **Not run:** the Playwright console end-to-end suite (console component tests ran, no browser against a live controller); the Compose profiles and the packaged native controller with the flag on (the shipped Compose files do not pass `BLINDPASS_FULFILLMENTS_ENABLED` through); node key rotation in flight, a reply lost on a live connection and a stale-state restore inside a VM; the authority suites `recovery_authority`, `recovery_authority_migration`, `recovery_receipts`, `legacy_authority`, `deployment_startup` and `fleet_provisioning_submit` on PostgreSQL (code they exercise was not changed).
+- **Not run:** the rest of the Playwright console suite (only the new `fulfillments.spec.ts` ran; the stack option it needed is additive); the Compose profiles and the packaged native controller with the flag on (the shipped Compose files do not pass `BLINDPASS_FULFILLMENTS_ENABLED` through); node key rotation in flight, a reply lost on a live connection and a stale-state restore inside a VM; a browser run against real brokers (the console journeys use fixture nodes).
 - **Provider limits.** There is no provider adapter. A credential read by a unit cannot be recalled and stays valid at its provider after every BlindPass revocation; the API reports `provider_revocation: unsupported`. A broker or node outage delays revocation until the node reconnects or the 10-minute expiry.
 - **Trust.** The controller can substitute node keys; the issuer broker trusts the controller-signed terms that carry the node fingerprints the approver bound. The isolation of the fulfillment tables from the v2 code is a convention enforced by a source-scan test, not a database-role boundary.
 - **Dependencies.** No dependency, manifest or lockfile changed. The console work ran `npx eslint`, which fetched eslint into the npx cache without a Socket review; nothing from it is in the repository. Run `socket` review before adding any such tool to a manifest.
