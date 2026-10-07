@@ -469,3 +469,34 @@ Same prerequisites and exit codes as the relay rehearsal (exit 78 is not a pass)
 `BLINDPASS_P06_FAILPOINT_CONTROLLER` the two interrupted-step cases (`H1a`, `H7a`) print `SKIPPED`.
 The failpoint binary is used only for those two commands; everything else runs the release build.
 The scenario uses the host SSH port 22231 like the relay harness, so the two cannot run together.
+
+## P10 cross-workload fulfillment
+
+`p10-vm.py` ([contract](../../docs/product/cross-workload-fulfillment.md), [evidence record](../../docs/testing/evidence/p10-cross-workload-fulfillment-2026-10-07.md))
+reuses the relay harness's controller, TLS client and guest plumbing with **two** pinned guests. A
+production-mode controller with `BLINDPASS_FULFILLMENTS_ENABLED=1` runs on the host; guest A holds a
+generated dummy credential for an issuer unit, guest B has eight recipient units (`blindpass-p10-recipient-*`)
+that load a fulfilled credential through `LoadCredential=` from the root-only loader and present it to a dummy
+provider on the host (`10.0.2.2`). `p10-guest.sh` writes the brokers' `--map`, `--fulfillment-source` and
+`--fulfillment-destination` drop-ins and runs the guest-side state scans.
+
+```
+cargo build --release --locked --bins
+BLINDPASS_FLEET_RUNNER_OWNER=<name> PATH=$HOME/.local/bin:$PATH python3 tests/fleet/p10-vm.py --backend sqlite|postgres
+```
+
+Scenarios, in order: `P10-I01` (default deny, reversed pair, self-fulfillment, unknown body fields, requester cannot
+approve, a substituted node fingerprint changes nothing), `P10-E01a/b` (approve, offer, seal, deliver, store, the unit
+loads and authenticates, `completed`; a repeat without `prior_fulfillment_id` fails at the broker and never overwrites,
+with it completes), `P10-I01b` (allow rule), `P10-E01c` (deny rule), `P10-E01d` (revoked after delivery and before the
+read), `P10-I03` (a completed fulfillment cannot be recalled; `provider_revocation` stays `unsupported`),
+`P10-I04a` (issuer node partitioned and the controller restarted in flight), `P10-I04b` (recipient broker restart
+after delivery: closed `expired`, never resumed), `P10-E02` (feature disabled with a pending fulfillment, capability
+withdrawn, new issuance refused, re-enabled) and `P10-S` (the dummy credential is in no audit row, controller store,
+controller log, nor guest file, argv, environment or journal; every scan first finds a planted value).
+
+Prerequisites, exit codes and ports as the relay rehearsal (exit 78 is not a pass), plus `blindpass-provision`; guests
+use SSH ports 22241 and 22242 (`BLINDPASS_P10_SSH_PORT`). `--only name,...` runs a subset after `i01` and `e01` and
+prints `DEBUG`: it is never acceptance evidence. The production controller fences its authority on stop, so the harness
+reactivates it (`authority-activate.sql`) at each restart. Not covered: node key rotation in flight (controller tests),
+a reply lost on a live connection, and provider-side revocation (there is no provider adapter).
