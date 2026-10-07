@@ -566,3 +566,52 @@ fn p10_c05_pull_events_retries_results_the_queue_could_not_take() {
     assert_eq!(results[0].1.state, ResultState::Stored);
     assert_eq!(recipient.read().as_deref(), Some(SECRET));
 }
+
+#[test]
+fn p10_c06_a_node_key_rotation_ends_every_unfinished_exchange() {
+    let controller = Controller::new(66);
+    let issuer = Peer::new(&controller, "issuer", true, false);
+    let recipient = Peer::new(&controller, "recipient", false, true);
+    issuer.provision(SECRET);
+    let terms = controller.terms(&issuer, &recipient, ID);
+    recipient.relay(&controller.authorization(FulfillmentSide::Recipient, &terms, None));
+    let (_, _, offer, _) = recipient.fulfillment_event(ID);
+    issuer.relay(&controller.authorization(FulfillmentSide::Issuer, &terms, Some(&offer)));
+    let (_, _, submit, _) = issuer.fulfillment_event(ID);
+
+    // Each node rotates its key: the terms and the offer bind the old version.
+    for peer in [&recipient, &issuer] {
+        let (to_key_version, candidate) = peer.identity.prepare_rotation().unwrap();
+        let rotation = NodeKeyRotation {
+            node_id: peer.node_id.clone(),
+            rotation_id: "rot_test_rotation_000000000042".to_owned(),
+            from_key_version: 1,
+            to_key_version,
+            signing_public: candidate.signing_public,
+            recipient_public: candidate.recipient_public,
+            fingerprint: candidate.fingerprint,
+            issuer_epoch: 1,
+        };
+        assert_eq!(
+            peer.relay(&controller.sign(
+                DocumentKind::NodeKeyRotation,
+                rotation.to_value().unwrap(),
+                1
+            )),
+            b"OK document_applied node_key_rotation\n"
+        );
+        assert_eq!(
+            peer.command(&format!("FULFILL_EVENT {ID}\n")),
+            b"ERR fulfillment_denied\n"
+        );
+    }
+    // The delivery can no longer be applied, and the broker says why.
+    assert_eq!(
+        recipient.relay(&controller.delivery(&terms, &offer, &submit)),
+        b"OK document_discarded fulfillment_rejected\n"
+    );
+    assert!(recipient.read().is_none());
+    let results = recipient.results();
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].1.code.as_deref(), Some("unknown_fulfillment"));
+}

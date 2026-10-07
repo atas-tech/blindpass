@@ -673,6 +673,7 @@ pub(crate) fn apply_controller_document_to_state(
                 pin.node_id,
                 identity.key_version()?
             ));
+            state.retire_unfinished_fulfillments();
         }
         DocumentKind::FulfillmentAuthorization
         | DocumentKind::FulfillmentDelivery

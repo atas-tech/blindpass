@@ -891,6 +891,22 @@ impl BrokerState {
         }
     }
 
+    /// A node key rotation ends every exchange that has not finished: the terms
+    /// and the offer bind the old key version, so a new authorization is needed.
+    /// A credential already stored is untouched.
+    pub(crate) fn retire_unfinished_fulfillments(&mut self) {
+        let unfinished: Vec<String> = self
+            .fulfillments
+            .entries
+            .iter()
+            .filter(|(_, entry)| matches!(entry.phase, Phase::Offered | Phase::Sealed))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for id in unfinished {
+            self.retire_fulfillment(&id);
+        }
+    }
+
     /// The signed `fulfillment_offer` (recipient) or `fulfillment_submit`
     /// (issuer) node event for a fulfillment this broker holds, as canonical
     /// bytes. Repeated calls return identical bytes. Only documents minted here
@@ -2336,5 +2352,53 @@ mod tests {
                 .unreported
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn p10_b15_the_largest_credential_fits_every_document_and_one_byte_more_is_refused() {
+        let world = World::new(60);
+        let (mut issuer, mut recipient) = pair(&world);
+        let largest = vec![b'Q'; blindpass_core::fulfillment::MAX_PLAINTEXT_BYTES as usize];
+        issuer.provision(&largest);
+        let f = flow(&world, &mut issuer, &mut recipient, ID);
+        let limit = blindpass_core::fleet::MAX_NODE_DOCUMENT_BYTES;
+        assert!(f.delivery.len() < limit, "{} bytes", f.delivery.len());
+        let event = issuer
+            .state
+            .fulfillment_event(&issuer.identity, ID)
+            .unwrap();
+        assert!(event.len() < limit, "{} bytes", event.len());
+        assert_eq!(
+            recipient.apply(&f.delivery).unwrap(),
+            "fulfillment_delivery"
+        );
+        assert_eq!(recipient.read().as_deref(), Some(largest.as_slice()));
+
+        let (mut issuer, recipient) = pair(&world);
+        issuer.provision(&vec![b'Q'; largest.len() + 1]);
+        let t = terms(&world, &issuer, &recipient, ID);
+        let offer = FulfillmentOffer {
+            fulfillment_id: ID.to_owned(),
+            terms_digest: t.digest_hex().unwrap(),
+            offer_id: "fo_0123456789abcdefABCDEF".to_owned(),
+            node_id: recipient.node_id.clone(),
+            node_key_version: recipient.identity.key_version().unwrap(),
+            recipient_public: base64_url_encode(RecipientKeyPair::generate().unwrap().public_key()),
+            issued_at_ms: world.now_ms,
+            expires_at_ms: world.now_ms + 120_000,
+        };
+        let envelope = recipient.identity.sign_fulfillment_offer(&offer).unwrap();
+        assert_eq!(
+            issuer
+                .apply(&authorization(
+                    &world,
+                    FulfillmentSide::Issuer,
+                    &t,
+                    Some(&envelope)
+                ))
+                .unwrap(),
+            "fulfillment_discarded_rejected"
+        );
+        assert_eq!(issuer.failure_codes(), vec!["source_too_large"]);
     }
 }
