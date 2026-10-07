@@ -1,0 +1,9 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.78s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_controller-e28e5bf0bb37d821)
+
+running 1 test
+test store::ownership::tests::p06_pw06_snapshot_mode_cannot_be_reused_for_ordinary_work_or_signing ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.11s
+

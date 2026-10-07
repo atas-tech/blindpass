@@ -117,7 +117,10 @@ async function testReleaseMetadataSyncAndStagedNpmContract() {
         assert.equal(stagedSkill.version, skill.version, "staged SKILL.md version must match source SKILL.md version");
 
         assert.equal(stagePackage.name, "@blindpass/mcp-server");
+        // `mcp-server` is the executable `npx @blindpass/mcp-server` selects (npm picks the bin named like
+        // the unscoped package when a package has several different targets).
         assert.deepEqual(stagePackage.bin, {
+            "mcp-server": "./dist/mcp-server.mjs",
             "blindpass-mcp-server": "./dist/mcp-server.mjs",
             "blindpass-resolver": "./dist/blindpass-resolver.mjs",
         });
@@ -125,8 +128,6 @@ async function testReleaseMetadataSyncAndStagedNpmContract() {
         const expectedFiles = [
             "dist",
             "SKILL.md",
-            "AGENTS.md",
-            "agents",
             "openclaw.plugin.json",
             "scripts",
             "LICENSE",
@@ -135,6 +136,9 @@ async function testReleaseMetadataSyncAndStagedNpmContract() {
 
         assert.deepEqual(stagePackage.files, expectedFiles, "dist package.json must list only the supported artifacts");
         await assert.rejects(readFile(path.join(stageDir, "CLAUDE.md")), { code: "ENOENT" });
+        // Contributor instructions and client configs with an unverified default endpoint are not packaged.
+        await assert.rejects(readFile(path.join(stageDir, "AGENTS.md")), { code: "ENOENT" });
+        await assert.rejects(readFile(path.join(stageDir, "agents", "claude_desktop_config.json")), { code: "ENOENT" });
     } finally {
         await rm(stageDir, { recursive: true, force: true });
     }

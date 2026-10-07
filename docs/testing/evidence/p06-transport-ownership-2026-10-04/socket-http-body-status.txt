@@ -1,0 +1,7 @@
+status=report_generated
+tool=socket-cli
+mode=deep
+socket_command=score
+purl=pkg:cargo/http-body@1.1.0
+report=/tmp/p06-http-body-1.1.0-socket.md
+next_step=apply references/decision-matrix.md to the generated report before changing manifests or lockfiles

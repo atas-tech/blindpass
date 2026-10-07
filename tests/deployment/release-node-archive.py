@@ -23,7 +23,8 @@ with tempfile.TemporaryDirectory(prefix='p06-node-artifact-') as temporary:
     root = Path(temporary); output = root / 'release'
     subprocess.run([str(ROOT / 'scripts/release/build-tarballs.sh'), '--profile', 'node',
                     '--arch', options.arch, '--bin-dir', str(options.bin_dir), '--output-dir', str(output),
-                    '--node-root', str(options.node_root), '--browser-root', str(options.browser_root)],
+                    '--node-root', str(options.node_root), '--browser-root', str(options.browser_root),
+                    '--allow-dirty'],
                    stdout=subprocess.DEVNULL, check=True)
     archive_path, = output.glob('*.tar.zst')
     raw = root / 'archive.tar'

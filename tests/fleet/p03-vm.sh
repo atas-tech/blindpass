@@ -41,6 +41,60 @@ done
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)
 # shellcheck source=tests/fleet/p03-vm-extended.sh
 source "$repo_root/tests/fleet/p03-vm-extended.sh"
+
+# P07-I04 opt-in evidence export. A no-op unless P07_RUN names a directory; with it, the generated
+# secrets, logs, journals and the E01 state dump are handed to tests/fleet/p07_export.py so that
+# scripts/tests/canary-scan.sh can look again offline. A failed export aborts the run (fail closed).
+p07() {
+    [[ -n "${P07_RUN:-}" ]] || return 0
+    # Counts go to stderr: several call sites run inside command substitutions that capture stdout.
+    python3 "$repo_root/tests/fleet/p07_export.py" "$@" >&2
+}
+
+# Guest journals must be taken while the guests still run.
+p07_collect_guests() {
+    [[ -n "${P07_RUN:-}" ]] || return 0
+    local guest journal
+    for guest in a b; do
+        journal=$backend_dir/guest-$guest.journal
+        guest_ssh "$guest" sudo journalctl --no-pager -o short-iso >"$journal"
+        p07 file journals "p03-$current_backend-guest-$guest" "$journal"
+        rm -f -- "$journal"
+    done
+}
+
+# Host-side logs, after the controller, proxies and guests have stopped.
+p07_collect_host() {
+    [[ -n "${P07_RUN:-}" ]] || return 0
+    local file label
+    p07 file logs "p03-$current_backend-controller" "$backend_dir/controller.log"
+    for file in "$backend_dir"/tls-proxy*.log "$backend_dir"/a/serial.log "$backend_dir"/b/serial.log; do
+        [[ -s "$file" ]] || continue
+        label=$(basename -- "$(dirname -- "$file")")-$(basename -- "$file" .log)
+        p07 file logs "p03-$current_backend-$label" "$file"
+    done
+}
+
+# A failed run never reaches teardown_backend, so cleanup() takes the same exports on the way out. These
+# run under the EXIT trap: a failed export is reported, never allowed to hide the original exit status.
+# run_backend keeps backend_dir local, and the EXIT trap does not see it, so the active one is mirrored here.
+p07_backend_dir=
+
+p07_failed_run() {
+    [[ -n "${P07_RUN:-}" && "${run_status:-0}" != 0 && -n "$p07_backend_dir" && -d "$p07_backend_dir" ]]
+}
+
+p07_collect_failed_guests() {
+    p07_failed_run || return 0
+    local backend_dir=$p07_backend_dir
+    ( p07_collect_guests ) || printf 'P07-EXPORT-INCOMPLETE guest journals of the failed run were not exported\n' >&2
+}
+
+p07_collect_failed_host() {
+    p07_failed_run || return 0
+    local backend_dir=$p07_backend_dir
+    ( p07_collect_host ) || printf 'P07-EXPORT-INCOMPLETE host logs of the failed run were not exported\n' >&2
+}
 guest_user=${BLINDPASS_FLEET_GUEST_USER:-blindpass}
 guest_image=${BLINDPASS_FLEET_GUEST_IMAGE:-"${XDG_DATA_HOME:-$HOME/.local/share}/blindpass/vm-images/noble-server-cloudimg-amd64.img"}
 guest_image_sha=${BLINDPASS_FLEET_GUEST_IMAGE_SHA256:-612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354}
@@ -88,6 +142,7 @@ stop_pid() {
 cleanup() {
     [[ "$cleanup_done" == 0 ]] || return
     cleanup_done=1
+    p07_collect_failed_guests
     stop_pid "$controller_pid"
     stop_pid "$proxy_pid"
     [[ -n "$controller_pid" ]] && wait "$controller_pid" 2>/dev/null || true
@@ -97,6 +152,7 @@ cleanup() {
         qemu_pid=$(<"$pidfile")
         stop_pid "$qemu_pid"
     done
+    p07_collect_failed_host
     if [[ -n "$postgres_state_file" && -f "$postgres_state_file" \
         && -n "$postgres_url_file" && -f "$postgres_url_file" ]]; then
         P03_TEST_POSTGRES_URL="$pg_parent_url" node "$repo_root/tests/fleet/p03-postgres.mjs" \
@@ -429,6 +485,7 @@ create_enrollment() {
     local enroll_output node_fingerprint
     enroll_output=$(guest_ssh "$guest" sudo /usr/local/sbin/blindpass-p03-guest enroll \
         https://p03-controller:8443 "$issuer_fingerprint" <"$token_file")
+    p07 text-canary "$token_file"
     rm -f -- "$token_file"
     printf '%s\n' "$enroll_output" >&2
     node_fingerprint=$(sed -n 's/^enrollment_id=.* fingerprint=\([a-f0-9]\{64\}\) status=submitted$/\1/p' \
@@ -524,6 +581,7 @@ run_backend() {
     current_backend=$1
     local backend_dir=$run_dir/$current_backend
     mkdir -m 0700 -p "$backend_dir"
+    p07_backend_dir=$backend_dir
     local database_url_file=$backend_dir/database.url
     local postgres_state=$backend_dir/postgres.state
     if [[ "$current_backend" == sqlite ]]; then
@@ -543,6 +601,9 @@ run_backend() {
     dd if=/dev/urandom of="$agent_secret" bs=32 count=1 status=none
     dd if=/dev/urandom of="$issuer_secret" bs=32 count=1 status=none
     chmod 0600 "$root_secret" "$agent_secret" "$issuer_secret"
+    p07 bytes-canary "$root_secret"
+    p07 bytes-canary "$agent_secret"
+    p07 bytes-canary "$issuer_secret"
     local admin_socket=$backend_dir/admin.sock
     local -a controller_env=(
         BLINDPASS_TEST_MODE=1
@@ -563,6 +624,11 @@ run_backend() {
         seed --fixture "$backend_dir/seed.fixture.json" >"$backend_dir/admin-seed.json"
     chmod 0600 "$backend_dir/admin-seed.json" "$backend_dir/seed.fixture.json"
     admin_seed_file=$backend_dir/admin-seed.json
+    # The seed is the one place the temporary password and the session id exist in the clear; the workspace,
+    # user, agent and operator identifiers and the username are stored by design, and the CSRF value is a
+    # documented exception (stored as issued). Registering those would only report designed state as exposure.
+    p07 json-canary "$admin_seed_file" --skip workspace_id --skip user_id --skip agents \
+        --skip operator_id --skip username --skip csrf
 
     env "${controller_env[@]}" "$repo_root/target/release/blindpass-controller" serve \
         >"$backend_dir/controller.log" 2>&1 &
@@ -1032,7 +1098,10 @@ PY
         printf 'P03-FAIL undelivered operation %s was not revoked with its node\n' "$pending_operation" >&2
         return 1
     }
-    guest_call a verify-revoked-grant "$pending_grant" node_revoked
+    # The original waiter may already have received its grant tombstone before
+    # node revocation finished. Both terminal denials forbid consumption; the
+    # fresh invocation below separately requires node revocation after restart.
+    guest_call a verify-revoked-grant "$pending_grant" 'node_revoked|grant_revoked'
     guest_call a stop-workload
     guest_call a restart-channel
     guest_call a start-workload
@@ -1282,6 +1351,7 @@ PY
 }
 
 teardown_backend() {
+    p07_collect_guests
     stop_proxy
     stop_pid "$controller_pid"
     wait "$controller_pid" 2>/dev/null || true
@@ -1292,6 +1362,8 @@ teardown_backend() {
         stop_pid "$qemu_pid"
     done
     qemu_pidfiles=()
+    p07_collect_host
+    p07_backend_dir=
     if [[ "$current_backend" == postgres ]]; then
         P03_TEST_POSTGRES_URL="$pg_parent_url" node "$repo_root/tests/fleet/p03-postgres.mjs" \
             drop "$postgres_state" "$database_url_file"

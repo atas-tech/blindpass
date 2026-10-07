@@ -1,0 +1,4 @@
+{
+  "deploy/controller/recovery-authority.sql": "69ae2960fab92b87c9db96c8a1062789ee5923e7ac742109032a936b8b8b1e04",
+  "crates/blindpass-controller/src/store/fleet.rs": "4c09420f8178a39fbf27569af726f2fdd5b4bebfb97445f50b9537b69db7f462"
+}

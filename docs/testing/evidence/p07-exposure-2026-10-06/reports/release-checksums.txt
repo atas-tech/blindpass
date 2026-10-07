@@ -1,0 +1,3 @@
+canary-scan PASS: 22 files, 0 entries, 3124 bytes scanned; 0 exposed, 0 allowlisted, 0 incomplete
+  controls: ok (tar, gz, bz2, xz, zip, ar, jsonl, wrapped, tar.gz, zst; zstd backend module)
+  classes: logs=21

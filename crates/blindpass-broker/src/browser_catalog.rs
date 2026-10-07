@@ -15,10 +15,10 @@ use std::os::unix::fs::MetadataExt;
 const FAILURE: &str = "browser_catalog_unavailable";
 const MAX_BYTES: usize = 65_536;
 const MAX_RESOURCES: usize = 128;
-const NOFOLLOW: i32 = 0x20000;
+const NOFOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 const NONBLOCK: i32 = 0x800;
-const DIRECTORY: i32 = 0x10000;
-const CLOEXEC: i32 = 0x80000;
+const DIRECTORY: i32 = blindpass_core::open_flags::O_DIRECTORY;
+const CLOEXEC: i32 = blindpass_core::open_flags::O_CLOEXEC;
 unsafe extern "C" {
     fn openat(dirfd: i32, path: *const std::ffi::c_char, flags: i32, ...) -> i32;
 }

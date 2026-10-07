@@ -1,0 +1,19 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.98s
+     Running tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 1 test
+test p06_qf01_sigterm_closes_admitted_incomplete_http_body_within_five_seconds ... 
+thread 'p06_qf01_sigterm_closes_admitted_incomplete_http_body_within_five_seconds' (398123) panicked at crates/blindpass-controller/tests/production_ownership.rs:907:5:
+SIGTERM waited for an incomplete admitted HTTP body beyond five seconds
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_qf01_sigterm_closes_admitted_incomplete_http_body_within_five_seconds
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 10 filtered out; finished in 5.27s
+
+error: test failed, to rerun pass `-p blindpass-controller --test production_ownership`

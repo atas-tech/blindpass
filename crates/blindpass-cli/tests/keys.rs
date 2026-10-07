@@ -217,3 +217,53 @@ fn p06_k08_fifo_is_rejected_without_blocking() {
         .unwrap();
     assert_eq!(output.status.code(), Some(1));
 }
+
+#[test]
+fn p06_k06_issuer_id_prints_only_the_public_authority_identifier() {
+    use blindpass_core::signing::{ed25519::Ed25519KeyPair, issuer_key_id};
+    let fixture = Fixture::new();
+    fixture.init();
+    let seed = fs::read(fixture.keys().join("issuer-key")).unwrap();
+    let expected = issuer_key_id(Ed25519KeyPair::from_seed(&seed).unwrap().public_key());
+    let output = fixture.run("issuer-id");
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let line = String::from_utf8(output.stdout.clone()).unwrap();
+    assert_eq!(line, format!("{expected}\n"));
+    // `ed25519-` plus the unpadded base64url of a 32-byte public key.
+    let body = expected.strip_prefix("ed25519-").unwrap();
+    assert_eq!(body.len(), 43);
+    assert!(
+        body.bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    );
+    for name in NAMES {
+        let bytes = fs::read(fixture.keys().join(name)).unwrap();
+        assert!(!output.stdout.windows(32).any(|window| window == bytes));
+        assert!(!output.stderr.windows(32).any(|window| window == bytes));
+    }
+    assert_eq!(fixture.run("issuer-id").stdout, output.stdout);
+}
+
+#[test]
+fn p06_k06_issuer_id_refuses_missing_short_and_exposed_keys_without_output() {
+    for failure in ["missing", "short", "exposed"] {
+        let fixture = Fixture::new();
+        fixture.init();
+        let path = fixture.keys().join("issuer-key");
+        match failure {
+            "missing" => fs::remove_file(&path).unwrap(),
+            "short" => fs::write(&path, [0; 31]).unwrap(),
+            _ => fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).unwrap(),
+        }
+        let output = fixture.run("issuer-id");
+        assert!(!output.status.success(), "accepted {failure}");
+        assert!(
+            output.stdout.is_empty(),
+            "printed an identifier for {failure}"
+        );
+    }
+}

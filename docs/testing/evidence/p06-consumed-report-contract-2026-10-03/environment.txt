@@ -1,0 +1,10 @@
+Scoped environment evidence for P06-CR, 2026-10-03
+Sandbox socket control: exit 101; PermissionDenied / Operation not permitted.
+Failed sandbox Rust job: identified by exact stdout log; two owned processes signalled, terminal exit 143.
+Sandbox Node test: exit 1; InternalCallbackScope::Close execution_async_id assertion and MCP launch failures.
+Host Node test: terminal exit 0 after rerun with host subprocess/socket access; no application source change for this retry.
+Scoped pinned-Node coredump list: exit 1; zero accessible matching records; no core extracted.
+Kernel OOM query: exit 1; cannot establish absence of OOM from this query.
+Later memory snapshot: 62 GiB total, 21 GiB available; 30 GiB swap used. This is not a crash-time measurement.
+Mutation controls: baseline exit 0, signature-disabled exit 101, trusted-minimum-disabled exit 101; owned control tree removed, zero scoped trees remain.
+No host configuration, dependency manifest or lockfile changed.

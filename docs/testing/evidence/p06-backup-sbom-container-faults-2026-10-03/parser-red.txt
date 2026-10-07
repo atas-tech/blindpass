@@ -1,0 +1,47 @@
+EFFE..
+======================================================================
+ERROR: test_sb01_complete_separate_inventories_and_runtime_os_versions_accept (__main__.Verification.test_sb01_complete_separate_inventories_and_runtime_os_versions_accept)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "$REPOSITORY/tests/deployment/controller-sbom-test.py", line 82, in test_sb01_complete_separate_inventories_and_runtime_os_versions_accept
+    digest=fixture(self.archive);self.check(digest,runtime=True)
+                                 ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "$REPOSITORY/tests/deployment/controller-sbom-test.py", line 78, in check
+    if runtime:return sbom.verify(self.archive,digest,self.runtime)
+                      ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: verify() takes from 1 to 2 positional arguments but 3 were given
+
+======================================================================
+ERROR: test_sb03_build_package_cannot_replace_wrong_runtime_os_version (__main__.Verification.test_sb03_build_package_cannot_replace_wrong_runtime_os_version)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "$REPOSITORY/tests/deployment/controller-sbom-test.py", line 94, in test_sb03_build_package_cannot_replace_wrong_runtime_os_version
+    with self.assertRaises(AssertionError):self.check(digest,runtime=True)
+                                           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "$REPOSITORY/tests/deployment/controller-sbom-test.py", line 78, in check
+    if runtime:return sbom.verify(self.archive,digest,self.runtime)
+                      ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: verify() takes from 1 to 2 positional arguments but 3 were given
+
+======================================================================
+FAIL: test_sb02_build_union_cannot_replace_runtime_document (__main__.Verification.test_sb02_build_union_cannot_replace_runtime_document)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "$REPOSITORY/tests/deployment/controller-sbom-test.py", line 86, in test_sb02_build_union_cannot_replace_runtime_document
+    with self.assertRaises(AssertionError):self.check(digest)
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+AssertionError: AssertionError not raised
+
+======================================================================
+FAIL: test_sb02_duplicate_inventory_name_cannot_replace_configured_stage (__main__.Verification.test_sb02_duplicate_inventory_name_cannot_replace_configured_stage)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "$REPOSITORY/tests/deployment/controller-sbom-test.py", line 90, in test_sb02_duplicate_inventory_name_cannot_replace_configured_stage
+    with self.assertRaises(AssertionError):self.check(digest)
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+AssertionError: AssertionError not raised
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.122s
+
+FAILED (failures=2, errors=2)

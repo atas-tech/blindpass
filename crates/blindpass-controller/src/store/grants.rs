@@ -100,35 +100,40 @@ const GRANT_COLUMNS: &str = "id, operation_id, node_id, workload_id, invocation_
 
 impl Store {
     pub async fn grant_by_id(&self, id: &str) -> Result<Option<GrantRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql =
-                    format!("SELECT {GRANT_COLUMNS} FROM grants WHERE id = ? AND tenant_id = ?");
-                sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(grant_from_sqlite)
-                    .transpose()
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!(
+                        "SELECT {GRANT_COLUMNS} FROM grants WHERE id = ? AND tenant_id = ?"
+                    );
+                    sqlx::query(&sql)
+                        .bind(id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .as_ref()
+                        .map(grant_from_sqlite)
+                        .transpose()
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!(
+                        "SELECT {GRANT_COLUMNS} FROM grants WHERE id = $1 AND tenant_id = $2"
+                    );
+                    sqlx::query(&sql)
+                        .bind(id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .as_ref()
+                        .map(grant_from_postgres)
+                        .transpose()
+                }
             }
-            Database::Postgres(pool) => {
-                let sql =
-                    format!("SELECT {GRANT_COLUMNS} FROM grants WHERE id = $1 AND tenant_id = $2");
-                sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(grant_from_postgres)
-                    .transpose()
-            }
-        }
+        })
+        .await
     }
 
     pub async fn list_grants(
@@ -138,57 +143,60 @@ impl Store {
         cursor: Option<(i64, String)>,
         limit: u32,
     ) -> Result<Vec<GrantRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        let limit = i64::from(limit.clamp(1, 101));
-        let status = status.unwrap_or("");
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!(
-                    "SELECT {GRANT_COLUMNS} FROM grants WHERE tenant_id = ?
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let limit = i64::from(limit.clamp(1, 101));
+            let status = status.unwrap_or("");
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!(
+                        "SELECT {GRANT_COLUMNS} FROM grants WHERE tenant_id = ?
                     AND (? = '' OR node_id = ?) AND (? = '' OR status = ?)
                     AND (? IS NULL OR created_at > ? OR (created_at = ? AND id > ?))
                     ORDER BY created_at, id LIMIT ?"
-                );
-                let rows = sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(node_id.unwrap_or(""))
-                    .bind(node_id.unwrap_or(""))
-                    .bind(status)
-                    .bind(status)
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.1.as_str()))
-                    .bind(limit)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                rows.iter().map(grant_from_sqlite).collect()
-            }
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "SELECT {GRANT_COLUMNS} FROM grants WHERE tenant_id = $1
+                    );
+                    let rows = sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(node_id.unwrap_or(""))
+                        .bind(node_id.unwrap_or(""))
+                        .bind(status)
+                        .bind(status)
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.1.as_str()))
+                        .bind(limit)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    rows.iter().map(grant_from_sqlite).collect()
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!(
+                        "SELECT {GRANT_COLUMNS} FROM grants WHERE tenant_id = $1
                     AND ($2 = '' OR node_id = $3) AND ($4 = '' OR status = $5)
                     AND ($6::BIGINT IS NULL OR created_at > $7 OR (created_at = $8 AND id > $9))
                     ORDER BY created_at, id LIMIT $10"
-                );
-                let rows = sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(node_id.unwrap_or(""))
-                    .bind(node_id.unwrap_or(""))
-                    .bind(status)
-                    .bind(status)
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.1.as_str()))
-                    .bind(limit)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                rows.iter().map(grant_from_postgres).collect()
+                    );
+                    let rows = sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(node_id.unwrap_or(""))
+                        .bind(node_id.unwrap_or(""))
+                        .bind(status)
+                        .bind(status)
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.1.as_str()))
+                        .bind(limit)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    rows.iter().map(grant_from_postgres).collect()
+                }
             }
-        }
+        })
+        .await
     }
 
     /// Issue a bounded group of already-authorized operation grants. Every
@@ -197,54 +205,57 @@ impl Store {
         &self,
         drafts: &[GrantIssueDraft],
     ) -> Result<GrantIssueOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        if drafts.is_empty() || drafts.len() > 10 {
-            return Err(StoreError::InvalidInput("grant group size"));
-        }
-        let mut operation_ids = std::collections::HashSet::new();
-        for draft in drafts {
-            let value = draft
-                .grant
-                .to_value()
-                .map_err(|_| StoreError::InvalidInput("grant document"))?;
-            let envelope = SignedEnvelope::from_json(&draft.envelope_json)
-                .map_err(|_| StoreError::InvalidInput("signed grant envelope"))?;
-            let expected_body =
-                canonicalize_value(&value).map_err(|_| StoreError::InvalidInput("grant body"))?;
-            let signed_body = envelope
-                .body_json()
-                .map_err(|_| StoreError::InvalidInput("grant body"))?;
-            if draft.expected_operation_version <= 0
-                || !operation_ids.insert(draft.grant.operation_id.as_str())
-                || envelope.kind() != DocumentKind::Grant
-                || envelope.epoch() != draft.grant.issuer_epoch
-                || signed_body != expected_body
-                || draft.envelope_json.is_empty()
-                || draft.envelope_json.len() > 64 * 1024
-            {
-                return Err(StoreError::InvalidInput("grant envelope binding"));
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            if drafts.is_empty() || drafts.len() > 10 {
+                return Err(StoreError::InvalidInput("grant group size"));
             }
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                issue_operation_grants_sqlite(
-                    pool,
-                    &self.tenant_id,
-                    drafts,
-                    self.fleet_signer.as_ref(),
-                )
-                .await
+            let mut operation_ids = std::collections::HashSet::new();
+            for draft in drafts {
+                let value = draft
+                    .grant
+                    .to_value()
+                    .map_err(|_| StoreError::InvalidInput("grant document"))?;
+                let envelope = SignedEnvelope::from_json(&draft.envelope_json)
+                    .map_err(|_| StoreError::InvalidInput("signed grant envelope"))?;
+                let expected_body = canonicalize_value(&value)
+                    .map_err(|_| StoreError::InvalidInput("grant body"))?;
+                let signed_body = envelope
+                    .body_json()
+                    .map_err(|_| StoreError::InvalidInput("grant body"))?;
+                if draft.expected_operation_version <= 0
+                    || !operation_ids.insert(draft.grant.operation_id.as_str())
+                    || envelope.kind() != DocumentKind::Grant
+                    || envelope.epoch() != draft.grant.issuer_epoch
+                    || signed_body != expected_body
+                    || draft.envelope_json.is_empty()
+                    || draft.envelope_json.len() > 64 * 1024
+                {
+                    return Err(StoreError::InvalidInput("grant envelope binding"));
+                }
             }
-            Database::Postgres(pool) => {
-                issue_operation_grants_postgres(
-                    pool,
-                    &self.tenant_id,
-                    drafts,
-                    self.fleet_signer.as_ref(),
-                )
-                .await
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    issue_operation_grants_sqlite(
+                        pool,
+                        &self.tenant_id,
+                        drafts,
+                        self.fleet_signer.as_ref(),
+                    )
+                    .await
+                }
+                Database::Postgres(pool) => {
+                    issue_operation_grants_postgres(
+                        pool,
+                        &self.tenant_id,
+                        drafts,
+                        self.fleet_signer.as_ref(),
+                    )
+                    .await
+                }
             }
-        }
+        })
+        .await
     }
 
     /// Revoke an active grant and atomically persist its signed tombstone for
@@ -261,36 +272,39 @@ impl Store {
         revoked_by: Option<&str>,
         audit: &AuditDraft,
     ) -> Result<GrantRevocationOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        if !matches!(reason, "operator" | "cancelled") {
-            return Err(StoreError::InvalidInput("grant revocation reason"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                revoke_grant_sqlite(
-                    pool,
-                    &self.tenant_id,
-                    grant_id,
-                    reason,
-                    envelope_json,
-                    revoked_by,
-                    audit,
-                )
-                .await
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            if !matches!(reason, "operator" | "cancelled") {
+                return Err(StoreError::InvalidInput("grant revocation reason"));
             }
-            Database::Postgres(pool) => {
-                revoke_grant_postgres(
-                    pool,
-                    &self.tenant_id,
-                    grant_id,
-                    reason,
-                    envelope_json,
-                    revoked_by,
-                    audit,
-                )
-                .await
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    revoke_grant_sqlite(
+                        pool,
+                        &self.tenant_id,
+                        grant_id,
+                        reason,
+                        envelope_json,
+                        revoked_by,
+                        audit,
+                    )
+                    .await
+                }
+                Database::Postgres(pool) => {
+                    revoke_grant_postgres(
+                        pool,
+                        &self.tenant_id,
+                        grant_id,
+                        reason,
+                        envelope_json,
+                        revoked_by,
+                        audit,
+                    )
+                    .await
+                }
             }
-        }
+        })
+        .await
     }
 
     /// Reconcile a broker-signed execution result without accepting arbitrary
@@ -300,157 +314,162 @@ impl Store {
         node_id: &str,
         body_json: &str,
     ) -> Result<(), StoreError> {
-        let body = parse_json(body_json).map_err(|_| StoreError::InvalidInput("node result"))?;
-        let fields = body
-            .as_object()
-            .filter(|fields| fields.len() == 5)
-            .ok_or(StoreError::InvalidInput("node result"))?;
-        if fields.iter().any(|(name, _)| {
-            !matches!(
-                name.as_str(),
-                "grant_id" | "operation_id" | "status" | "result_code" | "observed_at_ms"
-            )
-        }) {
-            return Err(StoreError::InvalidInput("node result fields"));
-        }
-        let grant_id = body
-            .get("grant_id")
-            .and_then(Value::as_str)
-            .filter(|value| valid_node_event_id(value))
-            .ok_or(StoreError::InvalidInput("node result grant"))?;
-        let operation_id = body
-            .get("operation_id")
-            .and_then(Value::as_str)
-            .filter(|value| valid_node_event_id(value))
-            .ok_or(StoreError::InvalidInput("node result operation"))?;
-        let status = body
-            .get("status")
-            .and_then(Value::as_str)
-            .filter(|value| matches!(*value, "completed" | "uncertain"))
-            .ok_or(StoreError::InvalidInput("node result status"))?;
-        let result_code = body
-            .get("result_code")
-            .and_then(Value::as_str)
-            .filter(|value| {
-                matches!(
-                    *value,
-                    "marker_created" | "browser_session_closed" | "result_uncertain"
+        self.run_owned(async {
+            let body =
+                parse_json(body_json).map_err(|_| StoreError::InvalidInput("node result"))?;
+            let fields = body
+                .as_object()
+                .filter(|fields| fields.len() == 5)
+                .ok_or(StoreError::InvalidInput("node result"))?;
+            if fields.iter().any(|(name, _)| {
+                !matches!(
+                    name.as_str(),
+                    "grant_id" | "operation_id" | "status" | "result_code" | "observed_at_ms"
                 )
-            })
-            .ok_or(StoreError::InvalidInput("node result code"))?;
-        let observed_at = body
-            .get("observed_at_ms")
-            .and_then(Value::as_u64)
-            .filter(|value| *value > 0)
-            .ok_or(StoreError::InvalidInput("node result time"))?;
-        let _ =
-            i64::try_from(observed_at).map_err(|_| StoreError::InvalidInput("node result time"))?;
-        if (status == "completed") != (result_code != "result_uncertain") {
-            return Err(StoreError::InvalidInput("node result binding"));
-        }
-        let result_json = format!("{{\"result_code\":\"{result_code}\"}}");
-        self.checkpoint_clock().await?;
-        let (now, lock) = match &self.database {
-            Database::Sqlite(_) => (SQLITE_NOW_MS, ""),
-            Database::Postgres(_) => (POSTGRES_NOW_MS, " FOR UPDATE OF g, o"),
-        };
-        let select_sql = format!(
-            "SELECT g.status AS grant_status, g.action AS grant_action, g.mode AS grant_mode,
+            }) {
+                return Err(StoreError::InvalidInput("node result fields"));
+            }
+            let grant_id = body
+                .get("grant_id")
+                .and_then(Value::as_str)
+                .filter(|value| valid_node_event_id(value))
+                .ok_or(StoreError::InvalidInput("node result grant"))?;
+            let operation_id = body
+                .get("operation_id")
+                .and_then(Value::as_str)
+                .filter(|value| valid_node_event_id(value))
+                .ok_or(StoreError::InvalidInput("node result operation"))?;
+            let status = body
+                .get("status")
+                .and_then(Value::as_str)
+                .filter(|value| matches!(*value, "completed" | "uncertain"))
+                .ok_or(StoreError::InvalidInput("node result status"))?;
+            let result_code = body
+                .get("result_code")
+                .and_then(Value::as_str)
+                .filter(|value| {
+                    matches!(
+                        *value,
+                        "marker_created" | "browser_session_closed" | "result_uncertain"
+                    )
+                })
+                .ok_or(StoreError::InvalidInput("node result code"))?;
+            let observed_at = body
+                .get("observed_at_ms")
+                .and_then(Value::as_u64)
+                .filter(|value| *value > 0)
+                .ok_or(StoreError::InvalidInput("node result time"))?;
+            let _ = i64::try_from(observed_at)
+                .map_err(|_| StoreError::InvalidInput("node result time"))?;
+            if (status == "completed") != (result_code != "result_uncertain") {
+                return Err(StoreError::InvalidInput("node result binding"));
+            }
+            let result_json = format!("{{\"result_code\":\"{result_code}\"}}");
+            self.checkpoint_clock().await?;
+            let (now, lock) = match &self.database {
+                Database::Sqlite(_) => (SQLITE_NOW_MS, ""),
+                Database::Postgres(_) => (POSTGRES_NOW_MS, " FOR UPDATE OF g, o"),
+            };
+            let select_sql = format!(
+                "SELECT g.status AS grant_status, g.action AS grant_action, g.mode AS grant_mode,
                     o.status AS operation_status, o.result_json
              FROM grants g JOIN operations o ON o.id = g.operation_id AND o.tenant_id = g.tenant_id
              WHERE g.id = ? AND g.node_id = ? AND g.operation_id = ? AND g.tenant_id = ?{lock}"
-        );
-        let consume_sql = format!(
-            "UPDATE grants SET status = CASE WHEN status IN ('issued', 'delivered')
+            );
+            let consume_sql = format!(
+                "UPDATE grants SET status = CASE WHEN status IN ('issued', 'delivered')
                  THEN 'consumed' ELSE status END,
                consumed_at = COALESCE(consumed_at, {now})
              WHERE id = ? AND tenant_id = ?"
-        );
-        let operation_sql = format!(
-            "UPDATE operations SET status = ?, result_json = ?,
+            );
+            let operation_sql = format!(
+                "UPDATE operations SET status = ?, result_json = ?,
                completed_at = CASE WHEN ? THEN {now} ELSE completed_at END,
                version = version + 1
              WHERE id = ? AND tenant_id = ? AND status = ?"
-        );
-        macro_rules! reconcile {
-            ($pool:expr, $convert:expr) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                if matches!(self.database, Database::Sqlite(_)) {
-                    sqlx::query(
-                        "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
-                    )
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                }
-                let row = sqlx::query(&$convert(&select_sql))
-                    .bind(grant_id)
-                    .bind(node_id)
-                    .bind(operation_id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let Some(row) = row else {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result binding"));
-                };
-                let grant_status: String =
-                    row.try_get("grant_status").map_err(StoreError::Database)?;
-                let operation_status: String = row
-                    .try_get("operation_status")
-                    .map_err(StoreError::Database)?;
-                let existing_result: Option<String> =
-                    row.try_get("result_json").map_err(StoreError::Database)?;
-                let grant_action: String =
-                    row.try_get("grant_action").map_err(StoreError::Database)?;
-                let grant_mode: String = row.try_get("grant_mode").map_err(StoreError::Database)?;
-                if !result_matches_grant(result_code, &grant_action, &grant_mode) {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result binding"));
-                }
-                if !matches!(
-                    grant_status.as_str(),
-                    "issued" | "delivered" | "consumed" | "revoked" | "expired"
-                ) {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput("node result grant state"));
-                }
-                let transition = result_transition(
-                    status,
-                    &operation_status,
-                    existing_result.as_deref(),
-                    &result_json,
-                    result_code,
-                )?;
-                // Any broker result proves the grant was received and used,
-                // including a late result after the controller revoked it.
-                sqlx::query(&$convert(&consume_sql))
-                    .bind(grant_id)
-                    .bind(&self.tenant_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if let Some((next_status, next_result, completed)) = transition {
-                    sqlx::query(&$convert(&operation_sql))
-                        .bind(next_status)
-                        .bind(next_result)
-                        .bind(completed)
-                        .bind(operation_id)
-                        .bind(&self.tenant_id)
-                        .bind(&operation_status)
+            );
+            macro_rules! reconcile {
+                ($pool:expr, $convert:expr) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    if matches!(self.database, Database::Sqlite(_)) {
+                        sqlx::query(
+                            "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
+                        )
                         .execute(&mut *tx)
                         .await
                         .map_err(StoreError::Database)?;
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => reconcile!(pool, |sql: &str| sql.to_owned()),
-            Database::Postgres(pool) => reconcile!(pool, super::pg),
-        }
-        Ok(())
+                    }
+                    let row = sqlx::query(&$convert(&select_sql))
+                        .bind(grant_id)
+                        .bind(node_id)
+                        .bind(operation_id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let Some(row) = row else {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Err(StoreError::InvalidInput("node result binding"));
+                    };
+                    let grant_status: String =
+                        row.try_get("grant_status").map_err(StoreError::Database)?;
+                    let operation_status: String = row
+                        .try_get("operation_status")
+                        .map_err(StoreError::Database)?;
+                    let existing_result: Option<String> =
+                        row.try_get("result_json").map_err(StoreError::Database)?;
+                    let grant_action: String =
+                        row.try_get("grant_action").map_err(StoreError::Database)?;
+                    let grant_mode: String =
+                        row.try_get("grant_mode").map_err(StoreError::Database)?;
+                    if !result_matches_grant(result_code, &grant_action, &grant_mode) {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Err(StoreError::InvalidInput("node result binding"));
+                    }
+                    if !matches!(
+                        grant_status.as_str(),
+                        "issued" | "delivered" | "consumed" | "revoked" | "expired"
+                    ) {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Err(StoreError::InvalidInput("node result grant state"));
+                    }
+                    let transition = result_transition(
+                        status,
+                        &operation_status,
+                        existing_result.as_deref(),
+                        &result_json,
+                        result_code,
+                    )?;
+                    // Any broker result proves the grant was received and used,
+                    // including a late result after the controller revoked it.
+                    sqlx::query(&$convert(&consume_sql))
+                        .bind(grant_id)
+                        .bind(&self.tenant_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if let Some((next_status, next_result, completed)) = transition {
+                        sqlx::query(&$convert(&operation_sql))
+                            .bind(next_status)
+                            .bind(next_result)
+                            .bind(completed)
+                            .bind(operation_id)
+                            .bind(&self.tenant_id)
+                            .bind(&operation_status)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(StoreError::Database)?;
+                    }
+                    tx.commit().await.map_err(StoreError::Database)?;
+                }};
+            }
+            match &self.database {
+                Database::Sqlite(pool) => reconcile!(pool, |sql: &str| sql.to_owned()),
+                Database::Postgres(pool) => reconcile!(pool, super::pg),
+            }
+            Ok(())
+        })
+        .await
     }
 
     /// Audit a correctly signed node event that can never apply. The event
@@ -463,45 +482,47 @@ impl Store {
         kind: &str,
         reason_code: &str,
     ) -> Result<(), StoreError> {
-        let id = format!("rej_{node_id}_{idempotency_key}");
-        let metadata = serde_json::json!({
-            "idempotency_key": idempotency_key,
-            "kind": kind,
-            "node_id": node_id,
-            "reason_code": reason_code,
-        })
-        .to_string();
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+        self.run_owned(async {
+            let id = format!("rej_{node_id}_{idempotency_key}");
+            let metadata = serde_json::json!({
+                "idempotency_key": idempotency_key,
+                "kind": kind,
+                "node_id": node_id,
+                "reason_code": reason_code,
+            })
+            .to_string();
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
                     VALUES (?, ?, 'node', ?, 'node_event_rejected', 'node_event', ?, ?, {SQLITE_NOW_MS})
                     ON CONFLICT(id) DO NOTHING");
-                sqlx::query(&sql)
-                    .bind(&id)
-                    .bind(&self.tenant_id)
-                    .bind(node_id)
-                    .bind(idempotency_key)
-                    .bind(&metadata)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-            }
-            Database::Postgres(pool) => {
-                let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+                    sqlx::query(&sql)
+                        .bind(&id)
+                        .bind(&self.tenant_id)
+                        .bind(node_id)
+                        .bind(idempotency_key)
+                        .bind(&metadata)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
                     VALUES ($1, $2, 'node', $3, 'node_event_rejected', 'node_event', $4, $5, {POSTGRES_NOW_MS})
                     ON CONFLICT(id) DO NOTHING");
-                sqlx::query(&sql)
-                    .bind(&id)
-                    .bind(&self.tenant_id)
-                    .bind(node_id)
-                    .bind(idempotency_key)
-                    .bind(&metadata)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
+                    sqlx::query(&sql)
+                        .bind(&id)
+                        .bind(&self.tenant_id)
+                        .bind(node_id)
+                        .bind(idempotency_key)
+                        .bind(&metadata)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        }).await
     }
 
     pub async fn record_node_audit_event(
@@ -510,323 +531,325 @@ impl Store {
         idempotency_key: &str,
         body_json: &str,
     ) -> Result<(), StoreError> {
-        let body =
-            parse_json(body_json).map_err(|_| StoreError::InvalidInput("node audit event"))?;
-        // Applying an audit event and recording its node event are separate
-        // commits; an identical, already-applied event is acknowledged again
-        // rather than failing the now-completed transition a second time.
-        if let Some(applied) = self
-            .node_audit_metadata(&format!("aud_{node_id}_{idempotency_key}"))
-            .await?
-        {
-            if applied != body_json {
-                return Err(StoreError::InvalidInput("node audit event replay"));
-            }
-            // The audit row and the revocation finalization commit separately.
-            // A retry after a failed finalization must still close the
-            // revoked node's channel; finalization is idempotent.
-            if body.get("action").and_then(Value::as_str) == Some("node_revocation_applied") {
-                self.finalize_node_revocation(node_id).await?;
-            }
-            return Ok(());
-        }
-        let fields = body
-            .as_object()
-            .filter(|fields| fields.len() <= 5)
-            .ok_or(StoreError::InvalidInput("node audit event"))?;
-        let action = body
-            .get("action")
-            .and_then(Value::as_str)
-            .ok_or(StoreError::InvalidInput("node audit event action"))?;
-        let finalize_node_revocation = action == "node_revocation_applied";
-        let (target_type, target_id) = match action {
-            "operation_result" => {
-                if fields.len() != 5
-                    || fields.iter().any(|(name, _)| {
-                        !matches!(
-                            name.as_str(),
-                            "action" | "grant_id" | "operation_id" | "observed_at_ms" | "status"
-                        )
-                    })
-                    || !body
-                        .get("grant_id")
-                        .and_then(Value::as_str)
-                        .is_some_and(valid_node_event_id)
-                    || !body
-                        .get("operation_id")
-                        .and_then(Value::as_str)
-                        .is_some_and(valid_node_event_id)
-                    || !body
-                        .get("observed_at_ms")
-                        .and_then(Value::as_u64)
-                        .is_some_and(|value| value > 0)
-                    || !body
-                        .get("status")
-                        .and_then(Value::as_str)
-                        .is_some_and(|value| matches!(value, "completed" | "uncertain"))
-                {
-                    return Err(StoreError::InvalidInput("node audit event fields"));
+        self.run_owned(async {
+            let body =
+                parse_json(body_json).map_err(|_| StoreError::InvalidInput("node audit event"))?;
+            // Applying an audit event and recording its node event are separate
+            // commits; an identical, already-applied event is acknowledged again
+            // rather than failing the now-completed transition a second time.
+            if let Some(applied) = self
+                .node_audit_metadata(&format!("aud_{node_id}_{idempotency_key}"))
+                .await?
+            {
+                if applied != body_json {
+                    return Err(StoreError::InvalidInput("node audit event replay"));
                 }
-                (
-                    "operation",
-                    body.get("operation_id")
-                        .and_then(Value::as_str)
-                        .unwrap_or_default(),
-                )
-            }
-            "audit_overflow" => {
-                if fields.len() != 3
-                    || fields.iter().any(|(name, _)| {
-                        !matches!(name.as_str(), "action" | "node_id" | "observed_at_ms")
-                    })
-                    || body.get("node_id").and_then(Value::as_str) != Some(node_id)
-                    || !body
-                        .get("observed_at_ms")
-                        .and_then(Value::as_u64)
-                        .is_some_and(|value| value > 0)
-                {
-                    return Err(StoreError::InvalidInput("node audit overflow event"));
+                // The audit row and the revocation finalization commit separately.
+                // A retry after a failed finalization must still close the
+                // revoked node's channel; finalization is idempotent.
+                if body.get("action").and_then(Value::as_str) == Some("node_revocation_applied") {
+                    self.finalize_node_revocation(node_id).await?;
                 }
-                ("node", node_id)
+                return Ok(());
             }
-            "grant_rejected" => {
-                if fields.len() != 5
-                    || fields.iter().any(|(name, _)| {
-                        !matches!(
-                            name.as_str(),
-                            "action" | "expires_at_ms" | "grant_id" | "node_id" | "reason_code"
-                        )
-                    })
-                    || body.get("node_id").and_then(Value::as_str) != Some(node_id)
-                    || !body
-                        .get("grant_id")
-                        .and_then(Value::as_str)
-                        .is_some_and(|grant_id| {
-                            grant_id.starts_with("gr_") && valid_node_event_id(grant_id)
+            let fields = body
+                .as_object()
+                .filter(|fields| fields.len() <= 5)
+                .ok_or(StoreError::InvalidInput("node audit event"))?;
+            let action = body
+                .get("action")
+                .and_then(Value::as_str)
+                .ok_or(StoreError::InvalidInput("node audit event action"))?;
+            let finalize_node_revocation = action == "node_revocation_applied";
+            let (target_type, target_id) = match action {
+                "operation_result" => {
+                    if fields.len() != 5
+                        || fields.iter().any(|(name, _)| {
+                            !matches!(
+                                name.as_str(),
+                                "action" | "grant_id" | "operation_id" | "observed_at_ms" | "status"
+                            )
                         })
-                    || !body
+                        || !body
+                            .get("grant_id")
+                            .and_then(Value::as_str)
+                            .is_some_and(valid_node_event_id)
+                        || !body
+                            .get("operation_id")
+                            .and_then(Value::as_str)
+                            .is_some_and(valid_node_event_id)
+                        || !body
+                            .get("observed_at_ms")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|value| value > 0)
+                        || !body
+                            .get("status")
+                            .and_then(Value::as_str)
+                            .is_some_and(|value| matches!(value, "completed" | "uncertain"))
+                    {
+                        return Err(StoreError::InvalidInput("node audit event fields"));
+                    }
+                    (
+                        "operation",
+                        body.get("operation_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default(),
+                    )
+                }
+                "audit_overflow" => {
+                    if fields.len() != 3
+                        || fields.iter().any(|(name, _)| {
+                            !matches!(name.as_str(), "action" | "node_id" | "observed_at_ms")
+                        })
+                        || body.get("node_id").and_then(Value::as_str) != Some(node_id)
+                        || !body
+                            .get("observed_at_ms")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|value| value > 0)
+                    {
+                        return Err(StoreError::InvalidInput("node audit overflow event"));
+                    }
+                    ("node", node_id)
+                }
+                "grant_rejected" => {
+                    if fields.len() != 5
+                        || fields.iter().any(|(name, _)| {
+                            !matches!(
+                                name.as_str(),
+                                "action" | "expires_at_ms" | "grant_id" | "node_id" | "reason_code"
+                            )
+                        })
+                        || body.get("node_id").and_then(Value::as_str) != Some(node_id)
+                        || !body
+                            .get("grant_id")
+                            .and_then(Value::as_str)
+                            .is_some_and(|grant_id| {
+                                grant_id.starts_with("gr_") && valid_node_event_id(grant_id)
+                            })
+                        || !body
+                            .get("expires_at_ms")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|value| value > 0)
+                        || !matches!(
+                            body.get("reason_code").and_then(Value::as_str),
+                            Some("expired_before_receipt" | "binding_mismatch" | "stale_at_receipt")
+                        )
+                    {
+                        return Err(StoreError::InvalidInput("node grant rejection audit"));
+                    }
+                    let grant_id = body
+                        .get("grant_id")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default();
+                    let expires_at_ms = body
                         .get("expires_at_ms")
                         .and_then(Value::as_u64)
-                        .is_some_and(|value| value > 0)
-                    || !matches!(
-                        body.get("reason_code").and_then(Value::as_str),
-                        Some("expired_before_receipt" | "binding_mismatch" | "stale_at_receipt")
-                    )
-                {
-                    return Err(StoreError::InvalidInput("node grant rejection audit"));
-                }
-                let grant_id = body
-                    .get("grant_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                let expires_at_ms = body
-                    .get("expires_at_ms")
-                    .and_then(Value::as_u64)
-                    .and_then(|value| i64::try_from(value).ok())
-                    .ok_or(StoreError::InvalidInput("node grant rejection expiry"))?;
-                let grant_expiry = match &self.database {
-                    Database::Sqlite(pool) => sqlx::query_scalar::<_, i64>(
-                        "SELECT expires_at FROM grants
+                        .and_then(|value| i64::try_from(value).ok())
+                        .ok_or(StoreError::InvalidInput("node grant rejection expiry"))?;
+                    let grant_expiry = match &self.database {
+                        Database::Sqlite(pool) => sqlx::query_scalar::<_, i64>(
+                            "SELECT expires_at FROM grants
                          WHERE id = ? AND node_id = ? AND tenant_id = ?",
-                    )
-                    .bind(grant_id)
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?,
-                    Database::Postgres(pool) => sqlx::query_scalar::<_, i64>(
-                        "SELECT expires_at FROM grants
+                        )
+                        .bind(grant_id)
+                        .bind(node_id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?,
+                        Database::Postgres(pool) => sqlx::query_scalar::<_, i64>(
+                            "SELECT expires_at FROM grants
                          WHERE id = $1 AND node_id = $2 AND tenant_id = $3",
-                    )
-                    .bind(grant_id)
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?,
-                };
-                if grant_expiry != Some(expires_at_ms) {
-                    return Err(StoreError::InvalidInput(
-                        "node grant rejection does not match a current grant expiry",
-                    ));
+                        )
+                        .bind(grant_id)
+                        .bind(node_id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?,
+                    };
+                    if grant_expiry != Some(expires_at_ms) {
+                        return Err(StoreError::InvalidInput(
+                            "node grant rejection does not match a current grant expiry",
+                        ));
+                    }
+                    ("grant", grant_id)
                 }
-                ("grant", grant_id)
-            }
-            "node_revocation_applied" => {
-                if fields.len() != 3
-                    || fields.iter().any(|(name, _)| {
-                        !matches!(name.as_str(), "action" | "node_id" | "observed_at_ms")
-                    })
-                    || body.get("node_id").and_then(Value::as_str) != Some(node_id)
-                    || !body
-                        .get("observed_at_ms")
-                        .and_then(Value::as_u64)
-                        .is_some_and(|value| value > 0)
-                {
-                    return Err(StoreError::InvalidInput("node revocation acknowledgement"));
-                }
-                let pending = match &self.database {
-                    Database::Sqlite(pool) => {
-                        sqlx::query_scalar::<_, i64>(
-                            "SELECT EXISTS(SELECT 1 FROM nodes n JOIN node_revocation_queue q
+                "node_revocation_applied" => {
+                    if fields.len() != 3
+                        || fields.iter().any(|(name, _)| {
+                            !matches!(name.as_str(), "action" | "node_id" | "observed_at_ms")
+                        })
+                        || body.get("node_id").and_then(Value::as_str) != Some(node_id)
+                        || !body
+                            .get("observed_at_ms")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|value| value > 0)
+                    {
+                        return Err(StoreError::InvalidInput("node revocation acknowledgement"));
+                    }
+                    let pending = match &self.database {
+                        Database::Sqlite(pool) => {
+                            sqlx::query_scalar::<_, i64>(
+                                "SELECT EXISTS(SELECT 1 FROM nodes n JOIN node_revocation_queue q
                              ON q.node_id = n.id WHERE n.id = ? AND n.tenant_id = ?
+                             AND n.status = 'revoked')",
+                            )
+                            .bind(node_id)
+                            .bind(&self.tenant_id)
+                            .fetch_one(pool)
+                            .await
+                            .map_err(StoreError::Database)?
+                                == 1
+                        }
+                        Database::Postgres(pool) => sqlx::query_scalar::<_, bool>(
+                            "SELECT EXISTS(SELECT 1 FROM nodes n JOIN node_revocation_queue q
+                             ON q.node_id = n.id WHERE n.id = $1 AND n.tenant_id = $2
                              AND n.status = 'revoked')",
                         )
                         .bind(node_id)
                         .bind(&self.tenant_id)
                         .fetch_one(pool)
                         .await
-                        .map_err(StoreError::Database)?
-                            == 1
+                        .map_err(StoreError::Database)?,
+                    };
+                    if !pending {
+                        return Err(StoreError::InvalidInput("node revocation is not pending"));
                     }
-                    Database::Postgres(pool) => sqlx::query_scalar::<_, bool>(
-                        "SELECT EXISTS(SELECT 1 FROM nodes n JOIN node_revocation_queue q
-                             ON q.node_id = n.id WHERE n.id = $1 AND n.tenant_id = $2
-                             AND n.status = 'revoked')",
-                    )
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(StoreError::Database)?,
-                };
-                if !pending {
-                    return Err(StoreError::InvalidInput("node revocation is not pending"));
+                    ("node", node_id)
                 }
-                ("node", node_id)
-            }
-            "node_key_rotation_applied" => {
-                if fields.len() != 5
-                    || fields.iter().any(|(name, _)| {
-                        !matches!(
-                            name.as_str(),
-                            "action" | "node_id" | "rotation_id" | "key_version" | "fingerprint"
-                        )
-                    })
-                    || body.get("node_id").and_then(Value::as_str) != Some(node_id)
-                    || !body
+                "node_key_rotation_applied" => {
+                    if fields.len() != 5
+                        || fields.iter().any(|(name, _)| {
+                            !matches!(
+                                name.as_str(),
+                                "action" | "node_id" | "rotation_id" | "key_version" | "fingerprint"
+                            )
+                        })
+                        || body.get("node_id").and_then(Value::as_str) != Some(node_id)
+                        || !body
+                            .get("rotation_id")
+                            .and_then(Value::as_str)
+                            .is_some_and(valid_node_event_id)
+                        || !body
+                            .get("key_version")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|value| value > 1)
+                        || !body
+                            .get("fingerprint")
+                            .and_then(Value::as_str)
+                            .is_some_and(|value| {
+                                value.len() == 64
+                                    && value.bytes().all(|byte| {
+                                        byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()
+                                    })
+                            })
+                    {
+                        return Err(StoreError::InvalidInput(
+                            "node key rotation acknowledgement",
+                        ));
+                    }
+                    let rotation_id = body
                         .get("rotation_id")
                         .and_then(Value::as_str)
-                        .is_some_and(valid_node_event_id)
-                    || !body
+                        .unwrap_or_default();
+                    let key_version = body
                         .get("key_version")
                         .and_then(Value::as_u64)
-                        .is_some_and(|value| value > 1)
-                    || !body
+                        .and_then(|value| i64::try_from(value).ok())
+                        .ok_or(StoreError::InvalidInput("node key rotation version"))?;
+                    let fingerprint = body
                         .get("fingerprint")
                         .and_then(Value::as_str)
-                        .is_some_and(|value| {
-                            value.len() == 64
-                                && value.bytes().all(|byte| {
-                                    byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase()
-                                })
+                        .unwrap_or_default();
+                    if !self
+                        .complete_node_key_rotation(node_id, rotation_id, key_version, fingerprint)
+                        .await?
+                    {
+                        return Err(StoreError::InvalidInput(
+                            "node key rotation acknowledgement",
+                        ));
+                    }
+                    ("node", node_id)
+                }
+                "grant_revocation_applied" => {
+                    let grant_id = body.get("grant_id").and_then(Value::as_str);
+                    let outcome = body.get("outcome").and_then(Value::as_str);
+                    if fields.len() != 5
+                        || fields.iter().any(|(name, _)| {
+                            !matches!(
+                                name.as_str(),
+                                "action" | "node_id" | "grant_id" | "outcome" | "observed_at_ms"
+                            )
                         })
-                {
-                    return Err(StoreError::InvalidInput(
-                        "node key rotation acknowledgement",
-                    ));
+                        || body.get("node_id").and_then(Value::as_str) != Some(node_id)
+                        || !grant_id.is_some_and(valid_node_event_id)
+                        || !outcome.is_some_and(|value| {
+                            matches!(
+                                value,
+                                "revoked_before_consumption" | "already_consumed" | "not_received"
+                            )
+                        })
+                        || !body
+                            .get("observed_at_ms")
+                            .and_then(Value::as_u64)
+                            .is_some_and(|value| value > 0)
+                    {
+                        return Err(StoreError::InvalidInput("grant revocation acknowledgement"));
+                    }
+                    let grant_id = grant_id.unwrap_or_default();
+                    if !self
+                        .apply_grant_revocation_outcome(node_id, grant_id, outcome.unwrap_or_default())
+                        .await?
+                    {
+                        return Err(StoreError::InvalidInput(
+                            "grant revocation acknowledgement does not match a revoked grant",
+                        ));
+                    }
+                    ("grant", grant_id)
                 }
-                let rotation_id = body
-                    .get("rotation_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                let key_version = body
-                    .get("key_version")
-                    .and_then(Value::as_u64)
-                    .and_then(|value| i64::try_from(value).ok())
-                    .ok_or(StoreError::InvalidInput("node key rotation version"))?;
-                let fingerprint = body
-                    .get("fingerprint")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default();
-                if !self
-                    .complete_node_key_rotation(node_id, rotation_id, key_version, fingerprint)
-                    .await?
-                {
-                    return Err(StoreError::InvalidInput(
-                        "node key rotation acknowledgement",
-                    ));
-                }
-                ("node", node_id)
-            }
-            "grant_revocation_applied" => {
-                let grant_id = body.get("grant_id").and_then(Value::as_str);
-                let outcome = body.get("outcome").and_then(Value::as_str);
-                if fields.len() != 5
-                    || fields.iter().any(|(name, _)| {
-                        !matches!(
-                            name.as_str(),
-                            "action" | "node_id" | "grant_id" | "outcome" | "observed_at_ms"
-                        )
-                    })
-                    || body.get("node_id").and_then(Value::as_str) != Some(node_id)
-                    || !grant_id.is_some_and(valid_node_event_id)
-                    || !outcome.is_some_and(|value| {
-                        matches!(
-                            value,
-                            "revoked_before_consumption" | "already_consumed" | "not_received"
-                        )
-                    })
-                    || !body
-                        .get("observed_at_ms")
-                        .and_then(Value::as_u64)
-                        .is_some_and(|value| value > 0)
-                {
-                    return Err(StoreError::InvalidInput("grant revocation acknowledgement"));
-                }
-                let grant_id = grant_id.unwrap_or_default();
-                if !self
-                    .apply_grant_revocation_outcome(node_id, grant_id, outcome.unwrap_or_default())
-                    .await?
-                {
-                    return Err(StoreError::InvalidInput(
-                        "grant revocation acknowledgement does not match a revoked grant",
-                    ));
-                }
-                ("grant", grant_id)
-            }
-            _ => return Err(StoreError::InvalidInput("node audit event action")),
-        };
-        let id = format!("aud_{node_id}_{idempotency_key}");
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+                _ => return Err(StoreError::InvalidInput("node audit event action")),
+            };
+            let id = format!("aud_{node_id}_{idempotency_key}");
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
                     VALUES (?, ?, 'node', ?, ?, ?, ?, ?, {SQLITE_NOW_MS})
                     ON CONFLICT(id) DO NOTHING");
-                sqlx::query(&sql)
-                    .bind(&id)
-                    .bind(&self.tenant_id)
-                    .bind(node_id)
-                    .bind(action)
-                    .bind(target_type)
-                    .bind(target_id)
-                    .bind(body_json)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-            }
-            Database::Postgres(pool) => {
-                let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
+                    sqlx::query(&sql)
+                        .bind(&id)
+                        .bind(&self.tenant_id)
+                        .bind(node_id)
+                        .bind(action)
+                        .bind(target_type)
+                        .bind(target_id)
+                        .bind(body_json)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!("INSERT INTO audit_events (id, tenant_id, actor_type, actor_id, action, target_type, target_id, metadata_json, created_at)
                     VALUES ($1, $2, 'node', $3, $4, $5, $6, $7, {POSTGRES_NOW_MS})
                     ON CONFLICT(id) DO NOTHING");
-                sqlx::query(&sql)
-                    .bind(&id)
-                    .bind(&self.tenant_id)
-                    .bind(node_id)
-                    .bind(action)
-                    .bind(target_type)
-                    .bind(target_id)
-                    .bind(body_json)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
+                    sqlx::query(&sql)
+                        .bind(&id)
+                        .bind(&self.tenant_id)
+                        .bind(node_id)
+                        .bind(action)
+                        .bind(target_type)
+                        .bind(target_id)
+                        .bind(body_json)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
             }
-        }
-        if finalize_node_revocation {
-            self.finalize_node_revocation(node_id).await?;
-        }
-        Ok(())
+            if finalize_node_revocation {
+                self.finalize_node_revocation(node_id).await?;
+            }
+            Ok(())
+        }).await
     }
 
     async fn finalize_node_revocation(&self, node_id: &str) -> Result<(), StoreError> {

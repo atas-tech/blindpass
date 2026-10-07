@@ -2,8 +2,13 @@
 
 use crate::app::AppState;
 use crate::routes::agents::client_ip;
-use crate::routes::auth::{constant_equal, hash_api_key, hash_refresh_token, verify_api_key};
-use crate::store::{LocalOperator, LocalSession, SessionKind, Store, StoreError};
+use crate::routes::auth::{
+    constant_equal, dummy_password_hash, hash_api_key, hash_refresh_token, verify_api_key,
+};
+use crate::store::{
+    LocalOperator, LocalSession, LoginBlock, SESSION_IDLE_SECONDS, SessionKind, Store, StoreError,
+    login_account_key,
+};
 use axum::extract::{ConnectInfo, Request, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::middleware::Next;
@@ -17,14 +22,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
 
-const LOGIN_ACCOUNT_LIMIT: u32 = 10;
-const LOGIN_IP_LIMIT: u32 = 30;
-const LOGIN_WINDOW_MS: u64 = 60_000;
-
 pub(crate) const SESSION_COOKIE: &str = "bp_session";
 const REFRESH_COOKIE: &str = "bp_refresh";
 const CSRF_COOKIE: &str = "bp_csrf";
-const SESSION_IDLE_SECONDS: u64 = 12 * 60 * 60;
 const REFRESH_COOKIE_PATH: &str = "/api/v3/admin/session/refresh";
 
 pub(crate) fn routes() -> Router<AppState> {
@@ -138,41 +138,35 @@ async fn verified_operator(
     if body.username.trim().is_empty() || body.password.is_empty() || body.password.len() > 1_024 {
         return Err(invalid());
     }
-    let username = body.username.trim().to_ascii_lowercase();
-    let account_key = match blindpass_core::custody::sha256(username.as_bytes()) {
-        Ok(digest) => digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect::<String>(),
-        Err(_) => return Err(Box::new(unavailable())),
+    let limits = state.abuse_limits;
+    let Some(account_key) = login_account_key(&body.username) else {
+        return Err(Box::new(unavailable()));
     };
     let ip = client_ip(headers, peer, state);
-    for (key, limit) in [
-        (format!("operator-login-ip:{ip}"), LOGIN_IP_LIMIT),
-        (
-            format!("operator-login-account:{account_key}"),
-            LOGIN_ACCOUNT_LIMIT,
-        ),
-    ] {
-        let window = match store.consume_rate_limit(&key, limit, LOGIN_WINDOW_MS).await {
-            Ok(window) => window,
-            Err(_) => return Err(Box::new(unavailable())),
-        };
-        if window.count > i64::from(limit) {
+    // Refuse before any password work. Failures count, successes do not, and
+    // unknown usernames lock exactly like real ones so a 423 does not reveal
+    // which accounts exist.
+    match store.login_block(&account_key, &ip, &limits).await {
+        Ok(None) => {}
+        Ok(Some(LoginBlock::IpLimited {
+            retry_after_seconds,
+        })) => {
             let mut response = admin_error(
                 StatusCode::TOO_MANY_REQUESTS,
                 "login_rate_limited",
                 "too many sign-in attempts; try again later",
             );
-            if let Ok(value) = HeaderValue::from_str(&window.retry_after_seconds.to_string()) {
-                response.headers_mut().insert(header::RETRY_AFTER, value);
-            }
+            set_retry_after(&mut response, retry_after_seconds);
             return Err(Box::new(response));
         }
+        Ok(Some(LoginBlock::Locked {
+            retry_after_seconds,
+        })) => return Err(Box::new(locked_response(retry_after_seconds))),
+        Err(_) => return Err(Box::new(unavailable())),
     }
     let operator = match store.operator_by_username(body.username.trim()).await {
-        Ok(Some(operator)) if operator.disabled_at_ms.is_none() => operator,
-        Ok(_) => return Err(invalid()),
+        Ok(Some(operator)) if operator.disabled_at_ms.is_none() => Some(operator),
+        Ok(_) => None,
         Err(_) => return Err(Box::new(unavailable())),
     };
     let permit = match state.login_hash_slots.clone().try_acquire_owned() {
@@ -186,7 +180,12 @@ async fn verified_operator(
         }
     };
     let password = blindpass_core::secret::SecretBytes::from_slice(body.password.as_bytes());
-    let encoded_hash = operator.password_hash.clone();
+    // Unknown and disabled accounts verify against a dummy hash: same work,
+    // same answer, nothing to tell them apart from a wrong password.
+    let encoded_hash = operator.as_ref().map_or_else(
+        || dummy_password_hash().to_owned(),
+        |op| op.password_hash.clone(),
+    );
     let verified = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         std::str::from_utf8(password.as_bytes())
@@ -194,10 +193,46 @@ async fn verified_operator(
     })
     .await
     .map_err(|_| Box::new(unavailable()))?;
-    if !verified {
-        return Err(invalid());
+    match operator {
+        Some(operator) if verified => {
+            if store.clear_login_failures(&account_key, &ip).await.is_err() {
+                return Err(Box::new(unavailable()));
+            }
+            Ok(operator)
+        }
+        known => {
+            if store
+                .record_login_failure(&account_key, known.is_some(), &ip, &limits)
+                .await
+                .is_err()
+            {
+                return Err(Box::new(unavailable()));
+            }
+            Err(invalid())
+        }
     }
-    Ok(operator)
+}
+
+fn set_retry_after(response: &mut Response, seconds: u64) {
+    if let Ok(value) = HeaderValue::from_str(&seconds.to_string()) {
+        response.headers_mut().insert(header::RETRY_AFTER, value);
+    }
+}
+
+/// P07-D4: the account reached its failure limit. Locked until the window
+/// lapses or an administrator resets the password on the local socket.
+fn locked_response(retry_after_seconds: u64) -> Response {
+    let mut response = (
+        StatusCode::LOCKED,
+        Json(json!({
+            "error": "locked",
+            "message": "too many failed sign-ins; try again later or ask an administrator to reset the password",
+            "retry_after": retry_after_seconds
+        })),
+    )
+        .into_response();
+    set_retry_after(&mut response, retry_after_seconds);
+    response
 }
 
 /// P04-D3 desktop login. The approval app is not a browser: it sends no

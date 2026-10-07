@@ -37,9 +37,9 @@ const HIGH_WATER_PERSIST_INTERVAL_MS: u64 = 600_000;
 const MAX_RECORDS: usize = 1_024;
 const MAX_BYTES: usize = 1_048_576;
 const MAX_TIME: u64 = 9_007_199_254_740_991 - RETENTION_MS;
-const NOFOLLOW: i32 = 0x20000;
+const NOFOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 const NONBLOCK: i32 = 0x800;
-const DIRECTORY: i32 = 0x10000;
+const DIRECTORY: i32 = blindpass_core::open_flags::O_DIRECTORY;
 const FAILURE: &str = "session reconciliation state unavailable";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 

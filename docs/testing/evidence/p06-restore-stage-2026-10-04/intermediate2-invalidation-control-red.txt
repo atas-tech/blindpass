@@ -1,0 +1,22 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-restore-control-r84nrwok/crates/blindpass-controller)
+   Compiling blindpass-core v0.1.0 (/tmp/blindpass-p06-restore-control-r84nrwok/crates/blindpass-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.73s
+     Running tests/restore_stage.rs (/home/hvo/Projects/blindpass/target/debug/deps/restore_stage-d45506280fd80b22)
+
+running 1 test
+test p06_st01_actual_authenticated_restore_publishes_only_fenced_invalidated_state ... 
+thread 'p06_st01_actual_authenticated_restore_publishes_only_fenced_invalidated_state' (1227532) panicked at crates/blindpass-controller/tests/restore_stage.rs:421:5:
+assertion `left == right` failed
+  left: 1
+ right: 8
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_st01_actual_authenticated_restore_publishes_only_fenced_invalidated_state
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.80s
+
+error: test failed, to rerun pass `-p blindpass-controller --test restore_stage`

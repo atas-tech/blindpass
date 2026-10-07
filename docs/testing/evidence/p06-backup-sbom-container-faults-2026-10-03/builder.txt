@@ -1,0 +1,7 @@
+#1 [internal] booting buildkit
+#1 pulling image moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea
+#1 pulling image moby/buildkit@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea 0.8s done
+#1 creating container buildx_buildkit_blindpass-p06-backup-sbom0
+#1 creating container buildx_buildkit_blindpass-p06-backup-sbom0 0.7s done
+#1 DONE 1.5s
+blindpass-p06-backup-sbom

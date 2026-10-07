@@ -1,0 +1,4 @@
+default_binaries_build_exit=0
+authority_postgres_gate_exit=0
+owned_authority_cleanup_errors=0
+default_binary_hook_absence_gate_exit=0

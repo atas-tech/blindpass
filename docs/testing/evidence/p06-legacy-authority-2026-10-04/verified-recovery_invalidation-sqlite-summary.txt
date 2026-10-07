@@ -1,0 +1,4 @@
+authority_postgres_gate_exit=0
+recovery_invalidation_backend=sqlite
+controller_test_target=recovery_invalidation
+owned_authority_cleanup_errors=0

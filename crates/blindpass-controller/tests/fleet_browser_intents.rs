@@ -80,7 +80,24 @@ async fn install_failure(h: &Harness, table: &str) {
         h.execute("CREATE FUNCTION p05_intent_write_failure() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'P05 dummy storage failure'; END $$",vec![]).await;
         h.execute(&format!("CREATE TRIGGER p05_intent_write_failure BEFORE INSERT ON {table} FOR EACH ROW EXECUTE FUNCTION p05_intent_write_failure()"),vec![]).await;
     } else {
-        h.execute(&format!("CREATE TRIGGER p05_intent_write_failure BEFORE INSERT ON {table} BEGIN SELECT RAISE(ABORT,'P05 dummy storage failure'); END"),vec![]).await;
+        let support::Backend::Sqlite(pool) = &h.backend else {
+            unreachable!()
+        };
+        // A pooled connection can still hold the schema from before the previous
+        // trigger was dropped on another connection; SQLite checks "already exists"
+        // at prepare time against that stale copy. A read step on the same
+        // connection reloads the schema first.
+        let mut connection = pool.acquire().await.expect("harness connection");
+        sqlx::query("SELECT COUNT(*) FROM sqlite_master")
+            .persistent(false)
+            .execute(&mut *connection)
+            .await
+            .expect("refresh SQLite schema");
+        sqlx::query(&format!("CREATE TRIGGER p05_intent_write_failure BEFORE INSERT ON {table} BEGIN SELECT RAISE(ABORT,'P05 dummy storage failure'); END"))
+            .persistent(false)
+            .execute(&mut *connection)
+            .await
+            .expect("install disposable SQLite trigger");
     }
 }
 async fn remove_failure(h: &Harness, table: &str) {

@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.42s
+     Running tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 1 test
+
+thread 'p06_pw06_unbound_production_builder_refuses_ordinary_routes_and_readiness' (4139058) panicked at crates/blindpass-controller/tests/production_ownership.rs:587:9:
+assertion `left == right` failed: unbound production builder accepted ordinary access
+  left: 200
+ right: 503
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test p06_pw06_unbound_production_builder_refuses_ordinary_routes_and_readiness ... FAILED
+
+failures:
+
+failures:
+    p06_pw06_unbound_production_builder_refuses_ordinary_routes_and_readiness
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.12s
+
+error: test failed, to rerun pass `-p blindpass-controller --test production_ownership`

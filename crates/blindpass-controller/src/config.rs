@@ -43,6 +43,7 @@ pub struct Config {
     public_url: String,
     ui_base_url: String,
     database_url: String,
+    authority: Option<AuthoritySettings>,
     root_secret: SecretBytes,
     agent_jwt_secret: SecretBytes,
     issuer_keypair: Option<Arc<Ed25519KeyPair>>,
@@ -66,10 +67,47 @@ pub struct Config {
     agent_token_rate_window_ms: u64,
     agent_rate_window_ms: u64,
     clock_tolerance_ms: u64,
+    abuse_limits: AbuseLimits,
+    session_absolute_seconds: u64,
     admin_socket_path: PathBuf,
     test_mode: bool,
     test_seed_token: Option<SecretBytes>,
     log_format: LogFormat,
+}
+
+/// P07-D4 operator sign-in and bootstrap abuse limits. Failures count; a
+/// successful sign-in never consumes budget. Every value is published in
+/// `/api/v3/capabilities` `limits`, except the state caps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AbuseLimits {
+    /// Failed sign-ins for one account from one source address inside
+    /// `window_seconds` before that account/source pair is locked. A guesser
+    /// at one address locks only itself, never the operator elsewhere.
+    pub login_account_failures: u32,
+    /// Failed sign-ins for one account from any sources inside the window
+    /// before the account is locked for everyone. Bounds distributed
+    /// guessing; always at least `login_account_failures`.
+    pub login_account_total_failures: u32,
+    /// Failed sign-ins per client address inside `window_seconds`.
+    pub login_ip_failures: u32,
+    /// Failure counting window for the account and address counters.
+    pub login_window_seconds: u64,
+    /// How long an account stays locked once it reaches the failure limit.
+    pub login_lockout_seconds: u64,
+    /// Cap on live per-account failure rows for usernames that do not exist.
+    pub login_tracked_accounts: u32,
+    /// Failed bootstrap attempts per peer shard inside the bootstrap window.
+    pub bootstrap_failures_per_peer: u32,
+    /// Failed bootstrap attempts for the whole controller inside the window.
+    pub bootstrap_failures_global: u32,
+}
+
+// Credentials have no Debug representation and stay outside controller state.
+// Offline backup verification does not need them; serving and maintenance do.
+struct AuthoritySettings {
+    url: String,
+    tenant_id: String,
+    owner_id: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -81,6 +119,29 @@ pub enum LogFormat {
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::from_variables(std::env::vars())
+    }
+
+    /// Configuration for commands that read the shared configuration file but never listen (the backup
+    /// job, the handoff commands). A remote direct-TLS controller binds a wildcard address and receives
+    /// its certificate only through the serving units, so the serve-time rule "no unrestricted bind
+    /// without TLS or a proxy" must not apply here; every other rule does. The bind is pinned to
+    /// loopback and is never opened by these commands.
+    pub fn from_env_offline() -> Result<Self, ConfigError> {
+        Self::from_variables_offline(std::env::vars())
+    }
+
+    pub fn from_variables_offline<K, V, I>(variables: I) -> Result<Self, ConfigError>
+    where
+        K: Into<String>,
+        V: Into<String>,
+        I: IntoIterator<Item = (K, V)>,
+    {
+        let mut values = variables
+            .into_iter()
+            .map(|(key, value)| (key.into(), value.into()))
+            .collect::<BTreeMap<String, String>>();
+        values.insert("BLINDPASS_LISTEN".into(), "127.0.0.1:3200".into());
+        Self::from_map(&values)
     }
 
     /// Build configuration from an explicit variable set. This is public so
@@ -162,6 +223,7 @@ impl Config {
         {
             return Err(ConfigError::Invalid("BLINDPASS_DATABASE_URL"));
         }
+        validate_postgres_query_parameters(&database_url)?;
 
         let root_path = credential_path(
             values,
@@ -209,6 +271,11 @@ impl Config {
             None if test_mode => None,
             None => return Err(ConfigError::Missing("BLINDPASS_ISSUER_KEY_FILE")),
         };
+
+        let authority = read_authority_settings(values)?;
+        if authority.is_some() && issuer_keypair.is_none() {
+            return Err(ConfigError::Missing("BLINDPASS_ISSUER_KEY_FILE"));
+        }
 
         let agent_auth_providers_json = value(values, "BLINDPASS_AGENT_AUTH_PROVIDERS_JSON")
             .map(validate_auth_providers)
@@ -276,6 +343,13 @@ impl Config {
             } else {
                 trusted_proxy_peers?
             };
+        // Every shipped native, image and Compose profile sets
+        // BLINDPASS_PROXY_REQUIRED=1, so it marks a production profile even
+        // when NODE_ENV is unset. Test mode there would skip the ownership
+        // requirement, mount the seed route and trust loopback forwarding.
+        if test_mode && proxy_required {
+            return Err(ConfigError::Invalid("BLINDPASS_TEST_MODE in production"));
+        }
         if proxy_required
             && (trusted_proxy_peers.is_empty()
                 || !public_url.starts_with("https://")
@@ -368,6 +442,70 @@ impl Config {
         )?;
         let clock_tolerance_ms =
             parse_range(values, "BLINDPASS_CLOCK_TOLERANCE_MS", 2_000, 250, 60_000)?;
+        let abuse_limits = AbuseLimits {
+            login_account_failures: parse_range(
+                values,
+                "BLINDPASS_LOGIN_ACCOUNT_FAILURES",
+                10,
+                1,
+                100_000,
+            )?,
+            login_account_total_failures: parse_range(
+                values,
+                "BLINDPASS_LOGIN_ACCOUNT_TOTAL_FAILURES",
+                50,
+                1,
+                1_000_000,
+            )?,
+            login_ip_failures: parse_range(values, "BLINDPASS_LOGIN_IP_FAILURES", 30, 1, 100_000)?,
+            login_window_seconds: parse_range(
+                values,
+                "BLINDPASS_LOGIN_WINDOW_SECONDS",
+                900,
+                1,
+                86_400,
+            )?,
+            login_lockout_seconds: parse_range(
+                values,
+                "BLINDPASS_LOGIN_LOCKOUT_SECONDS",
+                900,
+                1,
+                86_400,
+            )?,
+            login_tracked_accounts: parse_range(
+                values,
+                "BLINDPASS_LOGIN_TRACKED_ACCOUNTS",
+                10_000,
+                16,
+                1_000_000,
+            )?,
+            bootstrap_failures_per_peer: parse_range(
+                values,
+                "BLINDPASS_BOOTSTRAP_FAILURES_PER_PEER",
+                10,
+                1,
+                100_000,
+            )?,
+            bootstrap_failures_global: parse_range(
+                values,
+                "BLINDPASS_BOOTSTRAP_FAILURES_GLOBAL",
+                100,
+                1,
+                1_000_000,
+            )?,
+        };
+        let session_absolute_seconds = parse_range(
+            values,
+            "BLINDPASS_SESSION_ABSOLUTE_SECONDS",
+            7 * 24 * 60 * 60,
+            3_600,
+            30 * 24 * 60 * 60,
+        )?;
+        if abuse_limits.login_account_total_failures < abuse_limits.login_account_failures {
+            return Err(ConfigError::Invalid(
+                "BLINDPASS_LOGIN_ACCOUNT_TOTAL_FAILURES below BLINDPASS_LOGIN_ACCOUNT_FAILURES",
+            ));
+        }
         let test_seed_token = value(values, "BLINDPASS_TEST_SEED_TOKEN")
             .map(|token| {
                 if token.len() < MIN_KEY_BYTES {
@@ -399,6 +537,7 @@ impl Config {
             public_url: public_url.to_owned(),
             ui_base_url: ui_base_url.to_owned(),
             database_url,
+            authority,
             root_secret,
             agent_jwt_secret,
             issuer_keypair,
@@ -422,6 +561,8 @@ impl Config {
             agent_token_rate_window_ms,
             agent_rate_window_ms,
             clock_tolerance_ms,
+            abuse_limits,
+            session_absolute_seconds,
             admin_socket_path,
             test_mode,
             test_seed_token,
@@ -439,6 +580,31 @@ impl Config {
         &self.database_url
     }
 
+    /// Stateful production commands require the protected authority. Explicit
+    /// isolated test mode may omit it; a supplied partial/unsafe set never passes.
+    pub fn require_authority(&self) -> Result<(), ConfigError> {
+        if self.authority.is_none() && !self.test_mode {
+            return Err(ConfigError::Missing("BLINDPASS_AUTHORITY_URL_FILE"));
+        }
+        Ok(())
+    }
+
+    pub fn authority_url(&self) -> Option<&str> {
+        self.authority
+            .as_ref()
+            .map(|authority| authority.url.as_str())
+    }
+
+    pub fn authority_context(&self) -> Option<crate::recovery_authority::AuthorityContext> {
+        let authority = self.authority.as_ref()?;
+        let keypair = self.issuer_keypair.as_ref()?;
+        Some(crate::recovery_authority::AuthorityContext {
+            tenant_id: authority.tenant_id.clone(),
+            issuer_key_id: blindpass_core::signing::issuer_key_id(keypair.public_key()),
+            owner_id: authority.owner_id.clone(),
+        })
+    }
+
     #[must_use]
     pub fn body_limit_bytes(&self) -> usize {
         self.body_limit_bytes
@@ -452,6 +618,18 @@ impl Config {
     #[must_use]
     pub fn is_test_mode(&self) -> bool {
         self.test_mode
+    }
+
+    /// In-process component fixtures only: a production-shaped configuration
+    /// (proxy required, protected authority) served with test mode on, which
+    /// `from_variables` refuses on purpose. It is reachable from code, never
+    /// from the environment or a profile; `tests/production_flags.rs` pins that
+    /// no non-test source calls it.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn with_test_fixture_mode(mut self) -> Self {
+        self.test_mode = true;
+        self
     }
 
     #[must_use]
@@ -580,6 +758,18 @@ impl Config {
     }
 
     #[must_use]
+    pub fn abuse_limits(&self) -> AbuseLimits {
+        self.abuse_limits
+    }
+
+    /// Longest an operator session can live from its sign-in, however often
+    /// it refreshes.
+    #[must_use]
+    pub fn session_absolute_seconds(&self) -> u64 {
+        self.session_absolute_seconds
+    }
+
+    #[must_use]
     pub fn admin_socket_path(&self) -> &Path {
         &self.admin_socket_path
     }
@@ -602,6 +792,83 @@ fn required<'a>(
 /// External workload providers must name a JWKS file. URL providers are
 /// rejected rather than skipped at request time, because the controller has
 /// no bounded HTTPS JWKS transport.
+pub(crate) fn validate_postgres_query_parameters(source: &str) -> Result<(), ConfigError> {
+    const KEY: &str = "BLINDPASS_DATABASE_URL options";
+    if source.starts_with("sqlite:") {
+        return Ok(());
+    }
+    // SQLx warns with both name and value for unknown parameters. Validate
+    // query names before any SQLx parser can copy protected input into logs.
+    // URL fragments are not part of the query; empty form segments are ignored.
+    let source = source.split('#').next().unwrap_or(source);
+    let Some((_, query)) = source.split_once('?') else {
+        return Ok(());
+    };
+    for item in query.split('&').filter(|item| !item.is_empty()) {
+        let encoded = item.split('=').next().unwrap_or_default().as_bytes();
+        let mut decoded = Vec::with_capacity(encoded.len().min(128));
+        let mut index = 0;
+        while index < encoded.len() {
+            let byte = match encoded[index] {
+                b'%' => {
+                    let digits = encoded
+                        .get(index + 1..index + 3)
+                        .ok_or(ConfigError::Invalid(KEY))?;
+                    let high = (digits[0] as char)
+                        .to_digit(16)
+                        .ok_or(ConfigError::Invalid(KEY))?;
+                    let low = (digits[1] as char)
+                        .to_digit(16)
+                        .ok_or(ConfigError::Invalid(KEY))?;
+                    index += 2;
+                    (high * 16 + low) as u8
+                }
+                b'+' => b' ',
+                byte => byte,
+            };
+            decoded.push(byte);
+            if decoded.len() > 128 {
+                return Err(ConfigError::Invalid(KEY));
+            }
+            index += 1;
+        }
+        let name = std::str::from_utf8(&decoded).map_err(|_| ConfigError::Invalid(KEY))?;
+        let known = matches!(
+            name,
+            "sslmode"
+                | "ssl-mode"
+                | "sslrootcert"
+                | "ssl-root-cert"
+                | "ssl-ca"
+                | "sslcert"
+                | "ssl-cert"
+                | "sslkey"
+                | "ssl-key"
+                | "statement-cache-capacity"
+                | "host"
+                | "hostaddr"
+                | "port"
+                | "dbname"
+                | "user"
+                | "password"
+                | "application_name"
+                | "options"
+        ) || name
+            .strip_prefix("options[")
+            .and_then(|key| key.strip_suffix(']'))
+            .is_some_and(|key| {
+                !key.is_empty()
+                    && key.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-')
+                    })
+            });
+        if !known {
+            return Err(ConfigError::Invalid(KEY));
+        }
+    }
+    Ok(())
+}
+
 fn validate_auth_providers(source: &str) -> Result<String, ConfigError> {
     const KEY: &str = "BLINDPASS_AGENT_AUTH_PROVIDERS_JSON";
     let providers =
@@ -653,6 +920,46 @@ where
         return Err(ConfigError::Invalid(key));
     }
     Ok(parsed)
+}
+
+fn read_authority_settings(
+    values: &BTreeMap<String, String>,
+) -> Result<Option<AuthoritySettings>, ConfigError> {
+    if values.contains_key("BLINDPASS_AUTHORITY_URL") {
+        return Err(ConfigError::Invalid(
+            "BLINDPASS_AUTHORITY_URL must be file-backed",
+        ));
+    }
+    let fields = [
+        "BLINDPASS_AUTHORITY_URL_FILE",
+        "BLINDPASS_CONTROLLER_TENANT_ID",
+        "BLINDPASS_CONTROLLER_OWNER_ID",
+    ];
+    if !fields.iter().any(|field| values.contains_key(*field)) {
+        return Ok(None);
+    }
+    let url = read_text_file(required(values, fields[0])?, fields[0])?;
+    if !(url.starts_with("postgres://") || url.starts_with("postgresql://"))
+        || validate_postgres_query_parameters(&url).is_err()
+    {
+        return Err(ConfigError::Invalid(fields[0]));
+    }
+    let identity = |field| -> Result<String, ConfigError> {
+        let id = required(values, field)?;
+        if id.len() > 128
+            || !id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+        {
+            return Err(ConfigError::Invalid(field));
+        }
+        Ok(id.to_owned())
+    };
+    Ok(Some(AuthoritySettings {
+        url,
+        tenant_id: identity(fields[1])?,
+        owner_id: identity(fields[2])?,
+    }))
 }
 
 fn read_text_file(path: &str, field: &'static str) -> Result<String, ConfigError> {

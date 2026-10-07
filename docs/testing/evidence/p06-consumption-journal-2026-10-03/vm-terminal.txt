@@ -1,0 +1,11 @@
+{
+  "normal_driver_exit": 0,
+  "debug_stage_skips": false,
+  "passed_scenario_lines": 23,
+  "owned_fixture_remaining": false,
+  "broker_sha256": "977a0637a4f3357182d49e089174c79e6c8310cf7f2df189bd1f60833b963542",
+  "cj06_intent_count": 1,
+  "cj06_marker_created": false,
+  "cj06_replay_denial": "grant_consumed",
+  "cj06_operation_status": "uncertain"
+}

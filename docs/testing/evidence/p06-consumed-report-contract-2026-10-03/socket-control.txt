@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_broker-6db550adea3814d9)
+
+running 1 test
+
+thread 'tests::existing_socket_parent_keeps_its_mode' (7) panicked at crates/blindpass-broker/src/lib.rs:7236:59:
+called `Result::unwrap()` on an `Err` value: Io(Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::existing_socket_parent_keeps_its_mode ... FAILED
+
+failures:
+
+failures:
+    tests::existing_socket_parent_keeps_its_mode
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 297 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p blindpass-broker --lib`

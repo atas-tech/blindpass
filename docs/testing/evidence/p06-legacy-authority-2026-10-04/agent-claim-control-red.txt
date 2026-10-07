@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-legacy-control-mg4bkh_l/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 20.28s
+     Running tests/legacy_authority.rs (/home/hvo/Projects/blindpass/target/debug/deps/legacy_authority-66d2e9a8cfb30fb0)
+
+running 1 test
+test p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart ... 
+thread 'p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart' (3789353) panicked at crates/blindpass-controller/tests/legacy_authority.rs:218:9:
+assertion `left == right` failed: valid current MAC cannot mask invalid epoch claim
+  left: 201
+ right: 401
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 2.19s
+
+error: test failed, to rerun pass `-p blindpass-controller --test legacy_authority`

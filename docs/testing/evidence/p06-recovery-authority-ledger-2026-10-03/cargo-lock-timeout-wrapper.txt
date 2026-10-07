@@ -1,0 +1,41 @@
+Traceback (most recent call last):
+  File "/tmp/p06-oa-run.py", line 18, in <module>
+    result = subprocess.run(["cargo", "test", "-p", "blindpass-controller", "--locked", "--offline", "--test", "recovery_authority", "--", "--ignored", "--test-threads=1"], env=env, stdout=log, stderr=subprocess.STDOUT, timeout=300)
+  File "/usr/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 2179, in _communicate
+    self.wait(timeout=self._remaining_time(endtime))
+    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1279, in wait
+    return self._wait(timeout=timeout)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 2076, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['cargo', 'test', '-p', 'blindpass-controller', '--locked', '--offline', '--test', 'recovery_authority', '--', '--ignored', '--test-threads=1']' timed out after 300 seconds
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/tmp/p06-oa-run.py", line 21, in <module>
+    sql(f"DROP DATABASE IF EXISTS {name} WITH (FORCE); DROP ROLE IF EXISTS {runtime}; DROP ROLE IF EXISTS {name};")
+    ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/p06-oa-run.py", line 8, in sql
+    result = subprocess.run(["docker", "exec", "-i", "blindpass-postgres", "psql", "-U", "blindpass", "-d", database, "-v", "ON_ERROR_STOP=1"], input=statement, text=True, capture_output=True, timeout=30)
+  File "/usr/lib/python3.14/subprocess.py", line 557, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1221, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 2154, in _communicate
+    self._check_timeout(endtime, orig_timeout, stdout, stderr)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 1268, in _check_timeout
+    raise TimeoutExpired(
+    ...<2 lines>...
+            stderr=b''.join(stderr_seq) if stderr_seq else None)
+subprocess.TimeoutExpired: Command '['docker', 'exec', '-i', 'blindpass-postgres', 'psql', '-U', 'blindpass', '-d', 'blindpass', '-v', 'ON_ERROR_STOP=1']' timed out after 30 seconds

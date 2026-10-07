@@ -1,0 +1,24 @@
+   Compiling blindpass-controller v0.1.0 ($REPOSITORY/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 34s
+     Running tests/backup_archive.rs (target/debug/deps/backup_archive-1172292f476c2870)
+
+running 1 test
+test p06_b05_b07_fixed_members_bind_keys_database_and_coherent_metadata ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.87s
+
+     Running tests/backup_cleanup.rs (target/debug/deps/backup_cleanup-9f4dbb6f30daa0e0)
+
+running 2 tests
+test p06_b06_explicit_cleanup_requires_custody_and_preserves_published_files ... ok
+test p06_b06_killed_capture_cannot_publish_and_explicit_cleanup_removes_private_residue ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests/backup_command.rs (target/debug/deps/backup_command-9bc91871d7438e66)
+
+running 1 test
+test p06_b03_b06_b07_sqlite_create_verifies_complete_bundle_and_never_initializes_lost_state ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.70s
+

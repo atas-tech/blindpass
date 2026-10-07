@@ -192,6 +192,14 @@ pub fn verify_fleet_provisioning_capability(
     Ok(expires_at)
 }
 
+/// The authority/ledger identifier of an issuer signing key: `ed25519-` plus
+/// the unpadded base64url public key. Public data; never derived from or
+/// containing the seed.
+#[must_use]
+pub fn issuer_key_id(public_key: &[u8]) -> String {
+    format!("ed25519-{}", base64_url_encode(public_key))
+}
+
 pub fn base64_url_encode(input: &[u8]) -> String {
     const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut output = String::with_capacity((input.len() * 4).div_ceil(3));

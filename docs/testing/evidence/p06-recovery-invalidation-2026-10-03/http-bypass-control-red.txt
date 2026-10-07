@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-invalidation-control-12qr1ckn/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.05s
+     Running tests/recovery_invalidation.rs (/home/hvo/Projects/blindpass/target/debug/deps/recovery_invalidation-c07524c8ea7d0b21)
+
+running 1 test
+test p06_ri03_prepared_intent_fences_all_http_and_clones_after_restart ... 
+thread 'p06_ri03_prepared_intent_fences_all_http_and_clones_after_restart' (3497212) panicked at crates/blindpass-controller/tests/recovery_invalidation.rs:445:13:
+assertion `left == right` failed: GET /api/v3/admin/session
+  left: 401
+ right: 503
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_ri03_prepared_intent_fences_all_http_and_clones_after_restart
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.75s
+
+error: test failed, to rerun pass `-p blindpass-controller --test recovery_invalidation`

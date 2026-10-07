@@ -1,0 +1,8 @@
+{
+  "targets": 71,
+  "passed": 689,
+  "failed": 0,
+  "ignored": 14,
+  "exit_code": 0,
+  "postgres_integration_cases": 6
+}

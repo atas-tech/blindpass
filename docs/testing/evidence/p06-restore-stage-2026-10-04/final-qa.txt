@@ -1,0 +1,7 @@
+relative_links=181 broken=0 source_pins=66 mismatches=0 control_pins=4 matches=true runtime_logs=80 credential_markers=0
+rust_passed=698 rust_failed=0 rust_ignored=72 result_targets=77 prior_focused_passes=127 postgres_snapshot_passes=4 restore_distinct_passes=9 focused_snapshot_total=140
+restore_normal_passes=7 restore_fault_passes=9 overlapping=true source_archive_preserved=true destination_remains_recovery_required=true protected_epoch=8 schema16_migration=true actual_production_health=200 ready=503 ordinary=503
+negative_controls=2 actual_assertion_failures=true production_sources_unchanged=true private_control_trees=0 generated_databases=0 generated_roles=0
+node26_build_exit=0 node26_test_exit=0 clippy_exit=0 format_exit=0 openapi_exit=0 process_address_space_bytes=536870912 tokio_workers=2 audit_rows=10000 whole_container_memory_proven=false
+user_p03_additions=66 user_p03_deletions=0 index_empty=true manifests_unchanged=true vault_checkpoints=2 verified=true
+authenticated_source_stop_proven=false broker_provider_reconciliation_complete=false protected_activation=false current_profile_restore_parity=false full_nine_slice_acceptance=false goal_active=true no_commit=true

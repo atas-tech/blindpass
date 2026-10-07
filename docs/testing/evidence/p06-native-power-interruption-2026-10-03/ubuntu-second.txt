@@ -1,0 +1,31 @@
+P06-NATIVE profile=ubuntu-24.04 artifact_sha256=86796930032b8231476c58659e5bb3458f1e8e80b093879cfd6ad9686abc2ea8
+P06-NATIVE guest_test_sha256=7eec3af4d7c6ce719e1a9036a35fceb6285baea65c4ef6a2a107478d3ab24a88
+P06-N01 PASS
+P06-N02 install={"backup_timer": "disabled unless separately configured", "initialized": true, "ok": true, "version": "0.1.0"}
+P06-N02 PASS
+P06-N03 PASS
+P06-N04 stop_seconds=0.012
+P06-N04-restart PASS
+P06-N04-reboot PASS
+P06-N05 PASS
+P06-N06 PASS
+P06-N07 PASS
+P06-B10 openssl=OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)
+P06-B10 package=libssl3t64 3.0.13-0ubuntu3.16
+P06-B10 package=openssl 3.0.13-0ubuntu3.16
+P06-B08 native_backup_seconds=0.486
+P06-B08 PASS
+P06-NB05 progress_missing available_bytes=22827008
+P06-NB05 source_file=controller.db uid=988 mode=0o600 bytes=210423808
+P06-NB05 source_file=controller.db-wal uid=988 mode=0o600 bytes=211174752
+P06-NB05 source_file=controller.db-shm uid=988 mode=0o600 bytes=425984
+P06-NB05-prepare FAIL line=415 type=AssertionError (private guest diagnostics withheld)
+
+
+Result=exit-code
+ExecMainStatus=1
+blindpass-controller: SQLite snapshot capture or validation failed
+Result=success
+ExecMainStatus=0
+blindpass-controller-initialize.service: Deactivated successfully.
+P06-NATIVE teardown complete

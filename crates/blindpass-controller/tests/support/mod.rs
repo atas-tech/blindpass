@@ -255,6 +255,17 @@ impl Harness {
     }
 
     pub async fn start_with(extra: &[(&str, &str)]) -> Self {
+        Self::start_inner(extra, true).await
+    }
+
+    /// A controller that has not been bootstrapped: no administrator exists,
+    /// no bootstrap token is issued and `admin` is an empty placeholder.
+    /// P07 bootstrap-abuse cases issue their own tokens.
+    pub async fn start_unbootstrapped(extra: &[(&str, &str)]) -> Self {
+        Self::start_inner(extra, false).await
+    }
+
+    async fn start_inner(extra: &[(&str, &str)], bootstrapped: bool) -> Self {
         let directory = TestDirectory::new();
         let database_url = if postgres_selected() {
             let parent = std::env::var("P02_TEST_POSTGRES_URL")
@@ -295,6 +306,7 @@ impl Harness {
         let agent_file = directory.file("agent.secret");
         let issuer_file = directory.file("issuer.seed");
         let mut variables = vec![
+            ("BLINDPASS_TEST_MODE", "1"),
             ("BLINDPASS_LISTEN", "127.0.0.1:0"),
             ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
             ("BLINDPASS_UI_BASE_URL", ORIGIN),
@@ -341,7 +353,9 @@ impl Harness {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
-        assert!(store.issue_bootstrap_token(&token_hash, 900).await.unwrap());
+        if bootstrapped {
+            assert!(store.issue_bootstrap_token(&token_hash, 900).await.unwrap());
+        }
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .expect("bind harness");
@@ -356,6 +370,27 @@ impl Harness {
             .await
             .unwrap();
         });
+        let issuer = Ed25519KeyPair::from_seed(&[ISSUER_SEED; 32]).unwrap();
+        let issuer_key_id = format!("ed25519-{}", base64_url_encode(issuer.public_key()));
+        if !bootstrapped {
+            return Self {
+                directory,
+                address,
+                database_url,
+                store,
+                backend,
+                admin: Operator {
+                    id: String::new(),
+                    username: String::new(),
+                    cookies: String::new(),
+                    csrf: String::new(),
+                },
+                issuer,
+                issuer_key_id,
+                variables: owned_variables,
+                server,
+            };
+        }
         let bootstrap = raw_request(
             address,
             "POST",
@@ -389,8 +424,6 @@ impl Harness {
             ),
             csrf: bootstrap.body["csrf_token"].as_str().unwrap().to_owned(),
         };
-        let issuer = Ed25519KeyPair::from_seed(&[ISSUER_SEED; 32]).unwrap();
-        let issuer_key_id = format!("ed25519-{}", base64_url_encode(issuer.public_key()));
         Self {
             directory,
             address,
@@ -436,6 +469,36 @@ impl Harness {
             .unwrap();
         });
         self.store = store;
+    }
+
+    /// Run the actual HTTP ownership gate on the current disposable store.
+    pub async fn restart_server_with_ownership(
+        &mut self,
+        owner: std::sync::Arc<blindpass_controller::recovery_authority::ProcessOwnership>,
+    ) {
+        self.server.abort();
+        let _ = (&mut self.server).await;
+        let variables = self
+            .variables
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect::<Vec<_>>();
+        let config = Config::from_variables(variables).expect("valid owned harness config");
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        self.address = listener.local_addr().unwrap();
+        let app = blindpass_controller::app::build_app_with_ownership(
+            config,
+            Some(self.store.clone()),
+            owner,
+        );
+        self.server = tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
     }
 
     pub async fn request(

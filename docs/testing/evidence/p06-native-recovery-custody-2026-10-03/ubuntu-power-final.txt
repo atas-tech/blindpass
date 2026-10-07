@@ -1,0 +1,26 @@
+P06-NATIVE profile=ubuntu-24.04 artifact_sha256=fad2c7b884ff2575cefb25b1e2f0a15b0a22e93e194271b31a94bf7f6dd84b10
+P06-NATIVE guest_test_sha256=14b235592969a36ae7a6e8204d9e8bddb03ceb1c81fcfb72b224177bc600f792
+P06-N01 PASS
+P06-N02 install={"backup_timer": "disabled unless separately configured", "initialized": true, "ok": true, "version": "0.1.0"}
+P06-N02 PASS
+P06-N03 PASS
+P06-N04 stop_seconds=0.008
+P06-N04-restart PASS
+P06-N04-reboot PASS
+P06-N05 PASS
+P06-N06 PASS
+P06-N07 PASS
+P06-B10 openssl=OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)
+P06-B10 package=libssl3t64 3.0.13-0ubuntu3.16
+P06-B10 package=openssl 3.0.13-0ubuntu3.16
+P06-B08 native_backup_seconds=0.550
+P06-B08 PASS
+P06-NB05 encryption_progress_observed=True child_frozen=True partial_bytes=202031104 plaintext_archive_bytes=202033664
+P06-NB05 scoped_QEMU_SIGKILL=True guest_shutdown=False
+P06-NB05 private_residues=1 prior_archive_verified=True identity_payload_keys_intact=True credentials_gone=True
+P06-NB05 PASS
+P06-N08 PASS
+P06-N09 PASS
+P06-NATIVE kernel=6.8.0-139-generic systemd=systemd 255 (255.4-1ubuntu8.17)
+P06-NATIVE ubuntu-24.04 PASS
+P06-NATIVE teardown complete

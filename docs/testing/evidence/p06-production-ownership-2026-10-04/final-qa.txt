@@ -1,0 +1,7 @@
+relative_links=151 broken=0 source_pins=52 mismatches=0 control_pins=4 matches=true runtime_logs=78 credential_markers=0
+rust_passed=693 rust_failed=0 rust_ignored=55 result_targets=74 focused_regression_passes=114 postgres_snapshot_passes=4
+production_sqlite_passed=7 production_postgres_passed=7 original_startup_sqlite_passed=5 legacy_each=4 source_each=25 recovery_each=6 ownership_passed=25
+negative_controls=3 actual_assertion_failures=true production_sources_unchanged=true private_control_trees=0 generated_authority_snapshot_databases=0 generated_authority_snapshot_roles=0
+node26_build_exit=0 node26_test_exit=0 clippy_exit=0 format_exit=0 openapi_exit=0
+user_p03_additions=66 user_p03_deletions=0 index_empty=true manifests_unchanged=true vault_checkpoints=2 verified=true
+mandatory_production_ownership_source=true packaged_startup_sequence_integrated=false recovery_activation=false full_phase_acceptance=false goal_active=true no_commit=true

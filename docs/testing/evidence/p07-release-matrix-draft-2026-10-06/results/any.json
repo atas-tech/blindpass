@@ -1,0 +1,20 @@
+{
+ "schema": "blindpass-release-evidence-v1",
+ "commit": "8a595ad18783634da59e046595942e729b56147b",
+ "date": "2026-10-06",
+ "profile": "any",
+ "client": "repository review and local tooling",
+ "environment": "uncommitted working tree on 8a595ad; local harness runs; not a release candidate",
+ "scenarios": [
+  {
+   "id": "P07-I01",
+   "result": "skip",
+   "reason": "finding disposition mapped to code and tests; Rust, VM and Compose tests mostly mapped, not re-run; regression gaps G-1 to G-4, G-7 to G-9 open"
+  },
+  {
+   "id": "P07-I05",
+   "result": "fail",
+   "reason": "not passed: no attested candidate SBOM, CVE decisions open, shipped runtimes unscanned"
+  }
+ ]
+}

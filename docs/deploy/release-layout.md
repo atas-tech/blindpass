@@ -61,6 +61,19 @@ or incompatible state and never creates replacement trust. See
 [startup, readiness and HTTPS](controller-ingress.md) for diagnostics and both
 ingress modes. Full deployment/recovery gates are still unfinished.
 
+## Controller image assets
+
+The release publishes the controller image twice, from one build. `blindpass-controller-image-X.Y.Z-linux-amd64.oci.tar`
+is the OCI archive with the BuildKit SBOM and provenance attestations; `controller-image.digest` holds its index
+digest, which is the registry identity. A stock Docker (overlay2 image store) cannot `docker load` that archive
+(`invalid archive: does not contain a manifest.json`). `blindpass-controller-image-X.Y.Z-linux-amd64.docker.tar` is
+derived from it by `scripts/release/oci-to-docker-archive.py`: the linux/amd64 image's config and layer blobs are copied
+unchanged after every size and sha256 is checked, a `manifest.json` is added, and the multi-platform index and
+attestations are dropped. The output is deterministic and never replaces an existing file. `docker load` reports the
+tag `ghcr.io/atas-tech/blindpass-controller:X.Y.Z` and the image ID equals the config digest the script prints
+(`image_id sha256:…`). Both archives are listed in the signed `SHA256SUMS`. The registry image exists only after the
+approved publish step; before that, the `.docker.tar` is the way to a verified image.
+
 ## Building and inspecting candidate archives
 
 The pinned official Node 26.10.0 and Rust 1.98.1 bookworm build images compile
@@ -78,8 +91,14 @@ scripts/release/checksums.sh /tmp/blindpass-release
 ```
 
 Archive names include workspace version, profile and architecture. The controller
-archive contains `bin/blindpass-controller`, `bin/blindpass`, configuration/docs,
-the complete AGPL text, licensing matrix and `manifest.json`. The manifest binds
+archive contains `bin/blindpass-controller`, `bin/blindpass`, the native files under
+`deploy/native/`, the recovery authority SQL, the Compose files (`compose.*.yml`, `.env.example`,
+`postgres-init/`) and the reverse proxy examples under `deploy/`, the operator documents under `docs/`
+(start with `docs/deploy/README.md`; the build rewrites links to repository-only files to the release tag and
+fails on a link that resolves nowhere), the complete AGPL text, licensing matrix and `manifest.json`. The
+Dockerfile and entrypoint are build inputs and are not shipped; the image comes from the release assets
+below. The node archive carries only `docs/deploy/node-candidate.md`, which states that the package has no
+installer and no operator procedure. The manifest binds
 member hashes/modes, source revision/dirty state, UI availability, schema/protocol
 and each Rust binary's direct ELF library/symbol requirements. Only explicit
 build inputs enter the archives. Missing binaries/UI, version/architecture

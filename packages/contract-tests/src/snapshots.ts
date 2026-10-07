@@ -4,7 +4,7 @@ import { expect } from "vitest";
 import { normalizeHttpResult, normalizeSnapshotValue, stableJson } from "./normalization.js";
 
 const SNAPSHOT_FILE = path.resolve(new URL("../fixtures/snapshots/ts-baseline.json", import.meta.url).pathname);
-const RUST_PENDING_FILE = path.resolve(new URL("../fixtures/rust-pending.json", import.meta.url).pathname);
+const REQUIRED_CASES_FILE = path.resolve(new URL("../fixtures/required-cases.json", import.meta.url).pathname);
 
 function normalizeRecordName(name: string): string {
   return name
@@ -21,11 +21,10 @@ function objectAt(value: unknown, name: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-// Keep the full P00 TypeScript baseline immutable for the SPS gate. Rust has
-// reviewed response differences in readiness (no Redis check or error code),
-// CORS implementation details and audit volume, so compare an explicit
-// projection of those legacy observations. All other retained cases still
-// compare their complete normalized snapshots.
+// The P00 TypeScript baseline is frozen history (fixtures/snapshots/PROVENANCE.md): the retired SPS can no longer
+// regenerate it. Rust has reviewed response differences in readiness (no Redis check or error code), CORS
+// implementation details and audit volume, so compare an explicit projection of those legacy observations. All
+// other retained cases still compare their complete normalized snapshots.
 export function projectRustSharedSnapshot(name: string, value: unknown): unknown {
   if (name === "CT02.key.rotate") {
     const response = objectAt(value, name);
@@ -152,10 +151,10 @@ export class SnapshotRecorder {
       ? Object.fromEntries(Object.entries(existing).map(([name, value]) => [name, projectRustSharedSnapshot(name, value)]))
       : { ...existing };
     if (process.env.SUT === "rust") {
-      const manifest = JSON.parse(await readFile(RUST_PENDING_FILE, "utf8")) as { pendingIds?: unknown; excludedIds?: unknown };
+      const manifest = JSON.parse(await readFile(REQUIRED_CASES_FILE, "utf8")) as { pendingIds?: unknown; excludedIds?: unknown };
       if (!Array.isArray(manifest.pendingIds) || !manifest.pendingIds.every((id) => typeof id === "string")
         || !Array.isArray(manifest.excludedIds) || !manifest.excludedIds.every((id) => typeof id === "string")) {
-        throw new Error(`Invalid pending contract manifest at ${RUST_PENDING_FILE}`);
+        throw new Error(`Invalid required-cases manifest at ${REQUIRED_CASES_FILE}`);
       }
       for (const id of [...manifest.pendingIds as string[], ...manifest.excludedIds as string[]]) {
         for (const records of [actual, expected]) {
@@ -165,6 +164,14 @@ export class SnapshotRecorder {
             }
           }
         }
+      }
+    }
+
+    // A run against an externally started controller (scripts/tests/rust-base-contract.mjs) cannot execute the
+    // cases that need harness control of the server, so it compares only the snapshots it recorded.
+    if (process.env.CONTRACT_SNAPSHOT_SUBSET === "1") {
+      for (const key of Object.keys(expected)) {
+        if (!Object.hasOwn(actual, key)) delete expected[key];
       }
     }
 

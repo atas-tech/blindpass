@@ -1,0 +1,10 @@
+{
+  "owned_vm_directories_remaining": 0,
+  "owned_qemu_processes_remaining": 0,
+  "fixture_ports_free": {
+    "3200": true,
+    "8443": true,
+    "22272": true,
+    "22273": true
+  }
+}

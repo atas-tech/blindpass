@@ -11,6 +11,11 @@ RUN npm ci && npm run build \
 
 FROM ${RUST_IMAGE} AS binaries
 ARG BUILDKIT_SBOM_SCAN_STAGE=true
+# The default build images are x86-64 digests. Refuse a build whose requested platform
+# differs, otherwise the runtime stage would carry binaries of the wrong architecture.
+ARG TARGETARCH
+RUN case "${TARGETARCH:-amd64}:$(uname -m)" in amd64:x86_64|arm64:aarch64) ;; \
+      *) echo "builder image architecture $(uname -m) does not match target ${TARGETARCH}; pass the reviewed NODE_IMAGE/RUST_IMAGE digests for that architecture" >&2; exit 1 ;; esac
 RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /source
@@ -25,6 +30,36 @@ RUN cargo build --release --locked -p blindpass-controller -p blindpass-cli \
     && target/release/blindpass-controller --build-info && target/release/blindpass --version \
     && node scripts/release/controller-notices.mjs /usr/local/cargo/registry/src /source/controller-notices/rust
 
+# ADR 0011: the signed PostgreSQL repository key is fetched and fingerprint-checked
+# in a throwaway stage; no downloader or key tooling reaches the runtime image.
+FROM ${RUNTIME_IMAGE} AS pgdg
+ARG PGDG_KEY_FINGERPRINT=B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && curl --fail --silent --show-error --location https://www.postgresql.org/media/keys/ACCC4CF8.asc --output /pgdg.asc \
+    && test "$(gpg --show-keys --with-colons /pgdg.asc | awk -F: '/^fpr:/ {print $10; exit}')" = "$PGDG_KEY_FINGERPRINT" \
+    && gpg --dearmor --output /pgdg.gpg /pgdg.asc
+
+# Test-only: runs the PostgreSQL toolkit integration tests (ADR 0011) as an unprivileged
+# user against the exact pinned toolkit. Never the default or a published target.
+FROM binaries AS pgtest
+COPY --from=pgdg /pgdg.gpg /usr/share/keyrings/pgdg.gpg
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && install -d /etc/postgresql-common \
+    && printf 'create_main_cluster = false\n' > /etc/postgresql-common/createcluster.conf \
+    && echo 'deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        postgresql-16=16.15-1.pgdg12+2 postgresql-client-16=16.15-1.pgdg12+2 \
+        postgresql-common=293.pgdg12+1 postgresql-client-common=293.pgdg12+1 libpq5=18.6-1.pgdg12+2 \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home tester \
+    && cp -a /usr/local/cargo /home/tester/.cargo && chown -R 10001:10001 /home/tester/.cargo /source
+USER 10001:10001
+ENV CARGO_HOME=/home/tester/.cargo CARGO_TARGET_DIR=/home/tester/target HOME=/home/tester
+WORKDIR /source
+# Compile once at image build so each run starts immediately.
+RUN cargo test -p blindpass-controller --test backup_postgres_toolkit --test restore_postgres --test production_ownership --no-run --locked --offline
+CMD ["cargo", "test", "-p", "blindpass-controller", "--test", "backup_postgres_toolkit", "--locked", "--offline", "--", "--ignored", "--test-threads=1"]
+
 FROM ${RUNTIME_IMAGE} AS runtime
 ARG VERSION=0.1.0
 ARG REVISION=unknown
@@ -32,7 +67,20 @@ LABEL org.opencontainers.image.title="BlindPass controller" \
     org.opencontainers.image.source="https://github.com/atas-tech/blindpass" \
     org.opencontainers.image.licenses="AGPL-3.0-only" \
     org.opencontainers.image.version=$VERSION org.opencontainers.image.revision=$REVISION
+COPY --from=pgdg /pgdg.gpg /usr/share/keyrings/pgdg.gpg
+# Exact reviewed toolkit (ADR 0011). No cluster is ever created, and the repository
+# configuration does not remain in the image. postgresql-common depends on ssl-cert,
+# whose postinst generates a private snakeoil key shared by every container of the
+# image; it is removed in the same layer so no layer retains it (O01 scans all layers).
 RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates \
+    && install -d /etc/postgresql-common \
+    && printf 'create_main_cluster = false\n' > /etc/postgresql-common/createcluster.conf \
+    && echo 'deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        postgresql-16=16.15-1.pgdg12+2 postgresql-client-16=16.15-1.pgdg12+2 \
+        postgresql-common=293.pgdg12+1 postgresql-client-common=293.pgdg12+1 libpq5=18.6-1.pgdg12+2 \
+    && rm -f /etc/apt/sources.list.d/pgdg.list /usr/share/keyrings/pgdg.gpg \
+    && rm -f /etc/ssl/private/ssl-cert-snakeoil.key /etc/ssl/certs/ssl-cert-snakeoil.pem \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 blindpass \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass \

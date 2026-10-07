@@ -56,7 +56,52 @@ pub(crate) struct AppState {
     pub(crate) agent_exchange_rate_limit: u32,
     pub(crate) agent_token_rate_window_ms: u64,
     pub(crate) agent_rate_window_ms: u64,
+    pub(crate) abuse_limits: crate::config::AbuseLimits,
+    pub(crate) session_absolute_seconds: u64,
     pub(crate) login_hash_slots: Arc<Semaphore>,
+    ownership: Option<Arc<crate::recovery_authority::ProcessOwnership>>,
+    pub(crate) recovery_slots: Arc<Semaphore>,
+    authority_required: bool,
+}
+
+impl AppState {
+    pub(crate) fn recovery_owner(
+        &self,
+    ) -> Option<&Arc<crate::recovery_authority::ProcessOwnership>> {
+        self.ownership.as_ref().filter(|owner| {
+            owner.is_recovering() && self.store.as_ref().is_some_and(Store::recovery_required)
+        })
+    }
+
+    pub(crate) async fn legacy_authority_keys(
+        &self,
+    ) -> Result<crate::legacy_authority::LegacyAuthorityKeys, StoreError> {
+        if self.authority_required && self.ownership.is_none() {
+            return Err(StoreError::AuthorityFenced);
+        }
+        let store = self
+            .store
+            .as_ref()
+            .ok_or(StoreError::MissingState("store"))?;
+        let epoch = store.legacy_authority_epoch().await?;
+        let keys = crate::legacy_authority::LegacyAuthorityKeys::derive(
+            self.root_secret.as_bytes(),
+            self.agent_jwt_secret.as_bytes(),
+            store.tenant_id(),
+            epoch,
+        )?;
+        if store.recovery_required() {
+            return Err(StoreError::RecoveryRequired);
+        }
+        if self
+            .ownership
+            .as_ref()
+            .is_some_and(|owner| owner.is_fenced())
+        {
+            return Err(StoreError::AuthorityFenced);
+        }
+        Ok(keys)
+    }
 }
 
 #[derive(Serialize)]
@@ -67,6 +112,8 @@ struct HealthResponse {
 #[derive(Serialize)]
 struct ReadinessChecks {
     database: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    authority: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -90,6 +137,30 @@ struct CapabilitiesResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     issuer_epoch: Option<u64>,
     features: CapabilitiesFeatures,
+    limits: CapabilitiesLimits,
+}
+
+/// Operator sign-in limits, published so a client or operator can read the
+/// configured values instead of guessing (P07-D4).
+#[derive(Serialize)]
+struct CapabilitiesLimits {
+    login: CapabilitiesLoginLimits,
+    session: CapabilitiesSessionLimits,
+}
+
+#[derive(Serialize)]
+struct CapabilitiesSessionLimits {
+    absolute_seconds: u64,
+    idle_seconds: u64,
+}
+
+#[derive(Serialize)]
+struct CapabilitiesLoginLimits {
+    account_failures: u32,
+    account_total_failures: u32,
+    ip_failures: u32,
+    window_seconds: u64,
+    lockout_seconds: u64,
 }
 
 #[derive(Serialize)]
@@ -99,6 +170,52 @@ struct CapabilitiesFeatures {
 }
 
 pub fn build_app(config: Config, store: Option<Store>) -> Router {
+    build_app_inner(config, store, None)
+}
+
+/// Recovery integration candidate. Bind the holder to the local identity;
+/// active handling also checks the local epoch. These checks do not establish
+/// complete restored-state reconciliation or source shutdown.
+/// Production `serve` acquires a protected guard before opening its store and
+/// uses this builder. Full restore reconciliation and source shutdown are
+/// separate requirements; the builder never activates a generation.
+pub fn build_app_with_ownership(
+    config: Config,
+    store: Option<Store>,
+    ownership: Arc<crate::recovery_authority::ProcessOwnership>,
+) -> Router {
+    let identity_matches = match (store.as_ref(), config.issuer_keypair()) {
+        (Some(store), Some(keypair)) => ownership.matches_controller(
+            store.tenant_id(),
+            &format!("ed25519-{}", base64_url_encode(keypair.public_key())),
+        ),
+        _ => false,
+    };
+    if !identity_matches {
+        ownership.fence();
+    }
+    if let (Some(store), Some(keypair)) = (store.as_ref(), config.issuer_keypair()) {
+        let key_id = format!("ed25519-{}", base64_url_encode(keypair.public_key()));
+        if store.bind_ownership(ownership.clone(), &key_id).is_err() {
+            ownership.fence();
+        }
+    }
+    build_app_inner(config, store, Some(ownership))
+}
+
+fn build_app_inner(
+    config: Config,
+    store: Option<Store>,
+    ownership: Option<Arc<crate::recovery_authority::ProcessOwnership>>,
+) -> Router {
+    let authority_required = !config.is_test_mode() || config.authority_url().is_some();
+    // Build the lookalike-account hash off the request path so the first
+    // unknown-username sign-in costs the same as every other.
+    if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+        runtime.spawn_blocking(|| {
+            let _ = crate::routes::auth::dummy_password_hash();
+        });
+    }
     let body_limit_bytes = config.body_limit_bytes();
     let allowed_origins = config
         .allowed_origins()
@@ -110,6 +227,8 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
     let issuer_key_id = issuer_keypair
         .as_ref()
         .map(|keypair| format!("ed25519-{}", base64_url_encode(keypair.public_key())));
+    let store =
+        store.map(|store| store.with_session_absolute_seconds(config.session_absolute_seconds()));
     let store = match (store, issuer_keypair.as_ref()) {
         (Some(store), Some(keypair)) => {
             Some(store.with_fleet_signer(FleetSigner::new(Arc::clone(keypair))))
@@ -156,7 +275,12 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         agent_exchange_rate_limit: config.agent_exchange_rate_limit(),
         agent_token_rate_window_ms: config.agent_token_rate_window_ms(),
         agent_rate_window_ms: config.agent_rate_window_ms(),
+        abuse_limits: config.abuse_limits(),
+        session_absolute_seconds: config.session_absolute_seconds(),
         login_hash_slots: Arc::new(Semaphore::new(4)),
+        recovery_slots: Arc::new(Semaphore::new(4)),
+        ownership,
+        authority_required,
     };
 
     Router::new()
@@ -168,6 +292,7 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .merge(exchanges::routes())
         .merge(secrets::routes())
         .merge(routes::node_routes())
+        .merge(routes::recovery::routes())
         .merge(routes::test_seed_routes(state.test_mode))
         .route_layer(middleware::from_fn_with_state(
             state.clone(),
@@ -206,6 +331,7 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
                 .allow_credentials(true),
         )
         .layer(middleware::from_fn(normalize_allowed_preflight))
+        .layer(middleware::from_fn_with_state(state.clone(), authority_gate))
         .layer(
             TraceLayer::new_for_http()
                 .make_span_with(|request: &axum::http::Request<_>| {
@@ -222,6 +348,58 @@ pub fn build_app(config: Config, store: Option<Store>) -> Router {
         .layer(SetRequestIdLayer::new(request_id, MakeRequestUuid))
         .layer(middleware::from_fn(normalize_compat_errors))
         .layer(middleware::from_fn_with_state(state, enforce_proxy))
+}
+
+async fn authority_gate(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    if routes::recovery::is_recovery_path(request.uri().path()) {
+        return routes::recovery::metadata_gate(state, request, next).await;
+    }
+    if !matches!(request.uri().path(), "/healthz" | "/readyz") {
+        if state.authority_required && state.ownership.is_none() {
+            return crate::recovery_authority::fenced_response();
+        }
+        if state.store.as_ref().is_some_and(Store::recovery_required) {
+            return crate::recovery_authority::fenced_response();
+        }
+        validate_owner_epoch(&state).await;
+    }
+    match state.ownership {
+        Some(ownership) => {
+            crate::recovery_authority::ownership_gate(State(ownership), request, next).await
+        }
+        None => next.run(request).await,
+    }
+}
+
+/// Runs on its own task: a disconnecting unauthenticated client must not drop
+/// the epoch read midway. A real timeout, error or panic still fences.
+async fn validate_owner_epoch(state: &AppState) {
+    let detached = state.clone();
+    if tokio::spawn(async move { validate_owner_epoch_inline(&detached).await })
+        .await
+        .is_err()
+        && let Some(ownership) = state.ownership.as_ref()
+    {
+        ownership.fence();
+    }
+}
+
+async fn validate_owner_epoch_inline(state: &AppState) {
+    let Some(ownership) = state.ownership.as_ref().filter(|owner| owner.is_active()) else {
+        return;
+    };
+    let matches = match state.store.as_ref() {
+        Some(store) => {
+            match tokio::time::timeout(Duration::from_secs(3), store.issuer_epoch()).await {
+                Ok(Ok(epoch)) => ownership.matches_epoch(epoch),
+                _ => false,
+            }
+        }
+        None => false,
+    };
+    if !matches {
+        ownership.fence();
+    }
 }
 
 async fn enforce_proxy(State(state): State<AppState>, request: Request, next: Next) -> Response {
@@ -378,20 +556,54 @@ async fn healthz() -> Json<HealthResponse> {
 }
 
 async fn readyz(State(state): State<AppState>) -> Response {
-    let reason = match state.store.as_ref() {
+    if state.authority_required && state.ownership.is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ReadinessResponse {
+                ok: false,
+                checks: ReadinessChecks {
+                    database: "down",
+                    authority: Some("down"),
+                },
+                reason: Some("recovery_required"),
+            }),
+        )
+            .into_response();
+    }
+    let database_reason = match state.store.as_ref() {
         Some(store) => store
-            .readiness()
+            .database_readiness()
             .await
             .err()
             .as_ref()
             .map(store_failure_reason),
         None => Some("store_unavailable"),
     };
+    validate_owner_epoch(&state).await;
+    let authority = match state.ownership {
+        Some(ownership) if ownership.check_detached().await.is_err() => Some("down"),
+        Some(ownership) if !ownership.is_active() => Some("fenced"),
+        Some(_) => Some("up"),
+        None => None,
+    };
+    let reason = database_reason.or_else(|| {
+        if state.store.as_ref().is_some_and(Store::recovery_required) {
+            return Some("recovery_required");
+        }
+        authority
+            .filter(|check| *check != "up")
+            .map(|_| "recovery_required")
+    });
     let ready = reason.is_none();
     let payload = ReadinessResponse {
         ok: ready,
         checks: ReadinessChecks {
-            database: if ready { "up" } else { "down" },
+            database: if database_reason.is_none() {
+                "up"
+            } else {
+                "down"
+            },
+            authority,
         },
         reason,
     };
@@ -411,8 +623,12 @@ pub fn store_failure_reason(error: &StoreError) -> &'static str {
         StoreError::UnsupportedSchemaVersion => "schema_mismatch",
         StoreError::ClockRegression
         | StoreError::ClockFenced
-        | StoreError::ClockSourceUnavailable => "recovery_required",
+        | StoreError::ClockSourceUnavailable
+        | StoreError::AuthorityFenced
+        | StoreError::RecoveryRequired => "recovery_required",
         StoreError::InvalidInput("controller database permissions") => "permissions_invalid",
+        StoreError::InvalidInput(crate::handoff::RETIRED) => "handoff_retired",
+        StoreError::InvalidInput(crate::handoff::STALE) => "handoff_stale",
         StoreError::Database(sqlx::Error::Database(error))
             if error
                 .code()
@@ -471,6 +687,19 @@ async fn capabilities(State(state): State<AppState>) -> Response {
         features: CapabilitiesFeatures {
             browser_status: BROWSER_STATUS_ADOPTED,
             fleet_authorization: state.issuer_keypair.is_some(),
+        },
+        limits: CapabilitiesLimits {
+            login: CapabilitiesLoginLimits {
+                account_failures: state.abuse_limits.login_account_failures,
+                account_total_failures: state.abuse_limits.login_account_total_failures,
+                ip_failures: state.abuse_limits.login_ip_failures,
+                window_seconds: state.abuse_limits.login_window_seconds,
+                lockout_seconds: state.abuse_limits.login_lockout_seconds,
+            },
+            session: CapabilitiesSessionLimits {
+                absolute_seconds: state.session_absolute_seconds,
+                idle_seconds: crate::store::SESSION_IDLE_SECONDS,
+            },
         },
     })
     .into_response()

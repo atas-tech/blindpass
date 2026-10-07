@@ -2,9 +2,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AeadId, CipherSuite, KdfId, KemId } from "hpke-js";
-import { ExchangePolicyEngine, hashPolicyDecision } from "../../sps-server/src/services/policy.js";
-import { generateScopedSigs, signFulfillmentToken } from "../../sps-server/src/services/crypto.js";
-import { deriveAgentFulfillmentTokenSecret, deriveBrowserSigSecret } from "../../sps-server/src/utils/signing-secrets.js";
+import {
+  ExchangePolicyEngine,
+  deriveAgentFulfillmentTokenSecret,
+  deriveBrowserSigSecret,
+  generateScopedSigs,
+  hashPolicyDecision,
+  signFulfillmentToken
+} from "./oracle/index.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 

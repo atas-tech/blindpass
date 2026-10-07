@@ -1,0 +1,25 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.98s
+     Running tests/deployment_startup.rs (target/debug/deps/deployment_startup-8fac269a2cd3308b)
+
+running 5 tests
+test p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url ... ok
+test p06_s02_serve_does_not_initialize_an_empty_existing_database ... ok
+test p06_s03_serve_does_not_migrate_or_repair_schema_versions ... ok
+test p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart ... 
+thread 'p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart' (78501) panicked at crates/blindpass-controller/tests/deployment_startup.rs:252:17:
+assertion `left == right` failed
+  left: Object {"checks": Object {"authority": String("up"), "database": String("up")}, "ok": Bool(true)}
+ right: Object {"checks": Object {"database": String("up")}, "ok": Bool(true)}
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata ... ok
+
+failures:
+
+failures:
+    p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.61s
+
+error: test failed, to rerun pass `-p blindpass-controller --test deployment_startup`

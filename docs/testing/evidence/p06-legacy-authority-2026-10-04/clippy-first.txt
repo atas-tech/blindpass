@@ -1,0 +1,28 @@
+    Checking blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error: this `if` statement can be collapsed
+   --> crates/blindpass-controller/src/store/mod.rs:854:9
+    |
+854 | /         if result.is_err() {
+855 | |             if let Some(owner) = self
+856 | |                 .ownership
+857 | |                 .lock()
+...   |
+863 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D clippy::all`
+    = help: to override `-D clippy::all` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+854 ~         if result.is_err()
+855 ~             && let Some(owner) = self
+856 |                 .ownership
+...
+861 |                 owner.fence();
+862 ~             }
+    |
+
+error: could not compile `blindpass-controller` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `blindpass-controller` (lib test) due to 1 previous error

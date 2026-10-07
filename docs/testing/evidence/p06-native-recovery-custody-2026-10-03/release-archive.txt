@@ -1,0 +1,1 @@
+P06-R01/R02/R03/R04 PASS: actual archive, hashes, canary exclusion, no overwrite, extracted controller/CLI/UI startup

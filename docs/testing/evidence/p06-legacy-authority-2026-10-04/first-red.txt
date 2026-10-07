@@ -1,0 +1,42 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.55s
+     Running tests/legacy_authority.rs (target/debug/deps/legacy_authority-66d2e9a8cfb30fb0)
+
+running 4 tests
+test p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart ... 
+thread 'p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart' (3644686) panicked at crates/blindpass-controller/tests/legacy_authority.rs:138:5:
+assertion `left == right` failed: stale agent JWT despite retained active credential and master key
+  left: 201
+ right: 401
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_la02_every_browser_scope_changes_key_while_retained_request_stays_pending ... 
+thread 'p06_la02_every_browser_scope_changes_key_while_retained_request_stays_pending' (3644775) panicked at crates/blindpass-controller/tests/legacy_authority.rs:197:5:
+assertion `left == right` failed: retained metadata authority must change key
+  left: 200
+ right: 403
+FAILED
+test p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use ... 
+thread 'p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use' (3644979) panicked at crates/blindpass-controller/tests/legacy_authority.rs:322:5:
+assertion `left == right` failed: stale fulfillment token with a current agent JWT and retained exchange
+  left: 200
+ right: 401
+FAILED
+test p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority ... 
+thread 'p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority' (3645075) panicked at crates/blindpass-controller/tests/legacy_authority.rs:379:5:
+assertion `left == right` failed
+  left: 410
+ right: 401
+FAILED
+
+failures:
+
+failures:
+    p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart
+    p06_la02_every_browser_scope_changes_key_while_retained_request_stays_pending
+    p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use
+    p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority
+
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.94s
+
+error: test failed, to rerun pass `-p blindpass-controller --test legacy_authority`

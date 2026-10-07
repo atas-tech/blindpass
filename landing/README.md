@@ -27,7 +27,7 @@ These checks use DOM doubles to cover success, rejection, flow switching and the
 
 ## Machine-readable summary
 
-[dist/llms.txt](dist/llms.txt) publishes with the page and is the summary automated readers will quote. Keep it to claims the repository supports, and keep its implemented/proposed split identical to the page's. It separately records the boundaries that marketing copy tends to drop: the plaintext endpoints, that delivery limits are not revocation, and that approval does not constrain later use. Do not reintroduce archive-era terminology such as "zero-knowledge", named defensive-layer counts, TEE or egress filtering; [Specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#repository-findings) and the [threat model](../docs/security/blindpass-threat-model.md) correct those.
+[dist/llms.txt](dist/llms.txt) publishes with the page and is the summary automated readers will quote. Keep it to claims the repository supports, and keep its implemented/proposed split identical to the page's. It separately records the boundaries that marketing copy tends to drop: the plaintext endpoints, that delivery limits are not revocation, and that approval does not constrain later use. It also states the site's own analytics disposition (none; hosted by GitHub Pages), which must stay identical to the Analytics section below. Do not reintroduce archive-era terminology such as "zero-knowledge", named defensive-layer counts, TEE or egress filtering; [Specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#repository-findings) and the [threat model](../docs/security/blindpass-threat-model.md) correct those.
 
 ## Reel
 
@@ -37,7 +37,15 @@ The reel shows only the implemented agent-to-agent exchange and this page's own 
 
 ## Analytics
 
-The page loads Google Analytics 4 (`G-QDP5XZPTDV`) from `googletagmanager.com`. This is the only third-party request the page makes; everything else is local. It sets cookies and sends visitor IP addresses to Google on load, with no consent gate and no `anonymize_ip`, so it needs a privacy-notice and consent decision before serving EU/UK visitors.
+GA4 was removed on 2026-10-06 (P07-D1). The property `G-QDP5XZPTDV` and every `googletagmanager.com`, `gtag` and `dataLayer` reference are gone from `dist/`. The page runs no analytics or tag manager, has no consent banner because nothing needs consent, sets no cookies and uses no browser storage. Its HTML, CSS and scripts request nothing from another origin: the font, video and poster are local. [release-gate.test.mjs](tests/release-gate.test.mjs) enforces all of this before every deploy, and the fresh-browser network record is in [p07-landing-2026-10-06.md](../docs/testing/evidence/p07-landing-2026-10-06.md).
+
+Removal does not mean nothing is processed. What remains, with what could not be verified:
+
+- **GitHub Pages is the host.** The site deploys from `.github/workflows/deploy-landing-pages.yml` and serves from the custom domain `blindpass.atas.tech` (response header `server: GitHub.com` behind a Fastly edge, checked 2026-10-06). GitHub receives every request, including the visitor's IP address, and handles it under its own [privacy statement](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement), which lists IP address under service-usage information and gives no Pages-specific retention period. This repository cannot read or configure those logs, and what GitHub or its CDN retains, for how long and who can see it is not verified.
+- **DNS for `atas.tech` is operated outside this repository.** Its provider and query logging are not verified.
+- **Outbound clicks** go to `github.com` under GitHub's terms. The page sets no `Referrer-Policy`, so the browser default applies.
+- **Data already collected stays collected.** The deployed page served the GA4 tag until this removal reaches `main`. Whatever Google Analytics holds for that property is unaffected by this change; deleting the property or its data, or recording that it is retained, is an owner action that has not been taken.
+- **No headers are set by this repository.** GitHub Pages does not let a project set response headers, so the live page has no Content-Security-Policy, frame or referrer headers of its own (F-11's landing half). A `<meta>` policy is possible and is a separate decision.
 
 ## Open items
 
@@ -45,9 +53,9 @@ Accepted on 2026-09-22 with the decision deferred, not resolved. Close each one 
 
 | Item | Decision needed | Owner stage |
 |---|---|---|
-| GA4 consent | Serving EU/UK visitors without a consent gate or `anonymize_ip` is a privacy-notice decision, not a default. Either add a consent gate and IP anonymization, restrict the audience, or record an explicit accepted-risk. A tracker with no notice also undercuts the page's own claim discipline. | Before broad promotion |
+| Tag-dependent CTAs | “Read the docs” and “Explore BlindPass” still point at the repository README and root. P07-D7 sends them to `docs/deploy/native-quickstart.md` and the GitHub Release page at the release tag. No tag exists, and the plan forbids a placeholder, so both stay as they are until P07.6 and are recorded as unresolved in the evidence record. | P07.6 |
 | Hosted platform link | `https://app.atas.tech/` was removed from [dist/llms.txt](dist/llms.txt) because the repository only evidences it in archive/Phase documents. Restore it once the deployment is confirmed live, or leave it out. | Before the next content revision |
-| Rendered verification | Social/canonical metadata, the `role="img"` diagram label and the GA4 snippet have never been checked in a browser. No rendering, tag-firing, crawler or Lighthouse result exists. | Before treating the page as released |
+| Rendered verification | Metadata and the diagram label were checked in a browser on 2026-10-06 (see the evidence record). No crawler, Lighthouse or Safari/Firefox result exists. | Before treating the page as released |
 
 ## Verification
 
@@ -59,4 +67,6 @@ Updated on 2026-09-22 for the analytics, metadata and content revision: seven de
 
 Updated on 2026-09-26 for the reel: `npm run test:landing` passed 13 tests, including six reel-player DOM-double tests. The section was also checked in a real browser (Arch `chromium` via Playwright, 1440×900 and 390×844, default autoplay policy). Nothing downloaded before scroll. Muted autoplay started in view. Sound unmuted and restarted from 0. A pause held after scrolling away and back. Reduced motion neither played nor loaded. There was no horizontal overflow. The only failed request was the deliberately blocked GA4 script. Safari/iOS and Firefox playback were not tested.
 
-The P07.5/P07.6 landing-promotion gate is maintained in the Obsidian vault. It owns the GA4 removal or consent-gated disposition and the six GitHub-bound CTA destinations. Browser network and click evidence are required before broad promotion; removal of hosted dashboard analytics does not resolve this landing tag.
+Updated on 2026-10-06 for P07.5: GA4 removed, the footer “Security” link retargeted to the new root [SECURITY.md](../SECURITY.md), and `tests/release-gate.test.mjs` added to `npm run test:landing`. Fresh-browser network, storage and click-through evidence (desktop 1440×900, mobile 390×844) is in [p07-landing-2026-10-06.md](../docs/testing/evidence/p07-landing-2026-10-06.md). Two of the six CTA rows remain unresolved until a release tag exists.
+
+The P07.5/P07.6 landing-promotion gate is maintained in the Obsidian vault. It owns the GA4 disposition and the six GitHub-bound CTA destinations. P07.6 blocks promotion while any CTA row is unresolved; removal of hosted dashboard analytics did not resolve the landing tag, and removing the tag does not resolve the CTA rows.

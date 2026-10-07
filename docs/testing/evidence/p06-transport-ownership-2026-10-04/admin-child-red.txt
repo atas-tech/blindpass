@@ -1,0 +1,19 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.29s
+     Running tests/admin_socket.rs (target/debug/deps/admin_socket-0d83a9376cbde744)
+
+running 1 test
+test p06_qf05_stopping_admin_listener_cancels_its_accepted_partial_client ... 
+thread 'p06_qf05_stopping_admin_listener_cancels_its_accepted_partial_client' (407201) panicked at crates/blindpass-controller/tests/admin_socket.rs:203:5:
+accepted child delivered bytes after its admin listener stopped
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_qf05_stopping_admin_listener_cancels_its_accepted_partial_client
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.11s
+
+error: test failed, to rerun pass `-p blindpass-controller --test admin_socket`

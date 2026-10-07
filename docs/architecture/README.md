@@ -1,14 +1,13 @@
 # Current code architecture
 
-**Source inspection:** 2026-09-22; Rust workspace section 2026-09-25. This page describes the existing repository, not a deployment certification. Forward design lives in the [product specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md); historical phases are in the Obsidian vault.
+**Source inspection:** 2026-09-22; Rust workspace section 2026-09-25; legacy SPS removal reflected 2026-10-07. This page describes the existing repository, not a deployment certification. Forward design lives in the [product specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md); historical phases are in the Obsidian vault.
 
 ## Components
 
 | Component | Implementation |
 |---|---|
-| SPS | [Fastify bootstrap](../../packages/sps-server/src/index.ts), route authentication, policy/approval services and persistence |
+| Rust controller | [axum controller](../../crates/blindpass-controller): the `/api/v2` machine routes, `/api/v3` administration and fleet APIs, policy, approvals, audit and persistence; see [Rust workspace](#rust-workspace) |
 | Browser input | [Request context](../../packages/browser-ui/src/request-context.js), configured API origin and [HPKE encryption](../../packages/browser-ui/src/crypto.js) |
-| Dashboard | [Authentication context](../../packages/dashboard/src/auth/AuthContext.tsx), [API client](../../packages/dashboard/src/api/client.ts), workspace administration pages for hosted SPS. Eligible for removal since P04 slice 13: the console replaces it and its P02 browser runner moved to `packages/console/p02-browser`; SPS itself stays until P08 |
 | Operator console | [React console](../../packages/console) for the Rust controller: cookie session with session-bound CSRF, approvals, fleet, policy, audit and operator screens. The controller embeds the built console and the input page and serves them itself; see [embedded UI](../../crates/blindpass-controller/src/embedded_ui.rs) |
 | Desktop approval app | [Quickshell QML app](../../desktop/approval-app/README.md), a separate process: desktop bearer session (access token in memory, refresh token in a 0600 runtime file), controller calls through curl without redirects, approval list, detail and decisions |
 | Omarchy widget | [Bar widget](../../desktop/omarchy-widget/README.md) inside `omarchy-shell`: reads the app's metadata-only summary and opens the app; no credentials or approval path |
@@ -18,6 +17,8 @@
 | Private login helper | [Worker](../../helpers/login/README.md): pinned Playwright, fixed HTTPS recipes, capture disabled and protected framed IPC; selected real systemd fixture/managed controller-node dispatch and cancellation/restart reconciliation pass; full client/lifetime acceptance pending |
 | Official MCP server | [Factory/stdio transport and wrapper](../../packages/mcp-server/README.md): official SDK, safe errors, bounded callbacks, legacy tools and opt-in broker request/status/cancel tools; packaged production-broker VM metadata/identity checks pass. Versioned browser intent creates an operation/approval automatically. Both stock AI clients pass selected Node26 controller/node/local HPKE tasks; ordered delivery component/SDK tests pass. Production human delivery, GUI provisioning and full client variants remain open |
 | Shared localization | [i18n package](../../packages/i18n/package.json), locale resources and parity validation |
+
+The legacy SPS hosted stack (`packages/sps-server`, `packages/dashboard`, its Redis service and legacy images and templates) was removed on 2026-10-07 under P08, on the owner's decision that no installation or backup of it existed. It is in git history before the removal commit, and its documents are archived under [docs/legacy](../legacy/README.md). The client packages (`packages/agent-skill`, `packages/gateway`, `packages/openclaw-plugin`) keep their SPS-era names and settings (`SpsClient`, `GatewaySpsClient`, `sps-bridge.mjs`, `SPS_BASE_URL`, `SPS_AGENT_API_KEY`, `VITE_SPS_API_URL`) but call the controller's `/api/v2` routes. The fulfillment-token issuer string `sps` is wire format.
 
 ## Rust workspace
 
@@ -35,7 +36,7 @@ The Cargo workspace in [crates](../../crates) holds the P01 host broker and the 
 | `blindpass-core` | Shared primitives with no crate dependencies: signed browser links and derived secrets, Ed25519 fleet documents with canonical JSON, policy evaluation and decision hashes, HPKE through OpenSSL `libcrypto`, the broker protocol, workload identity and credential custody |
 | `blindpass-broker` | P01 host broker, peer-credential-checked fleet control socket and test binaries. Browser grant/source preparation and typed import validation have unit coverage; private IPC and the schema-4 session journal require a held helper reverse kernel proof and durable exact helper identity before source delivery. Schema-2 unfinished records retain metadata but stay blocked; older journal rollback needs a matching backup. The invocation proxy retains a kernel peer pidfd and passes actual guest same-UID wrong-unit/restarted-invocation denial with stock report/reconnect. The fixed socket-activated Root outside supervisor and native Rust client supply private control, bounded application TLS forwarding and an explicitly published Root-only backend while preserving the broker Unix-only/JIT-denied sandbox. Cookie import binds the complete prepared recipe. The opt-in production coordinator dispatches signed grants from the retained original kernel workload lease; signed-fixture and actual SQLite-controller/unprivileged-node guests reach private login, stock reads, cancellation and imported-session SIGKILL recovery. Selected managed controller/node lifecycle passes on both pinned Node profiles; AI-client, complete lifetime and full phase acceptance remain open. Journal schema 4 stores exact request correlation; schemas 2/3 retain available recovery metadata without guessing owners. Revocation outcomes are retained with private tombstones and completed outcome IDs in a separate private acknowledgement journal; a pre-fix broker cannot read the extended tombstone format, so rollback needs a pre-upgrade broker state backup |
 | `blindpass-node` | Unprivileged fleet relay using HTTPS through `/usr/bin/curl`; it handles enrollment, signed-document delivery and a durable event outbox without access to broker key storage |
-| `blindpass-controller` | axum HTTP API with the embedded console and input page (built by `npm run build` before `cargo build`, embedded by `build.rs`), sqlx store (SQLite WAL or PostgreSQL, schema version 16) and a local administration Unix socket. The version 14 migration deletes existing operator sessions because older session IDs were stored in plaintext; operators must sign in again. Version 15 adds independent node/resource Source bindings and public recipient offers, preserving sessions already hashed at14. Version 16 adds scoped Source links (`fleet_provisioning_links`) and immutable ciphertext receipts (`fleet_provisioning_receipts`); it is additive and preserves every earlier row. A provisioning table that already exists with the wrong columns, like a missing one, is damage and fails closed rather than being recreated. New browser and desktop access tokens live in browser cookies or desktop process memory and are stored only as SHA-256 digests in the database. An older controller cannot run against schema version 16; rollback requires a pre-migration database backup and operator reauthentication. Production startup requires the 32-byte issuer seed in `BLINDPASS_ISSUER_KEY_FILE`. Production `serve` opens only initialized current-schema state; explicit `migrate` creates/upgrades it. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
+| `blindpass-controller` | axum HTTP API with the embedded console and input page (built by `npm run build` before `cargo build`, embedded by `build.rs`), sqlx store (SQLite WAL or PostgreSQL, schema version 19) and a local administration Unix socket. The version 14 migration deletes existing operator sessions because older session IDs were stored in plaintext; operators must sign in again. Version 15 adds independent node/resource Source bindings and public recipient offers, preserving sessions already hashed at14. Version 16 adds scoped Source links (`fleet_provisioning_links`) and immutable ciphertext receipts (`fleet_provisioning_receipts`); it is additive and preserves every earlier row. A provisioning table that already exists with the wrong columns, like a missing one, is damage and fails closed rather than being recreated. New browser and desktop access tokens live in browser cookies or desktop process memory and are stored only as SHA-256 digests in the database. Version 17 adds durable recovery intent and quarantined node/operation/review queues. A persisted recovery intent fences ordinary HTTP, Store methods and signing after reopen; no activation or clear API exists. An older controller cannot run against schema version 17; rollback requires a pre-migration database backup and operator reauthentication. Version 18 binds authenticated recovery archive metadata under the issuer signature. Version 19 retains reverified consumed intent reports as quarantine metadata; it creates no grant or provider-success authority and never clears the recovery fence. Production startup requires the 32-byte issuer seed in `BLINDPASS_ISSUER_KEY_FILE`. Production `serve` opens only initialized current-schema state; explicit `migrate` creates/upgrades it. Subcommands: `serve`, `check-config`, `migrate`, `reconcile-clock` and test-mode `seed --fixture` |
 | `blindpass-cli` | `blindpass` administration CLI: migration, bootstrap, password reset, clock recovery, test seeding, and authenticated fleet enrollment/node commands. Fleet commands read the operator password from stdin, use the session/CSRF-protected controller API through curl, and remove their mode-0600 session cookie file after logout. Enrollment creation writes the one-use token to a new mode-0600 file; node rotation accepts the public metadata from `blindpass-node rotate-prepare` |
 
 New broker browser events include signed `request_version: 2`; the controller's
@@ -70,6 +71,8 @@ The controller validates its environment at startup and refuses to start on any 
 | `BLINDPASS_KEYS_DIR`, `BLINDPASS_DATA_DIR` | P06 opt-in absolute private roots (0700, owned by the service account). The keys root resolves `root-secret`, `agent-jwt-secret` and `issuer-key`; individual file settings override them. An explicit data root provides the SQLite `controller.db` URL when no URL/file is set. Validation creates no state; see [release layout](../deploy/release-layout.md) |
 | `BLINDPASS_ROOT_SECRET_FILE`, `BLINDPASS_AGENT_JWT_SECRET_FILE` | Required key files of at least 32 bytes, unreadable by group and others |
 | `BLINDPASS_ISSUER_KEY_FILE` | Required in production; raw 32-byte Ed25519 seed, mode 0600. Its public key, key ID and persisted recovery epoch appear in `/api/v3/capabilities`. |
+| `BLINDPASS_AUTHORITY_URL_FILE` | Required by production `serve`, `migrate`, `reconcile-clock` and `check-config`; private file containing the separately protected PostgreSQL authority URL. Inline `BLINDPASS_AUTHORITY_URL` is refused, including in test mode. Neither startup nor controller backups provision/copy authority |
+| `BLINDPASS_CONTROLLER_TENANT_ID`, `BLINDPASS_CONTROLLER_OWNER_ID` | Required with the authority file; explicit 1–128 ASCII alphanumeric/underscore/hyphen identities. The tenant must match local state; the issuer key ID is derived from the actual private key. Owner labels are not source-stop proof |
 | `BLINDPASS_AGENT_AUTH_PROVIDERS_JSON` | Optional external issuers. Each provider needs a `jwks_file`; `jwks_url` providers are refused. Issuers and audiences default to `gateway` and `sps`, tokens must carry `exp`, `iss` and `aud`, and expiry has no leeway |
 | `BLINDPASS_SECRET_REGISTRY_JSON`, `BLINDPASS_EXCHANGE_POLICY_JSON` | Optional startup policy, validated like an administrator policy write; an unrecognized rule mode denies |
 | `BLINDPASS_CORS_ALLOWED_ORIGINS` | Comma-separated exact origins |
@@ -80,39 +83,171 @@ The controller validates its environment at startup and refuses to start on any 
 | `BLINDPASS_AGENT_REQUEST_RATE_LIMIT`, `BLINDPASS_AGENT_EXCHANGE_RATE_LIMIT` | 60 secret-request creates and 60 exchange-request attempts per authenticated agent and tenant per window (1–10,000) |
 | `BLINDPASS_AGENT_RATE_WINDOW_SECONDS` | 60 seconds (1–3,600); `BLINDPASS_TEST_AGENT_RATE_WINDOW_MS` can set a 1–3,600,000 ms test window only with `BLINDPASS_TEST_MODE=1` |
 | `BLINDPASS_CLOCK_TOLERANCE_MS` | 2,000 ms (250–60,000); the running monitor checks database and host wall clocks against monotonic elapsed time and fences regressions or boot identity changes |
+| `BLINDPASS_LOGIN_ACCOUNT_FAILURES`, `BLINDPASS_LOGIN_ACCOUNT_TOTAL_FAILURES`, `BLINDPASS_LOGIN_IP_FAILURES`, `BLINDPASS_LOGIN_WINDOW_SECONDS`, `BLINDPASS_LOGIN_LOCKOUT_SECONDS`, `BLINDPASS_LOGIN_TRACKED_ACCOUNTS` | P07-D4 operator sign-in limits, failures only: 10 per account and source address, 50 per account across addresses, 30 per client address, in a 900 s window, 900 s lock (`423 locked`); `limits.login` in `/api/v3/capabilities`. Applied pending owner confirmation. See [operator sign-in limits](../security/operator-auth-and-headers.md) |
+| `BLINDPASS_BOOTSTRAP_FAILURES_PER_PEER`, `BLINDPASS_BOOTSTRAP_FAILURES_GLOBAL` | Failed bootstrap attempts per 15 minutes per peer shard (10) and for the controller (100), then `429 bootstrap_rate_limited`; a valid token is never refused |
+| `BLINDPASS_SESSION_ABSOLUTE_SECONDS` | Longest an operator session lives from sign-in however often it refreshes: 604,800 (3,600–2,592,000); `limits.session` in capabilities |
 | `BLINDPASS_AUDIT_RETENTION_DAYS` | 90 (1–3,650) |
 | `BLINDPASS_ADMIN_SOCKET_PATH` | `/run/blindpass-controller/admin.sock`; must be absolute |
 | `BLINDPASS_LOG_FORMAT` | `json` (default) or `text` |
 | `BLINDPASS_TLS_CERT_FILE`, `BLINDPASS_TLS_KEY_FILE` | Built-in TLS alternative using the separately approved ring-only Tokio/rustls adapter. Both private PEM files and HTTPS origins are required; bounded handshakes, HSTS, restart for replacement. See [controller ingress](../deploy/controller-ingress.md) |
-| `BLINDPASS_TEST_MODE=1`, `BLINDPASS_TEST_*` | Test-only TTL, window and seed-route overrides; refused without test mode and when `NODE_ENV=production` |
+| `BLINDPASS_TEST_MODE=1`, `BLINDPASS_TEST_*` | Test-only TTL, window and seed-route overrides; the overrides are refused without test mode, and test mode is refused when `NODE_ENV=production` or `BLINDPASS_PROXY_REQUIRED=1` (every shipped profile). `check-config` warns when it is on |
+
+PostgreSQL URL query names must use the supported connection options: TLS mode
+and certificate-file options, host/address/port/database/user/password,
+`application_name`, `statement-cache-capacity`, `options` or `options[setting]`.
+Their SQLx aliases and percent-encoded names are accepted. Unknown or malformed
+names fail configuration before a database connection, with a fixed diagnostic
+that includes no URL or option contents. See the
+[connection diagnostic checks](../testing/evidence/p06-postgres-config-diagnostics-2026-10-03.md).
+
+The dependency-free core [consumed-report contract](../../crates/blindpass-core/src/recovery.rs)
+prepares strictly bounded broker recovery metadata. Signatures bind tenant,
+node/key version, issuer key, recovery ID/generation, challenge, event key and
+every consumed/revoked/uncertain grant record. Verification requires current
+trusted context and refuses stale observations; it does not establish external
+ownership, journal completeness, challenge freshness or permission to activate
+restored state. Generic live node-event admission remains closed until the
+reconciliation consumer is implemented. See the
+[report contract checks](../testing/evidence/p06-consumed-report-contract-2026-10-03.md).
+
+The broker's [bound consumption journal](../testing/evidence/p06-consumption-journal-2026-10-03.md)
+stores exact operation and issuer epoch in the same fsynced one-use intent.
+Legacy intents stay consumed without invented correlation; malformed/conflicting
+complete records and unsafe hardlinks refuse. Existing expiry-plus-24-hour
+pruning is retained, so legacy/pruned history still needs complete coverage
+and reconciliation before a recovery report can permit activation.
+
+Fresh identities now establish a private history genesis, bound once to the
+first tenant/node/issuer pin. Compaction persists the removed-expiry coverage
+boundary and trusted epoch high-watermark even after the last row is removed.
+Pin binding, reads, appends and compaction share a nonblocking private file lock;
+stale writers refresh the durable replay map before changing it. Legacy imports
+and missing journals retain unknown provenance. A torn provenance journal fails
+closed without repairing away its evidence; legacy torn-tail handling remains.
+These metadata bounds do not prove effect completion, provider cleanup or broker
+state rollback resistance. Protected reconciliation remains required. The broker
+now freezes its real journal into bounded version-2 signed
+pages under a fresh local nonce and a pinned-controller-signed request. Page
+signing holds the current node-key/version and issuer-pin locks. Count, order,
+history scope, pruning/unmapped bounds and the full digest are immutable across
+pages. Original observations above the proposed generation remain visible.
+Receiving all pages proves delivery integrity only. Schema-4 external authority
+now retains current/approved-pending broker keys and irrevocable revocation,
+published by the actual owned controller lifecycle before local commit.
+Recovering holders can read those records; restored rows cannot create trust.
+The authority now also retains one-use nonces, immutable signed pages and
+authenticated observed-epoch bounds. Its Rust collector verifies protected
+current/approved-pending keys and the complete ordered digest before marking
+covered history. This does not enable a revoked node, acknowledge pending
+rotation, resolve provider effects or activate ordinary routes. The actual
+recovering SQLite/PostgreSQL application workflow, HTTPS relay and protected
+activation remain required. See the
+[history foundation](../testing/evidence/p06-broker-history-2026-10-04.md) and
+[paginated exporter checks](../testing/evidence/p06-paginated-recovery-2026-10-04.md).
+The [protected current trust checks](../testing/evidence/p06-protected-node-trust-2026-10-04.md)
+retain the actual ownership, lifecycle, migration and failure-test boundary.
+The [durable receipt boundary](../testing/evidence/p06-durable-receipts-2026-10-04.md)
+records all six expanded schema-4 cases and current workspace/integration limits.
+
+The [external authority adapter](../../crates/blindpass-controller/src/recovery_authority.rs)
+uses existing SQLx and a separate protected PostgreSQL database for monotonic
+reservations, a held transaction guard and a durable one-use active revision.
+Its three-second checks latch closed on loss/cancellation. The router candidate
+binds actual local tenant/key/epoch and protects HTTP while retaining health/
+readiness. Existing Store and attached signer clones share an immutable binding;
+protected store futures cancel on loss, maintenance refuses and direct node replies
+use the guarded signer. Operation permits retain the authority guard through admitted Rust
+futures and active accepted transports. Production `serve` uses the bound builder
+and owned HTTP/TLS/admin IO. Complete server-side quiescence, source-stop proof,
+reconciliation, transfer and activation remain mandatory. Authority
+credentials/data stay outside controller backups. See [the authority boundary](../product/decisions/0012-p06-external-recovery-authority.md),
+[historical metadata checks](../testing/evidence/p06-recovery-authority-ledger-2026-10-03.md)
+and [process/router evidence](../testing/evidence/p06-process-ownership-2026-10-03.md),
+with [operation/store checks](../testing/evidence/p06-owned-store-2026-10-03.md)
+and [schema17 recovery invalidation checks](../testing/evidence/p06-recovery-invalidation-2026-10-03.md).
+
+Local schema18 additionally binds authenticated archive epoch/time and manifest
+digest to the exact recovery/owner/external epoch/revision using a distinct issuer
+signature. Its live-holder reader refuses missing/tampered/unbound context; older
+recoveries receive no invented proof. See [snapshot binding checks](../testing/evidence/p06-authenticated-recovery-snapshot-2026-10-04.md).
+This metadata is not a coverage receipt or permission to issue. Actual protected
+page application, node HTTPS relay and activation remain required.
+
+The [scoped Store collector](../testing/evidence/p06-scoped-recovery-collection-2026-10-04.md)
+compares protected challenge snapshot time/digest with signed local archive scope
+before writes or one-use completion, then checks scope again before delivery.
+Independent current keys verify pages; restored node keys never become report
+trust. Covered status does not change local grants/operations/quarantine or enable
+ordinary routes. The later local application candidate retains quarantine metadata; actual node HTTPS relay and complete reconciliation remain open.
+
+The [schema19 local application candidate](../testing/evidence/p06-recovery-application-2026-10-04.md) re-verifies complete protected history under the live holder and signed snapshot scope inside one local transaction. Exact bindings, unknown records and conflicts remain quarantine metadata; no grant, provider result or admission is created. Actual node relay and complete recovery remain required.
+
+The local recovery candidate commits a prepared fence before a separate atomic
+invalidation transaction. It advances only to the exact live external recovering
+reservation, removes stale transient authority, tombstones grants, marks all
+operations uncertain and records quarantined nodes and persistent authority for
+review. Existing operator roles and policy documents remain forensic metadata.
+The local fence also applies to the original HTTP builder after reopening.
+Authenticated schema16 SQLite backups remain verifiable inputs for explicit
+protected migration; verification never upgrades or activates them. Complete
+broker/provider reconciliation and protected activation still precede any future
+unfence; the production entrypoint now requires external ownership as described below.
+
+The [legacy authority candidate](../testing/evidence/p06-legacy-authority-2026-10-04.md)
+versions agent/fulfillment JWT and secret/fleet Source HMAC keys by current tenant
+and recovery epoch. Generation one preserves the accepted SPS signing vectors (frozen in `packages/contract-tests/fixtures`);
+later generations use separate root and agent-JWT HMAC contexts with no raw-key
+fallback. Later local/fulfillment JWTs require the exact epoch claim. Each request
+reads actual schema, tenant and safe epoch through the guarded Store boundary,
+with a three-second limit; failure fences a bound holder. Derived keys remain in
+request-local SecretBytes, while master keys retain their existing process
+lifetime. Library/OS copies have no new erasure guarantee. Node-channel crypto
+and external asymmetric-provider trust remain independent. Provider revocation
+and complete recovery approval are still required before activating restored state.
+
+The [production ownership candidate](../testing/evidence/p06-production-ownership-2026-10-04.md)
+claims the existing exact external record before controller startup clock writes,
+listeners or retention/admin tasks. All Store/signing clones share that guard.
+An active revision is used once; process loss cannot silently replay it. Fenced
+or recovering startup serves diagnostics without clock/ordinary writes. Public
+app builders also refuse unbound production handling. Protected initialization
+and clock maintenance require a fenced holder; new initialization preserves an
+explicitly selected tenant at epoch one and refuses nonpristine/missing/damaged
+state. Current-schema migration is a guarded no-op; older upgrades refuse until
+verified automatic backups/locking are implemented. Offline capture uses a
+nonissuing snapshot Store and does not update the source clock or connect to
+configured authority. Credentials stay in private files/configuration/SQLx memory;
+no complete allocator/library/OS erasure is promised and the archive admits only
+its four existing members. Packaged automatic migration/serve revision sequencing,
+full server/body quiescence, source-stop proof and protected activation remain open.
 
 Agent bootstrap keys and operator passwords are stored as Argon2 hashes and refresh tokens as SHA-256 hashes. Browser cookies and desktop access tokens are stored only as SHA-256 digests; a database session identifier cannot authenticate. The CSRF secret remains session-bound. Deadlines use the database clock; a persisted clock anchor compares database and host wall time with monotonic elapsed time and the Linux boot ID. A regression beyond tolerance, changed boot ID or unreadable boot ID sets a durable fence and purges transient requests, exchanges, pending approvals, bootstrap tokens, rate windows and idempotency keys. The operator must run `blindpass admin reconcile-clock` before expiring authority is accepted again. Agent JWTs and signed links still use the host clock.
 
 ## Provisioning and exchange
 
-The gateway/plugin creates an authenticated SPS request with a recipient public key. SPS returns a scoped signed input link. The configured human transport delivers that link, the input page fetches metadata from its configured API, and the browser encrypts the supplied value. The recipient retrieves and decrypts the ciphertext through its authenticated runtime.
+The gateway/plugin creates an authenticated controller request with a recipient public key. The controller returns a scoped signed input link. The configured human transport delivers that link, the input page fetches metadata from its configured API (the controller's own origin when it serves the embedded input page), and the browser encrypts the supplied value. The recipient retrieves and decrypts the ciphertext through its authenticated runtime.
 
 HPKE uses X25519, HKDF-SHA256 and ChaCha20-Poly1305 in both browser and agent implementations. The older AES-256-GCM brainstorm is not the implemented cipher suite. Browser-input JavaScript and the recipient runtime are trusted plaintext endpoints; a compromised recipient or input page is outside the ciphertext-relay guarantee.
 
-Agent-to-agent exchange adds requester/fulfiller identity, workspace policy, approval, reservation, fulfillment and one-use retrieval. Its implementation is in [exchange routes](../../packages/sps-server/src/routes/exchange.ts), [policy](../../packages/sps-server/src/services/policy.ts) and [Redis transitions](../../packages/sps-server/src/services/redis.ts). An exchange record authorizes its defined payload flow; it is not the proposed fleet operation grant.
+Agent-to-agent exchange adds requester/fulfiller identity, policy, approval, reservation, fulfillment and one-use retrieval. Its implementation is in the controller's [exchange routes](../../crates/blindpass-controller/src/routes/exchanges.rs), [exchange store](../../crates/blindpass-controller/src/store/exchanges.rs) and the [policy engine](../../crates/blindpass-core/src/policy.rs). An exchange record authorizes its defined payload flow; it is not the proposed fleet operation grant.
 
 ## Persistence and authentication
 
-Redis holds request/exchange lifecycle state; the in-memory implementation is for explicit development/test use. PostgreSQL holds users, workspaces, enrolled agents, policies, approvals/audit and existing commercial state. The bundled Compose files disable Redis persistence and provide development database defaults; they are not a durable production configuration.
+The controller keeps request, exchange, agent, operator, session, policy, approval, audit and fleet state in its SQLite or PostgreSQL store; there is no Redis. The root `docker-compose.yml` and `docker-compose.test.yml` start only a PostgreSQL with development defaults and are not a durable production configuration. The controller's deployment profiles are in [deploy/controller](../../deploy/controller) and the [Compose guide](../deploy/compose-quickstart.md).
 
-SPS validates user bearer tokens and agent JWTs, including configured issuer/audience/JWKS providers and hosted workspace binding. Enrolled agents exchange bootstrap API keys at `POST /api/v2/agents/token`. A JWT claim or SPIFFE-shaped ID does not attest a host-local systemd workload.
+The controller validates agent JWTs, including configured issuer/audience providers with a local JWKS file, and tenant binding. Enrolled agents exchange bootstrap API keys at `POST /api/v2/agents/token`. Operators sign in through the `/api/v3/admin/session` API. A JWT claim or SPIFFE-shaped ID does not attest a host-local systemd workload.
 
-Hosted auth issues refresh cookies; non-hosted/test flows can also return refresh tokens in JSON. Both frontends contain `localStorage` compatibility paths. The exact modes and remaining risks are documented once in the [current threat model](../security/blindpass-threat-model.md#authentication-storage).
+Operator sign-in sets `HttpOnly` cookies for the browser console, or returns bearer tokens to the desktop approval app; the console keeps no credential in web storage. The exact modes and remaining risks are documented once in the [current threat model](../security/blindpass-threat-model.md#authentication-storage).
 
-Workspace policy is PostgreSQL-backed in hosted mode, with bootstrap seeding and no normal env fallback for a missing workspace row. Non-hosted policy can use startup configuration. See the [policy guide](../guides/policy.md).
+Policy is one versioned document in the controller's database, with optional startup values used until one is saved. See the [policy guide](../guides/policy.md).
 
 ## Implementation limits
 
 - The MCP entry point still uses `Content-Length` framing and protocol `2024-11-05`, and has no URL-mode elicitation. A stock-client complete-workflow claim remains blocked.
 - Receiving a secret into plugin memory does not make it available to unrelated shell/browser tools. The runtime store has no built-in TTL/use-count enforcement.
-- SOPS protects stored material; the resolver intentionally emits plaintext to its consuming runtime. Service/session authority cannot be revoked by expiring an SPS handoff alone.
-- Current Dockerfiles/Unraid templates package SPS and frontends. No template packages the Rust controller yet, and none implements the W2 non-root, recovery, migration and two-host parity contract.
-- Billing, x402, guest intake and existing A2A code remain in the repository; new investment follows the [freeze register](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Roadmap.md#freeze-register).
+- SOPS protects stored material; the resolver intentionally emits plaintext to its consuming runtime. Service/session authority cannot be revoked by expiring a controller retrieval TTL or grant alone.
+- The [controller Dockerfile](../../deploy/controller/Dockerfile), the Compose profiles and the two controller [Unraid templates](../deploy/unraid.md) package the Rust controller, which embeds the console and input page and runs non-root. They are release candidates: complete recovery, migration and two-host parity acceptance remain open, and nothing has run on an Unraid host. `packages/browser-ui/Dockerfile`, a separately hosted nginx input-page image, remains and is built only by a CI browser check.
+- Billing, x402 payment code and guest intake were removed with the legacy SPS stack on 2026-10-07 and are in git history before the removal commit.
 
 For current checks use [testing setup](../testing/README.md). The [fleet test plan](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/testing/Linux%20Fleet%20Pilot.md) defines additional tests that existing suites cannot replace.
 
@@ -235,8 +370,8 @@ actual fixture controller/node lifecycle passes; managed application, full clien
 node/resource Source destinations and atomic public signed-offer ingestion from
 current enrolled keys and retained original signed grants. Eleven actual HTTP
 cases pass on SQLite and PostgreSQL; 500 full Rust cases pass with four
-inherited ignores, and both pinned Node build/workspace gates pass with 101 SPS
-skips. Scoped operator Source submission and the node relay are described below;
+inherited ignores, and both pinned Node build/workspace gates passed on 2026-10-02
+with 101 skips in the SPS suites (removed 2026-10-07). Scoped operator Source submission and the node relay are described below;
 actual GUI/systemd acceptance remains open.
 
 ## P05 scoped Source link, submit and node relay
@@ -265,3 +400,43 @@ hands an inbox `provisioning_delivery` to the broker's `PROVISION_SOURCE`. The
 broker's browser-offer lifetime is a separate 180 second default, still capped by
 the grant. Actual operator GUI, real systemd/stock-client provisioning and phase
 acceptance remain open.
+
+
+The [transport/shutdown candidate](../testing/evidence/p06-transport-ownership-2026-10-04.md)
+retains active connection permits until local IO closes, covering pending input and
+responses under backpressure. Fencing closes already accepted issuing transports;
+fresh nonactive connections reach diagnostic routing and ordinary 503 refusal.
+HTTP/TLS connections have a 60-second lifetime and reconnect; existing 10-second
+ordinary/35-second node handler bounds remain. Local admin connections have a
+10-second lifetime and at most 64 tracked children. Shutdown fences before graceful
+waiting, stops transports, awaits known clock/sweep/admin/monitor tasks, closes
+pools and refuses a four-second cleanup timeout. This is local IO/task accounting,
+not proof of remote delivery rollback, ambiguous PostgreSQL COMMIT rollback,
+authenticated previous-host stop, complete broker reports or protected unfence.
+Bytes already written cannot be recalled. The existing dependency graph is unchanged.
+
+Admitted Store database boundaries also track uncertain cancellation. A dropped
+future, timeout or failed database/authority acknowledgement latches uncertainty,
+fences admission and retains the live authority connection. Local `quiesce` then
+refuses even after the operation count reaches zero; neither pool close nor an
+independent outcome read resets it. Actual PostgreSQL blocked inserts and COMMIT
+can finish after cancellation and pool close. Selected server faults and the
+healthy drain case are in the [database uncertainty record](../testing/evidence/p06-database-uncertainty-2026-10-04.md).
+Production stop may exit with the specific local-drain error when background
+database work was cancelled. This requires review, not activation. The latch is
+in memory: process/socket loss can release the guard, so durable external
+source-stop/database proof and protected recovery remain unfinished.
+
+
+### P06 authenticated fenced restore destination — 2026-10-04
+
+The controller `restore` command and co-located `blindpass restore` verify one
+complete SQLite archive, then use the exact external recovering holder to open
+isolated restored state without clock initialization. A private typed Store
+purpose admits only that recovery path, including schema16→17 migration against
+the unchanged authenticated source backup. Durable invalidation/quarantine,
+checkpoint/file flush and fresh holder checks precede no-overwrite publication
+of one private keys/data root. The root remains `recovery_required`; no command
+activates the external authority or clears local quarantine. See the
+[restore stage guide](../deploy/recovery-stage.md). Full recovery/reconciliation,
+packaged-profile parity and phase acceptance remain open.

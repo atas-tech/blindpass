@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "canary",
+    "id": "*",
+    "path": "p01/dumps/core.blindpass-crash.*",
+    "reason": "S07 part ii, disposable QEMU guest only: the P01 crash probe holds the delivered canary in memory by design, and its core limit was lifted on purpose (tests/fleet/p01-guest.sh, BLINDPASS_P01_LIFT_CORE=1). The shipped unit runs with LimitCORE=0 and produces no dump (the same run without the lift). Runtime dumps cannot be pinned by SHA-256, so the entry is scoped by path to this one named dump."
+  }
+]

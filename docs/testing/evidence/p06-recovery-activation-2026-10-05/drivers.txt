@@ -1,0 +1,18 @@
+recovery_authority sqlite rc=0 test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 88.06s
+recovery_authority postgres rc=0 test result: ok. 34 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 86.10s
+production_ownership sqlite rc=0 test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 25.53s
+production_ownership postgres rc=0 test result: ok. 32 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 39.72s
+legacy_authority sqlite rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.41s
+legacy_authority postgres rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 11.68s
+recovery_invalidation sqlite rc=0 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 15.03s
+recovery_invalidation postgres rc=0 test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 40.39s
+recovery_activation sqlite rc=0 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.89s
+recovery_activation postgres rc=0 test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.53s
+restore_stage sqlite rc=0 test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 71.58s
+restore_stage postgres rc=0 test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 72.65s
+recovery_authority_migration sqlite rc=0 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+recovery_receipts sqlite rc=0 test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.22s
+restore_postgres sqlite rc=0 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 36.57s
+deployment_startup sqlite rc=0 test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 1.95s
+store_quiescence postgres rc=0 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.18s
+DONE

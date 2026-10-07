@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -65,7 +65,7 @@ const workspacePackage = (root, directory, manifest) => mkdir(path.join(root, di
 test('M01 allowlist accepts only explicitly listed MIT workspace packages', async () => {
   const options = await withInputs(['node_modules/example/index.mjs', 'packages/mcp-server/src/index.mjs', 'packages/openclaw-plugin/mcp-server.mjs',
     'packages/gateway/dist/identity.js', 'packages/agent-skill/dist/index.js'], async (root) => {
-    for (const name of ['mcp-server', 'openclaw-plugin', 'gateway', 'agent-skill']) await workspacePackage(root, `packages/${name}`, { name: `@blindpass/${name}`, license: 'MIT' });
+    for (const name of ['mcp-server', 'openclaw-plugin', 'gateway', 'agent-skill']) await workspacePackage(root, `packages/${name}`, { name: name === 'mcp-server' ? '@blindpass/mcp-server-lib' : `@blindpass/${name}`, license: 'MIT' });
   });
   try { assert.equal((await generateMcpBundleNotices(options)).length, 1); } finally { await rm(options.root, { recursive: true, force: true }); }
 });
@@ -73,8 +73,10 @@ test('M01 allowlist accepts only explicitly listed MIT workspace packages', asyn
 test('M01 allowlist rejects an unlisted MIT workspace, relicensed listed packages and non-package workspace paths', async () => {
   const cases = {
     'unlisted MIT workspace package': { inputs: ['packages/console/src/main.ts'], setup: (root) => workspacePackage(root, 'packages/console', { name: '@blindpass/console', license: 'MIT' }) },
-    'unlisted AGPL workspace package': { inputs: ['packages/sps-server/src/index.ts'], setup: (root) => workspacePackage(root, 'packages/sps-server', { name: '@blindpass/sps-server', license: 'AGPL-3.0-only' }) },
-    'listed package relicensed': { inputs: ['packages/mcp-server/src/index.mjs'], setup: (root) => workspacePackage(root, 'packages/mcp-server', { name: '@blindpass/mcp-server', license: 'AGPL-3.0-only' }) },
+    'unlisted AGPL workspace package': { inputs: ['packages/agpl-fixture/src/index.ts'], setup: (root) => workspacePackage(root, 'packages/agpl-fixture', { name: '@blindpass/agpl-fixture', license: 'AGPL-3.0-only' }) },
+    'listed package relicensed': { inputs: ['packages/mcp-server/src/index.mjs'], setup: (root) => workspacePackage(root, 'packages/mcp-server', { name: '@blindpass/mcp-server-lib', license: 'AGPL-3.0-only' }) },
+    // The published bundle owns the public name; the library directory may no longer claim it.
+    'library directory claiming the public bundle name': { inputs: ['packages/mcp-server/src/index.mjs'], setup: (root) => workspacePackage(root, 'packages/mcp-server', { name: '@blindpass/mcp-server', license: 'MIT' }) },
     'listed package without manifest': { inputs: ['packages/gateway/dist/identity.js'], setup: async () => {} },
     'helper workspace': { inputs: ['helpers/login/src/worker.mjs'], setup: (root) => workspacePackage(root, 'helpers/login', { name: '@blindpass/login-helper', license: 'MIT' }) },
     'Rust crate path': { inputs: ['crates/blindpass-core/src/lib.rs'], setup: async () => {} },
@@ -109,4 +111,51 @@ test('M01 the real MCP bundle inputs satisfy the allowlist and every emitted pac
     assert.ok(inventory.some((entry) => entry.name === '@modelcontextprotocol/server'));
     assert.ok(!inventory.some((entry) => entry.name.startsWith('@blindpass/')));
   } finally { await rm(scratch, { recursive: true, force: true }); }
+});
+
+// The standalone resolver is bundled too (it imports ./encrypted-store.mjs), so its compiler inputs go through
+// the same boundary as the MCP entrypoint; a second metadata file may not add AGPL code or an unlisted workspace.
+test('M01 several bundle metadata files are checked and their packages merged into one inventory', async () => {
+  const options = await fixture();
+  try {
+    const second = path.join(options.root, 'resolver-meta.json');
+    await mkdir(path.join(options.root, 'packages/openclaw-plugin'), { recursive: true });
+    await writeFile(path.join(options.root, 'packages/openclaw-plugin/package.json'), JSON.stringify({ name: '@blindpass/openclaw-plugin', license: 'MIT' }));
+    await writeFile(second, JSON.stringify({ outputs: { 'resolver.mjs': { inputs: {
+      'packages/openclaw-plugin/blindpass-resolver.mjs': { bytesInOutput: 10 }, 'packages/openclaw-plugin/encrypted-store.mjs': { bytesInOutput: 10 },
+      'node_modules/example/index.mjs': { bytesInOutput: 4 } } } } }));
+    const inventory = await generateMcpBundleNotices({ ...options, metadataFile: [options.metadataFile, second] });
+    assert.deepEqual(inventory.map((entry) => entry.name), ['example'], 'a package used by both bundles is listed once');
+  } finally { await rm(options.root, { recursive: true, force: true }); }
+});
+
+test('M01 a second metadata file with AGPL or unlisted workspace code is refused, and so is an unreadable one', async () => {
+  for (const input of ['packages/controller/src/index.mjs', 'packages/console/src/main.ts', 'crates/blindpass-core/src/lib.rs']) {
+    const options = await fixture();
+    try {
+      const second = path.join(options.root, 'resolver-meta.json');
+      await workspacePackage(options.root, 'packages/controller', { name: 'controller', license: 'AGPL-3.0-only' });
+      await writeFile(second, JSON.stringify({ outputs: { 'resolver.mjs': { inputs: { [input]: { bytesInOutput: 10 } } } } }));
+      await assert.rejects(generateMcpBundleNotices({ ...options, metadataFile: [options.metadataFile, second] }), /mcp_bundle_boundary_unavailable/, input);
+    } finally { await rm(options.root, { recursive: true, force: true }); }
+  }
+  const options = await fixture();
+  try {
+    await assert.rejects(generateMcpBundleNotices({ ...options, metadataFile: [options.metadataFile, path.join(options.root, 'absent.json')] }), /mcp_bundle_boundary_unavailable/);
+    await assert.rejects(generateMcpBundleNotices({ ...options, metadataFile: [] }), /mcp_bundle_boundary_unavailable/);
+  } finally { await rm(options.root, { recursive: true, force: true }); }
+});
+
+test('M01 the command accepts one or more metadata files followed by the dist directory', async () => {
+  const options = await fixture();
+  const script = path.join(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'), 'bundle-mcp-notices.mjs');
+  try {
+    // The command resolves paths against the real repository root, so a fixture input is refused: this only
+    // proves the argument shape is parsed and a bad one fails closed with the fixed message.
+    const refused = spawnSync(process.execPath, [script, options.metadataFile, options.dist], { encoding: 'utf8' });
+    assert.equal(refused.status, 1);
+    assert.equal(refused.stderr.trim(), 'mcp_bundle_boundary_unavailable');
+    assert.equal(spawnSync(process.execPath, [script, options.dist], { encoding: 'utf8' }).status, 1);
+    assert.equal(spawnSync(process.execPath, [script], { encoding: 'utf8' }).status, 1);
+  } finally { await rm(options.root, { recursive: true, force: true }); }
 });

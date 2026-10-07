@@ -63,7 +63,7 @@ fn probe() -> Result<(), ()> {
             .unwrap_or_else(|| "/etc/ssl/certs/ca-certificates.crt".into());
         let file = OpenOptions::new()
             .read(true)
-            .custom_flags(0x20000 | 0x800)
+            .custom_flags(blindpass_core::open_flags::O_NOFOLLOW | 0x800)
             .open(ca)
             .map_err(|_| ())?;
         let metadata = file.metadata().map_err(|_| ())?;

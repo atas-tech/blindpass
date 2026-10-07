@@ -6,8 +6,6 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 
 | Package | License | Notes |
 | :--- | :--- | :--- |
-| `packages/sps-server` | `AGPL-3.0-only` | Secret Provisioning Service / trust anchor |
-| `packages/dashboard` | `AGPL-3.0-only` | Hosted control plane UI; eligible for removal since P04 slice 13, frozen tests kept until the package is deleted |
 | `packages/console` | `AGPL-3.0-only` | P04 operator console for the Rust controller; declared in package metadata |
 | `desktop/approval-app` | `AGPL-3.0-only` | P04 Quickshell approval app; SPDX headers, no package manifest |
 | `desktop/omarchy-widget` | `AGPL-3.0-only` | P04 Omarchy bar widget; declared in its `manifest.json` |
@@ -28,6 +26,9 @@ BlindPass uses a mixed-license monorepo model. The applicable license depends on
 | `crates/blindpass-node` | `AGPL-3.0-only` | Unprivileged fleet channel relay; no broker key storage |
 
 ## Repository Notes
+- 2026-10-07: `packages/sps-server` and `packages/dashboard` (both `AGPL-3.0-only`) were removed with the legacy
+  hosted stack. The last commit that contains them is the parent of the removal commit. No remaining package carries
+  their code; the contract harness keeps frozen data derived from the legacy server's behaviour.
 
 - The root workspace package is marked `private` and uses `SEE LICENSE IN LICENSES.md` because the repository contains packages under more than one license.
 - The six original application/integration packages include `LICENSE` files. The shared i18n package currently declares its license in `package.json` only; this documentation update does not add or change licensing terms.

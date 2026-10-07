@@ -1,0 +1,11 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.30s
+     Running tests/recovery_authority.rs (target/debug/deps/recovery_authority-8f0890b4349a4ec3)
+
+running 3 tests
+test p06_qf02_quiescence_closes_the_actual_backpressured_response_socket ... ok
+test p06_qf03_idle_connection_is_closed_before_quiescence_can_release_the_guard ... ok
+test p06_qf03_idle_http_connection_has_the_actual_sixty_second_lifetime_bound ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 26 filtered out; finished in 60.58s
+

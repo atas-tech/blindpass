@@ -1,0 +1,6 @@
+{
+  "crates/blindpass-core/src/deployment.rs": "feeaa6c92546e3c600c37360b6d2c92c87c19e795357aafdb6de3927f6e5f557",
+  "crates/blindpass-controller/src/restore.rs": "8def8081ce85bdf3d72575732df8665744db2d655703f6f72855cd5f8117bbfe",
+  "crates/blindpass-controller/src/store/ownership.rs": "092aa6d421614963b4cef8b1bfc93a2c19fea6c5ca0da012810a565bd6ce8301",
+  "crates/blindpass-controller/src/store/mod.rs": "9688dee265a8ba19d5aa66e4f3af35fff0b0e2575ffbd88df316ae6cad402490"
+}

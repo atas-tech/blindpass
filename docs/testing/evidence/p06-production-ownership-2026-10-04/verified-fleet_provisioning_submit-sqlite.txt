@@ -1,0 +1,33 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.04s
+     Running tests/fleet_provisioning_submit.rs (target/debug/deps/fleet_provisioning_submit-7dada275acc6a9bd)
+
+running 25 tests
+test a_stored_offer_that_disagrees_with_independent_state_is_never_served ... ok
+test automatic_allow_uses_independent_destination_administrator_as_named_owner ... ok
+test chained_browser_equivalent_flow_delivers_exact_source_to_the_node_inbox ... ok
+test concurrent_encrypted_submit_commits_one_original_receipt_and_signed_delivery ... ok
+test current_authority_and_destination_version_gate_metadata_and_fresh_submit ... ok
+test damaged_provisioning_tables_fail_closed_by_missing_table_and_by_wrong_columns ... ok
+test delivery_write_failures_roll_back_every_effect_and_retry ... ok
+test expired_capability_link_and_offer_deny_without_a_receipt ... ok
+test expired_links_and_receipts_prune_after_seven_days_but_live_ones_are_never_evicted ... ok
+test full_64k_source_stays_encrypted_in_the_dedicated_signed_delivery ... ok
+test invalid_ciphertext_scope_csrf_and_oversize_get_fixed_safe_errors ... ok
+test link_waits_for_the_published_offer_and_never_before_authority_exists ... ok
+test link_write_failures_roll_back_every_effect_and_retry ... ok
+test lock_wait_cannot_extend_the_original_link_and_offer_deadline ... ok
+test metadata_requires_named_cookie_fleet_scope_and_never_consumes_on_read ... ok
+test metadata_returns_independently_verified_expected_values_for_the_original_offer ... ok
+test named_operator_link_is_authorized_immutable_and_scope_bound ... ok
+test node_key_rotation_withdraws_link_authority_for_a_new_key_version ... ok
+test operator_session_logout_removal_and_role_change_withdraw_fresh_submission ... ok
+test p06_la05_later_generation_source_link_refuses_raw_key_and_delivers_current_hpke ... ok
+test password_change_and_reset_end_older_sessions_before_fresh_submission ... ok
+test real_time_expiry_of_the_original_deadline_denies_metadata_and_submit ... ok
+test receipt_survives_a_real_server_restart_and_never_requeues_after_inbox_loss ... ok
+test schema_16_migrates_additively_and_keeps_rows_across_a_version_rollback_marker ... ok
+test source_private_key_link_and_cookie_canaries_never_reach_storage_audit_or_logs ... ok
+
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 81.10s
+

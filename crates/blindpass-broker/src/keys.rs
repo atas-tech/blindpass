@@ -24,7 +24,7 @@ const PRIVATE_FILE_MODE: u32 = 0o600;
 const KEY_DIRECTORY_MODE: u32 = 0o700;
 const KEY_MATERIAL_BYTES: usize = 137;
 const ROTATION_ID_BYTES: usize = 64;
-const O_NOFOLLOW: i32 = 0x20000;
+const O_NOFOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 static STATE_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,11 +71,23 @@ impl std::fmt::Debug for NodeIdentity {
 impl NodeIdentity {
     pub fn load_or_create(directory: &Path) -> Result<Self, BrokerError> {
         ensure_key_directory(directory)?;
+        // Only an empty identity directory can establish an unambiguous
+        // history genesis. Imports and missing journals never reconstruct it.
+        let fresh_directory = fs::read_dir(directory)?.next().is_none();
         let identity_path = directory.join("node-identity.state");
         let keys = match read_key_material(&identity_path) {
             Ok(keys) => keys,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 let keys = load_legacy_key_material(directory)?;
+                // Genesis first: a crash between the two steps must not leave
+                // an identity whose empty directory can no longer establish
+                // provenance. A retry sees an existing, valid genesis.
+                if fresh_directory {
+                    crate::grants::initialize_consumption_history(
+                        &directory.join("consumed.jsonl"),
+                    )
+                    .map_err(BrokerError::Configuration)?;
+                }
                 write_key_material(&identity_path, &keys)?;
                 keys
             }
@@ -405,6 +417,8 @@ impl NodeIdentity {
                 ));
             }
         }
+        crate::grants::bind_consumption_history(&self.consumed_grant_journal_path(), &candidate)
+            .map_err(BrokerError::Configuration)?;
         write_pin(&self.directory, &candidate)?;
         *current = Some(candidate);
         Ok(())
@@ -415,6 +429,78 @@ impl NodeIdentity {
             .lock()
             .map(|pin| pin.clone())
             .map_err(|_| BrokerError::Configuration("node issuer pin is unavailable"))
+    }
+
+    /// Recovery must retain the original high-watermark before its own pin
+    /// advancement. Holding the pin mutex and journal mutation lock makes
+    /// that observation atomic with ordinary pin publication.
+    pub(crate) fn recovery_pin(
+        &self,
+        expected: &blindpass_core::recovery::pages::ReportIdentity,
+    ) -> Result<(PinnedIssuer, u64), BrokerError> {
+        let mut current = self
+            .pin
+            .lock()
+            .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?;
+        let pin = current
+            .as_ref()
+            .ok_or(BrokerError::Configuration("recovery_report_denied"))?;
+        let keys = self
+            .keys
+            .lock()
+            .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?;
+        if pin.tenant_id != expected.tenant_id
+            || pin.node_id != expected.node_id
+            || pin.key_id != expected.issuer_key_id
+            || keys.version != expected.node_key_version
+        {
+            return Err(BrokerError::Configuration("recovery_report_denied"));
+        }
+        let previous_epoch = pin.epoch;
+        let mut candidate = pin.clone();
+        candidate.epoch = candidate.epoch.max(expected.recovery_generation);
+        let observed = crate::grants::bind_history_observation(
+            &self.consumed_grant_journal_path(),
+            &candidate,
+        )
+        .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?
+        .max(previous_epoch);
+        if candidate.epoch != previous_epoch {
+            write_pin(&self.directory, &candidate)?;
+            *current = Some(candidate.clone());
+        }
+        Ok((candidate, observed))
+    }
+
+    pub(crate) fn sign_recovery_page(
+        &self,
+        page: &blindpass_core::recovery::pages::ReportPage,
+        expected_pin_epoch: u64,
+    ) -> Result<String, BrokerError> {
+        let pin = self
+            .pin
+            .lock()
+            .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?;
+        let pin = pin
+            .as_ref()
+            .ok_or(BrokerError::Configuration("recovery_report_denied"))?;
+        let keys = self
+            .keys
+            .lock()
+            .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?;
+        let binding = &page.manifest.identity;
+        if pin.tenant_id != binding.tenant_id
+            || pin.node_id != binding.node_id
+            || pin.key_id != binding.issuer_key_id
+            || pin.epoch != expected_pin_epoch
+            || keys.version != binding.node_key_version
+        {
+            return Err(BrokerError::Configuration("recovery_report_denied"));
+        }
+        let message = page
+            .signing_message()
+            .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?;
+        Ok(base64_url_encode(&keys.signing.sign(&message)?))
     }
 
     pub fn verify_controller_document(&self, document: &[u8]) -> Result<String, BrokerError> {
@@ -993,6 +1079,68 @@ mod tests {
     }
 
     #[test]
+    fn p06_br01_fresh_identity_has_private_stable_history_genesis() {
+        let directory = temporary_directory();
+        let identity = NodeIdentity::load_or_create(&directory).unwrap();
+        let path = identity.consumed_grant_journal_path();
+        let genesis = std::fs::read_to_string(&path).expect("fresh identity needs history genesis");
+        let value = blindpass_core::canon::parse_json(genesis.trim_end()).unwrap();
+        assert_eq!(
+            value.get("history_version").and_then(|v| v.as_u64()),
+            Some(1)
+        );
+        assert_eq!(
+            value.get("pruned_through_ms").and_then(|v| v.as_u64()),
+            Some(0)
+        );
+        assert_eq!(
+            value.get("highest_issuer_epoch").and_then(|v| v.as_u64()),
+            Some(0)
+        );
+        let nonce = value.get("history_id").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(
+            blindpass_core::signing::base64_url_decode(nonce, 32)
+                .unwrap()
+                .len(),
+            32
+        );
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        drop(identity);
+        NodeIdentity::load_or_create(&directory).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), genesis);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn p06_br02_existing_identity_never_reconstructs_missing_history() {
+        let directory = temporary_directory();
+        let identity = NodeIdentity::load_or_create(&directory).unwrap();
+        let path = identity.consumed_grant_journal_path();
+        std::fs::remove_file(&path).unwrap();
+        drop(identity);
+        NodeIdentity::load_or_create(&directory).unwrap();
+        assert!(!path.exists(), "missing history must remain unknown");
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn p06_br02_imported_legacy_seeds_never_acquire_history_genesis() {
+        let directory = temporary_directory();
+        let legacy = super::load_legacy_key_material(&directory).unwrap();
+        let public = super::public_identity(&legacy).unwrap();
+        drop(legacy);
+        let identity = NodeIdentity::load_or_create(&directory).unwrap();
+        assert_eq!(identity.public_identity().unwrap(), public);
+        assert!(!identity.consumed_grant_journal_path().exists());
+        assert!(!directory.join("node-signing.seed").exists());
+        assert!(!directory.join("node-recipient.key").exists());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn node_key_rotation_is_staged_persistent_atomic_and_acknowledged() {
         let directory = temporary_directory();
         let identity = NodeIdentity::load_or_create(&directory).unwrap();
@@ -1009,6 +1157,8 @@ mod tests {
                 public_key: blindpass_core::signing::base64_url_encode(&[9; 32]),
             })
             .unwrap();
+
+        let history = std::fs::read(identity.consumed_grant_journal_path()).unwrap();
 
         let (candidate_version, candidate_public) = identity.prepare_rotation().unwrap();
         assert_eq!(candidate_version, 2);
@@ -1042,6 +1192,10 @@ mod tests {
         assert_eq!(identity.key_version().unwrap(), 2);
         assert_eq!(identity.public_identity().unwrap(), candidate_public);
         assert_eq!(
+            std::fs::read(identity.consumed_grant_journal_path()).unwrap(),
+            history
+        );
+        assert_eq!(
             identity.applied_rotation_ack().unwrap(),
             Some((
                 rotation.rotation_id.clone(),
@@ -1054,6 +1208,10 @@ mod tests {
         let identity = NodeIdentity::load_or_create(&directory).unwrap();
         assert_eq!(identity.key_version().unwrap(), 2);
         assert_eq!(identity.public_identity().unwrap(), candidate_public);
+        assert_eq!(
+            std::fs::read(identity.consumed_grant_journal_path()).unwrap(),
+            history
+        );
         assert!(
             identity
                 .acknowledge_rotation_event(&["unrelated-event-key".to_owned()])

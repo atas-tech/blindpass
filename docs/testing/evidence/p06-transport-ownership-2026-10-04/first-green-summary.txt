@@ -1,0 +1,3 @@
+admin-child_exit=0
+qf01-sqlite_exit=0
+qf01-postgres_exit=0

@@ -17,9 +17,7 @@ pub const KEY_NAMES: [&str; 3] = ["root-secret", "agent-jwt-secret", "issuer-key
 pub const DEFAULT_KEYS_DIR: &str = "/etc/blindpass/keys";
 pub const DEFAULT_DATA_DIR: &str = "/var/lib/blindpass/controller";
 
-const O_DIRECTORY: i32 = 0x10000;
-const O_NOFOLLOW: i32 = 0x20000;
-const O_CLOEXEC: i32 = 0x80000;
+use crate::open_flags::{O_CLOEXEC, O_DIRECTORY, O_NOFOLLOW};
 const O_NONBLOCK: i32 = 0x800;
 const O_WRONLY: i32 = 1;
 const O_CREAT: i32 = 0x40;
@@ -27,10 +25,18 @@ const O_EXCL: i32 = 0x80;
 
 unsafe extern "C" {
     fn openat(dirfd: i32, path: *const std::ffi::c_char, flags: i32, mode: u32) -> i32;
+    fn renameat2(
+        old_dirfd: i32,
+        old_path: *const std::ffi::c_char,
+        new_dirfd: i32,
+        new_path: *const std::ffi::c_char,
+        flags: u32,
+    ) -> i32;
     fn mkdirat(dirfd: i32, path: *const std::ffi::c_char, mode: u32) -> i32;
     fn unlinkat(dirfd: i32, path: *const std::ffi::c_char, flags: i32) -> i32;
     fn geteuid() -> u32;
     fn flock(fd: i32, operation: i32) -> i32;
+    fn fstatfs(fd: i32, buffer: *mut [u64; 15]) -> i32;
     fn fgetxattr(
         fd: i32,
         name: *const std::ffi::c_char,
@@ -142,8 +148,60 @@ impl Directory {
         }
     }
 
+    /// Atomically publish a complete private child directory without replacing
+    /// any existing name. Unsupported kernel/filesystem semantics fail closed.
+    /// Callers flush child files first and retain their ownership/custody guards.
+    pub fn publish_directory(&self, source: &str, target: &str) -> Result<(), UnsafeCredential> {
+        self.validate_private()?;
+        let source = member_name(source)?;
+        let target = member_name(target)?;
+        let staging = Self(open_relative(
+            &self.0,
+            &source,
+            O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC,
+            0,
+        )?);
+        staging.validate_private()?;
+        staging.sync()?;
+        // SAFETY: descriptors and both NUL-terminated relative names are live.
+        // RENAME_NOREPLACE (1) is mandatory; plain rename would overwrite state.
+        if unsafe {
+            renameat2(
+                self.0.as_raw_fd(),
+                source.as_ptr(),
+                self.0.as_raw_fd(),
+                target.as_ptr(),
+                1,
+            )
+        } != 0
+        {
+            return Err(UnsafeCredential);
+        }
+        // A failure here is uncertain publication; callers must never erase a
+        // possibly published destination. Recovery fencing remains mandatory.
+        self.sync()
+    }
+
     pub fn sync(&self) -> Result<(), UnsafeCredential> {
         self.0.sync_all().map_err(|_| UnsafeCredential)
+    }
+
+    /// Bytes still available to an unprivileged writer when this directory lives
+    /// on tmpfs or ramfs; every other filesystem (including swap-backed or
+    /// network storage) is refused. The 64-bit Linux `statfs` layout starts with
+    /// `f_type, f_bsize, f_blocks, f_bfree, f_bavail`, each eight bytes.
+    pub fn memory_backed_free_bytes(&self) -> Result<u64, UnsafeCredential> {
+        const TMPFS_MAGIC: u64 = 0x0102_1994;
+        const RAMFS_MAGIC: u64 = 0x8584_58f6;
+        let mut buffer = [0u64; 15];
+        // SAFETY: the descriptor is live and the buffer is at least as large as
+        // `struct statfs` on the supported 64-bit Linux targets.
+        if unsafe { fstatfs(self.0.as_raw_fd(), &mut buffer) } != 0
+            || !matches!(buffer[0], TMPFS_MAGIC | RAMFS_MAGIC)
+        {
+            return Err(UnsafeCredential);
+        }
+        Ok(buffer[1].saturating_mul(buffer[4]))
     }
 }
 
@@ -266,6 +324,21 @@ pub fn initialize_keys(path: &Path) -> Result<(), UnsafeCredential> {
         let _ = directory.sync();
     }
     result
+}
+
+/// The public authority identifier of the initialized issuer key. Reads under
+/// the same private-directory checks and shared lock as `check_keys`; only the
+/// derived public identifier leaves this function.
+pub fn issuer_key_id(path: &Path) -> Result<String, UnsafeCredential> {
+    let directory = Directory::open_private(path)?;
+    directory.lock(false)?;
+    let seed = directory.read("issuer-key", 32)?;
+    if seed.len() != 32 {
+        return Err(UnsafeCredential);
+    }
+    let keypair = crate::signing::ed25519::Ed25519KeyPair::from_seed(seed.as_bytes())
+        .map_err(|_| UnsafeCredential)?;
+    Ok(crate::signing::issuer_key_id(keypair.public_key()))
 }
 
 pub fn check_keys(path: &Path) -> Result<(), UnsafeCredential> {

@@ -1,13 +1,14 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { startAdapter, type ServerAdapter } from "../src/adapter.js";
-import { httpRequest, jsonRequestBody, withBearer, withOrigin } from "../src/http.js";
+import { httpRejectedBeforeBody, httpRequest, jsonRequestBody, withBearer, withOrigin } from "../src/http.js";
 import { addCanaries, AGENT_IDS, CANARIES, SECRET_NAMES, type AgentId, type ContractFixture } from "../src/fixtures.js";
 import { containsCanary } from "../src/normalization.js";
 import { SnapshotRecorder } from "../src/snapshots.js";
 import { expiredBrowserPayload, signBrowserPayload } from "../src/signing.js";
-import { verifyFulfillmentToken } from "../../sps-server/src/services/crypto.js";
-import { buildApp } from "../../sps-server/src/index.js";
-import { InMemoryRequestStore } from "../../sps-server/src/services/redis.js";
+import { verifyFulfillmentToken } from "../src/oracle/index.js";
 import { SpsClient } from "../../agent-skill/src/sps-client.js";
 import { GatewaySpsClient } from "../../gateway/src/sps-client.js";
 import { evaluatePolicyVectors } from "../src/vectors.js";
@@ -106,11 +107,11 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
   }
 
   async function call<T = unknown>(name: string, path: string, init: RequestInit = {}): Promise<Awaited<ReturnType<typeof httpRequest<T>>>> {
-    const response = await httpRequest<T>(fixture.baseUrl, path, init);
+    return record(name, await httpRequest<T>(fixture.baseUrl, path, init));
+  }
+
+  function record<T>(name: string, response: Awaited<ReturnType<typeof httpRequest<T>>>): Awaited<ReturnType<typeof httpRequest<T>>> {
     const mismatchTarget = process.env.P02_INJECT_RESPONSE_MISMATCH;
-    if (mismatchTarget && process.env.SUT !== "rust") {
-      throw new Error("P02 response mismatch injection is available only with SUT=rust");
-    }
     const result = name === mismatchTarget
       ? { ...response, status: response.status === 200 ? 503 : 502 }
       : response;
@@ -181,23 +182,18 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(health.status).toBe(200);
     expect(requireBody<{ ok: boolean }>(health).ok).toBe(true);
 
-    const ready = await call(process.env.SUT === "rust" ? "helper.CT01.readyz.up" : "CT01.readyz.up", "/readyz");
+    const ready = await call("helper.CT01.readyz.up", "/readyz");
     expect(ready.status).toBe(200);
-    const expectedChecks = process.env.SUT === "rust"
-      ? { database: "up" }
-      : { database: "up", redis: "up" };
     const readyBody = requireBody<{ ok: boolean; checks: Record<string, string> }>(ready);
     expect(readyBody).toMatchObject({
       ok: true,
-      checks: expectedChecks
+      checks: { database: "up" }
     });
-    if (process.env.SUT === "rust") {
-      snapshots.recordValue("CT01.readyz.up", {
-        status: ready.status,
-        ok: readyBody.ok,
-        database: readyBody.checks.database
-      });
-    }
+    snapshots.recordValue("CT01.readyz.up", {
+      status: ready.status,
+      ok: readyBody.ok,
+      database: readyBody.checks.database
+    });
   });
 
   it("CT02 preserves bootstrap-key auth, rotation, revocation, and throttling", async () => {
@@ -237,24 +233,19 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     });
     expect(unknown.status).toBe(401);
 
-    const isRust = process.env.SUT === "rust";
     const rotatableRecordId = fixture.agentRecordIds?.[AGENT_IDS.rotatable];
     const rotate = await call<{ agent?: { status?: string }; bootstrap_api_key: string }>(
-      isRust ? "helper.CT02.key.rotate" : "CT02.key.rotate",
-      isRust ? `/api/v3/admin/agents/${rotatableRecordId}/rotate-key` : `/api/v2/agents/${AGENT_IDS.rotatable}/rotate-key`,
-      isRust
-        ? { method: "POST", headers: rustAdminHeaders(true) }
-        : withBearer(fixture.adminAccessToken ?? "", { method: "POST" })
+      "helper.CT02.key.rotate",
+      `/api/v3/admin/agents/${rotatableRecordId}/rotate-key`,
+      { method: "POST", headers: rustAdminHeaders(true) }
     );
     expect(rotate.status).toBe(200);
     const rotatedKey = requireBody(rotate).bootstrap_api_key;
-    if (isRust) {
-      snapshots.recordValue("CT02.key.rotate", {
-        status: rotate.status,
-        agent_status: rotate.body?.agent?.status,
-        key_issued: rotatedKey.length > 0
-      });
-    }
+    snapshots.recordValue("CT02.key.rotate", {
+      status: rotate.status,
+      agent_status: rotate.body?.agent?.status,
+      key_issued: rotatedKey.length > 0
+    });
     addCanaries(fixture, rotatedKey);
 
     const oldKey = await call("CT02.key.rotated-old", "/api/v2/agents/token", {
@@ -273,19 +264,15 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
 
     const revocableRecordId = fixture.agentRecordIds?.[AGENT_IDS.revocable];
     const revoke = await call<{ status?: string }>(
-      isRust ? "helper.CT02.key.revoke" : "CT02.key.revoke",
-      isRust ? `/api/v3/admin/agents/${revocableRecordId}` : `/api/v2/agents/${AGENT_IDS.revocable}`,
-      isRust
-        ? { method: "DELETE", headers: rustAdminHeaders(true) }
-        : withBearer(fixture.adminAccessToken ?? "", { method: "DELETE" })
+      "helper.CT02.key.revoke",
+      `/api/v3/admin/agents/${revocableRecordId}`,
+      { method: "DELETE", headers: rustAdminHeaders(true) }
     );
     expect(revoke.status).toBe(200);
-    if (isRust) {
-      snapshots.recordValue("CT02.key.revoke", {
-        status: revoke.status,
-        agent_status: revoke.body?.status
-      });
-    }
+    snapshots.recordValue("CT02.key.revoke", {
+      status: revoke.status,
+      agent_status: revoke.body?.status
+    });
 
     const revokedKey = await call("CT02.key.revoked", "/api/v2/agents/token", {
       method: "POST",
@@ -332,7 +319,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     }));
     expect(expiredExternal.status).toBe(401);
 
-    // SPS verifies workload JWTs with zero clock tolerance: five seconds past
+    // Workload JWTs are verified with zero clock tolerance: five seconds past
     // `exp` is expired, not inside a leeway window.
     const justExpiredExternal = await call("CT03.request.just-expired-external", "/api/v2/secret/request", withBearer(adapter.externalJwt({}, Math.floor(Date.now() / 1000) - 305), {
       ...jsonRequestBody({ public_key: "Y29udHJhY3Q=", description: "external token expired five seconds ago" })
@@ -375,6 +362,13 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const body = requireBody<{ request_id: string; confirmation_code: string; secret_url: string }>(created.response);
     expect(body.request_id).toMatch(/^[a-f0-9]{64}$/);
     expect(body.confirmation_code).toMatch(/^[A-Z]+-[A-Z]+-\d{2}$/);
+    // CV04 in the live response: both words come from the frozen dictionary, not from a server constant.
+    const dictionary = JSON.parse(await readFile(path.join(fileURLToPath(new URL("../fixtures", import.meta.url)), "cv04-confirmation-code.json"), "utf8")) as {
+      adjectives: string[]; nouns: string[];
+    };
+    const [adjective, noun] = body.confirmation_code.split("-");
+    expect(dictionary.adjectives).toContain(adjective);
+    expect(dictionary.nouns).toContain(noun);
     expect(new URL(body.secret_url).searchParams.get("api_url")).toBe(fixture.baseUrl);
   });
 
@@ -708,24 +702,19 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     const approvalBody = requireBody<{ policy: { approval_reference: string } }>(approval);
     const approvalReference = approvalBody.policy.approval_reference;
 
-    const isRust = process.env.SUT === "rust";
     const approve = await call<{ status?: string }>(
-      isRust ? "helper.CT13.approval.approve" : "CT13.approval.approve",
-      isRust ? `/api/v3/admin/approvals/${approvalReference}/approve` : `/api/v2/secret/exchange/admin/approval/${approvalReference}/approve`,
-      isRust
-        ? {
-          ...jsonRequestBody({ expected_status: "pending" }),
-          headers: rustAdminHeaders(true, { "content-type": "application/json", "idempotency-key": `ct13-approve-${approvalReference}` })
-        }
-        : withBearer(fixture.adminAccessToken ?? "", { method: "POST" })
+      "helper.CT13.approval.approve",
+      `/api/v3/admin/approvals/${approvalReference}/approve`,
+      {
+        ...jsonRequestBody({ expected_status: "pending" }),
+        headers: rustAdminHeaders(true, { "content-type": "application/json", "idempotency-key": `ct13-approve-${approvalReference}` })
+      }
     );
     expect(approve.status).toBe(200);
-    if (isRust) {
-      snapshots.recordValue("CT13.approval.approve", {
-        status: approve.status,
-        decision_status: approve.body?.status
-      });
-    }
+    snapshots.recordValue("CT13.approval.approve", {
+      status: approve.status,
+      decision_status: approve.body?.status
+    });
 
     const continued = await createExchange("CT13 approve", SECRET_NAMES.approval, "CT13.exchange.approve.continued");
     expect(continued.status).toBe(201);
@@ -735,192 +724,139 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(rejection.status).toBe(403);
     const rejectionReference = requireBody<{ policy: { approval_reference: string } }>(rejection).policy.approval_reference;
     const reject = await call<{ status?: string }>(
-      isRust ? "helper.CT13.approval.reject" : "CT13.approval.reject",
-      isRust ? `/api/v3/admin/approvals/${rejectionReference}/reject` : `/api/v2/secret/exchange/admin/approval/${rejectionReference}/reject`,
-      isRust
-        ? {
-          ...jsonRequestBody({ expected_status: "pending" }),
-          headers: rustAdminHeaders(true, { "content-type": "application/json", "idempotency-key": `ct13-reject-${rejectionReference}` })
-        }
-        : withBearer(fixture.adminAccessToken ?? "", { method: "POST" })
+      "helper.CT13.approval.reject",
+      `/api/v3/admin/approvals/${rejectionReference}/reject`,
+      {
+        ...jsonRequestBody({ expected_status: "pending" }),
+        headers: rustAdminHeaders(true, { "content-type": "application/json", "idempotency-key": `ct13-reject-${rejectionReference}` })
+      }
     );
     expect(reject.status).toBe(200);
-    if (isRust) {
-      snapshots.recordValue("CT13.approval.reject", {
-        status: reject.status,
-        decision_status: reject.body?.status
-      });
-    }
+    snapshots.recordValue("CT13.approval.reject", {
+      status: reject.status,
+      decision_status: reject.body?.status
+    });
     const rejectedAgain = await createExchange("CT13 reject", SECRET_NAMES.approval, "CT13.exchange.reject.rejected");
     expect(rejectedAgain.status).toBe(403);
     expect(requireBody(rejectedAgain)).toMatchObject({ error: "Exchange approval was rejected" });
   });
 
-  if (process.env.SUT !== "rust") {
-    it("CT14 records hosted user refresh rotation, replay rejection, expiry, and absence", async () => {
-      const seeded = await httpRequest<{
-        refresh_token: string;
-        access_token: string;
-      }>(fixture.baseUrl, "/api/v2/auth/test/seed-workspace", {
-        ...jsonRequestBody({ prefix: "refresh", role: "workspace_admin" }),
-        headers: {
-          "content-type": "application/json",
-          "x-blindpass-e2e-seed-token": fixture.seedToken
-        }
-      });
-      expect(seeded.status).toBe(201);
-      const oldRefresh = requireBody(seeded).refresh_token;
-      const refreshWorkspaceAccess = requireBody(seeded).access_token;
-      addCanaries(fixture, oldRefresh, refreshWorkspaceAccess);
-      const rotated = await call<{ refresh_token: string; access_token: string }>("CT14.refresh.valid", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: oldRefresh }));
-      expect(rotated.status).toBe(200);
-      const cookie = rotated.headers.get("set-cookie");
-      expect(cookie).toMatch(/^sps_refresh_token=[^;]+;/);
-      const cookieAttributes = new Map(cookie!.split(";").slice(1).map((part) => {
-        const [name, ...value] = part.trim().split("=");
-        return [name!.toLowerCase(), value.join("=")];
-      }));
-      snapshots.recordValue("CT14.refresh.cookie", {
-        path: cookieAttributes.get("path"),
-        expires: cookieAttributes.has("expires") ? "<timestamp>" : null,
-        max_age: cookieAttributes.has("max-age") ? "<seconds>" : null,
-        http_only: cookieAttributes.has("httponly"),
-        same_site: cookieAttributes.get("samesite"),
-        secure: cookieAttributes.has("secure")
-      });
-      const rotatedBody = requireBody(rotated);
-      addCanaries(fixture, rotatedBody.refresh_token, rotatedBody.access_token);
+  it("keeps hosted user refresh outside the controller", async () => {
+    const response = await httpRequest(fixture.baseUrl, "/api/v2/auth/refresh", jsonRequestBody({}));
+    expect(response.status).toBe(404);
+  });
 
-      const replay = await call("CT14.refresh.replay", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: oldRefresh }));
-      expect(replay.status).toBe(401);
-
-      const absent = await call("CT14.refresh.absent", "/api/v2/auth/refresh", jsonRequestBody({}));
-      expect(absent.status).toBe(401);
-
-      await sleep(Number(process.env.CONTRACT_REFRESH_TOKEN_TTL_SECONDS ?? 10) * 1000 + 250);
-      const expired = await call("CT14.refresh.expired", "/api/v2/auth/refresh", jsonRequestBody({ refresh_token: rotatedBody.refresh_token }));
-      expect(expired.status).toBe(401);
+  it("CT15.request.agent-limit scopes request windows by tenant, agent and provider", async () => {
+    const rateAdapter = await startRateLimitContractAdapter();
+    const rateFixture = rateAdapter.fixture;
+    const rateCall = <T = unknown>(path: string, init: RequestInit = {}) =>
+      httpRequest<T>(rateFixture.baseUrl, path, init);
+    const subject = "ct15-provider-scoped-agent";
+    const providerOne = rateAdapter.externalJwt({ sub: subject });
+    const requestBody = () => jsonRequestBody({ public_key: "YQ==", description: "CT15 request limit" });
+    const allowedOne = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+    const allowedTwo = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+    const limited = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+    expect(allowedOne.status).toBe(201);
+    expect(allowedTwo.status).toBe(201);
+    expect(limited.status).toBe(429);
+    expect(requireBody(limited)).toEqual({
+      error: "Too many secret requests",
+      code: "rate_limited",
+      retry_after_seconds: expect.any(Number),
+      limit: 2,
+      used: 3
     });
-  }
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect(containsCanary(limited.body, rateFixture.canaries)).toEqual([]);
 
-  if (process.env.SUT === "rust") {
-    it("keeps hosted user refresh outside the controller", async () => {
-      const response = await httpRequest(fixture.baseUrl, "/api/v2/auth/refresh", jsonRequestBody({}));
-      expect(response.status).toBe(404);
+    const otherProvider = rateAdapter.externalJwt({ sub: subject, iss: "contract-gateway-alt" });
+    const otherProviderRequest = await rateCall("/api/v2/secret/request", withBearer(otherProvider, requestBody()));
+    expect(otherProviderRequest.status).toBe(201);
+
+    const foreignToken = rateAdapter.externalJwt({ sub: "ct15-foreign-scope", workspace_id: "another-tenant" });
+    const foreign = await rateCall("/api/v2/secret/request", withBearer(foreignToken, requestBody()));
+    expect(foreign.status).toBe(403);
+    const validTenantToken = rateAdapter.externalJwt({ sub: "ct15-foreign-scope" });
+    const validOne = await rateCall("/api/v2/secret/request", withBearer(validTenantToken, requestBody()));
+    const validTwo = await rateCall("/api/v2/secret/request", withBearer(validTenantToken, requestBody()));
+    expect(validOne.status).toBe(201);
+    expect(validTwo.status).toBe(201);
+
+    const exchangeBody = () => jsonRequestBody({
+      public_key: "YQ==",
+      secret_name: "not-registered.secret",
+      purpose: "CT15 exchange rate limit",
+      fulfiller_hint: AGENT_IDS.fulfiller
     });
-
-    it("CT15.request.agent-limit scopes request windows by tenant, agent and provider", async () => {
-      const rateAdapter = await startRateLimitContractAdapter();
-      const rateFixture = rateAdapter.fixture;
-      const rateCall = <T = unknown>(path: string, init: RequestInit = {}) =>
-        httpRequest<T>(rateFixture.baseUrl, path, init);
-      const subject = "ct15-provider-scoped-agent";
-      const providerOne = rateAdapter.externalJwt({ sub: subject });
-      const requestBody = () => jsonRequestBody({ public_key: "YQ==", description: "CT15 request limit" });
-      const allowedOne = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
-      const allowedTwo = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
-      const limited = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
-      expect(allowedOne.status).toBe(201);
-      expect(allowedTwo.status).toBe(201);
-      expect(limited.status).toBe(429);
-      expect(requireBody(limited)).toEqual({
-        error: "Too many secret requests",
-        code: "rate_limited",
-        retry_after_seconds: expect.any(Number),
-        limit: 2,
-        used: 3
-      });
-      expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
-      expect(containsCanary(limited.body, rateFixture.canaries)).toEqual([]);
-
-      const otherProvider = rateAdapter.externalJwt({ sub: subject, iss: "contract-gateway-alt" });
-      const otherProviderRequest = await rateCall("/api/v2/secret/request", withBearer(otherProvider, requestBody()));
-      expect(otherProviderRequest.status).toBe(201);
-
-      const foreignToken = rateAdapter.externalJwt({ sub: "ct15-foreign-scope", workspace_id: "another-tenant" });
-      const foreign = await rateCall("/api/v2/secret/request", withBearer(foreignToken, requestBody()));
-      expect(foreign.status).toBe(403);
-      const validTenantToken = rateAdapter.externalJwt({ sub: "ct15-foreign-scope" });
-      const validOne = await rateCall("/api/v2/secret/request", withBearer(validTenantToken, requestBody()));
-      const validTwo = await rateCall("/api/v2/secret/request", withBearer(validTenantToken, requestBody()));
-      expect(validOne.status).toBe(201);
-      expect(validTwo.status).toBe(201);
-
-      const exchangeBody = () => jsonRequestBody({
-        public_key: "YQ==",
-        secret_name: "not-registered.secret",
-        purpose: "CT15 exchange rate limit",
-        fulfiller_hint: AGENT_IDS.fulfiller
-      });
-      const deniedOne = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
-      const deniedTwo = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
-      const exchangeLimited = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
-      expect(deniedOne.status).toBe(403);
-      expect(deniedTwo.status).toBe(403);
-      expect(exchangeLimited.status).toBe(429);
-      expect(requireBody(exchangeLimited)).toMatchObject({
-        error: "Too many exchange requests",
-        code: "rate_limited",
-        limit: 2,
-        used: 3
-      });
-      expect(containsCanary(exchangeLimited.body, rateFixture.canaries)).toEqual([]);
-
-      await sleep(Number(process.env.CONTRACT_AGENT_RATE_WINDOW_MS ?? 1000) + 250);
-      const reset = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
-      expect(reset.status).toBe(201);
+    const deniedOne = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
+    const deniedTwo = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
+    const exchangeLimited = await rateCall("/api/v2/secret/exchange/request", withBearer(providerOne, exchangeBody()));
+    expect(deniedOne.status).toBe(403);
+    expect(deniedTwo.status).toBe(403);
+    expect(exchangeLimited.status).toBe(429);
+    expect(requireBody(exchangeLimited)).toMatchObject({
+      error: "Too many exchange requests",
+      code: "rate_limited",
+      limit: 2,
+      used: 3
     });
+    expect(containsCanary(exchangeLimited.body, rateFixture.canaries)).toEqual([]);
 
-    it("CT15.exchange.agent-limit counts policy denials and keeps the request budget separate", async () => {
-      const rateAdapter = await startRateLimitContractAdapter();
-      const rateFixture = rateAdapter.fixture;
-      const rateCall = <T = unknown>(path: string, init: RequestInit = {}) =>
-        httpRequest<T>(rateFixture.baseUrl, path, init);
-      const token = rateAdapter.externalJwt({ sub: "ct15-independent-exchange-agent" });
-      const requestBody = () => jsonRequestBody({ public_key: "YQ==", description: "independent request window" });
-      const allowed = await rateCall("/api/v2/secret/request", withBearer(token, requestBody()));
-      expect(allowed.status).toBe(201);
-      const exchangeBody = () => jsonRequestBody({
-        public_key: "YQ==",
-        secret_name: "not-registered.secret",
-        purpose: "CT15 isolated exchange limit",
-        fulfiller_hint: AGENT_IDS.fulfiller
-      });
-      const deniedOne = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
-      const deniedTwo = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
-      expect(deniedOne.status).toBe(403);
-      expect(deniedTwo.status).toBe(403);
-      const limited = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
-      expect(limited.status).toBe(429);
-      expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+    await sleep(Number(process.env.CONTRACT_AGENT_RATE_WINDOW_MS ?? 1000) + 250);
+    const reset = await rateCall("/api/v2/secret/request", withBearer(providerOne, requestBody()));
+    expect(reset.status).toBe(201);
+  });
+
+  it("CT15.exchange.agent-limit counts policy denials and keeps the request budget separate", async () => {
+    const rateAdapter = await startRateLimitContractAdapter();
+    const rateFixture = rateAdapter.fixture;
+    const rateCall = <T = unknown>(path: string, init: RequestInit = {}) =>
+      httpRequest<T>(rateFixture.baseUrl, path, init);
+    const token = rateAdapter.externalJwt({ sub: "ct15-independent-exchange-agent" });
+    const requestBody = () => jsonRequestBody({ public_key: "YQ==", description: "independent request window" });
+    const allowed = await rateCall("/api/v2/secret/request", withBearer(token, requestBody()));
+    expect(allowed.status).toBe(201);
+    const exchangeBody = () => jsonRequestBody({
+      public_key: "YQ==",
+      secret_name: "not-registered.secret",
+      purpose: "CT15 isolated exchange limit",
+      fulfiller_hint: AGENT_IDS.fulfiller
     });
+    const deniedOne = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
+    const deniedTwo = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
+    expect(deniedOne.status).toBe(403);
+    expect(deniedTwo.status).toBe(403);
+    const limited = await rateCall("/api/v2/secret/exchange/request", withBearer(token, exchangeBody()));
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
 
-    it("P02-I01 keeps a submit/revoke HTTP race revoked without retrievable ciphertext", async () => {
-      const created = requireBody(await createExchange("P02-I01 HTTP race", SECRET_NAMES.allowed, "helper.P02-I01.exchange"));
-      const exchangeId = created.exchange_id;
-      const reserved = await httpRequest(fixture.baseUrl, "/api/v2/secret/exchange/fulfill", withBearer(agent(fixture, "fulfiller").token, {
-        ...jsonRequestBody({ fulfillment_token: created.fulfillment_token })
-      }));
-      expect(reserved.status).toBe(200);
+  it("P02-I01 keeps a submit/revoke HTTP race revoked without retrievable ciphertext", async () => {
+    const created = requireBody(await createExchange("P02-I01 HTTP race", SECRET_NAMES.allowed, "helper.P02-I01.exchange"));
+    const exchangeId = created.exchange_id;
+    const reserved = await httpRequest(fixture.baseUrl, "/api/v2/secret/exchange/fulfill", withBearer(agent(fixture, "fulfiller").token, {
+      ...jsonRequestBody({ fulfillment_token: created.fulfillment_token })
+    }));
+    expect(reserved.status).toBe(200);
 
-      const [submitted, revoked] = await Promise.all([
-        httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/submit/${exchangeId}`, withBearer(agent(fixture, "fulfiller").token, {
-          ...jsonRequestBody({ enc: "ZW5j", ciphertext: CANARIES.ciphertext })
-        })),
-        httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/revoke/${exchangeId}`, withBearer(agent(fixture, "requester").token, { method: "DELETE" }))
-      ]);
-      expect([201, 409, 410]).toContain(submitted.status);
-      expect(revoked.status).toBe(200);
-      expect(revoked.body).toEqual({ status: "revoked" });
+    const [submitted, revoked] = await Promise.all([
+      httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/submit/${exchangeId}`, withBearer(agent(fixture, "fulfiller").token, {
+        ...jsonRequestBody({ enc: "ZW5j", ciphertext: CANARIES.ciphertext })
+      })),
+      httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/revoke/${exchangeId}`, withBearer(agent(fixture, "requester").token, { method: "DELETE" }))
+    ]);
+    expect([201, 409, 410]).toContain(submitted.status);
+    expect(revoked.status).toBe(200);
+    expect(revoked.body).toEqual({ status: "revoked" });
 
-      const status = await httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/status/${exchangeId}`, withBearer(agent(fixture, "requester").token));
-      expect(status.status).toBe(200);
-      expect(status.body).toEqual({ status: "revoked" });
-      const retrieved = await httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/retrieve/${exchangeId}`, withBearer(agent(fixture, "requester").token));
-      expect(retrieved.status).toBe(409);
-      expect(retrieved.text).not.toContain(CANARIES.ciphertext);
-    });
-  }
+    const status = await httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/status/${exchangeId}`, withBearer(agent(fixture, "requester").token));
+    expect(status.status).toBe(200);
+    expect(status.body).toEqual({ status: "revoked" });
+    const retrieved = await httpRequest(fixture.baseUrl, `/api/v2/secret/exchange/retrieve/${exchangeId}`, withBearer(agent(fixture, "requester").token));
+    expect(retrieved.status).toBe(409);
+    expect(retrieved.text).not.toContain(CANARIES.ciphertext);
+  });
 
   it("CT15 records rate-limit rejection and window reset without changing production defaults", async () => {
     await sleep(Number(process.env.CONTRACT_AGENT_TOKEN_RATE_WINDOW_MS ?? 1000) + 250);
@@ -937,7 +873,7 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
   });
 
   it("CT16 grants CORS only to configured origins", async () => {
-    const allowed = await call(process.env.SUT === "rust" ? "helper.CT16.cors.allowed" : "CT16.cors.allowed", "/healthz", withOrigin("http://allowed.contract.test", {
+    const allowed = await call("helper.CT16.cors.allowed", "/healthz", withOrigin("http://allowed.contract.test", {
       method: "OPTIONS",
       headers: {
         "access-control-request-method": "GET"
@@ -945,65 +881,54 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     }));
     expect(allowed.status).toBe(204);
     expect(allowed.headers.get("access-control-allow-origin")).toBe("http://allowed.contract.test");
-    if (process.env.SUT === "rust") {
-      snapshots.recordValue("CT16.cors.allowed", {
-        status: allowed.status,
-        allow_origin: allowed.headers.get("access-control-allow-origin"),
-        allow_credentials: allowed.headers.get("access-control-allow-credentials")
-      });
-    }
+    snapshots.recordValue("CT16.cors.allowed", {
+      status: allowed.status,
+      allow_origin: allowed.headers.get("access-control-allow-origin"),
+      allow_credentials: allowed.headers.get("access-control-allow-credentials")
+    });
 
-    const disallowed = await call(process.env.SUT === "rust" ? "helper.CT16.cors.disallowed" : "CT16.cors.disallowed", "/healthz", withOrigin("http://denied.contract.test", {
+    const disallowed = await call("helper.CT16.cors.disallowed", "/healthz", withOrigin("http://denied.contract.test", {
       method: "OPTIONS",
       headers: {
         "access-control-request-method": "GET"
       }
     }));
     expect(disallowed.headers.get("access-control-allow-origin")).toBeNull();
-    if (process.env.SUT === "rust") {
-      snapshots.recordValue("CT16.cors.disallowed", {
-        allow_origin: disallowed.headers.get("access-control-allow-origin")
-      });
-    }
+    snapshots.recordValue("CT16.cors.disallowed", {
+      allow_origin: disallowed.headers.get("access-control-allow-origin")
+    });
 
-    const allowedSimple = await call(process.env.SUT === "rust" ? "helper.CT16.cors.allowed-simple" : "CT16.cors.allowed-simple", "/healthz", withOrigin("http://allowed.contract.test"));
+    const allowedSimple = await call("helper.CT16.cors.allowed-simple", "/healthz", withOrigin("http://allowed.contract.test"));
     expect(allowedSimple.status).toBe(200);
     expect(allowedSimple.headers.get("access-control-allow-origin")).toBe("http://allowed.contract.test");
-    if (process.env.SUT === "rust") {
-      snapshots.recordValue("CT16.cors.allowed-simple", {
-        status: allowedSimple.status,
-        allow_origin: allowedSimple.headers.get("access-control-allow-origin"),
-        allow_credentials: allowedSimple.headers.get("access-control-allow-credentials")
-      });
-    }
+    snapshots.recordValue("CT16.cors.allowed-simple", {
+      status: allowedSimple.status,
+      allow_origin: allowedSimple.headers.get("access-control-allow-origin"),
+      allow_credentials: allowedSimple.headers.get("access-control-allow-credentials")
+    });
 
-    const disallowedSimple = await call(process.env.SUT === "rust" ? "helper.CT16.cors.disallowed-simple" : "CT16.cors.disallowed-simple", "/healthz", withOrigin("http://denied.contract.test"));
+    const disallowedSimple = await call("helper.CT16.cors.disallowed-simple", "/healthz", withOrigin("http://denied.contract.test"));
     expect(disallowedSimple.status).toBe(200);
     expect(disallowedSimple.headers.get("access-control-allow-origin")).toBeNull();
-    if (process.env.SUT === "rust") {
-      snapshots.recordValue("CT16.cors.disallowed-simple", {
-        status: disallowedSimple.status,
-        allow_origin: disallowedSimple.headers.get("access-control-allow-origin")
-      });
-    }
+    snapshots.recordValue("CT16.cors.disallowed-simple", {
+      status: disallowedSimple.status,
+      allow_origin: disallowedSimple.headers.get("access-control-allow-origin")
+    });
   });
 
   it("CT17 records metadata-only audit output and rejects canary leakage", async () => {
-    const isRust = process.env.SUT === "rust";
-    const audit = await call<{ records?: unknown[]; items?: unknown[] }>(
-      isRust ? "helper.CT17.audit" : "CT17.audit",
-      isRust ? "/api/v3/admin/audit?limit=100" : "/api/v2/audit/?limit=200",
-      isRust ? { headers: rustAdminHeaders() } : withBearer(fixture.adminAccessToken ?? "")
+    const audit = await call<{ items?: unknown[] }>(
+      "helper.CT17.audit",
+      "/api/v3/admin/audit?limit=100",
+      { headers: rustAdminHeaders() }
     );
     expect(audit.status).toBe(200);
-    const records = (isRust ? requireBody(audit).items : requireBody(audit).records) ?? [];
+    const records = requireBody(audit).items ?? [];
     expect(records).toBeDefined();
     expect(records.length).toBeGreaterThan(0);
     const eventTypes = new Set(records.flatMap((record) => {
       if (!record || typeof record !== "object") return [];
-      const event = isRust
-        ? ("event" in record ? record.event : undefined)
-        : ("event_type" in record ? record.event_type : undefined);
+      const event = "event" in record ? record.event : undefined;
       return event === undefined ? [] : [String(event)];
     }));
     expect([...eventTypes]).toEqual(expect.arrayContaining([
@@ -1012,19 +937,15 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
       "exchange_rejected"
     ]));
     expect(containsCanary(records, fixture.canaries)).toEqual([]);
-    const recordShape = isRust
-      ? ["actor_id", "created_at", "event", "id", "metadata", "resource_id"]
-      : ["actor_id", "actor_type", "created_at", "event_type", "id", "ip_address", "metadata", "resource_id", "workspace_id"];
+    const recordShape = ["actor_id", "created_at", "event", "id", "metadata", "resource_id"];
     expect(records.every((record) => record && typeof record === "object"
       && JSON.stringify(Object.keys(record).sort()) === JSON.stringify(recordShape))).toBe(true);
-    if (process.env.SUT === "rust") {
-      snapshots.recordValue("CT17.audit", {
-        status: audit.status,
-        content_type: audit.contentType?.split(";", 1)[0] ?? null,
-        record_shape: recordShape,
-        required_events: ["agent_token_minted", "exchange_pending_approval", "exchange_rejected"]
-      });
-    }
+    snapshots.recordValue("CT17.audit", {
+      status: audit.status,
+      content_type: audit.contentType?.split(";", 1)[0] ?? null,
+      record_shape: recordShape,
+      required_events: ["agent_token_minted", "exchange_pending_approval", "exchange_rejected"]
+    });
   });
 
   it("CT18 preserves route-specific error bodies across representative status classes", async () => {
@@ -1056,54 +977,35 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     expect(limited?.status).toBe(429);
     snapshots.recordValue("CT18.error.429", { status: limited?.status, body: limited?.body });
 
-    const tooLarge = await call("CT18.error.413", "/api/v2/secret/request", withBearer(agent(fixture, "requester").token, {
-      ...jsonRequestBody({ public_key: "YQ==", description: "x".repeat(1024 * 1024) })
-    }));
+    // The limit applies to the declared length, so the oversized body is declared, not streamed (see httpRejectedBeforeBody).
+    const tooLarge = record("CT18.error.413", await httpRejectedBeforeBody(
+      fixture.baseUrl,
+      "/api/v2/secret/request",
+      withBearer(agent(fixture, "requester").token, jsonRequestBody({ public_key: "YQ==", description: "x" })),
+      1024 * 1024 + 1024
+    ));
     expect(tooLarge.status).toBe(413);
 
     const oversized = namedResults.get("CT05.submit.oversized");
     expect(oversized?.status).toBe(400);
     snapshots.recordValue("CT18.error.validation", { status: oversized?.status, body: oversized?.body });
+  });
 
-    if (process.env.SUT === "rust") {
-      if (!adapter.withReadinessFailure) {
-        throw new Error("CT18 requires the Rust adapter to force a readiness failure");
-      }
-      const readiness = await adapter.withReadinessFailure(() => httpRequest(adapter.baseUrl, "/readyz"));
-      expect(readiness.status).toBe(503);
-      expect(readiness.body).toEqual({ ok: false, checks: { database: "down" }, reason: "recovery_required" });
-      snapshots.recordValue("CT18.error.503", {
-        status: readiness.status,
-        ok: (readiness.body as { ok: boolean }).ok,
-        database: (readiness.body as { checks: { database: string } }).checks.database
-      });
-      const recovered = await httpRequest(adapter.baseUrl, "/readyz");
-      expect(recovered.status).toBe(200);
-      return;
+  // Needs the harness to force a database failure, so it runs only against a harness-spawned controller.
+  it("CT18.error.503 reports a recovery-required readiness failure and recovers", async () => {
+    if (!adapter.withReadinessFailure) {
+      throw new Error("CT18 requires the Rust adapter to force a readiness failure");
     }
-
-    const unavailableApp = await buildApp({
-      store: new InMemoryRequestStore(),
-      useInMemoryStore: true,
-      hmacSecret: "ct18-readiness-dummy-secret",
-      readinessChecks: {
-        db: async () => { throw new Error("CT18 database dependency unavailable"); },
-        redis: async () => { throw new Error("CT18 Redis dependency unavailable"); }
-      }
+    const readiness = await adapter.withReadinessFailure(() => httpRequest(adapter.baseUrl, "/readyz"));
+    expect(readiness.status).toBe(503);
+    expect(readiness.body).toEqual({ ok: false, checks: { database: "down" }, reason: "recovery_required" });
+    snapshots.recordValue("CT18.error.503", {
+      status: readiness.status,
+      ok: (readiness.body as { ok: boolean }).ok,
+      database: (readiness.body as { checks: { database: string } }).checks.database
     });
-    try {
-      const baseUrl = await unavailableApp.listen({ host: "127.0.0.1", port: 0 });
-      const readiness = await httpRequest(baseUrl, "/readyz");
-      expect(readiness.status).toBe(503);
-      expect(readiness.body).toEqual({
-        ok: false,
-        code: "service_unavailable",
-        checks: { database: "down", redis: "down" }
-      });
-      snapshots.record("CT18.error.503", readiness);
-    } finally {
-      await unavailableApp.close();
-    }
+    const recovered = await httpRequest(adapter.baseUrl, "/readyz");
+    expect(recovered.status).toBe(200);
   });
 
   it("CC01 keeps the agent-skill and gateway clients compatible with live responses", async () => {
@@ -1160,134 +1062,132 @@ describeContract("P00 CT/CC black-box baseline", { timeout: 90_000 }, () => {
     }));
   });
 
-  if (process.env.SUT === "rust") {
-    it("CT19 grants idempotent status-only browser authority bounded by the metadata signature", async () => {
-      const created = await createSecretRequest("requester", "CT19 browser recovery status");
-      const capabilityPath = `/api/v2/secret/browser-status/${created.requestId}/capability?sig=${encodeURIComponent(created.metadataSig)}`;
-      const first = await httpRequest<{ status_sig: string }>(fixture.baseUrl, capabilityPath, { method: "POST" });
-      expect(first.status).toBe(200);
-      expect(first.body?.status_sig).toMatch(/^\d+\.[A-Za-z0-9_-]+$/);
-      addCanaries(fixture, first.body?.status_sig);
-      const metadataExpiry = Number(created.metadataSig.split(".", 1)[0]);
-      const statusExpiry = Number(first.body?.status_sig.split(".", 1)[0]);
-      expect(statusExpiry).toBeLessThanOrEqual(metadataExpiry);
+  it("CT19 grants idempotent status-only browser authority bounded by the metadata signature", async () => {
+    const created = await createSecretRequest("requester", "CT19 browser recovery status");
+    const capabilityPath = `/api/v2/secret/browser-status/${created.requestId}/capability?sig=${encodeURIComponent(created.metadataSig)}`;
+    const first = await httpRequest<{ status_sig: string }>(fixture.baseUrl, capabilityPath, { method: "POST" });
+    expect(first.status).toBe(200);
+    expect(first.body?.status_sig).toMatch(/^\d+\.[A-Za-z0-9_-]+$/);
+    addCanaries(fixture, first.body?.status_sig);
+    const metadataExpiry = Number(created.metadataSig.split(".", 1)[0]);
+    const statusExpiry = Number(first.body?.status_sig.split(".", 1)[0]);
+    expect(statusExpiry).toBeLessThanOrEqual(metadataExpiry);
 
-      const retried = await httpRequest<{ status_sig: string }>(fixture.baseUrl, capabilityPath, { method: "POST" });
-      expect(retried.status).toBe(200);
-      expect(retried.body?.status_sig).toBe(first.body?.status_sig);
+    const retried = await httpRequest<{ status_sig: string }>(fixture.baseUrl, capabilityPath, { method: "POST" });
+    expect(retried.status).toBe(200);
+    expect(retried.body?.status_sig).toBe(first.body?.status_sig);
 
-      const missingSource = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${created.requestId}/capability`, { method: "POST" });
-      expect(missingSource.status).toBe(410);
-      expect(missingSource.body).toEqual({ status: "expired" });
-      const wrongScopeSource = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${created.requestId}/capability?sig=${encodeURIComponent(created.submitSig)}`,
-        { method: "POST" });
-      expect(wrongScopeSource.status).toBe(410);
-      expect(wrongScopeSource.body).toEqual({ status: "expired" });
-      const tamperedSource = created.metadataSig.replace(/.$/, created.metadataSig.endsWith("A") ? "B" : "A");
-      const invalidSource = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${created.requestId}/capability?sig=${encodeURIComponent(tamperedSource)}`,
-        { method: "POST" });
-      expect(invalidSource.status).toBe(410);
-      expect(invalidSource.body).toEqual({ status: "expired" });
+    const missingSource = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${created.requestId}/capability`, { method: "POST" });
+    expect(missingSource.status).toBe(410);
+    expect(missingSource.body).toEqual({ status: "expired" });
+    const wrongScopeSource = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${created.requestId}/capability?sig=${encodeURIComponent(created.submitSig)}`,
+      { method: "POST" });
+    expect(wrongScopeSource.status).toBe(410);
+    expect(wrongScopeSource.body).toEqual({ status: "expired" });
+    const tamperedSource = created.metadataSig.replace(/.$/, created.metadataSig.endsWith("A") ? "B" : "A");
+    const invalidSource = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${created.requestId}/capability?sig=${encodeURIComponent(tamperedSource)}`,
+      { method: "POST" });
+    expect(invalidSource.status).toBe(410);
+    expect(invalidSource.body).toEqual({ status: "expired" });
 
-      const statusPath = `/api/v2/secret/browser-status/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`;
-      const pending = await httpRequest<{ status: string }>(fixture.baseUrl, statusPath);
-      expect(pending.status).toBe(200);
-      expect(pending.body).toEqual({ status: "pending" });
-      if (!adapter.restartController) {
-        throw new Error("CT19 requires a harness-spawned Rust controller to verify status across restart");
-      }
-      await adapter.restartController();
-      const pendingAfterRestart = await httpRequest<{ status: string }>(fixture.baseUrl, statusPath);
-      expect(pendingAfterRestart.status).toBe(200);
-      expect(pendingAfterRestart.body).toEqual({ status: "pending" });
+    const statusPath = `/api/v2/secret/browser-status/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`;
+    const pending = await httpRequest<{ status: string }>(fixture.baseUrl, statusPath);
+    expect(pending.status).toBe(200);
+    expect(pending.body).toEqual({ status: "pending" });
+    if (!adapter.restartController) {
+      throw new Error("CT19 requires a harness-spawned Rust controller to verify status across restart");
+    }
+    await adapter.restartController();
+    const pendingAfterRestart = await httpRequest<{ status: string }>(fixture.baseUrl, statusPath);
+    expect(pendingAfterRestart.status).toBe(200);
+    expect(pendingAfterRestart.body).toEqual({ status: "pending" });
 
-      const wrongScope = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${created.requestId}?sig=${encodeURIComponent(created.metadataSig)}`);
-      expect(wrongScope.status).toBe(410);
-      expect(wrongScope.body).toEqual({ status: "expired" });
-      const tampered = first.body?.status_sig.replace(/.$/, first.body.status_sig.endsWith("A") ? "B" : "A") ?? "bad";
-      const invalid = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${created.requestId}?sig=${encodeURIComponent(tampered)}`);
-      expect(invalid.status).toBe(410);
-      expect(invalid.body).toEqual({ status: "expired" });
-      const missing = await httpRequest(fixture.baseUrl, `/api/v2/secret/browser-status/${created.requestId}`);
-      expect(missing.status).toBe(410);
-      expect(missing.body).toEqual({ status: "expired" });
+    const wrongScope = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${created.requestId}?sig=${encodeURIComponent(created.metadataSig)}`);
+    expect(wrongScope.status).toBe(410);
+    expect(wrongScope.body).toEqual({ status: "expired" });
+    const tampered = first.body?.status_sig.replace(/.$/, first.body.status_sig.endsWith("A") ? "B" : "A") ?? "bad";
+    const invalid = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${created.requestId}?sig=${encodeURIComponent(tampered)}`);
+    expect(invalid.status).toBe(410);
+    expect(invalid.body).toEqual({ status: "expired" });
+    const missing = await httpRequest(fixture.baseUrl, `/api/v2/secret/browser-status/${created.requestId}`);
+    expect(missing.status).toBe(410);
+    expect(missing.body).toEqual({ status: "expired" });
 
-      const foreign = await createSecretRequest("requester", "CT19 foreign request");
-      const foreignStatus = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${foreign.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`);
-      expect(foreignStatus.status).toBe(410);
-      expect(foreignStatus.body).toEqual({ status: "expired" });
+    const foreign = await createSecretRequest("requester", "CT19 foreign request");
+    const foreignStatus = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${foreign.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`);
+    expect(foreignStatus.status).toBe(410);
+    expect(foreignStatus.body).toEqual({ status: "expired" });
 
-      const statusAsSubmit = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/submit/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`,
-        jsonRequestBody({ enc: "ZW5jLWN0MTk=", ciphertext: "Y2lwaGVydGV4dC1jdDE5" }));
-      expect([403, 410]).toContain(statusAsSubmit.status);
-      const statusAsAgentStatus = await httpRequest(fixture.baseUrl, `/api/v2/secret/status/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`);
-      expect(statusAsAgentStatus.status).toBe(401);
-      const statusAsRetrieve = await httpRequest(fixture.baseUrl, `/api/v2/secret/retrieve/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`);
-      expect(statusAsRetrieve.status).toBe(401);
+    const statusAsSubmit = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/submit/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`,
+      jsonRequestBody({ enc: "ZW5jLWN0MTk=", ciphertext: "Y2lwaGVydGV4dC1jdDE5" }));
+    expect([403, 410]).toContain(statusAsSubmit.status);
+    const statusAsAgentStatus = await httpRequest(fixture.baseUrl, `/api/v2/secret/status/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`);
+    expect(statusAsAgentStatus.status).toBe(401);
+    const statusAsRetrieve = await httpRequest(fixture.baseUrl, `/api/v2/secret/retrieve/${created.requestId}?sig=${encodeURIComponent(first.body?.status_sig ?? "")}`);
+    expect(statusAsRetrieve.status).toBe(401);
 
-      // A submit whose response is discarded models the browser's uncertain
-      // outcome; the separate capability remains safe to query afterward.
-      const submitted = await submitSecret(created.requestId, created.submitSig, "Y2lwaGVydGV4dC1jdDE5");
-      expect(submitted.status).toBe(201);
-      const submittedStatus = await httpRequest<{ status: string }>(fixture.baseUrl, statusPath);
-      expect(submittedStatus.status).toBe(200);
-      expect(submittedStatus.body).toEqual({ status: "submitted" });
+    // A submit whose response is discarded models the browser's uncertain
+    // outcome; the separate capability remains safe to query afterward.
+    const submitted = await submitSecret(created.requestId, created.submitSig, "Y2lwaGVydGV4dC1jdDE5");
+    expect(submitted.status).toBe(201);
+    const submittedStatus = await httpRequest<{ status: string }>(fixture.baseUrl, statusPath);
+    expect(submittedStatus.status).toBe(200);
+    expect(submittedStatus.body).toEqual({ status: "submitted" });
 
-      const retrieved = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/retrieve/${created.requestId}`,
-        withBearer(agent(fixture, "requester").token));
-      expect(retrieved.status).toBe(200);
-      const consumed = await httpRequest(fixture.baseUrl, statusPath);
-      expect(consumed.status).toBe(410);
-      expect(consumed.body).toEqual({ status: "expired" });
+    const retrieved = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/retrieve/${created.requestId}`,
+      withBearer(agent(fixture, "requester").token));
+    expect(retrieved.status).toBe(200);
+    const consumed = await httpRequest(fixture.baseUrl, statusPath);
+    expect(consumed.status).toBe(410);
+    expect(consumed.body).toEqual({ status: "expired" });
 
-      // A reloaded page retries issuance after its submit response was lost.
-      // Submitting shortens the request deadline below the metadata
-      // credential's expiry; the retry must still succeed, clamped to that
-      // shorter deadline rather than extending authority.
-      const reloaded = await createSecretRequest("requester", "CT19 capability after submit");
-      const reloadedSubmit = await submitSecret(reloaded.requestId, reloaded.submitSig, "Y2lwaGVydGV4dC1jdDE5LXJlbG9hZA==");
-      expect(reloadedSubmit.status).toBe(201);
-      const submittedDeadline = Math.floor(
-        (Date.now() + Number(process.env.CONTRACT_SUBMITTED_TTL_SECONDS ?? 3) * 1_000) / 1_000
-      );
-      const reissued = await httpRequest<{ status_sig: string }>(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${reloaded.requestId}/capability?sig=${encodeURIComponent(reloaded.metadataSig)}`,
-        { method: "POST" });
-      expect(reissued.status).toBe(200);
-      addCanaries(fixture, reissued.body?.status_sig);
-      const reissuedExpiry = Number(reissued.body?.status_sig.split(".", 1)[0]);
-      expect(reissuedExpiry).toBeLessThanOrEqual(Number(reloaded.metadataSig.split(".", 1)[0]));
-      expect(reissuedExpiry).toBeLessThanOrEqual(submittedDeadline);
-      expect(reissuedExpiry * 1_000).toBeGreaterThan(Date.now());
-      const reloadedStatus = await httpRequest<{ status: string }>(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${reloaded.requestId}?sig=${encodeURIComponent(reissued.body?.status_sig ?? "")}`);
-      expect(reloadedStatus.status).toBe(200);
-      expect(reloadedStatus.body).toEqual({ status: "submitted" });
+    // A reloaded page retries issuance after its submit response was lost.
+    // Submitting shortens the request deadline below the metadata
+    // credential's expiry; the retry must still succeed, clamped to that
+    // shorter deadline rather than extending authority.
+    const reloaded = await createSecretRequest("requester", "CT19 capability after submit");
+    const reloadedSubmit = await submitSecret(reloaded.requestId, reloaded.submitSig, "Y2lwaGVydGV4dC1jdDE5LXJlbG9hZA==");
+    expect(reloadedSubmit.status).toBe(201);
+    const submittedDeadline = Math.floor(
+      (Date.now() + Number(process.env.CONTRACT_SUBMITTED_TTL_SECONDS ?? 3) * 1_000) / 1_000
+    );
+    const reissued = await httpRequest<{ status_sig: string }>(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${reloaded.requestId}/capability?sig=${encodeURIComponent(reloaded.metadataSig)}`,
+      { method: "POST" });
+    expect(reissued.status).toBe(200);
+    addCanaries(fixture, reissued.body?.status_sig);
+    const reissuedExpiry = Number(reissued.body?.status_sig.split(".", 1)[0]);
+    expect(reissuedExpiry).toBeLessThanOrEqual(Number(reloaded.metadataSig.split(".", 1)[0]));
+    expect(reissuedExpiry).toBeLessThanOrEqual(submittedDeadline);
+    expect(reissuedExpiry * 1_000).toBeGreaterThan(Date.now());
+    const reloadedStatus = await httpRequest<{ status: string }>(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${reloaded.requestId}?sig=${encodeURIComponent(reissued.body?.status_sig ?? "")}`);
+    expect(reloadedStatus.status).toBe(200);
+    expect(reloadedStatus.body).toEqual({ status: "submitted" });
 
-      const expiring = await createSecretRequest("requester", "CT19 expired capability");
-      const expiringCapability = await httpRequest<{ status_sig: string }>(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${expiring.requestId}/capability?sig=${encodeURIComponent(expiring.metadataSig)}`,
-        { method: "POST" });
-      expect(expiringCapability.status).toBe(200);
-      const expiresAt = Number(expiringCapability.body?.status_sig.split(".", 1)[0]) * 1_000;
-      await sleep(Math.max(0, expiresAt - Date.now() + 1_100));
-      const expired = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${expiring.requestId}?sig=${encodeURIComponent(expiringCapability.body?.status_sig ?? "")}`);
-      expect(expired.status).toBe(410);
-      expect(expired.body).toEqual({ status: "expired" });
-      const expiredSource = await httpRequest(fixture.baseUrl,
-        `/api/v2/secret/browser-status/${expiring.requestId}/capability?sig=${encodeURIComponent(expiring.metadataSig)}`,
-        { method: "POST" });
-      expect(expiredSource.status).toBe(410);
-      expect(expiredSource.body).toEqual({ status: "expired" });
-    }, 90_000);
-  }
+    const expiring = await createSecretRequest("requester", "CT19 expired capability");
+    const expiringCapability = await httpRequest<{ status_sig: string }>(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${expiring.requestId}/capability?sig=${encodeURIComponent(expiring.metadataSig)}`,
+      { method: "POST" });
+    expect(expiringCapability.status).toBe(200);
+    const expiresAt = Number(expiringCapability.body?.status_sig.split(".", 1)[0]) * 1_000;
+    await sleep(Math.max(0, expiresAt - Date.now() + 1_100));
+    const expired = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${expiring.requestId}?sig=${encodeURIComponent(expiringCapability.body?.status_sig ?? "")}`);
+    expect(expired.status).toBe(410);
+    expect(expired.body).toEqual({ status: "expired" });
+    const expiredSource = await httpRequest(fixture.baseUrl,
+      `/api/v2/secret/browser-status/${expiring.requestId}/capability?sig=${encodeURIComponent(expiring.metadataSig)}`,
+      { method: "POST" });
+    expect(expiredSource.status).toBe(410);
+    expect(expiredSource.body).toEqual({ status: "expired" });
+  }, 90_000);
 });

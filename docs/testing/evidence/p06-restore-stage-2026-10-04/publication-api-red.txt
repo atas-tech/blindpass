@@ -1,0 +1,27 @@
+   Compiling blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+error[E0599]: no method named `publish_directory` found for struct `Directory` in the current scope
+  --> crates/blindpass-core/tests/directory_publication.rs:19:20
+   |
+19 |     assert!(parent.publish_directory("source", "destination").is_err(), "publication replaced existing destination");
+   |                    ^^^^^^^^^^^^^^^^^ method not found in `Directory`
+
+error[E0599]: no method named `publish_directory` found for struct `Directory` in the current scope
+  --> crates/blindpass-core/tests/directory_publication.rs:30:20
+   |
+30 |     assert!(parent.publish_directory("linked", "destination").is_err());
+   |                    ^^^^^^^^^^^^^^^^^ method not found in `Directory`
+
+error[E0599]: no method named `publish_directory` found for struct `Directory` in the current scope
+  --> crates/blindpass-core/tests/directory_publication.rs:31:20
+   |
+31 |     assert!(parent.publish_directory("../source", "destination").is_err());
+   |                    ^^^^^^^^^^^^^^^^^ method not found in `Directory`
+
+error[E0599]: no method named `publish_directory` found for struct `Directory` in the current scope
+  --> crates/blindpass-core/tests/directory_publication.rs:32:12
+   |
+32 |     parent.publish_directory("source", "destination").unwrap();
+   |            ^^^^^^^^^^^^^^^^^ method not found in `Directory`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `blindpass-core` (test "directory_publication") due to 4 previous errors

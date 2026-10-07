@@ -25,9 +25,12 @@ async fn login_attempts_are_bounded_before_password_verification() {
             .await;
         statuses.push(response.status);
     }
+    // P07-D4: ten failures from one address lock that account/source pair, so
+    // the eleventh attempt is refused as locked (423) before any hashing; the
+    // old shared 10-per-minute bucket answered 429 here.
     assert_eq!(
         statuses,
-        [401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 429]
+        [401, 401, 401, 401, 401, 401, 401, 401, 401, 401, 423]
     );
 }
 

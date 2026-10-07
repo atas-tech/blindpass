@@ -1,0 +1,51 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Opt-in PostgreSQL backup/verification job (ADR 0011). Use with compose.postgres.yml;
+# never include this file for ordinary up. The job reads the controller database over
+# the internal database network, dumps one exported snapshot with the pinned
+# toolkit and proves the dump by a full restore in a private socket-only cluster.
+services:
+  controller-backup:
+    profiles: [backup]
+    image: ${BLINDPASS_CONTROLLER_IMAGE:-ghcr.io/atas-tech/blindpass-controller:0.1.0}
+    user: "10001:10001"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ulimits:
+      core: 0
+    stop_grace_period: 10s
+    restart: "no"
+    healthcheck:
+      disable: true
+    entrypoint: [/usr/bin/timeout, --signal=TERM, --kill-after=10s, 15m, /usr/local/bin/blindpass]
+    command: [backup, create, --output, /data/backups, --signing-credential-file, /recovery/signing.pem, --recipient-certificate-file, /recovery/recipient-certificate.pem]
+    environment:
+      BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:?set the public HTTPS origin}
+      BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:?set the public HTTPS input origin}
+      BLINDPASS_PROXY_REQUIRED: "1"
+      BLINDPASS_TRUST_PROXY: ${BLINDPASS_TRUST_PROXY:?set the exact trusted HTTPS edge peer}
+      BLINDPASS_DATABASE_URL_FILE: /config/database.url
+    volumes:
+      - blindpass-data:/data
+      - blindpass-keys:/keys:ro
+      - type: bind
+        source: ${BLINDPASS_DATABASE_CONFIG_DIR:?set the private UID10001 database config directory}
+        target: /config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_BACKUP_RECOVERY_DIR:?set the protected UID10001 directory holding signing.pem and recipient-certificate.pem}
+        target: /recovery
+        read_only: true
+        bind:
+          create_host_path: false
+    tmpfs:
+      - /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [database]
+volumes:
+  blindpass-data: {}
+  blindpass-keys: {}

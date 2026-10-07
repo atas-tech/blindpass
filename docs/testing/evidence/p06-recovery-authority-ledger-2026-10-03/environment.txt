@@ -1,0 +1,5 @@
+{
+  "server_version": "16.15",
+  "owned_authority_roles_remaining": 0,
+  "owned_authority_databases_remaining": 0
+}

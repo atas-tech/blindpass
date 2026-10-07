@@ -1,0 +1,15 @@
+{
+ "schema": "blindpass-release-evidence-v1",
+ "commit": "8a595ad18783634da59e046595942e729b56147b",
+ "date": "2026-10-06",
+ "profile": "npm-package",
+ "client": "npm 11 clean-directory install",
+ "environment": "uncommitted working tree on 8a595ad; local harness runs; not a release candidate",
+ "scenarios": [
+  {
+   "id": "R02",
+   "result": "skip",
+   "reason": "candidate tarball installed and driven over stdio in a clean directory outside the repo; not a clean host and not the published release"
+  }
+ ]
+}

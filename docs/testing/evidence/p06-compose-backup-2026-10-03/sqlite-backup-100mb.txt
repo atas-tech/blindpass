@@ -1,0 +1,6 @@
+Candidate image config: sha256:1b6f4083a4755f67a96cb8b0060bd6f328b66c4deb9800f2c8d3ccb7d397aab2
+PASS P06-CB02/P06-I02 actual offline non-root backup/verify; 100000000-byte source retained; creation 2.104 s; 109 concurrent requests, zero failures
+Runtime prerequisite: OpenSSL 3.0.22 25 Aug 2026 (Library: OpenSSL 3.0.22 25 Aug 2026); libssl3 3.0.22-1~deb12u1; openssl 3.0.22-1~deb12u1
+PASS P06-CB03 actual wrong/missing/exposed recovery refusal; ordinary controller has no recovery mount; no residue
+PASS P06-CB04 retained identity/old verification and distinct repeated backup; creation 5.735 s; 280 concurrent requests, zero failures
+PASS disposable Compose backup resources removed

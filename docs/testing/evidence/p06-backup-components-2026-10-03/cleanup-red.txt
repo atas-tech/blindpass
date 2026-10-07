@@ -1,0 +1,22 @@
+   Compiling blindpass-controller v0.1.0 ($REPOSITORY/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.31s
+     Running tests/backup_cleanup.rs (target/debug/deps/backup_cleanup-9f4dbb6f30daa0e0)
+
+running 1 test
+test p06_b06_explicit_cleanup_requires_custody_and_preserves_published_files ... FAILED
+
+failures:
+
+---- p06_b06_explicit_cleanup_requires_custody_and_preserves_published_files stdout ----
+
+thread 'p06_b06_explicit_cleanup_requires_custody_and_preserves_published_files' (1103064) panicked at crates/blindpass-controller/tests/backup_cleanup.rs:58:5:
+explicit private staging cleanup failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    p06_b06_explicit_cleanup_requires_custody_and_preserves_published_files
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p blindpass-controller --test backup_cleanup`

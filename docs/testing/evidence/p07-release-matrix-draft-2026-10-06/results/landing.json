@@ -1,0 +1,20 @@
+{
+ "schema": "blindpass-release-evidence-v1",
+ "commit": "8a595ad18783634da59e046595942e729b56147b",
+ "date": "2026-10-06",
+ "profile": "landing",
+ "client": "Chromium 152 (Playwright)",
+ "environment": "uncommitted working tree on 8a595ad; local harness runs; not a release candidate",
+ "scenarios": [
+  {
+   "id": "P07-I06",
+   "result": "fail",
+   "reason": "local candidate clean; the published page still serves GA4 until the change is pushed"
+  },
+  {
+   "id": "P07-E04",
+   "result": "fail",
+   "reason": "three of six CTA rows unresolved (two need a release tag, one needs SECURITY.md on main)"
+  }
+ ]
+}

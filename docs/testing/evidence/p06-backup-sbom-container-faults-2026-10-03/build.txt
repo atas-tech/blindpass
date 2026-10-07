@@ -1,0 +1,1167 @@
+#0 building with "blindpass-p06-backup-sbom" instance using docker-container driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 4.06kB done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+#2 DONE 2.5s
+
+#3 [internal] load metadata for docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#3 ...
+
+#4 [internal] load metadata for docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#4 DONE 1.5s
+
+#5 [internal] load metadata for docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+#5 DONE 2.0s
+
+#3 [internal] load metadata for docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#3 DONE 2.2s
+
+#6 docker-image://docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+#6 resolve docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9 0.1s done
+#6 DONE 0.2s
+
+#7 [runtime  1/11] FROM docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+#7 resolve docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 0.1s done
+#7 ...
+
+#8 [internal] load build context
+#8 transferring context: 9.17MB 0.1s done
+#8 DONE 0.3s
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 resolve docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5 0.0s done
+#9 DONE 0.4s
+
+#7 [runtime  1/11] FROM docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 0B / 28.24MB 0.2s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 2.10MB / 28.24MB 1.5s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 4.19MB / 28.24MB 2.0s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 6.29MB / 28.24MB 2.4s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 8.39MB / 28.24MB 3.0s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 10.49MB / 28.24MB 3.5s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 12.58MB / 28.24MB 3.8s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 14.68MB / 28.24MB 4.7s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 16.78MB / 28.24MB 5.0s
+#7 ...
+
+#6 docker-image://docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+#6 sha256:307ce207d6cb61564520be6064a834450b1cc937f720bee712ee09ed9ded309f 49.55MB / 49.55MB 4.8s done
+#6 extracting sha256:307ce207d6cb61564520be6064a834450b1cc937f720bee712ee09ed9ded309f 0.4s done
+#6 DONE 5.3s
+
+#7 [runtime  1/11] FROM docker.io/library/debian:bookworm-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 18.87MB / 28.24MB 5.3s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 20.97MB / 28.24MB 5.6s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 23.07MB / 28.24MB 6.0s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 25.17MB / 28.24MB 6.3s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 27.26MB / 28.24MB 6.9s
+#7 sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 28.24MB / 28.24MB 7.2s done
+#7 extracting sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150
+#7 extracting sha256:774043ccc8ccd0d0833a9ee0792142ab7ad93df971e59dd248fbf82db16d0150 0.5s done
+#7 DONE 7.9s
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 1.619 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#10 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 resolve docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec 0.0s done
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 34.60MB / 213.84MB 9.6s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 5.24MB / 211.71MB 9.6s
+#11 sha256:81578410df169380efec491bfdc60a7e586d4b48ef4c0aeb9b6ff085812d9a7d 59.77MB / 64.42MB 5.0s
+#11 sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 10.49MB / 24.06MB 2.7s
+#11 sha256:81578410df169380efec491bfdc60a7e586d4b48ef4c0aeb9b6ff085812d9a7d 64.42MB / 64.42MB 5.3s done
+#11 sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 12.58MB / 24.06MB 3.0s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 0B / 48.50MB 0.2s
+#11 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 14.68MB / 24.06MB 3.3s
+#11 sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 16.78MB / 24.06MB 3.6s
+#11 sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 18.87MB / 24.06MB 3.9s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 4.19MB / 48.50MB 0.9s
+#11 sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 22.02MB / 24.06MB 4.2s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 8.39MB / 48.50MB 1.2s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 46.14MB / 213.84MB 11.3s
+#11 sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 24.06MB / 24.06MB 4.5s done
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 12.58MB / 48.50MB 1.5s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 17.83MB / 48.50MB 1.8s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 23.07MB / 48.50MB 2.1s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 28.31MB / 48.50MB 2.4s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 57.67MB / 213.84MB 12.5s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 32.51MB / 48.50MB 2.7s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 38.80MB / 48.50MB 3.3s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 41.94MB / 48.50MB 3.6s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 46.14MB / 48.50MB 3.9s
+#11 sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 48.50MB / 48.50MB 4.3s done
+#11 extracting sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 70.25MB / 213.84MB 14.4s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 8.39MB / 211.71MB 14.7s
+#11 extracting sha256:eaac70c68abdf6ffacf6de10d31ed9de4813505d1a794eb7393cb27fceb624a6 1.0s done
+#11 extracting sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 81.79MB / 213.84MB 15.6s
+#11 extracting sha256:7b2de2423ebd9d3290883175c0e46dccd6de955b08e6e9a5bd20909e3face240 0.3s done
+#11 extracting sha256:81578410df169380efec491bfdc60a7e586d4b48ef4c0aeb9b6ff085812d9a7d
+#11 extracting sha256:81578410df169380efec491bfdc60a7e586d4b48ef4c0aeb9b6ff085812d9a7d 1.1s done
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 96.47MB / 213.84MB 16.8s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 108.00MB / 213.84MB 17.6s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 120.59MB / 213.84MB 18.3s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 132.12MB / 213.84MB 18.9s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 143.65MB / 213.84MB 19.5s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 10.49MB / 211.71MB 19.8s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 156.24MB / 213.84MB 20.3s
+#11 ...
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 2.947 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#10 8.483 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#10 9.055 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#10 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 168.82MB / 213.84MB 20.9s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 183.50MB / 213.84MB 21.5s
+#11 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 sha256:98803031a6def7cdb7459479729e4aa6d6185861b9f7480ed3ac5743416cea94 446B / 446B 0.4s done
+#9 sha256:ce128d9b45eda94d173f34366e48d7e524e2aa5d5f4e84cbd2b2b5b1375a2b0a 49.28MB / 64.54MB 9.8s
+#9 sha256:198cbc42a6590996f9df798ac097bdc605f7dcddae2a246c8352c64d77f3075f 3.33kB / 3.33kB 0.5s done
+#9 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 198.18MB / 213.84MB 22.2s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 210.76MB / 213.84MB 23.1s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 13.63MB / 211.71MB 24.9s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 25.17MB / 211.71MB 26.9s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 37.75MB / 211.71MB 27.8s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 213.84MB / 213.84MB 28.2s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 51.38MB / 211.71MB 28.4s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 62.91MB / 211.71MB 28.8s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 74.45MB / 211.71MB 29.3s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 89.13MB / 211.71MB 29.7s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 101.71MB / 211.71MB 30.5s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 113.25MB / 211.71MB 31.1s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 124.78MB / 211.71MB 31.7s
+#11 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 sha256:ce128d9b45eda94d173f34366e48d7e524e2aa5d5f4e84cbd2b2b5b1375a2b0a 64.54MB / 64.54MB 20.1s
+#9 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 138.41MB / 211.71MB 32.3s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 153.09MB / 211.71MB 32.7s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 213.84MB / 213.84MB 33.3s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 166.72MB / 211.71MB 33.2s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 178.26MB / 211.71MB 33.6s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 190.84MB / 211.71MB 34.4s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 203.42MB / 211.71MB 35.0s
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 213.84MB / 213.84MB 38.4s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 211.71MB / 211.71MB 40.1s
+#11 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 sha256:ce128d9b45eda94d173f34366e48d7e524e2aa5d5f4e84cbd2b2b5b1375a2b0a 64.54MB / 64.54MB 30.5s
+#9 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 213.84MB / 213.84MB 43.5s
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 211.71MB / 211.71MB 45.2s
+#11 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 sha256:ce128d9b45eda94d173f34366e48d7e524e2aa5d5f4e84cbd2b2b5b1375a2b0a 64.54MB / 64.54MB 33.8s done
+#9 DONE 46.1s
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 213.84MB / 213.84MB 46.1s done
+#11 sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 211.71MB / 211.71MB 47.7s done
+#11 extracting sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a
+#11 ...
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 54.08 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#10 54.32 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [345 kB]
+#10 58.90 Fetched 9383 kB in 59s (160 kB/s)
+#10 58.90 Reading package lists...
+#10 59.30 Reading package lists...
+#10 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 extracting sha256:de9e8d0a007171cac57d643a3982902d45431cd860400eea55e18df75fc0b12a 19.4s done
+#11 DONE 67.4s
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 extracting sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357
+#11 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 extracting sha256:198cbc42a6590996f9df798ac097bdc605f7dcddae2a246c8352c64d77f3075f 0.3s done
+#9 DONE 46.4s
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 59.30 Reading package lists...
+#10 59.69 Building dependency tree...
+#10 59.80 Reading state information...
+#10 59.91 The following additional packages will be installed:
+#10 59.91   openssl
+#10 59.93 The following NEW packages will be installed:
+#10 59.93   ca-certificates libssl3 openssl
+#10 60.03 0 upgraded, 3 newly installed, 0 to remove and 1 not upgraded.
+#10 60.03 Need to get 3643 kB of archives.
+#10 60.03 After this operation, 8955 kB of additional disk space will be used.
+#10 60.03 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u1 [2039 kB]
+#10 62.06 Get:2 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.22-1~deb12u1 [1442 kB]
+#10 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 extracting sha256:ce128d9b45eda94d173f34366e48d7e524e2aa5d5f4e84cbd2b2b5b1375a2b0a
+#9 ...
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 75.54 Get:3 http://deb.debian.org/debian-security bookworm-security/main amd64 ca-certificates all 20250419~deb12u1 [162 kB]
+#10 75.82 debconf: delaying package configuration, since apt-utils is not installed
+#10 75.89 Fetched 3643 kB in 16s (233 kB/s)
+#10 87.76 Selecting previously unselected package libssl3:amd64.
+#10 87.76 (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 6096 files and directories currently installed.)
+#10 87.76 Preparing to unpack .../libssl3_3.0.22-1~deb12u1_amd64.deb ...
+#10 94.04 Unpacking libssl3:amd64 (3.0.22-1~deb12u1) ...
+#10 ...
+
+#11 [binaries  1/10] FROM docker.io/library/rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+#11 extracting sha256:47495189b3619615361bf1ba54a703b2a44cb7d76757ae1cd6a77d4f845bd357 34.6s done
+#11 DONE 102.0s
+
+#12 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#12 ...
+
+#9 [ui 1/4] FROM docker.io/library/node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+#9 extracting sha256:ce128d9b45eda94d173f34366e48d7e524e2aa5d5f4e84cbd2b2b5b1375a2b0a 34.3s done
+#9 extracting sha256:98803031a6def7cdb7459479729e4aa6d6185861b9f7480ed3ac5743416cea94 1.7s done
+#9 DONE 82.3s
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 95.71 Selecting previously unselected package openssl.
+#10 95.72 Preparing to unpack .../openssl_3.0.22-1~deb12u1_amd64.deb ...
+#10 95.78 Unpacking openssl (3.0.22-1~deb12u1) ...
+#10 96.87 Selecting previously unselected package ca-certificates.
+#10 96.87 Preparing to unpack .../ca-certificates_20250419~deb12u1_all.deb ...
+#10 98.33 Unpacking ca-certificates (20250419~deb12u1) ...
+#10 ...
+
+#13 [ui 2/4] WORKDIR /source
+#13 DONE 2.6s
+
+#12 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#12 2.330 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#12 2.453 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#12 2.496 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#12 2.539 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#12 2.986 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#12 2.992 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [345 kB]
+#12 3.633 Fetched 9383 kB in 2s (6003 kB/s)
+#12 3.633 Reading package lists...
+#12 4.051 Reading package lists...
+#12 4.411 Building dependency tree...
+#12 4.495 Reading state information...
+#12 4.582 pkg-config is already the newest version (1.8.1-1).
+#12 4.582 pkg-config set to manually installed.
+#12 4.582 The following additional packages will be installed:
+#12 4.582   libssl3 openssl
+#12 4.583 Suggested packages:
+#12 4.583   libssl-doc
+#12 4.610 The following NEW packages will be installed:
+#12 4.610   libsystemd-dev
+#12 4.610 The following packages will be upgraded:
+#12 4.610   libssl-dev libssl3 openssl
+#12 4.695 3 upgraded, 1 newly installed, 0 to remove and 4 not upgraded.
+#12 4.695 Need to get 6285 kB of archives.
+#12 4.695 After this operation, 1165 kB of additional disk space will be used.
+#12 4.695 Get:1 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl-dev amd64 3.0.22-1~deb12u1 [2450 kB]
+#12 4.976 Get:2 http://deb.debian.org/debian-security bookworm-security/main amd64 libssl3 amd64 3.0.22-1~deb12u1 [2039 kB]
+#12 5.033 Get:3 http://deb.debian.org/debian bookworm/main amd64 libsystemd-dev amd64 252.39-1~deb12u2 [354 kB]
+#12 5.039 Get:4 http://deb.debian.org/debian-security bookworm-security/main amd64 openssl amd64 3.0.22-1~deb12u1 [1442 kB]
+#12 6.754 debconf: delaying package configuration, since apt-utils is not installed
+#12 6.867 Fetched 6285 kB in 0s (13.5 MB/s)
+#12 8.462 (Reading database ... 
+#12 ...
+
+#14 [ui 3/4] COPY . .
+#14 DONE 4.4s
+
+#12 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#12 8.462 (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 23263 files and directories currently installed.)
+#12 8.477 Preparing to unpack .../libssl-dev_3.0.22-1~deb12u1_amd64.deb ...
+#12 ...
+
+#15 [ui 4/4] RUN npm ci && npm run build     && node scripts/release/controller-notices.mjs /source/node_modules /source/controller-notices/npm
+#15 2.320 npm warn deprecated whatwg-encoding@3.1.1: Use @exodus/bytes instead for a more spec-conformant and faster implementation
+#15 ...
+
+#12 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#12 8.600 Unpacking libssl-dev:amd64 (3.0.22-1~deb12u1) over (3.0.20-1~deb12u2) ...
+#12 10.52 Preparing to unpack .../libssl3_3.0.22-1~deb12u1_amd64.deb ...
+#12 10.59 Unpacking libssl3:amd64 (3.0.22-1~deb12u1) over (3.0.20-1~deb12u2) ...
+#12 10.75 Selecting previously unselected package libsystemd-dev:amd64.
+#12 10.75 Preparing to unpack .../libsystemd-dev_252.39-1~deb12u2_amd64.deb ...
+#12 10.76 Unpacking libsystemd-dev:amd64 (252.39-1~deb12u2) ...
+#12 10.86 Preparing to unpack .../openssl_3.0.22-1~deb12u1_amd64.deb ...
+#12 10.87 Unpacking openssl (3.0.22-1~deb12u1) over (3.0.20-1~deb12u2) ...
+#12 ...
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 99.12 Setting up libssl3:amd64 (3.0.22-1~deb12u1) ...
+#10 99.25 Setting up openssl (3.0.22-1~deb12u1) ...
+#10 102.7 Setting up ca-certificates (20250419~deb12u1) ...
+#10 102.8 debconf: unable to initialize frontend: Dialog
+#10 102.8 debconf: (TERM is not set, so the dialog frontend is not usable.)
+#10 102.8 debconf: falling back to frontend: Readline
+#10 102.8 debconf: unable to initialize frontend: Readline
+#10 102.8 debconf: (Can't locate Term/ReadLine.pm in @INC (you may need to install the Term::ReadLine module) (@INC contains: /etc/perl /usr/local/lib/x86_64-linux-gnu/perl/5.36.0 /usr/local/share/perl/5.36.0 /usr/lib/x86_64-linux-gnu/perl5/5.36 /usr/share/perl5 /usr/lib/x86_64-linux-gnu/perl-base /usr/lib/x86_64-linux-gnu/perl/5.36 /usr/share/perl/5.36 /usr/local/lib/site_perl) at /usr/share/perl5/Debconf/FrontEnd/Readline.pm line 7.)
+#10 102.8 debconf: falling back to frontend: Teletype
+#10 103.2 Updating certificates in /etc/ssl/certs...
+#10 103.7 150 added, 0 removed; done.
+#10 104.6 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+#10 104.7 Processing triggers for ca-certificates (20250419~deb12u1) ...
+#10 104.7 Updating certificates in /etc/ssl/certs...
+#10 105.1 0 added, 0 removed; done.
+#10 105.1 Running hooks in /etc/ca-certificates/update.d...
+#10 105.1 done.
+#10 ...
+
+#12 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#12 16.28 Setting up libssl3:amd64 (3.0.22-1~deb12u1) ...
+#12 17.87 Setting up libssl-dev:amd64 (3.0.22-1~deb12u1) ...
+#12 20.51 Setting up openssl (3.0.22-1~deb12u1) ...
+#12 ...
+
+#10 [runtime  2/11] RUN apt-get update && apt-get install -y --no-install-recommends libssl3 ca-certificates     && rm -rf /var/lib/apt/lists/*     && groupadd --gid 10001 blindpass     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin blindpass     && install -d -m 0700 -o 10001 -g 10001 /data /keys /run/blindpass-controller     && install -d -m 0755 /usr/share/doc/blindpass
+#10 DONE 118.3s
+
+#15 [ui 4/4] RUN npm ci && npm run build     && node scripts/release/controller-notices.mjs /source/node_modules /source/controller-notices/npm
+#15 ...
+
+#12 [binaries  2/10] RUN apt-get update && apt-get install -y --no-install-recommends libsystemd-dev libssl-dev pkg-config     && rm -rf /var/lib/apt/lists/*
+#12 24.63 Setting up libsystemd-dev:amd64 (252.39-1~deb12u2) ...
+#12 24.70 Processing triggers for libc-bin (2.36-9+deb12u14) ...
+#12 DONE 30.6s
+
+#15 [ui 4/4] RUN npm ci && npm run build     && node scripts/release/controller-notices.mjs /source/node_modules /source/controller-notices/npm
+#15 ...
+
+#16 [binaries  3/10] WORKDIR /source
+#16 ...
+
+#15 [ui 4/4] RUN npm ci && npm run build     && node scripts/release/controller-notices.mjs /source/node_modules /source/controller-notices/npm
+#15 23.28 
+#15 23.28 added 312 packages, and audited 325 packages in 22s
+#15 23.28 
+#15 23.28 73 packages are looking for funding
+#15 23.28   run `npm fund` for details
+#15 23.31 
+#15 23.31 10 vulnerabilities (2 low, 2 moderate, 6 high)
+#15 23.31 
+#15 23.31 To address all issues, run:
+#15 23.31   npm audit fix
+#15 23.31 
+#15 23.31 Run `npm audit` for details.
+#15 23.60 npm warn install-scripts 1 package has install scripts not yet covered by allowScripts:
+#15 23.60 npm warn install-scripts   esbuild@0.27.3 (postinstall: node install.js)
+#15 23.60 npm warn install-scripts
+#15 23.60 npm warn install-scripts Run `npm install-scripts ls` to review, or `npm install-scripts approve <pkg>` to allow.
+#15 23.60 npm notice
+#15 23.60 npm notice New major version of npm available! 11.19.1 -> 12.2.0
+#15 23.60 npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+#15 23.60 npm notice To update run: npm install -g npm@12.2.0
+#15 23.60 npm notice
+#15 23.72 
+#15 23.72 > blindpass@0.1.0 build
+#15 23.72 > npm run build:i18n && npm run build --workspaces --if-present
+#15 23.72 
+#15 23.80 
+#15 23.80 > blindpass@0.1.0 build:i18n
+#15 23.80 > npm run build --workspace=@blindpass/i18n
+#15 23.80 
+#15 23.92 
+#15 23.92 > @blindpass/i18n@0.1.0 build
+#15 23.92 > tsc
+#15 23.92 
+#15 24.87 
+#15 24.87 > @blindpass/agent-skill@0.1.0 build
+#15 24.87 > tsc -p tsconfig.json
+#15 24.87 
+#15 26.61 
+#15 26.61 > @blindpass/browser-ui@0.1.0 build
+#15 26.61 > vite build && vite build --mode embedded
+#15 26.61 
+#15 26.76 vite v7.3.6 building client environment for production...
+#15 26.81 transforming...
+#15 26.90 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#15 26.91 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#15 26.91 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#15 26.91 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+#15 26.91 
+#15 26.91 "// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+#15 26.91 
+#15 26.91 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 26.91 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+#15 26.91 
+#15 26.91 "//   /* @__PURE__ */ oidNist(0x07),"
+#15 26.91 
+#15 26.91 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 26.91 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+#15 26.91 
+#15 26.91 "//   /* @__PURE__ */"
+#15 26.91 
+#15 26.91 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 26.91 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+#15 26.91 
+#15 26.91 "//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+#15 26.91 
+#15 26.91 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 26.91 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+#15 26.91 
+#15 26.91 "//   /* @__PURE__ */"
+#15 26.91 
+#15 26.91 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 26.91 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+#15 26.91 
+#15 26.91 "//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+#15 26.91 
+#15 26.91 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 26.93 ../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+#15 26.93 
+#15 26.93 "/* @__PURE__ */"
+#15 26.93 
+#15 26.93 in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.12 ✓ 86 modules transformed.
+#15 27.15 rendering chunks...
+#15 27.19 computing gzip size...
+#15 27.20 dist/index.html                                    9.98 kB │ gzip:  2.32 kB
+#15 27.20 dist/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+#15 27.20 dist/assets/index-Blx-gcvB.css                    16.97 kB │ gzip:  4.29 kB
+#15 27.20 dist/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+#15 27.20 dist/assets/index-DbiCBHEa.js                    130.80 kB │ gzip: 38.22 kB
+#15 27.20 ✓ built in 421ms
+#15 27.34 vite v7.3.6 building client environment for embedded...
+#15 27.37 transforming...
+#15 27.47 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#15 27.48 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#15 27.48 [plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/source/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+#15 27.48 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+#15 27.48 
+#15 27.48 "// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+#15 27.48 
+#15 27.48 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.48 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+#15 27.48 
+#15 27.48 "//   /* @__PURE__ */ oidNist(0x07),"
+#15 27.48 
+#15 27.48 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.48 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+#15 27.48 
+#15 27.48 "//   /* @__PURE__ */"
+#15 27.48 
+#15 27.48 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.48 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+#15 27.48 
+#15 27.48 "//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+#15 27.48 
+#15 27.48 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.48 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+#15 27.48 
+#15 27.48 "//   /* @__PURE__ */"
+#15 27.48 
+#15 27.48 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.48 ../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+#15 27.48 
+#15 27.48 "//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+#15 27.48 
+#15 27.48 in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.50 ../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+#15 27.50 
+#15 27.50 "/* @__PURE__ */"
+#15 27.50 
+#15 27.50 in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+#15 27.68 ✓ 86 modules transformed.
+#15 27.72 rendering chunks...
+#15 27.75 computing gzip size...
+#15 27.76 dist-embedded/index.html                                   10.00 kB │ gzip:  2.33 kB
+#15 27.76 dist-embedded/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+#15 27.76 dist-embedded/assets/index-CsPbKv2W.css                    16.97 kB │ gzip:  4.29 kB
+#15 27.76 dist-embedded/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+#15 27.76 dist-embedded/assets/index-Bol_NMIH.js                    130.81 kB │ gzip: 38.22 kB
+#15 27.76 ✓ built in 415ms
+#15 27.77 
+#15 27.77 > @blindpass/console@0.1.0 build
+#15 27.77 > tsc --noEmit && vite build && node scripts/check-bundle.mjs
+#15 27.77 
+#15 ...
+
+#16 [binaries  3/10] WORKDIR /source
+#16 DONE 7.3s
+
+#17 [binaries  4/10] COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+#17 DONE 2.4s
+
+#15 [ui 4/4] RUN npm ci && npm run build     && node scripts/release/controller-notices.mjs /source/node_modules /source/controller-notices/npm
+#15 ...
+
+#18 [binaries  5/10] COPY crates ./crates
+#18 DONE 1.4s
+
+#15 [ui 4/4] RUN npm ci && npm run build     && node scripts/release/controller-notices.mjs /source/node_modules /source/controller-notices/npm
+#15 31.97 vite v7.3.6 building client environment for production...
+#15 32.00 transforming...
+#15 33.14 ✓ 136 modules transformed.
+#15 33.25 rendering chunks...
+#15 33.36 computing gzip size...
+#15 33.38 dist/index.html                              0.74 kB │ gzip:   0.38 kB
+#15 33.38 dist/assets/InterVariable-DxOIOTVw.woff2    90.90 kB
+#15 33.38 dist/assets/index-BIedOzTD.css              59.33 kB │ gzip:  10.55 kB
+#15 33.38 dist/assets/status-BrYlLUa7.js               0.15 kB │ gzip:   0.12 kB
+#15 33.38 dist/assets/events-DAm_YHLZ.js               0.30 kB │ gzip:   0.24 kB
+#15 33.38 dist/assets/validation-DQ6FMKO6.js           0.34 kB │ gzip:   0.22 kB
+#15 33.38 dist/assets/metadata-suhM9rdo.js             0.58 kB │ gzip:   0.34 kB
+#15 33.38 dist/assets/source-CCbCv4Kf.js               0.82 kB │ gzip:   0.39 kB
+#15 33.38 dist/assets/model-CptRzFhc.js                0.98 kB │ gzip:   0.46 kB
+#15 33.38 dist/assets/reveal-BKRVdsBV.js               1.00 kB │ gzip:   0.55 kB
+#15 33.38 dist/assets/dialog-Cfr1jBwQ.js               1.92 kB │ gzip:   0.85 kB
+#15 33.38 dist/assets/field-DLkuKEPR.js                1.97 kB │ gzip:   0.67 kB
+#15 33.38 dist/assets/exchange-timeline-CnltRhkd.js    2.51 kB │ gzip:   1.10 kB
+#15 33.38 dist/assets/change-password-CauJfWqx.js      2.60 kB │ gzip:   1.11 kB
+#15 33.38 dist/assets/common-7phvXdvY.js               3.12 kB │ gzip:   1.37 kB
+#15 33.38 dist/assets/login-Wg9N_2j2.js                3.22 kB │ gzip:   1.32 kB
+#15 33.38 dist/assets/settings-D3nH5Bq5.js             3.38 kB │ gzip:   1.31 kB
+#15 33.38 dist/assets/approvals-C-qEjgFR.js            3.85 kB │ gzip:   1.58 kB
+#15 33.38 dist/assets/setup-BTdXbNSq.js                4.40 kB │ gzip:   1.52 kB
+#15 33.38 dist/assets/grants-GpiU9MSO.js               5.42 kB │ gzip:   2.05 kB
+#15 33.38 dist/assets/audit-0KAmMx_X.js                5.60 kB │ gzip:   2.11 kB
+#15 33.38 dist/assets/fleet-policy-CZeeS5kK.js         6.34 kB │ gzip:   2.48 kB
+#15 33.38 dist/assets/agents-BD5F8Kcw.js               7.17 kB │ gzip:   2.50 kB
+#15 33.38 dist/assets/overview-Dh_KRXsR.js             7.64 kB │ gzip:   2.45 kB
+#15 33.38 dist/assets/enrollments-B2SoHFbq.js          8.43 kB │ gzip:   2.85 kB
+#15 33.38 dist/assets/operators-VwhJ9Zb_.js           10.23 kB │ gzip:   3.46 kB
+#15 33.38 dist/assets/nodes-4JpWiTbE.js               10.52 kB │ gzip:   3.06 kB
+#15 33.38 dist/assets/operations-SbUmKqri.js          11.24 kB │ gzip:   3.70 kB
+#15 33.38 dist/assets/workloads-CJwhNX0S.js           12.88 kB │ gzip:   3.97 kB
+#15 33.38 dist/assets/detail-CXYAJlKI.js              13.20 kB │ gzip:   3.84 kB
+#15 33.38 dist/assets/exchange-policy-B-6d60z0.js     17.38 kB │ gzip:   5.35 kB
+#15 33.38 dist/assets/index-BBTvxewk.js              481.13 kB │ gzip: 151.43 kB
+#15 33.38 ✓ built in 1.40s
+#15 33.38 
+#15 33.38 (!) Some chunks are larger than 400 kB after minification. Consider:
+#15 33.38 - Using dynamic import() to code-split the application
+#15 33.38 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#15 33.38 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#15 33.44 assets/index-BBTvxewk.js  147.9 kB gzip
+#15 33.45 assets/index-BIedOzTD.css  10.3 kB gzip
+#15 33.45 initial route: 158.2 kB gzip (budget 250 kB)
+#15 33.45 
+#15 33.45 > @blindpass/contract-tests@0.1.0 build
+#15 33.45 > tsc -p tsconfig.json --noEmit
+#15 33.45 
+#15 ...
+
+#19 [binaries  6/10] COPY scripts/release/controller-notices.mjs ./scripts/release/controller-notices.mjs
+#19 DONE 1.1s
+
+#15 [ui 4/4] RUN npm ci && npm run build     && node scripts/release/controller-notices.mjs /source/node_modules /source/controller-notices/npm
+#15 34.50 
+#15 34.50 > @blindpass/dashboard@0.1.0 build
+#15 34.50 > tsc --noEmit && vite build
+#15 34.50 
+#15 37.93 vite v7.3.6 building client environment for production...
+#15 38.10 (node:224) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+#15 38.10 (Use `node --trace-deprecation ...` to show where the warning was created)
+#15 38.10 transforming...
+#15 38.12 Browserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+#15 38.12   npx update-browserslist-db@latest
+#15 38.12   Why you should do it regularly: https://github.com/browserslist/update-db#readme
+#15 39.78 ✓ 1851 modules transformed.
+#15 39.96 rendering chunks...
+#15 39.97 computing gzip size...
+#15 39.98 dist/index.html                   1.18 kB │ gzip:   0.58 kB
+#15 39.98 dist/assets/index-CLLHCuqa.css   69.42 kB │ gzip:  10.26 kB
+#15 39.98 dist/assets/index-BVJRL2Wy.js   538.05 kB │ gzip: 152.51 kB
+#15 39.98 
+#15 39.98 (!) Some chunks are larger than 500 kB after minification. Consider:
+#15 39.98 - Using dynamic import() to code-split the application
+#15 39.98 - Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+#15 39.98 - Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+#15 39.99 ✓ built in 2.04s
+#15 40.04 
+#15 40.04 > @blindpass/gateway@0.1.0 build
+#15 40.04 > tsc -p tsconfig.json
+#15 40.04 
+#15 40.72 
+#15 40.72 > @blindpass/i18n@0.1.0 build
+#15 40.72 > tsc
+#15 40.72 
+#15 41.49 
+#15 41.49 > @blindpass/mcp-server@0.1.0 build
+#15 41.49 > node --check src/index.mjs
+#15 41.49 
+#15 41.52 
+#15 41.52 > @blindpass/openclaw-plugin@0.1.0 build
+#15 41.52 > bash ../../scripts/build_bundle.sh
+#15 41.52 
+#15 41.53 [blindpass] building workspace dependencies for bundle inputs...
+#15 41.63 
+#15 41.63 > @blindpass/gateway@0.1.0 build
+#15 41.63 > tsc -p tsconfig.json
+#15 41.63 
+#15 42.40 
+#15 42.40 > @blindpass/agent-skill@0.1.0 build
+#15 42.40 > tsc -p tsconfig.json
+#15 42.40 
+#15 44.25 [blindpass] bundling plugin entrypoints with esbuild...
+#15 44.52 
+#15 44.52   packages/openclaw-plugin/dist/blindpass.mjs  505.6kb
+#15 44.52 
+#15 44.52 ⚡ Done in 83ms
+#15 44.83 
+#15 44.83   packages/openclaw-plugin/dist/mcp-server.mjs  1.4mb ⚠️
+#15 44.83 
+#15 44.83 ⚡ Done in 122ms
+#15 44.97 [blindpass] bundle staged in /source/packages/openclaw-plugin/dist
+#15 44.97 
+#15 44.97 > @blindpass/sps-server@0.1.0 build
+#15 44.97 > tsc -p tsconfig.json && mkdir -p dist/db && cp -r src/db/migrations dist/db/
+#15 44.97 
+#15 47.39 Preserved 294 upstream notice files.
+#15 DONE 47.5s
+
+#20 [binaries  7/10] COPY --from=ui /usr/local/bin/node /usr/local/bin/node
+#20 DONE 0.1s
+
+#21 [binaries  8/10] COPY --from=ui /source/packages/console/dist /source/packages/console/dist
+#21 DONE 0.1s
+
+#22 [binaries  9/10] COPY --from=ui /source/packages/browser-ui/dist-embedded /source/packages/browser-ui/dist-embedded
+#22 DONE 0.1s
+
+#23 [binaries 10/10] RUN cargo build --release --locked -p blindpass-controller -p blindpass-cli     && target/release/blindpass-controller --build-info && target/release/blindpass --version     && node scripts/release/controller-notices.mjs /usr/local/cargo/registry/src /source/controller-notices/rust
+#23 0.123 info: syncing channel updates for 1.98.1-x86_64-unknown-linux-gnu
+#23 0.661 info: latest update on 2026-09-03 for version 1.98.1 (48a229cea 2026-09-01)
+#23 0.672 info: downloading 2 components
+#23 1.985     Updating crates.io index
+#23 4.499  Downloading crates ...
+#23 4.771   Downloaded writeable v0.6.4
+#23 4.777   Downloaded crc v3.4.0
+#23 4.803   Downloaded httpdate v1.0.3
+#23 4.807   Downloaded anstyle-query v1.1.5
+#23 4.809   Downloaded block-buffer v0.10.4
+#23 4.810   Downloaded clap_lex v1.1.1
+#23 4.811   Downloaded colorchoice v1.0.5
+#23 4.812   Downloaded futures-sink v0.3.34
+#23 4.835   Downloaded cfg-if v1.0.5
+#23 4.839   Downloaded futures-task v0.3.34
+#23 4.841   Downloaded hex v0.4.3
+#23 4.849   Downloaded matchers v0.2.0
+#23 4.851   Downloaded crypto-common v0.1.7
+#23 4.851   Downloaded futures-core v0.3.34
+#23 4.854   Downloaded atoi v2.0.0
+#23 4.855   Downloaded equivalent v1.0.2
+#23 4.856   Downloaded futures-io v0.3.34
+#23 4.857   Downloaded itoa v1.0.18
+#23 4.858   Downloaded atomic-waker v1.1.2
+#23 4.859   Downloaded signature v2.2.0
+#23 4.871   Downloaded heck v0.5.0
+#23 4.872   Downloaded md-5 v0.10.6
+#23 4.874   Downloaded home v0.5.12
+#23 4.874   Downloaded http-body v1.1.0
+#23 4.875   Downloaded idna_adapter v1.2.2
+#23 4.876   Downloaded is_terminal_polyfill v1.70.2
+#23 4.877   Downloaded mime v0.3.17
+#23 4.878   Downloaded generic-array v0.14.7
+#23 4.879   Downloaded lazy_static v1.5.0
+#23 4.886   Downloaded anstyle v1.0.14
+#23 4.888   Downloaded anstyle-parse v1.0.0
+#23 4.889   Downloaded crc-catalog v2.5.0
+#23 4.894   Downloaded cpufeatures v0.2.17
+#23 4.895   Downloaded num-conv v0.2.2
+#23 4.896   Downloaded untrusted v0.9.0
+#23 4.897   Downloaded anstream v1.0.0
+#23 4.899   Downloaded autocfg v1.5.1
+#23 4.900   Downloaded byteorder v1.5.0
+#23 4.902   Downloaded foldhash v0.1.5
+#23 4.903   Downloaded deranged v0.5.8
+#23 4.904   Downloaded hashlink v0.10.0
+#23 4.905   Downloaded http-body-util v0.1.5
+#23 4.907   Downloaded crossbeam-queue v0.3.14
+#23 4.909   Downloaded digest v0.10.7
+#23 4.910   Downloaded displaydoc v0.2.7
+#23 4.912   Downloaded find-msvc-tools v0.1.13
+#23 4.913   Downloaded form_urlencoded v1.2.2
+#23 4.914   Downloaded axum-core v0.5.6
+#23 4.916   Downloaded num-iter v0.1.46
+#23 4.920   Downloaded dotenvy v0.15.7
+#23 4.923   Downloaded errno v0.3.14
+#23 4.924   Downloaded serde_urlencoded v0.7.1
+#23 4.925   Downloaded either v1.18.0
+#23 4.926   Downloaded nu-ansi-term v0.50.3
+#23 4.930   Downloaded base64ct v1.8.3
+#23 4.933   Downloaded lock_api v0.4.14
+#23 4.937   Downloaded argon2 v0.5.3
+#23 4.938   Downloaded tracing-serde v0.2.0
+#23 4.939   Downloaded utf8_iter v1.0.4
+#23 4.940   Downloaded utf8parse v0.2.2
+#23 4.943   Downloaded blake2 v0.10.6
+#23 4.946   Downloaded const-oid v0.9.6
+#23 4.948   Downloaded futures-channel v0.3.34
+#23 4.950   Downloaded matchit v0.8.4
+#23 4.952   Downloaded event-listener v5.4.2
+#23 4.953   Downloaded futures-executor v0.3.34
+#23 4.954   Downloaded crossbeam-utils v0.8.23
+#23 4.956   Downloaded litemap v0.8.3
+#23 4.958   Downloaded bitflags v2.13.2
+#23 4.962   Downloaded log v0.4.34
+#23 4.964   Downloaded axum-macros v0.5.1
+#23 4.973   Downloaded clap_derive v4.6.7
+#23 4.974   Downloaded httparse v1.10.1
+#23 4.981   Downloaded getrandom v0.2.17
+#23 4.984   Downloaded aho-corasick v1.1.5
+#23 4.989   Downloaded getrandom v0.4.3
+#23 4.992   Downloaded jsonwebtoken v9.3.1
+#23 4.995   Downloaded hmac v0.12.1
+#23 4.997   Downloaded unicode-bidi v0.3.18
+#23 4.999   Downloaded version_check v0.9.5
+#23 4.999   Downloaded webpki-roots v0.26.11
+#23 5.000   Downloaded bytes v1.12.1
+#23 5.003   Downloaded clap v4.6.7
+#23 5.012   Downloaded unicode-properties v0.1.4
+#23 5.013   Downloaded allocator-api2 v0.2.21
+#23 5.016   Downloaded flume v0.11.1
+#23 5.019   Downloaded icu_locale_core v2.3.0
+#23 5.025   Downloaded icu_provider v2.3.1
+#23 5.027   Downloaded base64 v0.22.1
+#23 5.031   Downloaded icu_normalizer_data v2.3.0
+#23 5.032   Downloaded percent-encoding v2.3.2
+#23 5.033   Downloaded powerfmt v0.2.0
+#23 5.034   Downloaded rand_chacha v0.3.1
+#23 5.034   Downloaded yoke-derive v0.8.3
+#23 5.035   Downloaded futures-intrusive v0.5.0
+#23 5.039   Downloaded der v0.7.10
+#23 5.042   Downloaded icu_collections v2.3.0
+#23 5.048   Downloaded unicode-ident v1.0.26
+#23 5.050   Downloaded uuid v1.26.1
+#23 5.053   Downloaded cc v1.4.7
+#23 5.055   Downloaded http v1.5.0
+#23 5.058   Downloaded mio v1.2.3
+#23 5.063   Downloaded hyper-util v0.1.20
+#23 5.068   Downloaded indexmap v2.14.2
+#23 5.072   Downloaded memchr v2.8.3
+#23 5.076   Downloaded url v2.5.8
+#23 5.078   Downloaded zerofrom-derive v0.1.8
+#23 5.079   Downloaded icu_properties v2.3.0
+#23 5.081   Downloaded scopeguard v1.2.0
+#23 5.083   Downloaded tower-layer v0.3.3
+#23 5.084   Downloaded typenum v1.20.1
+#23 5.086   Downloaded idna v1.1.0
+#23 5.089   Downloaded hashbrown v0.15.5
+#23 5.094   Downloaded unicode-normalization v0.1.25
+#23 5.097   Downloaded libm v0.2.16
+#23 5.106   Downloaded clap_builder v4.6.7
+#23 5.111   Downloaded hashbrown v0.17.1
+#23 5.115   Downloaded hyper v1.11.1
+#23 5.121   Downloaded icu_properties_data v2.3.0
+#23 5.129   Downloaded futures-util v0.3.34
+#23 5.140   Downloaded axum v0.8.9
+#23 5.146   Downloaded hkdf v0.12.4
+#23 5.148   Downloaded time-core v0.1.9
+#23 5.149   Downloaded tracing-subscriber v0.3.23
+#23 5.156   Downloaded vcpkg v0.2.15
+#23 5.206   Downloaded icu_normalizer v2.3.0
+#23 5.216   Downloaded libc v0.2.189
+#23 5.250   Downloaded sha1 v0.10.7
+#23 5.262   Downloaded tower-service v0.3.3
+#23 5.274   Downloaded tokio-macros v2.7.2
+#23 5.310   Downloaded thread_local v1.1.10
+#23 5.370   Downloaded sqlx-macros v0.8.6
+#23 5.407   Downloaded libsqlite3-sys v0.30.1
+#23 5.458   Downloaded sync_wrapper v1.0.2
+#23 5.459   Downloaded strsim v0.11.1
+#23 5.461   Downloaded subtle v2.6.1
+#23 5.478   Downloaded stable_deref_trait v1.2.1
+#23 5.505   Downloaded pem-rfc7468 v0.7.0
+#23 5.535   Downloaded parking v2.2.1
+#23 5.537   Downloaded potential_utf v0.1.6
+#23 5.546   Downloaded pem v3.0.6
+#23 5.549   Downloaded password-hash v0.5.0
+#23 5.552   Downloaded serde_path_to_error v0.1.20
+#23 5.553   Downloaded whoami v1.6.1
+#23 5.561   Downloaded num-integer v0.1.47
+#23 5.588   Downloaded pkcs8 v0.10.2
+#23 5.591   Downloaded spki v0.7.3
+#23 5.597   Downloaded sha2 v0.10.9
+#23 5.600   Downloaded ppv-lite86 v0.2.21
+#23 5.601   Downloaded zerofrom v0.1.8
+#23 5.614   Downloaded rand_core v0.6.4
+#23 5.621   Downloaded zeroize v1.9.0
+#23 5.626   Downloaded slab v0.4.12
+#23 5.630   Downloaded sqlx-macros-core v0.8.6
+#23 5.644   Downloaded pkg-config v0.3.34
+#23 5.646   Downloaded shlex v2.0.1
+#23 5.649   Downloaded thiserror v2.0.21
+#23 5.655   Downloaded tracing-log v0.2.0
+#23 5.664   Downloaded synstructure v0.14.0
+#23 5.665   Downloaded tokio-rustls v0.26.6
+#23 5.666   Downloaded thiserror-impl v2.0.21
+#23 5.691   Downloaded parking_lot v0.12.5
+#23 5.693   Downloaded once_cell v1.21.4
+#23 5.696   Downloaded pkcs1 v0.7.5
+#23 5.698   Downloaded signal-hook-registry v1.4.8
+#23 5.699   Downloaded stringprep v0.1.5
+#23 5.700   Downloaded zmij v1.0.23
+#23 5.705   Downloaded quote v1.0.47
+#23 5.731   Downloaded parking_lot_core v0.9.12
+#23 5.734   Downloaded yoke v0.8.3
+#23 5.735   Downloaded pin-project-lite v0.2.17
+#23 5.740   Downloaded simple_asn1 v0.6.4
+#23 5.746   Downloaded rustls-pki-types v1.15.1
+#23 5.751   Downloaded smallvec v1.16.1
+#23 5.762   Downloaded spin v0.9.9
+#23 5.770   Downloaded tokio-stream v0.1.19
+#23 5.789   Downloaded time-macros v0.2.32
+#23 5.791   Downloaded tracing-attributes v0.1.31
+#23 5.795   Downloaded zerovec-derive v0.11.6
+#23 5.812   Downloaded tinystr v0.8.4
+#23 5.829   Downloaded num-bigint v0.4.8
+#23 5.874   Downloaded proc-macro2 v1.0.107
+#23 5.877   Downloaded ryu v1.0.23
+#23 5.891   Downloaded tinyvec v1.13.3
+#23 5.894   Downloaded socket2 v0.6.5
+#23 5.900   Downloaded tracing-core v0.1.36
+#23 5.928   Downloaded num-traits v0.2.19
+#23 5.931   Downloaded serde_core v1.0.229
+#23 5.960   Downloaded sharded-slab v0.1.7
+#23 5.980   Downloaded sqlx-mysql v0.8.6
+#23 6.001   Downloaded rustls-webpki v0.103.15
+#23 6.033   Downloaded rsa v0.9.10
+#23 6.037   Downloaded serde_derive v1.0.229
+#23 6.044   Downloaded zerotrie v0.2.5
+#23 6.047   Downloaded sqlx-sqlite v0.8.6
+#23 6.105   Downloaded serde v1.0.229
+#23 6.140   Downloaded sqlx-core v0.8.6
+#23 6.147   Downloaded rand v0.8.8
+#23 6.149   Downloaded tower v0.5.3
+#23 6.176   Downloaded num-bigint-dig v0.8.6
+#23 6.216   Downloaded sqlx-postgres v0.8.6
+#23 6.244   Downloaded zerovec v0.11.8
+#23 6.253   Downloaded serde_json v1.0.151
+#23 6.268   Downloaded tower-http v0.6.11
+#23 6.310   Downloaded sqlx v0.8.6
+#23 6.361   Downloaded webpki-roots v1.0.9
+#23 6.471   Downloaded time v0.3.55
+#23 6.552   Downloaded zerocopy v0.8.57
+#23 6.569   Downloaded syn v2.0.119
+#23 6.582   Downloaded syn v3.0.6
+#23 6.640   Downloaded rustls v0.23.45
+#23 6.649   Downloaded regex-syntax v0.8.11
+#23 6.724   Downloaded tracing v0.1.44
+#23 6.796   Downloaded regex-automata v0.4.18
+#23 6.881   Downloaded tokio v1.53.1
+#23 6.999   Downloaded ring v0.17.14
+#23 7.095    Compiling proc-macro2 v1.0.107
+#23 7.095    Compiling unicode-ident v1.0.26
+#23 7.095    Compiling quote v1.0.47
+#23 7.095    Compiling libc v0.2.189
+#23 7.095    Compiling serde v1.0.229
+#23 7.095    Compiling version_check v0.9.5
+#23 7.095    Compiling find-msvc-tools v0.1.13
+#23 7.095    Compiling shlex v2.0.1
+#23 7.095    Compiling serde_core v1.0.229
+#23 7.102    Compiling cfg-if v1.0.5
+#23 7.105    Compiling icu_properties_data v2.3.0
+#23 7.109    Compiling icu_normalizer_data v2.3.0
+#23 7.122    Compiling pin-project-lite v0.2.17
+#23 7.122    Compiling autocfg v1.5.1
+#23 7.129    Compiling zmij v1.0.23
+#23 7.145    Compiling stable_deref_trait v1.2.1
+#23 7.171    Compiling itoa v1.0.18
+#23 7.204    Compiling parking_lot_core v0.9.12
+#23 7.249    Compiling cc v1.4.7
+#23 7.256    Compiling futures-core v0.3.34
+#23 7.261    Compiling serde_json v1.0.151
+#23 7.270    Compiling bytes v1.12.1
+#23 7.327    Compiling zerocopy v0.8.57
+#23 7.327    Compiling crossbeam-utils v0.8.23
+#23 7.348    Compiling thiserror v2.0.21
+#23 7.354    Compiling once_cell v1.21.4
+#23 7.372    Compiling typenum v1.20.1
+#23 7.373    Compiling subtle v2.6.1
+#23 7.385    Compiling rustls v0.23.45
+#23 7.421    Compiling generic-array v0.14.7
+#23 7.549    Compiling litemap v0.8.3
+#23 7.592    Compiling writeable v0.6.4
+#23 7.605    Compiling tracing-core v0.1.36
+#23 7.643    Compiling futures-sink v0.3.34
+#23 7.654    Compiling memchr v2.8.3
+#23 7.714    Compiling utf8_iter v1.0.4
+#23 7.826    Compiling zeroize v1.9.0
+#23 7.826    Compiling log v0.4.34
+#23 7.836    Compiling scopeguard v1.2.0
+#23 7.892    Compiling lock_api v0.4.14
+#23 8.019    Compiling rustls-pki-types v1.15.1
+#23 8.179    Compiling syn v3.0.6
+#23 8.209    Compiling syn v2.0.119
+#23 8.238    Compiling num-traits v0.2.19
+#23 8.362    Compiling pkg-config v0.3.34
+#23 8.433    Compiling vcpkg v0.2.15
+#23 8.666    Compiling getrandom v0.2.17
+#23 8.683    Compiling errno v0.3.14
+#23 8.692    Compiling socket2 v0.6.5
+#23 8.867    Compiling signal-hook-registry v1.4.8
+#23 8.873    Compiling mio v1.2.3
+#23 8.968    Compiling block-buffer v0.10.4
+#23 8.977    Compiling crypto-common v0.1.7
+#23 9.059    Compiling digest v0.10.7
+#23 9.072    Compiling percent-encoding v2.3.2
+#23 9.078    Compiling untrusted v0.9.0
+#23 9.114    Compiling ring v0.17.14
+#23 9.188    Compiling libsqlite3-sys v0.30.1
+#23 9.252    Compiling equivalent v1.0.2
+#23 9.411    Compiling form_urlencoded v1.2.2
+#23 9.641    Compiling futures-io v0.3.34
+#23 9.659    Compiling foldhash v0.1.5
+#23 9.676    Compiling futures-task v0.3.34
+#23 9.761    Compiling slab v0.4.12
+#23 9.936    Compiling allocator-api2 v0.2.21
+#23 9.978    Compiling futures-util v0.3.34
+#23 10.14    Compiling webpki-roots v1.0.9
+#23 10.23    Compiling http v1.5.0
+#23 10.30    Compiling hashbrown v0.15.5
+#23 10.36    Compiling hashbrown v0.17.1
+#23 10.53    Compiling tokio v1.53.1
+#23 10.54    Compiling crc-catalog v2.5.0
+#23 10.55    Compiling cpufeatures v0.2.17
+#23 10.60    Compiling parking v2.2.1
+#23 10.69    Compiling crc v3.4.0
+#23 10.74    Compiling event-listener v5.4.2
+#23 10.74    Compiling sha2 v0.10.9
+#23 10.75    Compiling crossbeam-queue v0.3.14
+#23 10.88    Compiling webpki-roots v0.26.11
+#23 10.99    Compiling hashlink v0.10.0
+#23 11.01    Compiling rand_core v0.6.4
+#23 11.05    Compiling indexmap v2.14.2
+#23 11.21    Compiling futures-channel v0.3.34
+#23 11.30    Compiling http-body v1.1.0
+#23 11.49    Compiling tinyvec v1.13.3
+#23 11.69    Compiling base64 v0.22.1
+#23 11.73    Compiling heck v0.5.0
+#23 11.92    Compiling unicode-normalization v0.1.25
+#23 11.93    Compiling atoi v2.0.0
+#23 12.35    Compiling synstructure v0.14.0
+#23 12.49    Compiling hmac v0.12.1
+#23 12.76    Compiling spin v0.9.9
+#23 12.81    Compiling tower-service v0.3.3
+#23 12.91    Compiling unicode-bidi v0.3.18
+#23 12.97    Compiling httparse v1.10.1
+#23 13.02    Compiling unicode-properties v0.1.4
+#23 13.07    Compiling ryu v1.0.23
+#23 13.24    Compiling futures-executor v0.3.34
+#23 13.29    Compiling flume v0.11.1
+#23 13.48    Compiling stringprep v0.1.5
+#23 13.58    Compiling hkdf v0.12.4
+#23 13.60    Compiling md-5 v0.10.6
+#23 13.70    Compiling home v0.5.12
+#23 13.72    Compiling num-conv v0.2.2
+#23 13.73    Compiling byteorder v1.5.0
+#23 13.81    Compiling rustls-webpki v0.103.15
+#23 13.85    Compiling hex v0.4.3
+#23 13.91    Compiling getrandom v0.4.3
+#23 13.97    Compiling tracing-attributes v0.1.31
+#23 14.05    Compiling whoami v1.6.1
+#23 14.06    Compiling time-core v0.1.9
+#23 14.10    Compiling tower-layer v0.3.3
+#23 14.24    Compiling ppv-lite86 v0.2.21
+#23 14.26    Compiling bitflags v2.13.2
+#23 14.31    Compiling dotenvy v0.15.7
+#23 14.32    Compiling time-macros v0.2.32
+#23 14.43    Compiling serde_derive v1.0.229
+#23 14.45    Compiling zerofrom-derive v0.1.8
+#23 14.53    Compiling yoke-derive v0.8.3
+#23 14.60    Compiling zerovec-derive v0.11.6
+#23 14.62    Compiling displaydoc v0.2.7
+#23 14.68    Compiling thiserror-impl v2.0.21
+#23 14.80    Compiling tokio-macros v2.7.2
+#23 15.12    Compiling rand_chacha v0.3.1
+#23 15.30    Compiling tokio-stream v0.1.19
+#23 15.44    Compiling tracing v0.1.44
+#23 15.77    Compiling rand v0.8.8
+#23 15.79    Compiling zerofrom v0.1.8
+#23 15.84    Compiling http-body-util v0.1.5
+#23 15.90    Compiling yoke v0.8.3
+#23 15.94    Compiling num-integer v0.1.47
+#23 16.09    Compiling zerovec v0.11.8
+#23 16.13    Compiling zerotrie v0.2.5
+#23 16.45    Compiling powerfmt v0.2.0
+#23 16.48    Compiling deranged v0.5.8
+#23 16.69    Compiling httpdate v1.0.3
+#23 16.73    Compiling tinystr v0.8.4
+#23 16.74    Compiling potential_utf v0.1.6
+#23 16.76    Compiling utf8parse v0.2.2
+#23 16.77    Compiling atomic-waker v1.1.2
+#23 16.81    Compiling regex-syntax v0.8.11
+#23 16.85    Compiling icu_collections v2.3.0
+#23 16.87    Compiling sync_wrapper v1.0.2
+#23 16.88    Compiling icu_locale_core v2.3.0
+#23 17.06    Compiling anstyle-parse v1.0.0
+#23 17.24    Compiling num-bigint v0.4.8
+#23 17.93    Compiling icu_provider v2.3.1
+#23 17.99    Compiling time v0.3.55
+#23 18.28    Compiling icu_properties v2.3.0
+#23 18.64    Compiling regex-automata v0.4.18
+#23 18.84    Compiling smallvec v1.16.1
+#23 19.12    Compiling icu_normalizer v2.3.0
+#23 19.36    Compiling parking_lot v0.12.5
+#23 19.76    Compiling idna_adapter v1.2.2
+#23 19.76    Compiling futures-intrusive v0.5.0
+#23 19.84    Compiling idna v1.1.0
+#23 20.20    Compiling url v2.5.8
+#23 20.43    Compiling either v1.18.0
+#23 20.70    Compiling serde_urlencoded v0.7.1
+#23 20.95    Compiling sqlx-core v0.8.6
+#23 21.52    Compiling hyper v1.11.1
+#23 21.98    Compiling base64ct v1.8.3
+#23 22.11    Compiling lazy_static v1.5.0
+#23 22.39    Compiling mime v0.3.17
+#23 22.49    Compiling anstyle v1.0.14
+#23 22.94    Compiling is_terminal_polyfill v1.70.2
+#23 22.94    Compiling colorchoice v1.0.5
+#23 23.00    Compiling anstyle-query v1.1.5
+#23 23.04    Compiling hyper-util v0.1.20
+#23 23.07    Compiling anstream v1.0.0
+#23 23.16    Compiling axum-core v0.5.6
+#23 23.34    Compiling password-hash v0.5.0
+#23 23.42    Compiling sharded-slab v0.1.7
+#23 23.56    Compiling matchers v0.2.0
+#23 23.68    Compiling tower v0.5.3
+#23 23.73    Compiling simple_asn1 v0.6.4
+#23 23.89    Compiling tracing-serde v0.2.0
+#23 24.06    Compiling sqlx-sqlite v0.8.6
+#23 24.20    Compiling sqlx-postgres v0.8.6
+#23 24.24    Compiling uuid v1.26.1
+#23 24.77    Compiling axum-macros v0.5.1
+#23 24.83    Compiling pem v3.0.6
+#23 24.90    Compiling serde_path_to_error v0.1.20
+#23 24.91    Compiling blake2 v0.10.6
+#23 25.51    Compiling tracing-log v0.2.0
+#23 25.61    Compiling thread_local v1.1.10
+#23 25.68    Compiling blindpass-controller v0.1.0 (/source/crates/blindpass-controller)
+#23 25.76    Compiling strsim v0.11.1
+#23 25.90    Compiling blindpass-core v0.1.0 (/source/crates/blindpass-core)
+#23 25.91    Compiling clap_lex v1.1.1
+#23 25.93    Compiling matchit v0.8.4
+#23 26.29    Compiling nu-ansi-term v0.50.3
+#23 26.41    Compiling clap_builder v4.6.7
+#23 26.42    Compiling axum v0.8.9
+#23 26.51    Compiling argon2 v0.5.3
+#23 26.60    Compiling tracing-subscriber v0.3.23
+#23 26.62    Compiling jsonwebtoken v9.3.1
+#23 26.75    Compiling tower-http v0.6.11
+#23 26.78    Compiling clap_derive v4.6.7
+#23 28.22    Compiling tokio-rustls v0.26.6
+#23 29.20    Compiling sqlx-macros-core v0.8.6
+#23 30.14    Compiling clap v4.6.7
+#23 31.48    Compiling sqlx-macros v0.8.6
+#23 34.37    Compiling blindpass-cli v0.1.0 (/source/crates/blindpass-cli)
+#23 67.02    Compiling sqlx v0.8.6
+#23 123.3     Finished `release` profile [optimized] target(s) in 2m 01s
+#23 123.4 {"console_embedded":true,"input_embedded":true,"protocol_version":"blindpass-broker/0.1","schema_version":16,"version":"0.1.0"}
+#23 123.4 blindpass 0.1.0
+#23 123.7 Preserved 389 upstream notice files.
+#23 DONE 123.8s
+
+#24 [runtime  3/11] COPY --from=binaries /source/target/release/blindpass-controller /source/target/release/blindpass /usr/local/bin/
+#24 DONE 0.1s
+
+#25 [runtime  4/11] COPY --chmod=0755 deploy/controller/entrypoint.sh /usr/local/bin/blindpass-entrypoint
+#25 DONE 0.1s
+
+#26 [runtime  5/11] COPY Cargo.lock LICENSES.md /usr/share/doc/blindpass/
+#26 DONE 0.1s
+
+#27 [runtime  6/11] COPY packages/console/LICENSE /usr/share/doc/blindpass/LICENSE
+#27 DONE 0.1s
+
+#28 [runtime  7/11] COPY packages/browser-ui/LICENSE /usr/share/doc/blindpass/browser-ui-LICENSE
+#28 DONE 0.1s
+
+#29 [runtime  8/11] COPY assets/ui/ASSETS.md assets/ui/LICENSE /usr/share/doc/blindpass/assets/
+#29 DONE 0.1s
+
+#30 [runtime  9/11] COPY assets/ui/fonts/OFL.txt /usr/share/doc/blindpass/assets/Inter-OFL.txt
+#30 DONE 0.1s
+
+#31 [runtime 10/11] COPY --from=ui /source/controller-notices/npm /usr/share/doc/blindpass/third-party/npm
+#31 DONE 0.1s
+
+#32 [runtime 11/11] COPY --from=binaries /source/controller-notices/rust /usr/share/doc/blindpass/third-party/rust
+#32 DONE 0.1s
+
+#33 [linux/amd64] generating sbom using docker.io/docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9
+#33 0.086 time="2026-10-03T00:52:55Z" level=info msg="starting syft scanner for buildkit v1.12.0"
+#33 DONE 19.5s
+
+#34 exporting to oci image format
+#34 exporting layers
+#34 exporting layers 1.3s done
+#34 exporting manifest sha256:6f04b1b20ee325f9459a9c48756b45742e90284fc3a3c48792f43a2dd2560686 0.0s done
+#34 exporting config sha256:3e84437a30e9e0f9419c2a77d40e8b18987597808000c7893c8ef718f45307a3 0.0s done
+#34 exporting attestation manifest sha256:cf90fea88e24c515337f9f4ef5a6b8107d2af4c38d4a38e63417220c152477fa
+#34 exporting attestation manifest sha256:cf90fea88e24c515337f9f4ef5a6b8107d2af4c38d4a38e63417220c152477fa 0.0s done
+#34 exporting manifest list sha256:9dbe6b7e5d6adf3ffb6a6e2f2c377284a248e41decfcbb0fd8355a564915e7c3 0.0s done
+#34 sending tarball
+#34 sending tarball 0.6s done
+#34 DONE 4.0s

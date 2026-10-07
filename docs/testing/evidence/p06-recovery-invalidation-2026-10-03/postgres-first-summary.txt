@@ -1,0 +1,3 @@
+authority_postgres_gate_exit=101
+recovery_invalidation_backend=postgres
+owned_authority_cleanup_errors=0

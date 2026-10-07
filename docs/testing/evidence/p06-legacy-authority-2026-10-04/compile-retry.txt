@@ -1,0 +1,4 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 50.58s
+  Executable tests/fleet_provisioning_submit.rs (target/debug/deps/fleet_provisioning_submit-7dada275acc6a9bd)
+  Executable tests/legacy_authority.rs (target/debug/deps/legacy_authority-66d2e9a8cfb30fb0)

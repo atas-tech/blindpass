@@ -1,0 +1,1 @@
+blindpass-controller-0.1.0-linux-x86_64.tar.zst sha256=86796930032b8231476c58659e5bb3458f1e8e80b093879cfd6ad9686abc2ea8

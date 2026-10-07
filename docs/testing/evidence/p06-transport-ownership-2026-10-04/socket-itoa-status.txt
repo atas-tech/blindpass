@@ -1,0 +1,7 @@
+status=report_generated
+tool=socket-cli
+mode=deep
+socket_command=score
+purl=pkg:cargo/itoa@1.0.18
+report=/tmp/p06-http-body-itoa-socket.md
+next_step=apply references/decision-matrix.md to the generated report before changing manifests or lockfiles

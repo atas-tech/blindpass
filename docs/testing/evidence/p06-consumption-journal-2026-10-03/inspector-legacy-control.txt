@@ -1,0 +1,41 @@
+FFFF
+======================================================================
+FAIL: test_duplicate_and_malformed_event_records_refuse (__main__.BrokerEventAssertion.test_duplicate_and_malformed_event_records_refuse)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/blindpass-p06-event-baseline-x9yuvy37/p03-broker-event-test.py", line 48, in test_duplicate_and_malformed_event_records_refuse
+    self.assertNotEqual(self.run_assertion(), 0)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 == 0
+
+======================================================================
+FAIL: test_header_correlation_does_not_duplicate_actual_event (__main__.BrokerEventAssertion.test_header_correlation_does_not_duplicate_actual_event)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/blindpass-p06-event-baseline-x9yuvy37/p03-broker-event-test.py", line 38, in test_header_correlation_does_not_duplicate_actual_event
+    self.assertEqual(self.run_assertion(), 0)
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0
+
+======================================================================
+FAIL: test_header_or_nested_reference_is_not_a_queued_event (__main__.BrokerEventAssertion.test_header_or_nested_reference_is_not_a_queued_event)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/blindpass-p06-event-baseline-x9yuvy37/p03-broker-event-test.py", line 43, in test_header_or_nested_reference_is_not_a_queued_event
+    self.assertNotEqual(self.run_assertion(), 0)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 == 0
+
+======================================================================
+FAIL: test_unsafe_custody_refuses_without_repair (__main__.BrokerEventAssertion.test_unsafe_custody_refuses_without_repair)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/tmp/blindpass-p06-event-baseline-x9yuvy37/p03-broker-event-test.py", line 59, in test_unsafe_custody_refuses_without_repair
+    self.assertNotEqual(self.run_assertion(), 0)
+    ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 0 == 0
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.021s
+
+FAILED (failures=4)

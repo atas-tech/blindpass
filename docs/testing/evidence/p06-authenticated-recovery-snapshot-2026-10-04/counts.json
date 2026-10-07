@@ -1,0 +1,68 @@
+{
+  "workspace_passed": 726,
+  "workspace_failed": 0,
+  "workspace_ignored": 86,
+  "integration_passed": 144,
+  "integration_runs": [
+    {
+      "run": "rc08ab-first",
+      "passed": 2
+    },
+    {
+      "run": "authority-full-sqlite",
+      "passed": 33
+    },
+    {
+      "run": "authority-full-postgres",
+      "passed": 33
+    },
+    {
+      "run": "invalidation-sqlite",
+      "passed": 6
+    },
+    {
+      "run": "invalidation-postgres",
+      "passed": 6
+    },
+    {
+      "run": "legacy-sqlite",
+      "passed": 4
+    },
+    {
+      "run": "legacy-postgres",
+      "passed": 4
+    },
+    {
+      "run": "production-sqlite",
+      "passed": 10
+    },
+    {
+      "run": "production-postgres",
+      "passed": 10
+    },
+    {
+      "run": "startup-sqlite",
+      "passed": 5
+    },
+    {
+      "run": "quiescence-postgres",
+      "passed": 4
+    },
+    {
+      "run": "restore-sqlite",
+      "passed": 9
+    },
+    {
+      "run": "migration-regression",
+      "passed": 1
+    },
+    {
+      "run": "restore-failpoints",
+      "passed": 11
+    },
+    {
+      "run": "receipts-regression",
+      "passed": 6
+    }
+  ]
+}

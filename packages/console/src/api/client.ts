@@ -16,6 +16,7 @@ export type ApiErrorKind =
   | "invalid"
   | "too_large"
   | "rate_limited"
+  | "locked"
   | "unavailable"
   | "timeout"
   | "network"
@@ -59,6 +60,7 @@ function classify(status: number, code: string | null): ApiErrorKind {
   if (status === 410) return "gone";
   if (status === 400 || status === 422) return "invalid";
   if (status === 413) return "too_large";
+  if (status === 423) return "locked";
   if (status === 429) return "rate_limited";
   if (status === 503) return "unavailable";
   return "server";
@@ -149,6 +151,8 @@ export interface RequestOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
+/** P07 client bound: no request waits longer than 30 s in total, whatever a caller asks. */
+const MAX_TIMEOUT_MS = 30_000;
 
 export async function request<T>(method: string, path: string, options: RequestOptions = {}): Promise<T> {
   const url = new URL(path, location.origin);
@@ -170,7 +174,7 @@ export async function request<T>(method: string, path: string, options: RequestO
   if (options.ifMatch !== undefined) headers.set("if-match", `"${options.ifMatch}"`);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), Math.min(options.timeoutMs ?? DEFAULT_TIMEOUT_MS, MAX_TIMEOUT_MS));
   const abortFromCaller = () => controller.abort(options.signal?.reason);
   options.signal?.addEventListener("abort", abortFromCaller, { once: true });
 
@@ -212,7 +216,7 @@ export async function request<T>(method: string, path: string, options: RequestO
     const body = (payload && typeof payload === "object" ? payload : {}) as Record<string, unknown>;
     const code = typeof body.error === "string" ? body.error : typeof body.code === "string" ? body.code : null;
     const message = typeof body.message === "string" ? body.message : response.statusText || "Request failed";
-    const retryAfter = Number(response.headers.get("retry-after") ?? body.retry_after_seconds);
+    const retryAfter = Number(response.headers.get("retry-after") ?? body.retry_after_seconds ?? body.retry_after);
     const issues = Array.isArray(body.issues) ? body.issues.filter((issue): issue is string => typeof issue === "string") : [];
     const error = new ApiError(response.status, code, message, Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : null, issues);
     if (options.authenticated !== false && (error.kind === "unauthorized" || error.kind === "password_change_required")) {

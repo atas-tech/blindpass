@@ -1,0 +1,10 @@
+   Compiling blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.59s
+     Running tests/directory_publication.rs (target/debug/deps/directory_publication-ba55b049ab0b843b)
+
+running 2 tests
+test st03_atomic_publication_preserves_existing_empty_destination ... ok
+test st03_atomic_publication_moves_complete_private_directory_and_rejects_links ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

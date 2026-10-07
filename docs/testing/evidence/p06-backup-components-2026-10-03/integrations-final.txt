@@ -1,0 +1,40 @@
+   Compiling blindpass-controller v0.1.0 ($REPOSITORY/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.73s
+     Running tests/backup_archive.rs (target/debug/deps/backup_archive-1172292f476c2870)
+
+running 1 test
+test p06_b05_b07_fixed_members_bind_keys_database_and_coherent_metadata ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.74s
+
+     Running tests/backup_cleanup.rs (target/debug/deps/backup_cleanup-9f4dbb6f30daa0e0)
+
+running 2 tests
+test p06_b06_explicit_cleanup_requires_custody_and_preserves_published_files ... ok
+test p06_b06_killed_capture_cannot_publish_and_explicit_cleanup_removes_private_residue ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.88s
+
+     Running tests/backup_command.rs (target/debug/deps/backup_command-9bc91871d7438e66)
+
+running 1 test
+test p06_b03_b06_b07_sqlite_create_verifies_complete_bundle_and_never_initializes_lost_state ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s
+
+     Running tests/backup_envelope.rs (target/debug/deps/backup_envelope-84f4f1a135abf327)
+
+running 2 tests
+test p06_b03_b04_authenticated_roundtrip_requires_exact_recovery_signer ... ok
+test p06_b04_unsigned_and_unauthenticated_envelopes_are_rejected ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.12s
+
+     Running tests/backup_snapshot.rs (target/debug/deps/backup_snapshot-c144e7c48665cdab)
+
+running 2 tests
+test p06_b01_live_wal_snapshot_preserves_complete_transactions_and_metadata ... ok
+test p06_b09_authentic_snapshot_still_requires_integrity_and_complete_schema ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.25s
+

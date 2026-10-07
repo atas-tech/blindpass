@@ -1,0 +1,15 @@
+P06-RR S1 PASS production controller (authority-backed, built-in TLS) serving; operator session established
+P06-RR S2 PASS real broker+node in a QEMU guest enrolled over verified HTTPS; node online; authority holds its broker trust
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-RR S3 PASS authenticated backup restored under a recovering authority record (epoch 2); controller serving fenced 503
+P06-RR F1 PASS relay refuses a certificate that does not cover the requested name ('blindpass-node: recovery relay could not reach the controller'); durable state unchanged
+P06-RR F2 PASS relay refuses an untrusted certificate for the right name ('blindpass-node: recovery relay could not reach the controller'); durable state unchanged; restored controller restarted under the recovering record
+P06-RR F3 PASS stalled controller: relay gave up in 5.3s ('blindpass-node: recovery relay could not reach the controller'); durable state unchanged
+P06-RR F4 PASS real broker refused a real controller-signed request after its 30s nonce expired; protected challenge stays collecting (authority: nd_17c77980-8f59-4e71-9165-c957d33aa73a:collecting:0:false)
+P06-RR F5 PASS 7 malformed/oversized/partial/unknown frames refused by the real broker; service active; state unchanged
+P06-RR F6 PASS broker restarted; protected identity intact
+P06-RR L1 PASS after a page the broker exported but the controller never received, collecting again reports rebase_required (authority: nd_17c77980-8f59-4e71-9165-c957d33aa73a:rebase_required:1:false); no report recorded, nodes stay quarantined, ledger recovering:2:4
+P06-RR L2 PASS fenced, reserved a higher epoch (3) and restored the same archive into a new destination; controller serving fenced 503
+P06-RR R1 PASS recovery_relay state=covered pages=1 activation_permitted=false (recovery epoch 3); one quarantined node report recorded; the consumed grant mapped exactly (matched) to its now-uncertain operation; authority challenge covered; ledger recovering:3:6; ordinary routes 503
+P06-RR R2 PASS repeat relay idempotent (recovery_relay state=covered pages=0 activation_permitted=false)
+P06-RR R3 PASS controller and guest broker/node logs contain no operator or approver password, bootstrap password, enrollment token, authority password or PEM private key

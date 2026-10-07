@@ -1,0 +1,42 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 5 tests
+test p06_pw02_actual_production_excludes_second_store_and_same_revision_restart ... 
+thread 'p06_pw02_actual_production_excludes_second_store_and_same_revision_restart' (4089177) panicked at crates/blindpass-controller/tests/production_ownership.rs:32:9:
+production command did not terminate within fixture bound
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_pw03_actual_production_http_and_local_admin_share_authority_loss ... 
+thread 'p06_pw03_actual_production_http_and_local_admin_share_authority_loss' (4089728) panicked at crates/blindpass-controller/tests/production_ownership.rs:186:9:
+actual production did not fence after authority loss
+FAILED
+test p06_pw04_actual_startup_refuses_changed_context_before_clock_write ... 
+thread 'p06_pw04_actual_startup_refuses_changed_context_before_clock_write' (4090054) panicked at crates/blindpass-controller/tests/production_ownership.rs:32:9:
+production command did not terminate within fixture bound
+FAILED
+test p06_pw04_fenced_and_recovering_production_start_without_clock_writes ... 
+thread 'p06_pw04_fenced_and_recovering_production_start_without_clock_writes' (4090511) panicked at crates/blindpass-controller/tests/production_ownership.rs:42:17:
+assertion `left == right` failed
+  left: 200
+ right: 503
+FAILED
+test p06_pw05_production_initialization_and_clock_maintenance_require_fenced_owner ... 
+thread 'p06_pw05_production_initialization_and_clock_maintenance_require_fenced_owner' (4090617) panicked at crates/blindpass-controller/tests/production_ownership.rs:232:5:
+assertion `left == right` failed: production initialization replaced the explicitly chosen tenant
+  left: 0
+ right: 1
+FAILED
+
+failures:
+
+failures:
+    p06_pw02_actual_production_excludes_second_store_and_same_revision_restart
+    p06_pw03_actual_production_http_and_local_admin_share_authority_loss
+    p06_pw04_actual_startup_refuses_changed_context_before_clock_write
+    p06_pw04_fenced_and_recovering_production_start_without_clock_writes
+    p06_pw05_production_initialization_and_clock_maintenance_require_fenced_owner
+
+test result: FAILED. 0 passed; 5 failed; 0 ignored; 0 measured; 2 filtered out; finished in 21.96s
+
+error: test failed, to rerun pass `-p blindpass-controller --test production_ownership`

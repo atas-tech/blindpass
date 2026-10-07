@@ -18,7 +18,7 @@ const MAX_EVENT_BYTES: usize = 64 * 1024;
 const MAX_OUTBOX_BYTES: u64 = MAX_EVENTS as u64 * MAX_EVENT_BYTES as u64;
 const PRIVATE_MODE: u32 = 0o600;
 const DIRECTORY_MODE: u32 = 0o700;
-const O_NOFOLLOW: i32 = 0x20000;
+const O_NOFOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 /// An already queued key with different bytes is never replaced.
 pub(crate) const KEY_REUSED: &str = "node event key was reused with different bytes";
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);

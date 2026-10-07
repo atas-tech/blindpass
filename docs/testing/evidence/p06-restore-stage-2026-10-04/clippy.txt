@@ -1,0 +1,6 @@
+    Checking blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Checking blindpass-cli v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-cli)
+    Checking blindpass-broker v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-broker)
+    Checking blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+    Checking blindpass-node v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-node)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 32.37s

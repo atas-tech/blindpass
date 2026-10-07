@@ -21,6 +21,7 @@ struct Fixture {
 impl Fixture {
     fn new() -> Self {
         let directory = TestDirectory::new();
+        fs::set_permissions(&directory.0, fs::Permissions::from_mode(0o700)).unwrap();
         for name in ["keys", "data", "run"] {
             fs::create_dir(directory.file(name)).unwrap();
             fs::set_permissions(directory.file(name), fs::Permissions::from_mode(0o700)).unwrap();
@@ -68,6 +69,56 @@ impl Fixture {
         }
     }
 
+    // Production startup now needs a separate protected authority even when
+    // testing absent/damaged local state. Unavailable authority is not schema proof.
+    async fn authority(&mut self, phase: &str, tenant: Option<&str>) {
+        let tenant = tenant
+            .map(str::to_owned)
+            .unwrap_or_else(|| support::unique("P06_DUMMY_STARTUP"));
+        let issuer = format!(
+            "ed25519-{}",
+            blindpass_core::signing::base64_url_encode(
+                blindpass_core::signing::ed25519::Ed25519KeyPair::from_seed(&[b'I'; 32])
+                    .unwrap()
+                    .public_key()
+            )
+        );
+        let admin = sqlx::PgPool::connect(
+            &std::env::var("P06_TEST_AUTHORITY_ADMIN_URL").expect("owned authority fixture"),
+        )
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO blindpass_authority.recovery_authority (tenant_id,issuer_key_id,owner_id,epoch,revision,phase) VALUES ($1,$2,'P06_DUMMY_STARTUP_OWNER',1,1,$3)")
+            .bind(&tenant).bind(issuer).bind(phase).execute(&admin).await.unwrap();
+        admin.close().await;
+        let path = self.directory.file("authority-url");
+        fs::write(
+            &path,
+            std::env::var("P06_TEST_AUTHORITY_URL").expect("owned authority runtime"),
+        )
+        .unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+        self.values.insert(
+            "BLINDPASS_AUTHORITY_URL_FILE".into(),
+            path.display().to_string(),
+        );
+        self.values
+            .insert("BLINDPASS_CONTROLLER_TENANT_ID".into(), tenant);
+        self.values.insert(
+            "BLINDPASS_CONTROLLER_OWNER_ID".into(),
+            "P06_DUMMY_STARTUP_OWNER".into(),
+        );
+    }
+
+    async fn next_active_revision(&self) {
+        let admin = sqlx::PgPool::connect(&std::env::var("P06_TEST_AUTHORITY_ADMIN_URL").unwrap())
+            .await
+            .unwrap();
+        sqlx::query("UPDATE blindpass_authority.recovery_authority SET phase='active',revision=revision+1 WHERE tenant_id=$1")
+            .bind(&self.values["BLINDPASS_CONTROLLER_TENANT_ID"]).execute(&admin).await.unwrap();
+        admin.close().await;
+    }
+
     fn command(&self, command: &str) -> Command {
         let mut child = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"));
         child.env_clear().envs(&self.values).arg(command);
@@ -112,16 +163,20 @@ impl Drop for Server {
     }
 }
 
-#[test]
-fn p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url() {
-    let fixture = Fixture::new();
+#[tokio::test]
+#[ignore = "requires the owned separate PostgreSQL authority driver"]
+async fn p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url() {
+    let mut fixture = Fixture::new();
+    fixture.authority("active", None).await;
     fixture.refusal("state_missing");
     assert!(!fixture.directory.file("data/controller.db").exists());
 }
 
 #[tokio::test]
+#[ignore = "requires the owned separate PostgreSQL authority driver"]
 async fn p06_s02_serve_does_not_initialize_an_empty_existing_database() {
-    let fixture = Fixture::new();
+    let mut fixture = Fixture::new();
+    fixture.authority("active", None).await;
     let pool = SqlitePool::connect(&fixture.url).await.unwrap();
     fixture.refusal("state_missing");
     let count: i64 =
@@ -134,10 +189,12 @@ async fn p06_s02_serve_does_not_initialize_an_empty_existing_database() {
 }
 
 #[tokio::test]
+#[ignore = "requires the owned separate PostgreSQL authority driver"]
 async fn p06_s03_serve_does_not_migrate_or_repair_schema_versions() {
     for version in [15, 999] {
-        let fixture = Fixture::new();
+        let mut fixture = Fixture::new();
         let store = Store::connect(&fixture.url).await.unwrap();
+        fixture.authority("active", Some(store.tenant_id())).await;
         store.close().await;
         let pool = SqlitePool::connect(&fixture.url).await.unwrap();
         sqlx::query("UPDATE controller_meta SET schema_version = ?")
@@ -156,8 +213,10 @@ async fn p06_s03_serve_does_not_migrate_or_repair_schema_versions() {
 }
 
 #[tokio::test]
+#[ignore = "requires the owned separate PostgreSQL authority driver"]
 async fn p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart() {
     let mut fixture = Fixture::new();
+    fixture.authority("fenced", None).await;
     let output = fixture.command("migrate").output().unwrap();
     assert!(output.status.success());
     let pool = SqlitePool::connect(&fixture.url).await.unwrap();
@@ -167,6 +226,9 @@ async fn p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_re
             .await
             .unwrap();
     for _ in 0..2 {
+        // A used active revision is never replayed, even after process death.
+        // This explicit fixture authorization is not a production unfence API.
+        fixture.next_active_revision().await;
         let reservation = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = reservation.local_addr().unwrap();
         drop(reservation);
@@ -187,7 +249,10 @@ async fn p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_re
             if tokio::net::TcpStream::connect(address).await.is_ok() {
                 let response = raw_request(address, "GET", "/readyz", &[], None).await;
                 assert_eq!(response.status, 200);
-                assert_eq!(response.body, json!({"ok":true,"checks":{"database":"up"}}));
+                assert_eq!(
+                    response.body,
+                    json!({"ok":true,"checks":{"database":"up","authority":"up"}})
+                );
                 ready = true;
                 break;
             }
@@ -208,10 +273,12 @@ async fn p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_re
 }
 
 #[tokio::test]
+#[ignore = "requires the owned separate PostgreSQL authority driver"]
 async fn p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata() {
     for table in ["controller_meta", "controller_clock"] {
-        let fixture = Fixture::new();
+        let mut fixture = Fixture::new();
         let store = Store::connect(&fixture.url).await.unwrap();
+        fixture.authority("active", Some(store.tenant_id())).await;
         store.close().await;
         let pool = SqlitePool::connect(&fixture.url).await.unwrap();
         sqlx::query(&format!("DELETE FROM {table}"))

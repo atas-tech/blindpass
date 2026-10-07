@@ -1,0 +1,61 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[Unit]
+Description=BlindPass authenticated fenced restore (operator-started, offline custody only)
+# Run only on the recovery host with the controller stopped. The operator places the
+# restore arguments in /etc/blindpass/controller-restore.env (archive, destination, tenant,
+# owner, recovery id) and the OFFLINE recipient key and signing certificate under
+# /etc/blindpass/controller-restore/ for the duration of the run, then removes them.
+# The host's own backup signing credential is never loaded here (ADR 0013).
+Conflicts=blindpass-controller.service
+ConditionPathExists=/etc/blindpass/controller-initialized
+ConditionPathExists=/etc/blindpass/controller-restore.env
+ConditionPathExists=/etc/blindpass/controller-restore/recipient-key
+ConditionPathExists=/etc/blindpass/controller-restore/signing-certificate
+
+[Service]
+User=blindpass
+Group=blindpass
+UMask=0077
+EnvironmentFile=/etc/blindpass/controller-restore.env
+LoadCredential=recipient-key:/etc/blindpass/controller-restore/recipient-key
+LoadCredential=signing-certificate:/etc/blindpass/controller-restore/signing-certificate
+LoadCredential=authority-url:/etc/blindpass/controller-authority/authority-url
+# The archive and the restored destination live under this directory; decrypted
+# material is staged only on the tmpfs RuntimeDirectory below.
+StateDirectory=blindpass/controller-restore
+StateDirectoryMode=0700
+RuntimeDirectory=blindpass-controller-restore
+RuntimeDirectoryMode=0700
+ProtectSystem=strict
+ReadWritePaths=/var/lib/blindpass/controller-restore /run/blindpass-controller-restore
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+# The independent authority may be remote.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+LimitCORE=0
+LimitNOFILE=8192
+KillMode=control-group
+TimeoutStartSec=15min
+TimeoutStopSec=10
+StandardOutput=journal
+StandardError=journal
+Type=oneshot
+ExecStart=/opt/blindpass/controller/current/bin/blindpass restore --archive ${BLINDPASS_RESTORE_ARCHIVE} --recipient-key-file %d/recipient-key --signing-certificate-file %d/signing-certificate --staging-directory /run/blindpass-controller-restore --destination ${BLINDPASS_RESTORE_DESTINATION} --authority-url-file %d/authority-url --tenant-id ${BLINDPASS_RESTORE_TENANT_ID} --owner-id ${BLINDPASS_RESTORE_OWNER_ID} --recovery-id ${BLINDPASS_RESTORE_RECOVERY_ID}

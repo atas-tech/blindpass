@@ -1,0 +1,15 @@
+   Compiling blindpass-broker v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-broker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.50s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_broker-6db550adea3814d9)
+
+running 7 tests
+test grants::tests::p06_cj01_durable_consumption_contains_exact_signed_correlation ... ok
+test grants::tests::p06_cj02_legacy_intent_keeps_denial_beside_new_bound_consumption ... ok
+test grants::tests::p06_cj03_compaction_preserves_retained_bound_metadata_without_guessing_legacy ... ok
+test grants::tests::p06_cj04_complete_malformed_or_conflicting_correlations_refuse ... ok
+test grants::tests::p06_cj04b_torn_bound_record_retains_only_the_complete_intent ... ok
+test grants::tests::p06_cj05a_unsafe_correlation_denies_before_effect ... ok
+test grants::tests::p06_cj05b_hardlinked_intent_denies_append_and_recovery ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 298 filtered out; finished in 0.00s
+

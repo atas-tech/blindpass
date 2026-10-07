@@ -1,0 +1,498 @@
+{
+  "date": "2026-10-06T10:39:34.069Z",
+  "browser": "152.0.7977.82",
+  "executable": "/usr/bin/chromium",
+  "origin": "http://127.0.0.1:<ephemeral>",
+  "viewports": {
+    "desktop": {
+      "load": {
+        "requestCount": 10,
+        "origins": [
+          "same-origin (loopback)"
+        ],
+        "thirdPartyRequests": [],
+        "trackerRequests": [],
+        "byType": {
+          "document": 1,
+          "font": 1,
+          "stylesheet": 3,
+          "script": 2,
+          "image": 1,
+          "other": 1,
+          "media": 1
+        },
+        "mediaRequestedAfterScroll": true,
+        "failed": [],
+        "consoleErrors": [],
+        "cookies": [],
+        "cookie": "",
+        "localStorageKeys": [],
+        "sessionStorageKeys": [],
+        "indexedDb": [],
+        "scripts": [
+          "http://127.0.0.1:35633/script.js?v=2a137ae4",
+          "http://127.0.0.1:35633/reel.js?v=6b678ebf"
+        ],
+        "inlineScripts": 0,
+        "consentUi": 0,
+        "canonical": "https://blindpass.atas.tech/",
+        "ogUrl": "https://blindpass.atas.tech/",
+        "ogImage": "https://blindpass.atas.tech/favicon.svg",
+        "diagramLabel": "Agent-to-agent exchange: Agent A requests a named secret fro",
+        "overflow": {
+          "scrollWidth": 1440,
+          "innerWidth": 1440
+        },
+        "title": "BlindPass — Autonomy, under control."
+      },
+      "ctas": [
+        {
+          "placement": "desktop nav “View on GitHub”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "mobile nav “View on GitHub”",
+          "visibleWithoutMenu": false,
+          "href": "https://github.com/atas-tech/blindpass",
+          "menuButtonVisible": false,
+          "clicked": false
+        },
+        {
+          "placement": "hero “Read the docs”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass#readme",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass#readme",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "closing “Explore BlindPass”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "footer “GitHub”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "footer “Security”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass/blob/main/SECURITY.md",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass/blob/main/SECURITY.md",
+          "finalStatus": 404,
+          "chain": [
+            {
+              "status": 404,
+              "url": "https://github.com/atas-tech/blindpass/blob/main/SECURITY.md"
+            }
+          ],
+          "title": "File not found · GitHub"
+        }
+      ],
+      "anchors": [
+        {
+          "href": "#main",
+          "text": "Skip to content",
+          "nav": "page",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": true,
+          "hash": "#main",
+          "targetTop": 94,
+          "landed": true
+        },
+        {
+          "href": "#approach",
+          "text": "Use cases",
+          "nav": "Main navigation",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#approach",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#workflow",
+          "text": "How it works",
+          "nav": "Main navigation",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#workflow",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#roadmap",
+          "text": "Roadmap",
+          "nav": "Main navigation",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#roadmap",
+          "targetTop": 135,
+          "landed": true
+        },
+        {
+          "href": "#approach",
+          "text": "Use cases",
+          "nav": "mobile-nav",
+          "targetExists": true,
+          "visible": false,
+          "skipLink": false
+        },
+        {
+          "href": "#workflow",
+          "text": "How it works",
+          "nav": "mobile-nav",
+          "targetExists": true,
+          "visible": false,
+          "skipLink": false
+        },
+        {
+          "href": "#roadmap",
+          "text": "Roadmap",
+          "nav": "mobile-nav",
+          "targetExists": true,
+          "visible": false,
+          "skipLink": false
+        },
+        {
+          "href": "#approach",
+          "text": "+ SECURE SECRET HANDOFFS FOR AGENTS",
+          "nav": "hero",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#approach",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#workflow",
+          "text": "Explore the workflow",
+          "nav": "hero",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#workflow",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#workflow",
+          "text": "Explore the handoffs",
+          "nav": "approach",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#workflow",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#roadmap",
+          "text": "Roadmap",
+          "nav": "Footer navigation",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#roadmap",
+          "targetTop": 143,
+          "landed": true
+        }
+      ],
+      "anchorTargets": [
+        "#main",
+        "#approach",
+        "#workflow",
+        "#roadmap"
+      ]
+    },
+    "mobile": {
+      "load": {
+        "requestCount": 10,
+        "origins": [
+          "same-origin (loopback)"
+        ],
+        "thirdPartyRequests": [],
+        "trackerRequests": [],
+        "byType": {
+          "document": 1,
+          "font": 1,
+          "stylesheet": 3,
+          "script": 2,
+          "image": 1,
+          "other": 1,
+          "media": 1
+        },
+        "mediaRequestedAfterScroll": true,
+        "failed": [],
+        "consoleErrors": [],
+        "cookies": [],
+        "cookie": "",
+        "localStorageKeys": [],
+        "sessionStorageKeys": [],
+        "indexedDb": [],
+        "scripts": [
+          "http://127.0.0.1:35633/script.js?v=2a137ae4",
+          "http://127.0.0.1:35633/reel.js?v=6b678ebf"
+        ],
+        "inlineScripts": 0,
+        "consentUi": 0,
+        "canonical": "https://blindpass.atas.tech/",
+        "ogUrl": "https://blindpass.atas.tech/",
+        "ogImage": "https://blindpass.atas.tech/favicon.svg",
+        "diagramLabel": "Agent-to-agent exchange: Agent A requests a named secret fro",
+        "overflow": {
+          "scrollWidth": 390,
+          "innerWidth": 390
+        },
+        "title": "BlindPass — Autonomy, under control."
+      },
+      "ctas": [
+        {
+          "placement": "desktop nav “View on GitHub”",
+          "visibleWithoutMenu": false,
+          "href": "https://github.com/atas-tech/blindpass",
+          "clicked": false
+        },
+        {
+          "placement": "mobile nav “View on GitHub”",
+          "visibleWithoutMenu": false,
+          "href": "https://github.com/atas-tech/blindpass",
+          "menuExpanded": "true",
+          "visibleAfterMenu": true,
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "hero “Read the docs”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass#readme",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass#readme",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "closing “Explore BlindPass”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "footer “GitHub”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass",
+          "finalStatus": 200,
+          "chain": [
+            {
+              "status": 200,
+              "url": "https://github.com/atas-tech/blindpass"
+            }
+          ],
+          "title": "GitHub - atas-tech/blindpass: Zero-knowledge secret provisioning system · GitHub"
+        },
+        {
+          "placement": "footer “Security”",
+          "visibleWithoutMenu": true,
+          "href": "https://github.com/atas-tech/blindpass/blob/main/SECURITY.md",
+          "clicked": true,
+          "finalUrl": "https://github.com/atas-tech/blindpass/blob/main/SECURITY.md",
+          "finalStatus": 404,
+          "chain": [
+            {
+              "status": 404,
+              "url": "https://github.com/atas-tech/blindpass/blob/main/SECURITY.md"
+            }
+          ],
+          "title": "File not found · GitHub"
+        }
+      ],
+      "anchors": [
+        {
+          "href": "#main",
+          "text": "Skip to content",
+          "nav": "page",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": true,
+          "hash": "#main",
+          "targetTop": 76,
+          "landed": true
+        },
+        {
+          "href": "#approach",
+          "text": "Use cases",
+          "nav": "Main navigation",
+          "targetExists": true,
+          "visible": false,
+          "skipLink": false
+        },
+        {
+          "href": "#workflow",
+          "text": "How it works",
+          "nav": "Main navigation",
+          "targetExists": true,
+          "visible": false,
+          "skipLink": false
+        },
+        {
+          "href": "#roadmap",
+          "text": "Roadmap",
+          "nav": "Main navigation",
+          "targetExists": true,
+          "visible": false,
+          "skipLink": false
+        },
+        {
+          "href": "#approach",
+          "text": "Use cases",
+          "nav": "mobile-nav",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#approach",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#workflow",
+          "text": "How it works",
+          "nav": "mobile-nav",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#workflow",
+          "targetTop": 102,
+          "landed": true
+        },
+        {
+          "href": "#roadmap",
+          "text": "Roadmap",
+          "nav": "mobile-nav",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#roadmap",
+          "targetTop": 175,
+          "landed": true
+        },
+        {
+          "href": "#approach",
+          "text": "+ SECURE SECRET HANDOFFS FOR AGENTS",
+          "nav": "hero",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#approach",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#workflow",
+          "text": "Explore the workflow",
+          "nav": "hero",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#workflow",
+          "targetTop": 102,
+          "landed": true
+        },
+        {
+          "href": "#workflow",
+          "text": "Explore the handoffs",
+          "nav": "approach",
+          "targetExists": true,
+          "visible": true,
+          "skipLink": false,
+          "hash": "#workflow",
+          "targetTop": 100,
+          "landed": true
+        },
+        {
+          "href": "#roadmap",
+          "text": "Roadmap",
+          "nav": "Footer navigation",
+          "targetExists": true,
+          "visible": false,
+          "skipLink": false
+        }
+      ],
+      "anchorTargets": [
+        "#main",
+        "#approach",
+        "#workflow",
+        "#roadmap"
+      ]
+    }
+  }
+}

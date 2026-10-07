@@ -1,0 +1,4 @@
+canary-scan PASS: 51 files, 0 entries, 4918876 bytes scanned; 0 exposed, 0 allowlisted, 0 incomplete
+  controls: ok (tar, gz, bz2, xz, zip, ar, jsonl, wrapped, tar.gz, zst; zstd backend module)
+  classes: transcripts=27, logs=2
+  excluded: canaries.txt (*/canaries.txt)

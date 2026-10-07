@@ -1241,6 +1241,43 @@ done < <(find /var/crash /var/lib/systemd/coredump -type f \
     -newermt "$crash_started_at" -print0 2>/dev/null)
 printf 'P01-I06 core-artifact canary review: PASS (reports_inspected=%s coredumpctl=%s)\n' \
     "$crash_artifact_count" "$(command -v coredumpctl >/dev/null 2>&1 && printf available || printf unavailable)"
+if [[ "${BLINDPASS_P01_LIFT_CORE:-0}" == 1 ]]; then
+    # P07 S07 (ii), disposable guest only, never part of the default run: the same probe with the core
+    # limit lifted on purpose and a plain-file core pattern. The consumer holds the delivered secret by
+    # design, so a dump MUST exist and MUST hold the canary; that proves the dump scan can see a canary and
+    # that LimitCORE=0 above is what keeps it out. The dump is exported for the offline scanner (it sits
+    # outside the paths assert_canary_absent reads, which would otherwise fail on it by design).
+    old_core_pattern=$(sysctl -n kernel.core_pattern)
+    install -d -m 0700 /var/p07-cores
+    sysctl -qw kernel.core_pattern=/var/p07-cores/core.%e.%p
+    sed 's/^LimitCORE=0$/LimitCORE=infinity/' /etc/systemd/system/blindpass-crash.service \
+        >/etc/systemd/system/blindpass-crash-lifted.service
+    grep -q '^LimitCORE=infinity$' /etc/systemd/system/blindpass-crash-lifted.service || {
+        printf 'P01-FAIL the lifted-limit unit was not derived\n' >&2
+        exit 1
+    }
+    systemctl daemon-reload
+    printf '%s' "$crash_canary" >/run/blindpass-crash-canary
+    chmod 0600 /run/blindpass-crash-canary
+    if systemctl start blindpass-crash-lifted.service >/dev/null 2>&1; then
+        printf 'P01-FAIL lifted crash probe unexpectedly exited successfully\n' >&2
+        exit 1
+    fi
+    rm -f /run/blindpass-crash-canary
+    sysctl -qw kernel.core_pattern="$old_core_pattern"
+    lifted_cores=$(find /var/p07-cores -type f | wc -l)
+    [[ "$lifted_cores" -ge 1 ]] || {
+        printf 'P01-FAIL no core was written with the limit lifted: the S07 negative result above proves nothing\n' >&2
+        exit 1
+    }
+    grep -raF -f /run/blindpass-source/canary-patterns /var/p07-cores >/dev/null || {
+        printf 'P01-FAIL the lifted-limit core does not hold the canary: the dump scan has no positive control\n' >&2
+        exit 1
+    }
+    rm -f /etc/systemd/system/blindpass-crash-lifted.service
+    systemctl daemon-reload
+    printf 'P01-S07-LIFTED dump_files=%s canary_in_dump=yes (limit lifted on purpose in a disposable guest)\n' "$lifted_cores"
+fi
 assert_canary_absent
 
 assert_canary_absent
@@ -1440,6 +1477,19 @@ systemctl start blindpass-consumer.service
 assert_canary_absent
 printf 'P01-I06 final canary scan after restart and short-TTL scenarios: PASS\n'
 printf 'P01-RETAINED-PROTECTED-MATERIAL /etc/blindpass/api-key.cred\n'
+if [[ -n "${BLINDPASS_P01_EXPORT_DIR:-}" ]]; then
+    # P07 evidence export (disposable guest only): the run's canary list, journal and crash artifacts, for
+    # scripts/tests/canary-scan.sh on the host. Absent unless the host sets P07_RUN.
+    install -d -m 0700 "$BLINDPASS_P01_EXPORT_DIR" "$BLINDPASS_P01_EXPORT_DIR/dumps"
+    install -m 0600 /run/blindpass-source/canary-patterns "$BLINDPASS_P01_EXPORT_DIR/canaries.txt"
+    journalctl --since "$p01_started_at" --no-pager -o cat >"$BLINDPASS_P01_EXPORT_DIR/journal.log"
+    coredumpctl list --no-pager >"$BLINDPASS_P01_EXPORT_DIR/coredump-inventory.log" 2>&1 || true
+    for crash_dir in /var/lib/systemd/coredump /var/crash /var/p07-cores; do
+        [[ -d "$crash_dir" ]] && cp -a "$crash_dir/." "$BLINDPASS_P01_EXPORT_DIR/dumps/" 2>/dev/null || true
+    done
+    printf 'P01-P07-EXPORT journal_bytes=%s dump_files=%s\n' \
+        "$(stat -c %s "$BLINDPASS_P01_EXPORT_DIR/journal.log")" "$(find "$BLINDPASS_P01_EXPORT_DIR/dumps" -type f | wc -l)"
+fi
 
 systemctl stop blindpass-stall.service blindpass-loader-nonroot.service blindpass-loader-race.service blindpass-unregistered.service blindpass-unauthorized.service blindpass-dynamic.service blindpass-crash.service blindpass-consumer.service blindpass-consumer-native.service blindpass-backup.service blindpass-backup-native.service blindpass-workload.service blindpass-broker.service >/dev/null 2>&1 || true
 if [[ "$user_manager_ready" == yes ]]; then

@@ -1,0 +1,20 @@
+   Compiling blindpass-core v0.1.0 (/tmp/blindpass-p06-restore-control-r84nrwok/crates/blindpass-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.03s
+     Running tests/directory_publication.rs (/home/hvo/Projects/blindpass/target/debug/deps/directory_publication-ba55b049ab0b843b)
+
+running 2 tests
+
+thread 'st03_atomic_publication_preserves_existing_empty_destination' (1223451) panicked at crates/blindpass-core/tests/directory_publication.rs:39:5:
+publication replaced existing destination
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test st03_atomic_publication_moves_complete_private_directory_and_rejects_links ... ok
+test st03_atomic_publication_preserves_existing_empty_destination ... FAILED
+
+failures:
+
+failures:
+    st03_atomic_publication_preserves_existing_empty_destination
+
+test result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p blindpass-core --test directory_publication`

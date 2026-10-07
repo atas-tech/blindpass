@@ -822,38 +822,41 @@ impl Store {
         &self,
         input: &OperationDecision<'_>,
     ) -> Result<OperationDecisionOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        let signer = self.fleet_signer.as_ref();
-        match &self.database {
-            Database::Sqlite(pool) => decide!(
-                pool,
-                |sql: &str| sql.to_owned(),
-                SQLITE_NOW_MS,
-                "",
-                SQLITE_META_LOCK,
-                operation_approval_from_sqlite,
-                closure_targets_sqlite,
-                enqueue_closures_sqlite,
-                insert_audit_sqlite,
-                &self.tenant_id,
-                signer,
-                input
-            ),
-            Database::Postgres(pool) => decide!(
-                pool,
-                super::pg,
-                POSTGRES_NOW_MS,
-                " FOR UPDATE",
-                POSTGRES_META_LOCK,
-                operation_approval_from_postgres,
-                closure_targets_postgres,
-                enqueue_closures_postgres,
-                insert_audit_postgres,
-                &self.tenant_id,
-                signer,
-                input
-            ),
-        }
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let signer = self.fleet_signer.as_ref();
+            match &self.database {
+                Database::Sqlite(pool) => decide!(
+                    pool,
+                    |sql: &str| sql.to_owned(),
+                    SQLITE_NOW_MS,
+                    "",
+                    SQLITE_META_LOCK,
+                    operation_approval_from_sqlite,
+                    closure_targets_sqlite,
+                    enqueue_closures_sqlite,
+                    insert_audit_sqlite,
+                    &self.tenant_id,
+                    signer,
+                    input
+                ),
+                Database::Postgres(pool) => decide!(
+                    pool,
+                    super::pg,
+                    POSTGRES_NOW_MS,
+                    " FOR UPDATE",
+                    POSTGRES_META_LOCK,
+                    operation_approval_from_postgres,
+                    closure_targets_postgres,
+                    enqueue_closures_postgres,
+                    insert_audit_postgres,
+                    &self.tenant_id,
+                    signer,
+                    input
+                ),
+            }
+        })
+        .await
     }
 
     /// Cancel (dismiss) an operation that still awaits approval, remove it
@@ -865,75 +868,81 @@ impl Store {
         cancelled_by: &str,
         audit: &AuditDraft,
     ) -> Result<OperationCancelOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        let signer = self.fleet_signer.as_ref();
-        match &self.database {
-            Database::Sqlite(pool) => cancel_awaiting_impl!(
-                pool,
-                |sql: &str| sql.to_owned(),
-                SQLITE_NOW_MS,
-                "",
-                SQLITE_META_LOCK,
-                operation_approval_from_sqlite,
-                operation_from_sqlite,
-                closure_targets_sqlite,
-                enqueue_closures_sqlite,
-                insert_audit_sqlite,
-                &self.tenant_id,
-                signer,
-                operation_id,
-                cancelled_by,
-                audit
-            ),
-            Database::Postgres(pool) => cancel_awaiting_impl!(
-                pool,
-                super::pg,
-                POSTGRES_NOW_MS,
-                " FOR UPDATE",
-                POSTGRES_META_LOCK,
-                operation_approval_from_postgres,
-                operation_from_postgres,
-                closure_targets_postgres,
-                enqueue_closures_postgres,
-                insert_audit_postgres,
-                &self.tenant_id,
-                signer,
-                operation_id,
-                cancelled_by,
-                audit
-            ),
-        }
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let signer = self.fleet_signer.as_ref();
+            match &self.database {
+                Database::Sqlite(pool) => cancel_awaiting_impl!(
+                    pool,
+                    |sql: &str| sql.to_owned(),
+                    SQLITE_NOW_MS,
+                    "",
+                    SQLITE_META_LOCK,
+                    operation_approval_from_sqlite,
+                    operation_from_sqlite,
+                    closure_targets_sqlite,
+                    enqueue_closures_sqlite,
+                    insert_audit_sqlite,
+                    &self.tenant_id,
+                    signer,
+                    operation_id,
+                    cancelled_by,
+                    audit
+                ),
+                Database::Postgres(pool) => cancel_awaiting_impl!(
+                    pool,
+                    super::pg,
+                    POSTGRES_NOW_MS,
+                    " FOR UPDATE",
+                    POSTGRES_META_LOCK,
+                    operation_approval_from_postgres,
+                    operation_from_postgres,
+                    closure_targets_postgres,
+                    enqueue_closures_postgres,
+                    insert_audit_postgres,
+                    &self.tenant_id,
+                    signer,
+                    operation_id,
+                    cancelled_by,
+                    audit
+                ),
+            }
+        })
+        .await
     }
 
     /// Move expired approval groups, ungranted operations and grants to
     /// their terminal states, closing broker requests. Bounded per call; the
     /// list and count paths and the periodic maintenance task all run it.
     pub async fn expire_fleet_state(&self) -> Result<FleetExpirySummary, StoreError> {
-        self.checkpoint_clock().await?;
-        let signer = self.fleet_signer.as_ref();
-        match &self.database {
-            Database::Sqlite(pool) => expire!(
-                pool,
-                |sql: &str| sql.to_owned(),
-                SQLITE_NOW_MS,
-                SQLITE_META_LOCK,
-                closure_targets_sqlite,
-                enqueue_closures_sqlite,
-                sign_pending_tombstones_sqlite,
-                &self.tenant_id,
-                signer
-            ),
-            Database::Postgres(pool) => expire!(
-                pool,
-                super::pg,
-                POSTGRES_NOW_MS,
-                POSTGRES_META_LOCK,
-                closure_targets_postgres,
-                enqueue_closures_postgres,
-                sign_pending_tombstones_postgres,
-                &self.tenant_id,
-                signer
-            ),
-        }
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let signer = self.fleet_signer.as_ref();
+            match &self.database {
+                Database::Sqlite(pool) => expire!(
+                    pool,
+                    |sql: &str| sql.to_owned(),
+                    SQLITE_NOW_MS,
+                    SQLITE_META_LOCK,
+                    closure_targets_sqlite,
+                    enqueue_closures_sqlite,
+                    sign_pending_tombstones_sqlite,
+                    &self.tenant_id,
+                    signer
+                ),
+                Database::Postgres(pool) => expire!(
+                    pool,
+                    super::pg,
+                    POSTGRES_NOW_MS,
+                    POSTGRES_META_LOCK,
+                    closure_targets_postgres,
+                    enqueue_closures_postgres,
+                    sign_pending_tombstones_postgres,
+                    &self.tenant_id,
+                    signer
+                ),
+            }
+        })
+        .await
     }
 }

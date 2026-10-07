@@ -121,7 +121,7 @@ def main():
    'The trusted test driver reconnects the stock browser client after the first snapshot. '
    'After that snapshot returns, navigate to that same report again, wait for its report text, and call browser_snapshot a second time as an independent read. '
    'Cancel the operation with blindpass_cancel_operation using the returned eventKey. '
-   'Finally return only valid JSON with one integer property artifacts containing the count you actually read. '
+   'Finally return only valid JSON with one integer property artifacts containing the count you actually read, as plain text with no Markdown and no code fence. '
    'Never request credentials or inspect cookies, session storage, browser endpoints, host files, or shell tools.')
   transport=mcp_transport(name);executable=client_executable(name)
   tools=['blindpass_request_operation','blindpass_operation_status','blindpass_cancel_operation','browser_navigate','browser_wait_for','browser_snapshot']

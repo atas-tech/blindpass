@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-use blindpass_core::deployment::{DEFAULT_KEYS_DIR, check_keys, initialize_keys};
+use blindpass_core::deployment::{DEFAULT_KEYS_DIR, check_keys, initialize_keys, issuer_key_id};
 use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
@@ -22,12 +22,18 @@ enum KeysAction {
         #[arg(long)]
         directory: Option<PathBuf>,
     },
+    /// Print the public issuer key identifier to register in the recovery authority.
+    IssuerId {
+        #[arg(long)]
+        directory: Option<PathBuf>,
+    },
 }
 
 pub fn run(command: KeysCommand) -> Result<(), String> {
+    let print_identifier = matches!(command.action, KeysAction::IssuerId { .. });
     let (initialize, directory) = match command.action {
         KeysAction::Init { directory } => (true, directory),
-        KeysAction::Check { directory } => (false, directory),
+        KeysAction::Check { directory } | KeysAction::IssuerId { directory } => (false, directory),
     };
     let directory = directory.unwrap_or_else(|| {
         std::env::var_os("BLINDPASS_KEYS_DIR")
@@ -42,7 +48,14 @@ pub fn run(command: KeysCommand) -> Result<(), String> {
     } else {
         check_keys(&directory)
             .map_err(|_| "controller keys missing, unsafe, busy, or invalid".to_owned())?;
-        println!("Controller keys are valid.");
+        if print_identifier {
+            // Public identifier only, after the same full key validation.
+            let identifier = issuer_key_id(&directory)
+                .map_err(|_| "controller keys missing, unsafe, busy, or invalid".to_owned())?;
+            println!("{identifier}");
+        } else {
+            println!("Controller keys are valid.");
+        }
     }
     Ok(())
 }

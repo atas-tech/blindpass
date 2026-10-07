@@ -13,7 +13,6 @@ const BUILD = path.join(__dirname, "build");
   fs.mkdirSync(BUILD, { recursive: true });
   const browser = await chromium.launch();
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
-  await page.route(/googletagmanager/, (route) => route.abort());
   await page.goto(pathToFileURL(path.join(__dirname, "../dist/index.html")).href);
   await page.evaluate(() => document.querySelector("#reel")?.remove());
   await page.waitForTimeout(1000);

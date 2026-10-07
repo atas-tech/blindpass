@@ -1,0 +1,20 @@
+{
+  "crates/blindpass-controller/src/recovery_authority.rs": "a0e09712099e043e1ac80785cef62cf98a724ff84e9249832a0703619b4a3a9e",
+  "crates/blindpass-controller/src/app.rs": "72251401704e9b6c7aeff16c072c91166a1dbe718808058e6e75a9befc02fd57",
+  "crates/blindpass-controller/src/routes/node.rs": "06712bbf4f9ce03d0661b938a5dc2c5dc43c43ec9a71d89a967628f633e4cc87",
+  "crates/blindpass-controller/tests/recovery_authority.rs": "135a644aae40f31531dcbf8256b1d64a878edee26936206a79eec47e1e61346a",
+  "deploy/controller/recovery-authority.sql": "d97bcc1c3c1085a9ecd82fa951ff08bcd11f919dc1eb605e253e9c3699b47411",
+  "tests/deployment/recovery-authority-postgres.py": "be0a39ead431ed4bd8ed09c5aacba66faab18cf56f6d86541cf559ad0b815d20",
+  "crates/blindpass-controller/src/store/authorization.rs": "94d33ff7f4327cbf71dd2c6188609ab6690ad179c5274d5aeb7423d24d7d8e90",
+  "crates/blindpass-controller/src/store/exchanges.rs": "c348361081315b80bec4e0ce8d531e0f195cfcbf11eb1c93321dce0992dac81e",
+  "crates/blindpass-controller/src/store/fleet.rs": "98b2577aa24b1de61e0e6c6a29724e19e468d8fd896381b0c58eb67d52b10fef",
+  "crates/blindpass-controller/src/store/fleet_lifecycle.rs": "8ab5e9749f80af5b0d10b4cce2d3ab6565bdca1cc14472418a76a6d3763f2308",
+  "crates/blindpass-controller/src/store/grants.rs": "c65d29cf8ccbc5e8a86ef6c6bc2d024a0c4e7171dfbdaf87eb2f24654f81ba7d",
+  "crates/blindpass-controller/src/store/mod.rs": "ef062925bb0414b2596947850b76f32fd82348e5ceb4ed77ede7576aced9228e",
+  "crates/blindpass-controller/src/store/node_channel.rs": "386d3d9520abea4b46a16ef23f8fa1d2635e2b0529aa7daca8fdacaf0e248590",
+  "crates/blindpass-controller/src/store/operation_approvals.rs": "84d6be0e0ad3b8a78f58486b5769cdcf35bb4d64112def46a0f6efaa0da3bd4f",
+  "crates/blindpass-controller/src/store/operators.rs": "f6f0f9d63a24a9e38c9ca3a2db767d1846af9942d83c7a72b25c8fade1ea3fab",
+  "crates/blindpass-controller/src/store/provisioning.rs": "a0d9a3d50d5c5210aaeddcbc2d371bd5c6e8dd710bc1d3010531977a85afcfb4",
+  "crates/blindpass-controller/src/store/provisioning_links.rs": "dc909e940a60b058228c337a84e927a13976b95eae95351ac97c18813866684a",
+  "crates/blindpass-controller/src/store/workload_cancellation.rs": "620b22f8c145e0a5cdfd03a8fbb52508dbdcb0811894b72b03861058f91fe606"
+}

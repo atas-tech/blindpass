@@ -1,0 +1,14 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0599]: no method named `now_ms` found for struct `store::Store` in the current scope
+   --> crates/blindpass-controller/src/store/ownership.rs:199:22
+    |
+199 |             snapshot.now_ms().await,
+    |                      ^^^^^^ method not found in `store::Store`
+    |
+   ::: crates/blindpass-controller/src/store/mod.rs:313:1
+    |
+313 | pub struct Store {
+    | ---------------- method `now_ms` not found for this struct
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `blindpass-controller` (lib test) due to 1 previous error

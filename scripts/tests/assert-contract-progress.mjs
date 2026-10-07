@@ -6,7 +6,7 @@ async function main() {
   const reportPath = process.argv[2];
   const manifestPath = process.argv[3];
   if (!reportPath || !manifestPath) {
-    process.stderr.write("Usage: node scripts/tests/assert-contract-progress.mjs <vitest-json-report> <rust-pending.json>\n");
+    process.stderr.write("Usage: node scripts/tests/assert-contract-progress.mjs <vitest-json-report> <required-cases.json>\n");
     process.exit(2);
   }
 
@@ -113,7 +113,7 @@ export function compareProgress(reportValue, manifestValue) {
     const result = observed.get(id);
     if (pending.has(id)) {
       if (result.status === "passed") {
-        throw new Error(`Unexpected pass for pending case ${id}; remove it from rust-pending.json.`);
+        throw new Error(`Unexpected pass for pending case ${id}; remove it from required-cases.json.`);
       }
       if (result.status !== "failed") {
         throw new Error(`Pending case ${id} has non-executed status ${result.status}.`);

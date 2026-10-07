@@ -1,5 +1,11 @@
 # Official MCP server
 
+This workspace package is `@blindpass/mcp-server-lib`: a private library that is **not published**. The
+public npm package `@blindpass/mcp-server` is the self-contained esbuild bundle of the OpenClaw/MCP entrypoint
+that wraps it (`packages/openclaw-plugin/dist`, staged by [`scripts/publish_dist.sh`](../../scripts/publish_dist.sh)
+and released only by the approved [release workflow](../../docs/release/README.md)); it has `bin` entries and no
+runtime dependencies.
+
 This MIT package uses approved `@modelcontextprotocol/server@2.2.0` and Zod 4.6.5.
 `createMcpServer({tools, brokerClient})` registers trusted callbacks with JSON input
 schemas and, when supplied, the three broker operation tools below.
@@ -99,7 +105,7 @@ the browser operation tools use broker metadata.
 
 ## Checks and remaining work
 
-Run `npm run test --workspace=@blindpass/mcp-server` from the repository root.
+Run `npm run test --workspace=@blindpass/mcp-server-lib` from the repository root.
 One hundred and eight SDK/client cases pass (Node 26.10.0, 2026-10-02), including actual
 older/modern stdio, cancellation/EOF/SIGTERM, bounded callbacks, transport
 robustness, fleet legacy-surface and diagnostics cases and Unix reply/socket checks. Legacy handlers

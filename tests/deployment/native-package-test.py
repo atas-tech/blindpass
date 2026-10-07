@@ -25,9 +25,12 @@ class Preflight(unittest.TestCase):
             file.chmod(0o755)
             members[name] = {'sha256': hashlib.sha256(binary).hexdigest(), 'size': len(binary), 'mode': '0755'}
         for name in ['blindpass-controller.service', 'blindpass-controller-initialize.service',
-                     'blindpass-controller-reconcile-clock.service', 'blindpass-controller-backup.service',
+                     'blindpass-controller-reconcile-clock.service', 'blindpass-controller-upgrade.service',
+                     'blindpass-controller-restore.service',
+                     'blindpass-controller-backup.service',
+                     'blindpass-controller-backup-credential-check.service',
                      'blindpass-controller-backup.timer', 'blindpass-controller.sysusers',
-                     'blindpass-controller.tmpfiles', 'controller-install.py', 'install.sh', 'uninstall.sh']:
+                     'blindpass-controller.tmpfiles', 'controller-install.py', 'controller-backup-credential-check.py', 'install.sh', 'uninstall.sh']:
             file = root / 'deploy/native' / name
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_bytes(b'# P06 inventory fixture\n'); file.chmod(0o644)

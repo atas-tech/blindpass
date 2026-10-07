@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.48s
+     Running tests/backup_command.rs (target/debug/deps/backup_command-9bc91871d7438e66)
+
+running 1 test
+
+thread 'p06_b03_b06_b07_sqlite_create_verifies_complete_bundle_and_never_initializes_lost_state' (4182896) panicked at crates/blindpass-controller/tests/backup_command.rs:104:5:
+assertion `left == right` failed: offline capture changed the controller clock without ownership
+  left: 1791051495787
+ right: 1791051495757
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test p06_b03_b06_b07_sqlite_create_verifies_complete_bundle_and_never_initializes_lost_state ... FAILED
+
+failures:
+
+failures:
+    p06_b03_b06_b07_sqlite_create_verifies_complete_bundle_and_never_initializes_lost_state
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.59s
+
+error: test failed, to rerun pass `-p blindpass-controller --test backup_command`

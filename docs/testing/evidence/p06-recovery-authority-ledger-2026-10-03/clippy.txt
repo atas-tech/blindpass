@@ -1,0 +1,2 @@
+    Checking blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.97s

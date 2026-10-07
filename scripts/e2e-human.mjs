@@ -1,25 +1,18 @@
 #!/usr/bin/env node
 
 /**
- * Interactive E2E test: starts a real SPS server, opens the Browser UI
+ * Interactive E2E test against a running controller: opens the Browser UI
  * in your default browser, waits for a human to enter a secret,
  * then retrieves + decrypts it on the agent side.
  *
- * Usage:
- *   npm run e2e:human
- *   # or: node scripts/e2e-human.mjs
- *   # against an already-running SPS instance:
+ * Usage (CC02 runs this against the Rust controller):
  *   SPS_E2E_BEARER_TOKEN=... node scripts/e2e-human.mjs --base-url http://127.0.0.1:3100
  */
 
-import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
-import path from "node:path";
 import { exec, spawn } from "node:child_process";
-import { buildApp } from "../packages/sps-server/dist/index.js";
 import { GatewaySpsClient } from "../packages/gateway/dist/sps-client.js";
 import { RequestSecretInterceptor } from "../packages/gateway/dist/interceptor.js";
-import { issueJwt, loadOrCreateGatewayIdentity, writeJwksFile } from "../packages/gateway/dist/identity.js";
 import { decrypt, destroyKeyPair, generateKeyPair } from "../packages/agent-skill/dist/key-manager.js";
 import { SpsClient } from "../packages/agent-skill/dist/sps-client.js";
 
@@ -78,30 +71,16 @@ async function run() {
 
     const requestedBaseUrl = argumentValue("--base-url") ?? process.env.SPS_E2E_BASE_URL;
     const externalBearerToken = process.env.SPS_E2E_BEARER_TOKEN?.trim();
-    const externalServer = Boolean(requestedBaseUrl);
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "sps-e2e-human-"));
-    let identity;
-    let app;
-    let baseUrl = requestedBaseUrl?.replace(/\/$/, "");
+    if (!requestedBaseUrl) {
+        throw new Error("--base-url (or SPS_E2E_BASE_URL) is required: this test runs against a running controller");
+    }
+    if (!externalBearerToken) {
+        throw new Error("--base-url requires SPS_E2E_BEARER_TOKEN for the running controller");
+    }
+    const baseUrl = requestedBaseUrl.replace(/\/$/, "");
     let uiProcess;
 
-    if (externalServer) {
-        if (!externalBearerToken) {
-            throw new Error("--base-url requires SPS_E2E_BEARER_TOKEN for the already-running server");
-        }
-        log("SETUP", `Using existing SPS server at ${CYAN}${baseUrl}${RESET}`);
-    } else {
-        const keyPath = path.join(tempDir, "gateway-key.json");
-        const jwksPath = path.join(tempDir, "jwks.json");
-
-        log("SETUP", "Generating gateway identity...");
-        identity = await loadOrCreateGatewayIdentity({ keyPath });
-        await writeJwksFile(identity, jwksPath);
-
-        process.env.SPS_AGENT_AUTH_PROVIDERS_JSON = JSON.stringify([
-            { name: "human-e2e", jwks_file: jwksPath, issuer: "gateway", audience: "sps" }
-        ]);
-    }
+    log("SETUP", `Using controller at ${CYAN}${baseUrl}${RESET}`);
 
     // 1.5. Ensure Browser UI is running
     const uiBaseUrl = process.env.VITE_SPS_UI_URL ?? "http://localhost:5173";
@@ -129,23 +108,11 @@ async function run() {
         }
     }
 
-    // 2. Start SPS unless the caller supplied an already-running server.
-    if (!externalServer) {
-        app = await buildApp({
-            useInMemoryStore: true,
-            hmacSecret: "e2e-human-hmac-secret",
-            uiBaseUrl,
-        });
-
-        const address = await app.listen({ host: "127.0.0.1", port: 0 });
-        baseUrl = address;
-        log("SPS", `Server listening on ${CYAN}${baseUrl}${RESET}`);
-    } else {
-        if (!(await isServerRunning(`${baseUrl}/healthz`))) {
-            throw new Error(`Existing SPS server is not reachable at ${baseUrl}/healthz`);
-        }
-        log("SPS", `Connected to ${CYAN}${baseUrl}${RESET}`);
+    // 2. Check the controller is reachable.
+    if (!(await isServerRunning(`${baseUrl}/healthz`))) {
+        throw new Error(`Controller is not reachable at ${baseUrl}/healthz`);
     }
+    log("CONTROLLER", `Connected to ${CYAN}${baseUrl}${RESET}`);
 
     // 3. Generate agent HPKE keypair
     log("AGENT", "Generating HPKE keypair...");
@@ -153,7 +120,7 @@ async function run() {
 
     try {
         // 4. Gateway creates secret request
-        const gatewayToken = externalBearerToken ?? await issueJwt(identity, "e2e-human-agent");
+        const gatewayToken = externalBearerToken;
         const gatewayClient = new GatewaySpsClient({
             baseUrl,
             gatewayBearerToken: gatewayToken,
@@ -229,7 +196,7 @@ async function run() {
         }
 
         // 9. Poll for submission (agent-side)
-        const agentToken = externalBearerToken ?? await issueJwt(identity, "e2e-human-agent");
+        const agentToken = externalBearerToken;
         const agentClient = new SpsClient({
             baseUrl,
             gatewayBearerToken: agentToken,
@@ -277,12 +244,10 @@ async function run() {
         console.log();
     } finally {
         destroyKeyPair(keyPair);
-        await app?.close();
         if (uiProcess) {
             uiProcess.kill();
         }
-        await rm(tempDir, { recursive: true, force: true });
-        log("CLEANUP", "Server stopped, temp files removed.");
+        log("CLEANUP", "Browser UI helper stopped.");
     }
 }
 

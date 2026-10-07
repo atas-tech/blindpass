@@ -18,7 +18,8 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<"credentials" | "origin" | "rate" | "failed" | "missing" | null>(null);
+  const [error, setError] = useState<"credentials" | "origin" | "rate" | "locked" | "failed" | "missing" | null>(null);
+  const [lockedMinutes, setLockedMinutes] = useState(1);
   const reason = state.status === "anonymous" ? state.reason : null;
 
   const onSubmit = async (event: FormEvent) => {
@@ -40,6 +41,10 @@ export default function LoginPage() {
       if (failure?.kind === "unauthorized") setError("credentials");
       else if (failure?.kind === "csrf") setError("origin");
       else if (failure?.kind === "rate_limited") setError("rate");
+      else if (failure?.kind === "locked") {
+        setLockedMinutes(Math.max(1, Math.ceil((failure.retryAfterSeconds ?? 60) / 60)));
+        setError("locked");
+      }
       else setError("failed");
     } finally {
       setBusy(false);
@@ -82,6 +87,7 @@ export default function LoginPage() {
         {error === "missing" ? <Notice tone="danger">{t("login.errors.missing")}</Notice> : null}
         {error === "origin" ? <Notice tone="danger" title={t("auth.errors.origin.title")}>{t("auth.errors.origin.body")}</Notice> : null}
         {error === "rate" ? <Notice tone="warn">{t("login.errors.rate")}</Notice> : null}
+        {error === "locked" ? <Notice tone="warn">{t("login.errors.locked", { minutes: lockedMinutes })}</Notice> : null}
         {error === "failed" ? <Notice tone="danger">{t("login.errors.failed")}</Notice> : null}
         <TextField
           label={t("auth.fields.username")}

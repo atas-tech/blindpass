@@ -1,0 +1,3 @@
+    Checking blindpass-broker v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-broker)
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6.92s

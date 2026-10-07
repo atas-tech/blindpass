@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-legacy-control-mg4bkh_l/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 15.50s
+     Running tests/legacy_authority.rs (/home/hvo/Projects/blindpass/target/debug/deps/legacy_authority-66d2e9a8cfb30fb0)
+
+running 1 test
+test p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use ... 
+thread 'p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use' (3791599) panicked at crates/blindpass-controller/tests/legacy_authority.rs:415:9:
+assertion `left == right` failed: valid fulfillment MAC cannot mask invalid epoch claim
+  left: 200
+ right: 401
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 2.63s
+
+error: test failed, to rerun pass `-p blindpass-controller --test legacy_authority`

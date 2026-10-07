@@ -1,0 +1,28 @@
+    Checking blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Checking blindpass-broker v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-broker)
+    Checking blindpass-node v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-node)
+error: using `chunks_exact` with a constant chunk size
+  --> crates/blindpass-controller/src/restore.rs:49:26
+   |
+49 |         for pair in args.chunks_exact(2) {
+   |                          ^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<2>().0`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#chunks_exact_to_as_chunks
+   = note: `-D clippy::chunks-exact-to-as-chunks` implied by `-D clippy::all`
+   = help: to override `-D clippy::all` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+
+error: useless conversion to the same type: `&[u8]`
+   --> crates/blindpass-controller/src/restore.rs:117:41
+    |
+117 |     let key = Ed25519KeyPair::from_seed(seed.as_bytes().try_into().map_err(|_| REFUSAL)?)
+    |                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider removing `.try_into()`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#useless_conversion
+    = note: `-D clippy::useless-conversion` implied by `-D clippy::all`
+    = help: to override `-D clippy::all` add `#[allow(clippy::useless_conversion)]`
+
+error: could not compile `blindpass-controller` (lib) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `blindpass-controller` (lib test) due to 2 previous errors

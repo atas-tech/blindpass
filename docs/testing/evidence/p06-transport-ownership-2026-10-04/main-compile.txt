@@ -1,0 +1,4 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4.76s
+  Executable tests/admin_socket.rs (target/debug/deps/admin_socket-0d83a9376cbde744)
+  Executable tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)

@@ -17,7 +17,7 @@ const approvedLicenses = new Set(['MIT', 'Apache-2.0', 'MIT OR Apache-2.0', 'ISC
 // excluded by default instead of silently included. Extending this list is a
 // licensing-boundary decision (LICENSES.md, P05 MCP distribution boundary).
 const WORKSPACE_ALLOWLIST = Object.freeze({
-  'packages/mcp-server': { name: '@blindpass/mcp-server', license: 'MIT' },
+  'packages/mcp-server': { name: '@blindpass/mcp-server-lib', license: 'MIT' },
   'packages/openclaw-plugin': { name: '@blindpass/openclaw-plugin', license: 'MIT' },
   'packages/gateway': { name: '@blindpass/gateway', license: 'MIT' },
   'packages/agent-skill': { name: '@blindpass/agent-skill', license: 'MIT' },
@@ -29,9 +29,14 @@ const allowedWorkspaceNames = new Set(Object.values(WORKSPACE_ALLOWLIST).map((en
 // allowlisted MIT workspace code in this MIT runtime distribution.
 export async function generateMcpBundleNotices({ root, metadataFile, dist }) {
   root = path.resolve(root); dist = path.resolve(dist);
-  const metadata = JSON.parse(await readFile(metadataFile, 'utf8'));
+  // One metadata file per bundled entrypoint (the MCP server and the standalone resolver). All of them go
+  // through the same boundary, and a package used by several is listed once.
+  const files = Array.isArray(metadataFile) ? metadataFile : [metadataFile];
+  if (files.length === 0 || files.some((file) => typeof file !== 'string' || !file)) throw denied();
+  const outputs = [];
+  for (const file of files) outputs.push(...Object.values((await readManifest(file)).outputs ?? {}));
   const packages = new Map();
-  for (const output of Object.values(metadata.outputs ?? {})) for (const [source, input] of Object.entries(output.inputs ?? {})) {
+  for (const output of outputs) for (const [source, input] of Object.entries(output.inputs ?? {})) {
     if (input.bytesInOutput === 0) continue;
     const absolute = path.resolve(root, source);
     if (!absolute.startsWith(`${root}${path.sep}`)) throw denied();
@@ -62,16 +67,7 @@ export async function generateMcpBundleNotices({ root, metadataFile, dist }) {
     const files = [];
     const upstream = (await readdir(packageRoot)).filter((name) => /^(license|copying|notice)(?:[._-].*)?$/i.test(name));
     const texts = await Promise.all(upstream.map(async (name) => ({ name, bytes: await readFile(path.join(packageRoot, name)) })));
-    if (texts.length === 0) {
-      // These unchanged legacy packages omit a license file from npm. Their
-      // installed metadata declares Apache-2.0; retain the upstream canonical
-      // text copied into the repository, with explicit provenance in notices.
-      if (!['@x402/core', '@x402/fetch', '@x402/evm'].includes(pkg.name)
-        || pkg.version !== '2.8.0' || pkg.license !== 'Apache-2.0') throw denied();
-      const bytes = await readFile(path.join(root, 'packages/mcp-server/licenses/x402-Apache-LICENSE'));
-      if (digest(bytes) !== '50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a') throw denied();
-      texts.push({ name: 'LICENSE', bytes });
-    }
+    if (texts.length === 0) throw denied();
     for (const { name, bytes } of texts) {
       if (!bytes.length || bytes.length > 262_144 || !/^[A-Za-z0-9_.-]+$/.test(name)) throw denied();
       const target = `licenses/npm-${pkg.name.replace('@', '').replace('/', '-')}-${pkg.version}-${name}`;
@@ -90,8 +86,9 @@ export async function generateMcpBundleNotices({ root, metadataFile, dist }) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    if (process.argv.length !== 4) throw denied();
+    // bundle-mcp-notices.mjs METADATA_FILE... DIST_DIR
+    if (process.argv.length < 4) throw denied();
     const root = fileURLToPath(new URL('..', import.meta.url));
-    await generateMcpBundleNotices({ root, metadataFile: process.argv[2], dist: process.argv[3] });
+    await generateMcpBundleNotices({ root, metadataFile: process.argv.slice(2, -1), dist: process.argv.at(-1) });
   } catch { process.stderr.write('mcp_bundle_boundary_unavailable\n'); process.exitCode = 1; }
 }

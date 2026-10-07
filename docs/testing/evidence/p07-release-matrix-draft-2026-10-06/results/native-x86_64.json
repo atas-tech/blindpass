@@ -1,0 +1,30 @@
+{
+ "schema": "blindpass-release-evidence-v1",
+ "commit": "8a595ad18783634da59e046595942e729b56147b",
+ "date": "2026-10-06",
+ "profile": "native-x86_64",
+ "client": "real-systemd Ubuntu 24.04 and Debian 12 guests (QEMU)",
+ "environment": "uncommitted working tree on 8a595ad; local harness runs; not a release candidate",
+ "scenarios": [
+  {
+   "id": "P07-E03",
+   "result": "fail",
+   "reason": "nine of ten observations held; the previous program version cannot be restored (downgrade is restore-only); owner accepted this limit 2026-10-07, scenario not passed; docs/testing/evidence/p07-rollback-2026-10-06.md"
+  },
+  {
+   "id": "S06",
+   "result": "skip",
+   "reason": "clean for P01, P03 (SQLite, PostgreSQL), Compose both profiles, the P06 relay, handoff, activation and matrix runs and native real-node runs; not run: P05 backup (ADR 0007), stock AI client, root-only host cores"
+  },
+  {
+   "id": "S07",
+   "result": "skip",
+   "reason": "dump control only on P01; RUST_LOG=debug relay success path clean; full S07 pair not run on this profile"
+  },
+  {
+   "id": "P07-I04",
+   "result": "skip",
+   "reason": "clean for every run made (see S06); not passed: P05 backup and stock AI client not run, crash pair only on P01"
+  }
+ ]
+}

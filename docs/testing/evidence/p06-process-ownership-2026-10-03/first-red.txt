@@ -1,0 +1,93 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:324:21
+    |
+324 |         f.authority.claim_process(&f.context, &before),
+    |                     ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:325:16
+    |
+325 |         second.claim_process(&f.context, &before)
+    |                ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:333:39
+    |
+333 |     let independent = other.authority.claim_process(&other.context, &other_record).await.unwrap();
+    |                                       ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:354:29
+    |
+354 |         assert!(f.authority.claim_process(&bad, &before).await.is_err());
+    |                             ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:364:29
+    |
+364 |         assert!(f.authority.claim_process(&f.context, &bad).await.is_err());
+    |                             ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:367:30
+    |
+367 |     let holder = f.authority.claim_process(&f.context, &before).await.unwrap();
+    |                              ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:405:30
+    |
+405 |     let holder = f.authority.claim_process(&f.context,&before).await.unwrap();
+    |                              ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:416:29
+    |
+416 |     let fresh = f.authority.claim_process(&f.context,&current).await.unwrap();
+    |                             ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:429:30
+    |
+429 |     let holder = f.authority.claim_process(&f.context,&before).await.unwrap();
+    |                              ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:435:29
+    |
+435 |     let fresh = f.authority.claim_process(&f.context,&before).await.unwrap();
+    |                             ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:500:28
+    |
+500 |     let holder = authority.claim_process(&f.context,&before).await.unwrap();
+    |                            ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:511:29
+    |
+511 |     let fresh = f.authority.claim_process(&f.context,&before).await.unwrap();
+    |                             ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:525:30
+    |
+525 |     let holder = f.authority.claim_process(&f.context,&before).await.unwrap();
+    |                              ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:527:30
+    |
+527 |     let holder = f.authority.claim_process(&f.context,&before).await.unwrap();
+    |                              ^^^^^^^^^^^^^ method not found in `Authority`
+
+error[E0599]: no method named `claim_process` found for struct `Authority` in the current scope
+   --> crates/blindpass-controller/tests/recovery_authority.rs:541:39
+    |
+541 |     let holder = Arc::new(f.authority.claim_process(&f.context,&before).await.unwrap());
+    |                                       ^^^^^^^^^^^^^ method not found in `Authority`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `blindpass-controller` (test "recovery_authority") due to 15 previous errors

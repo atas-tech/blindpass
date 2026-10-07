@@ -5,7 +5,7 @@
 //! browser by sealing a dummy canary to the verified offer.
 mod support;
 
-use blindpass_controller::store::{Store, StoreError};
+use blindpass_controller::store::{SCHEMA_VERSION, Store, StoreError};
 use blindpass_core::canon::parse_json;
 use blindpass_core::custody::RecipientKeyPair;
 use blindpass_core::fleet::{DocumentKind, Grant, SignedEnvelope};
@@ -49,7 +49,22 @@ impl Fixture {
     /// `ttl_ms` is the original offer lifetime; `publish` posts the signed
     /// recipient offer event as the node would after its broker minted it.
     async fn build(seed: u8, approval: bool, ttl_ms: u64, publish: bool) -> Self {
+        Self::build_at_epoch(seed, approval, ttl_ms, publish, 1).await
+    }
+
+    async fn build_at_epoch(
+        seed: u8,
+        approval: bool,
+        ttl_ms: u64,
+        publish: bool,
+        epoch: i64,
+    ) -> Self {
         let h = Harness::start().await;
+        h.execute(
+            "UPDATE controller_meta SET issuer_epoch=? WHERE id=1",
+            vec![epoch.into()],
+        )
+        .await;
         let owner = h
             .create_operator(&format!("source-owner-{seed}"), "operator")
             .await;
@@ -904,10 +919,18 @@ async fn current_authority_and_destination_version_gate_metadata_and_fresh_submi
         let f = Fixture::new(100 + u8::try_from(index).unwrap(), true).await;
         let link = f.link().await;
         f.h.execute(sql, vec![]).await;
-        assert_eq!(f.metadata(&link).await.status, 410, "{sql}");
+        // Advancing the generation now retires the capability's MAC key
+        // before the stored grant/link check. Other stale authority still
+        // reaches that check and reports unavailable as before.
+        let capability_status = if sql.contains("issuer_epoch") {
+            403
+        } else {
+            410
+        };
+        assert_eq!(f.metadata(&link).await.status, capability_status, "{sql}");
         assert_eq!(
             f.submit(&link, &f.sealed(SOURCE)).await.status,
-            410,
+            capability_status,
             "{sql}"
         );
         if !sql.contains("fleet_provisioning_links") {
@@ -1364,7 +1387,7 @@ async fn schema_16_migrates_additively_and_keeps_rows_across_a_version_rollback_
             vec![]
         )
         .await,
-        i64::from(16_u8)
+        SCHEMA_VERSION
     );
     assert_eq!(f.h.get(&f.owner, "/api/v3/admin/session").await.status, 200);
     // A database that predates version 16 gains the tables and keeps 15 data.
@@ -1392,8 +1415,8 @@ async fn schema_16_migrates_additively_and_keeps_rows_across_a_version_rollback_
     );
     // A newer-than-supported marker is refused and changes nothing.
     f.h.execute(
-        "UPDATE controller_meta SET schema_version=17 WHERE id=1",
-        vec![],
+        "UPDATE controller_meta SET schema_version=? WHERE id=1",
+        vec![(SCHEMA_VERSION + 1).into()],
     )
     .await;
     assert!(matches!(
@@ -1523,4 +1546,35 @@ async fn expired_links_and_receipts_prune_after_seven_days_but_live_ones_are_nev
     );
     assert_eq!(f.rows("fleet_provisioning_links").await, 0);
     assert_eq!(f.rows("fleet_provisioning_receipts").await, 0);
+}
+
+#[tokio::test]
+async fn p06_la05_later_generation_source_link_refuses_raw_key_and_delivers_current_hpke() {
+    // Isolate key versioning on an actual currently valid later-epoch grant,
+    // signed recipient offer and named-owner link, without a restore/unfence.
+    let f = Fixture::build_at_epoch(201, true, 30_000, true, 9).await;
+    assert_eq!(f.binding.grant.issuer_epoch, 9);
+    let link = f.link().await;
+    assert_eq!(f.metadata(&link).await.status, 200);
+    let id = link["id"].as_str().unwrap();
+    let expiry = link["expires_at_ms"].as_u64().unwrap().div_ceil(1_000);
+    let raw_root = "R".repeat(32);
+    for (scope, action, method) in [
+        (BrowserScope::Metadata, "metadata", "GET"),
+        (BrowserScope::Submit, "submit", "POST"),
+    ] {
+        let old =
+            sign_fleet_provisioning_capability(id, expiry, scope, raw_root.as_bytes()).unwrap();
+        let path = format!("/api/v3/fleet/provisioning/{id}/{action}?sig={old}");
+        let response =
+            f.h.call(&f.owner, method, &path, &[], Some(&f.sealed(SOURCE)))
+                .await;
+        assert_eq!(
+            response.status, 403,
+            "raw legacy key cannot authorize current live {action} link"
+        );
+        assert_eq!(response.body["error"], "provisioning_capability_invalid");
+    }
+    assert_eq!(f.submit(&link, &f.sealed(SOURCE)).await.status, 201);
+    assert_eq!(f.delivery().await.len(), 1);
 }

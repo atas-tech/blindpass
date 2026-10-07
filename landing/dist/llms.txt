@@ -4,7 +4,7 @@
 > another agent for one it holds. BlindPass encrypts the handoff and applies exchange
 > policy to agent-to-agent requests.
 
-BlindPass is an open-source Secret Provisioning Service (SPS) and agent skill. It covers
+BlindPass is an open-source secret provisioning controller and agent skill. It covers
 two implemented workflows — human-to-agent provisioning and agent-to-agent exchange —
 plus a proposed Linux/browser access pilot that is not implemented. Statements below
 separate the two; do not describe proposed work as an available capability.
@@ -25,17 +25,18 @@ separate the two; do not describe proposed work as an available capability.
   is served at most once.
 - **Exchange policy.** A secret registry plus rules matching on `requesterIds`,
   `fulfillerIds`, `requesterRings`, `fulfillerRings`, `purposes`, `sameRing` and
-  `allowedRings`, with optional agent approver configuration. Versioned per workspace
-  in hosted mode; environment-configured otherwise.
+  `allowedRings`, with optional agent approver configuration. A versioned policy
+  document saved by an administrator; startup environment values apply until one is saved.
 - **Audit.** Exchange and decision events are recorded as metadata. Secret values are
   not written to the audit trail.
-- **Operator dashboard.** Workspace UI for approvals, agents, policy, members, audit
-  and usage. Self-hosted as part of the stack.
+- **Operator console.** The console the controller embeds for approvals, agents,
+  policy and audit. It is built but not accepted. The legacy hosted dashboard, with its
+  members and quota views, was removed on 2026-10-07.
 
 ## Boundaries — state these accurately
 
 - **Not zero-knowledge.** The browser handling input and the recipient runtime that
-  decrypts are plaintext endpoints. HPKE protects the relay path; SPS does not need the
+  decrypts are plaintext endpoints. HPKE protects the relay path; the controller does not need the
   plaintext value, but that guarantee depends on trustworthy endpoint code and correct
   recipient-key binding.
 - **Delivery limits are not revocation.** One-use retrieval and short request TTLs limit
@@ -57,11 +58,11 @@ as shipping features.
 
 ## Components
 
-- `packages/sps-server` — Fastify/Redis service coordinating requests, policy and audit;
-  PostgreSQL for hosted workspace state.
+- `crates/blindpass-controller` — Rust controller coordinating requests, policy and
+  audit on SQLite or PostgreSQL.
 - `packages/agent-skill` — client-side HPKE keypair generation and retrieval.
 - `packages/browser-ui` — secure human input page performing browser-side encryption.
-- `packages/dashboard` — operator dashboard.
+- `packages/console` — operator console.
 - `packages/gateway`, `packages/openclaw-plugin`, `packages/i18n` — transport, agent
   integration and localization.
 
@@ -71,5 +72,12 @@ as shipping features.
 - Source and documentation: https://github.com/atas-tech/blindpass
 - Threat model: https://github.com/atas-tech/blindpass/blob/main/docs/security/blindpass-threat-model.md
 - Exchange policy guide: https://github.com/atas-tech/blindpass/blob/main/docs/guides/policy.md
-- Quick start: https://github.com/atas-tech/blindpass/blob/main/docs/guides/quickstart.md
-- Self-hosting: https://github.com/atas-tech/blindpass/blob/main/docs/guides/self-hosting.md
+- Quick start: https://github.com/atas-tech/blindpass/blob/main/docs/deploy/README.md
+- Self-hosting: https://github.com/atas-tech/blindpass/blob/main/docs/deploy/README.md
+
+## This website
+
+The site runs no analytics, tag manager or cookies and loads nothing from third-party
+origins. It is served by GitHub Pages, which handles visitor request data, including IP
+addresses, under GitHub's own privacy statement; this project does not control or verify
+that logging.

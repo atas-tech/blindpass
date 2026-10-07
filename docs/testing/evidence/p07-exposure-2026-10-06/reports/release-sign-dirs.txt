@@ -1,0 +1,4 @@
+canary-scan FAIL_EXPOSED: 3 files, 0 entries, 653 bytes scanned; 1 exposed, 0 allowlisted, 0 incomplete
+  controls: ok (tar, gz, bz2, xz, zip, ar, jsonl, wrapped, tar.gz, zst; zstd backend module)
+  classes: logs=1
+  shape EXPOSED: pem-openssh-private-key sha256:cfb2efbd x1 at release offset 0

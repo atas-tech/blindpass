@@ -1,0 +1,167 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Opt-in planned same-owner handoff jobs for the SQLite profile (P06-D28). Never
+# include this file for ordinary up. Every job needs the controller stopped and the
+# authority record fenced, except `controller-handoff-install`, which only copies the
+# staged destination into EMPTY volumes of the destination project. See
+# docs/deploy/handoff.md for the order of steps.
+x-handoff-job: &handoff-job
+  image: ${BLINDPASS_CONTROLLER_IMAGE:-ghcr.io/atas-tech/blindpass-controller:0.1.0}
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  ulimits:
+    core: 0
+  stop_grace_period: 10s
+  restart: "no"
+  healthcheck:
+    disable: true
+  entrypoint: [/usr/bin/timeout, --signal=TERM, --kill-after=10s, 15m, /usr/local/bin/blindpass]
+  environment: &handoff-environment
+    BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:?set the public HTTPS origin}
+    BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:?set the public HTTPS input origin}
+    BLINDPASS_PROXY_REQUIRED: "1"
+    BLINDPASS_TRUST_PROXY: ${BLINDPASS_TRUST_PROXY:?set the exact trusted HTTPS edge peer}
+    BLINDPASS_CONTROLLER_TENANT_ID: ${BLINDPASS_CONTROLLER_TENANT_ID:?set the tenant ID registered in the recovery authority}
+    BLINDPASS_CONTROLLER_OWNER_ID: ${BLINDPASS_CONTROLLER_OWNER_ID:?set the owner ID registered in the recovery authority}
+    BLINDPASS_AUTHORITY_URL_FILE: /authority/authority-url
+  tmpfs:
+    - /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+
+services:
+  # SOURCE project: seal the fenced, stopped controller into the transfer directory and
+  # retire it. Repeating it with the same BLINDPASS_HANDOFF_ID is safe.
+  controller-handoff-export:
+    <<: *handoff-job
+    profiles: [handoff]
+    networks: [edge]
+    command: [handoff, export, --output, /transfer, --signing-credential-file, /recovery/signing.pem, --recipient-certificate-file, /recovery/recipient-certificate.pem, --handoff-id, "${BLINDPASS_HANDOFF_ID:?set the handoff id}"]
+    volumes:
+      - blindpass-data:/data
+      - blindpass-keys:/keys:ro
+      - type: bind
+        source: ${BLINDPASS_AUTHORITY_CONFIG_DIR:?set the private UID10001 authority config directory}
+        target: /authority
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_BACKUP_RECOVERY_DIR:?set the protected UID10001 recovery directory}
+        target: /recovery
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_HANDOFF_TRANSFER_DIR:?set the private UID10001 transfer directory}
+        target: /transfer
+        bind:
+          create_host_path: false
+
+  # SOURCE project: un-retire the source while the authority record is still the
+  # exported one; refused once any later activation moved the record.
+  controller-handoff-abort:
+    <<: *handoff-job
+    profiles: [handoff]
+    networks: [edge]
+    command: [handoff, abort, --handoff-id, "${BLINDPASS_HANDOFF_ID:?set the handoff id}", --output, /transfer]
+    volumes:
+      - blindpass-data:/data
+      - blindpass-keys:/keys:ro
+      - type: bind
+        source: ${BLINDPASS_AUTHORITY_CONFIG_DIR:?set the private UID10001 authority config directory}
+        target: /authority
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_HANDOFF_TRANSFER_DIR:?set the private UID10001 transfer directory}
+        target: /transfer
+        bind:
+          create_host_path: false
+
+  # Any project: verify the package and write the destination layout into a NEW root
+  # below the staging directory. The authority record stays fenced; nothing is activated.
+  controller-handoff-import:
+    <<: *handoff-job
+    profiles: [handoff]
+    networks: [edge]
+    command:
+      - handoff
+      - import
+      - --archive
+      - /transfer/${BLINDPASS_HANDOFF_ARCHIVE:?set the archive name printed by the export}
+      - --receipt
+      - /transfer/handoff-${BLINDPASS_HANDOFF_ID:?set the handoff id}.json
+      - --recipient-key-file
+      - /recovery/recipient.pem
+      - --signing-certificate-file
+      - /recovery/signing-certificate.pem
+      - --staging-directory
+      - /restore-staging
+      - --destination
+      - /staging/root
+      - --authority-url-file
+      - /authority/authority-url
+      - --tenant-id
+      - ${BLINDPASS_CONTROLLER_TENANT_ID}
+      - --owner-id
+      - ${BLINDPASS_CONTROLLER_OWNER_ID}
+    # Decrypted material is staged only in memory (ADR 0013). The size must cover
+    # twice the archive plus 8 MiB; the import refuses a smaller or non-tmpfs stage.
+    tmpfs:
+      - /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+      - /restore-staging:rw,noexec,nosuid,size=${BLINDPASS_RESTORE_TMPFS_SIZE:-1g},uid=10001,gid=10001,mode=0700
+    volumes:
+      - type: bind
+        source: ${BLINDPASS_AUTHORITY_CONFIG_DIR:?set the private UID10001 authority config directory}
+        target: /authority
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_BACKUP_RECOVERY_DIR:?set the protected UID10001 recovery directory}
+        target: /recovery
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_HANDOFF_TRANSFER_DIR:?set the private UID10001 transfer directory}
+        target: /transfer
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_HANDOFF_STAGING_DIR:?set the private UID10001 staging directory}
+        target: /staging
+        bind:
+          create_host_path: false
+
+  # DESTINATION project: copy the staged keys and database into its empty volumes.
+  # Refuses when either volume already holds anything.
+  controller-handoff-install:
+    <<: *handoff-job
+    profiles: [handoff]
+    network_mode: none
+    entrypoint: [/usr/bin/timeout, --signal=TERM, --kill-after=10s, 5m, /bin/sh, -ec]
+    command:
+      - |
+        test -z "$$(ls -A /keys)$$(ls -A /data)" || { echo "destination volumes are not empty" >&2; exit 1; }
+        test -d /staging/root/keys && test -f /staging/root/data/controller.db || { echo "staging root is not an imported handoff" >&2; exit 1; }
+        cp -a /staging/root/keys/. /keys/
+        cp -a /staging/root/data/. /data/
+        sync
+        echo '{"handoff":"installed"}'
+    volumes:
+      - blindpass-data:/data
+      - blindpass-keys:/keys
+      - type: bind
+        source: ${BLINDPASS_HANDOFF_STAGING_DIR:?set the private UID10001 staging directory}
+        target: /staging
+        read_only: true
+        bind:
+          create_host_path: false
+volumes:
+  blindpass-data: {}
+  blindpass-keys: {}
+networks:
+  edge: {}

@@ -1,0 +1,30 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-database-control-2r2p7dc0/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.10s
+     Running tests/store_quiescence.rs (/home/hvo/Projects/blindpass/target/debug/deps/store_quiescence-3cbba4666e374ef6)
+
+running 4 tests
+test p06_qf07a_cancelled_autocommit_cannot_report_quiescence ... 
+thread 'p06_qf07a_cancelled_autocommit_cannot_report_quiescence' (889993) panicked at crates/blindpass-controller/tests/store_quiescence.rs:223:5:
+uncertain Store work released its live authority guard
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_qf07b_cancelled_commit_may_still_commit_on_server ... 
+thread 'p06_qf07b_cancelled_commit_may_still_commit_on_server' (890048) panicked at crates/blindpass-controller/tests/store_quiescence.rs:295:5:
+ambiguous COMMIT released its live authority guard
+FAILED
+test p06_qf07c_aborted_store_task_cannot_release_uncertain_guard ... 
+thread 'p06_qf07c_aborted_store_task_cannot_release_uncertain_guard' (890098) panicked at crates/blindpass-controller/tests/store_quiescence.rs:223:5:
+uncertain Store work released its live authority guard
+FAILED
+test p06_qf07d_completed_store_work_can_drain_normally ... ok
+
+failures:
+
+failures:
+    p06_qf07a_cancelled_autocommit_cannot_report_quiescence
+    p06_qf07b_cancelled_commit_may_still_commit_on_server
+    p06_qf07c_aborted_store_task_cannot_release_uncertain_guard
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.97s
+
+error: test failed, to rerun pass `-p blindpass-controller --test store_quiescence`

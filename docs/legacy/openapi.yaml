@@ -1,0 +1,1226 @@
+# LEGACY, archived 2026-10-07: a manual snapshot of the retired SPS routes (packages/sps-server, removed). Kept as history,
+# not maintained. The current contract is docs/api/controller.openapi.yaml.
+openapi: 3.1.0
+info:
+  title: BlindPass SPS API
+  version: 0.1.0
+  description: |
+    Manual snapshot of existing BlindPass hosted-style and local-development API surfaces.
+    This document is derived from the route schemas in `packages/sps-server/src/routes`.
+    It is not the proposed Linux fleet controller API or a deployment-readiness declaration.
+servers:
+  - url: http://127.0.0.1:3100
+    description: Local development
+tags:
+  - name: Health
+  - name: Auth
+  - name: Workspace
+  - name: Agents
+  - name: Secrets
+  - name: Exchange
+  - name: Analytics
+  - name: Billing
+  - name: Policy
+paths:
+  /healthz:
+    get:
+      tags: [Health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: Service process is up
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                required: [ok]
+  /readyz:
+    get:
+      tags: [Health]
+      summary: Readiness probe
+      responses:
+        '200':
+          description: PostgreSQL and Redis checks passed, or were explicitly skipped in local in-memory mode
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          description: One or more backing services are unavailable
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ReadinessResponse'
+                  - type: object
+                    properties:
+                      code:
+                        type: string
+                        const: service_unavailable
+                    required: [code]
+  /api/v2/auth/register:
+    post:
+      tags: [Auth]
+      summary: Register a workspace owner and create the initial workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password, workspace_slug, display_name]
+              properties:
+                email:
+                  type: string
+                  minLength: 3
+                  maxLength: 320
+                password:
+                  type: string
+                  minLength: 8
+                  maxLength: 200
+                workspace_slug:
+                  type: string
+                  minLength: 3
+                  maxLength: 40
+                display_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+                preferred_locale:
+                  $ref: '#/components/schemas/SupportedLocale'
+                cf_turnstile_response:
+                  type: string
+                  minLength: 1
+                  maxLength: 4096
+      responses:
+        '201':
+          description: Session established
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '400':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v2/auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate a dashboard user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  minLength: 3
+                  maxLength: 320
+                password:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                cf_turnstile_response:
+                  type: string
+                  minLength: 1
+                  maxLength: 4096
+      responses:
+        '200':
+          description: Session established
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v2/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate the dashboard session
+      description: Accepts refresh_token in the request body before checking the sps_refresh_token cookie, including in hosted mode. Hosted non-test responses set an HttpOnly cookie and omit the body token; hosted test responses also return the token in JSON. Non-hosted responses use JSON tokens.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                refresh_token:
+                  type: string
+                  minLength: 20
+                  maxLength: 4096
+      responses:
+        '200':
+          description: Session rotated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthSessionResponse'
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v2/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the current dashboard session
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Session revoked and refresh cookie cleared
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v2/auth/locale:
+    patch:
+      tags: [Auth]
+      summary: Update the current user's preferred locale
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [preferred_locale]
+              properties:
+                preferred_locale:
+                  $ref: '#/components/schemas/SupportedLocale'
+      responses:
+        '200':
+          description: Updated current user locale
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                required: [user]
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v2/auth/me:
+    get:
+      tags: [Auth]
+      summary: Get the current user and workspace context
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current auth context
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  workspace:
+                    $ref: '#/components/schemas/Workspace'
+                required: [user, workspace]
+        '401':
+          $ref: '#/components/responses/Error'
+  /api/v2/workspace:
+    get:
+      tags: [Workspace]
+      summary: Get the caller workspace
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: '#/components/schemas/Workspace'
+                required: [workspace]
+    patch:
+      tags: [Workspace]
+      summary: Update the workspace display name
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [display_name]
+              properties:
+                display_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+      responses:
+        '200':
+          description: Updated workspace
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  workspace:
+                    $ref: '#/components/schemas/Workspace'
+                required: [workspace]
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+  /api/v2/agents:
+    post:
+      tags: [Agents]
+      summary: Enroll an agent and mint its bootstrap API key
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [agent_id]
+              properties:
+                agent_id:
+                  type: string
+                  pattern: ^[A-Za-z0-9._:@-]{1,160}$
+                display_name:
+                  type: string
+                  minLength: 1
+                  maxLength: 160
+      responses:
+        '201':
+          description: Agent enrolled
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agent:
+                    $ref: '#/components/schemas/Agent'
+                  bootstrap_api_key:
+                    type: string
+                required: [agent, bootstrap_api_key]
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+    get:
+      tags: [Agents]
+      summary: List agents in the workspace
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: cursor
+          schema:
+            type: string
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [active, revoked, deleted]
+      responses:
+        '200':
+          description: Agent page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Agent'
+                  next_cursor:
+                    type: string
+                    nullable: true
+                required: [agents, next_cursor]
+  /api/v2/agents/token:
+    post:
+      tags: [Agents]
+      summary: Exchange an agent bootstrap API key for a short-lived bearer token
+      security:
+        - agentApiKey: []
+      responses:
+        '200':
+          description: Agent bearer token minted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  access_token_expires_at:
+                    type: integer
+                  agent:
+                    $ref: '#/components/schemas/Agent'
+                required: [access_token, access_token_expires_at, agent]
+        '401':
+          $ref: '#/components/responses/Error'
+        '403':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v2/secret/request:
+    post:
+      tags: [Secrets]
+      summary: Create a human-to-agent secret request
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [public_key, description]
+              properties:
+                public_key:
+                  type: string
+                description:
+                  type: string
+                  minLength: 1
+                  maxLength: 512
+      responses:
+        '201':
+          description: Secret request created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  request_id:
+                    type: string
+                  confirmation_code:
+                    type: string
+                  secret_url:
+                    type: string
+                    format: uri
+                required: [request_id, confirmation_code, secret_url]
+        '401':
+          $ref: '#/components/responses/Error'
+        '429':
+          $ref: '#/components/responses/Error'
+  /api/v2/secret/metadata/{id}:
+    get:
+      tags: [Secrets]
+      summary: Read browser-side metadata for a signed secret request
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: sig
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Public key and confirmation metadata for the browser UI
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  public_key:
+                    type: string
+                  description:
+                    type: string
+                  confirmation_code:
+                    type: string
+                  expiry:
+                    type: integer
+                required: [public_key, description, confirmation_code, expiry]
+        '403':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v2/secret/submit/{id}:
+    post:
+      tags: [Secrets]
+      summary: Submit an encrypted secret payload from the browser UI
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: query
+          name: sig
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [enc, ciphertext]
+              properties:
+                enc:
+                  type: string
+                ciphertext:
+                  type: string
+      responses:
+        '201':
+          description: Ciphertext accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: submitted
+                required: [status]
+        '403':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v2/secret/status/{id}:
+    get:
+      tags: [Secrets]
+      summary: Poll the status of a secret request
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current request state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [pending, submitted, expired]
+                required: [status]
+        '401':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v2/secret/retrieve/{id}:
+    get:
+      tags: [Secrets]
+      summary: Retrieve and delete a submitted secret payload
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Encrypted payload
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enc:
+                    type: string
+                  ciphertext:
+                    type: string
+                required: [enc, ciphertext]
+        '401':
+          $ref: '#/components/responses/Error'
+        '409':
+          $ref: '#/components/responses/Error'
+        '410':
+          $ref: '#/components/responses/Error'
+  /api/v2/secret/exchange/request:
+    post:
+      tags: [Exchange]
+      summary: Request an agent-to-agent secret exchange
+      description: |
+        In free-tier overage cases this route may return `402 Payment Required` with x402 headers
+        before an exchange is created.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [public_key, secret_name, purpose, fulfiller_hint]
+              properties:
+                public_key:
+                  type: string
+                secret_name:
+                  type: string
+                purpose:
+                  type: string
+                fulfiller_hint:
+                  type: string
+                prior_exchange_id:
+                  type: string
+      responses:
+        '200':
+          description: Exchange requested
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exchange_id:
+                    type: string
+                  status:
+                    type: string
+                    const: pending
+                  expires_at:
+                    type: integer
+                  fulfillment_token:
+                    type: string
+                  policy:
+                    $ref: '#/components/schemas/PolicyDecision'
+                required: [exchange_id, status, expires_at, fulfillment_token, policy]
+        '402':
+          description: x402 payment required before the exchange can be created
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v2/analytics/requests:
+    get:
+      tags: [Analytics]
+      summary: Request-volume time series
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+      responses:
+        '200':
+          description: Daily request counts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsRequestVolume'
+  /api/v2/analytics/exchanges:
+    get:
+      tags: [Analytics]
+      summary: Exchange-outcome time series
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: days
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 90
+      responses:
+        '200':
+          description: Daily exchange metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsExchangeMetrics'
+  /api/v2/analytics/agents:
+    get:
+      tags: [Analytics]
+      summary: Active-agent summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: hours
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 336
+      responses:
+        '200':
+          description: Distinct active agents in the time window
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AnalyticsActiveAgents'
+  /api/v2/dashboard/summary:
+    get:
+      tags: [Billing]
+      summary: Dashboard overview model
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Workspace billing and quota summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+  /api/v2/billing:
+    get:
+      tags: [Billing]
+      summary: Read the current workspace billing record
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Billing record
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  billing:
+                    $ref: '#/components/schemas/BillingRecord'
+                required: [billing]
+  /api/v2/billing/checkout:
+    post:
+      tags: [Billing]
+      summary: Create a hosted billing checkout session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Checkout session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  checkout_url:
+                    type: string
+                    format: uri
+                  session_id:
+                    type: string
+                  billing:
+                    $ref: '#/components/schemas/BillingRecord'
+                required: [checkout_url, session_id, billing]
+  /api/v2/billing/portal:
+    post:
+      tags: [Billing]
+      summary: Create a hosted billing portal session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Portal session created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  portal_url:
+                    type: string
+                    format: uri
+                required: [portal_url]
+  /api/v2/billing/allowances:
+    get:
+      tags: [Billing]
+      summary: List per-agent x402 allowances
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Allowance list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowances:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/BillingAllowance'
+                required: [allowances]
+    post:
+      tags: [Billing]
+      summary: Create or update an agent x402 allowance
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [agent_id, monthly_budget_cents]
+              properties:
+                agent_id:
+                  type: string
+                monthly_budget_cents:
+                  type: integer
+                  minimum: 0
+      responses:
+        '201':
+          description: Allowance upserted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  allowance:
+                    $ref: '#/components/schemas/BillingAllowance'
+                required: [allowance]
+  /api/v2/workspace/policy:
+    get:
+      tags: [Policy]
+      summary: Read the current workspace policy document
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Policy document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacePolicyEnvelope'
+        '404':
+          $ref: '#/components/responses/Error'
+    patch:
+      tags: [Policy]
+      summary: Replace the current workspace policy document
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_version, secret_registry, exchange_policy]
+              properties:
+                expected_version:
+                  type: integer
+                  minimum: 0
+                secret_registry:
+                  type: array
+                  maxItems: 256
+                  items:
+                    $ref: '#/components/schemas/SecretRegistryEntry'
+                exchange_policy:
+                  type: array
+                  maxItems: 512
+                  items:
+                    $ref: '#/components/schemas/ExchangePolicyRule'
+      responses:
+        '200':
+          description: Policy updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspacePolicyEnvelope'
+        '409':
+          $ref: '#/components/responses/Error'
+  /api/v2/workspace/policy/validate:
+    post:
+      tags: [Policy]
+      summary: Validate a policy document without persisting it
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [secret_registry, exchange_policy]
+              properties:
+                secret_registry:
+                  type: array
+                  maxItems: 256
+                  items:
+                    $ref: '#/components/schemas/SecretRegistryEntry'
+                exchange_policy:
+                  type: array
+                  maxItems: 512
+                  items:
+                    $ref: '#/components/schemas/ExchangePolicyRule'
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  valid:
+                    type: boolean
+                  issues:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/PolicyValidationIssue'
+                required: [valid, issues]
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    agentApiKey:
+      type: apiKey
+      in: header
+      name: x-agent-api-key
+  responses:
+    Error:
+      description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        issues:
+          type: array
+          items:
+            type: object
+      required: [error]
+    ReadinessResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        checks:
+          type: object
+          properties:
+            database:
+              type: string
+              enum: [up, down, skipped]
+            redis:
+              type: string
+              enum: [up, down, skipped]
+          required: [database, redis]
+      required: [ok, checks]
+    SupportedLocale:
+      type: string
+      enum: [en, vi]
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        email: { type: string }
+        role:
+          type: string
+          enum: [workspace_admin, workspace_operator, workspace_viewer]
+        status:
+          type: string
+          enum: [active, suspended, deleted]
+        email_verified: { type: boolean }
+        preferred_locale:
+          $ref: '#/components/schemas/SupportedLocale'
+        force_password_change: { type: boolean }
+        workspace_id: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [id, email, role, status, email_verified, preferred_locale, force_password_change, workspace_id, created_at, updated_at]
+    Workspace:
+      type: object
+      properties:
+        id: { type: string }
+        slug: { type: string }
+        display_name: { type: string }
+        tier: { type: string }
+        status: { type: string }
+        owner_user_id: { type: string }
+        owner_email_verified: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [id, slug, display_name, tier, status, owner_user_id, created_at, updated_at]
+    AuthSessionResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        access_token_expires_at:
+          type: integer
+        refresh_token:
+          type: string
+          description: Returned in non-hosted mode and in hosted NODE_ENV=test responses; omitted from hosted non-test responses that use the refresh cookie.
+        refresh_token_expires_at:
+          type: integer
+        user:
+          $ref: '#/components/schemas/User'
+        workspace:
+          $ref: '#/components/schemas/Workspace'
+      required: [access_token, access_token_expires_at, refresh_token_expires_at, user, workspace]
+    Agent:
+      type: object
+      properties:
+        id: { type: string }
+        workspace_id: { type: string }
+        agent_id: { type: string }
+        display_name: { type: string, nullable: true }
+        status: { type: string }
+        created_at: { type: string, format: date-time }
+        revoked_at: { type: string, format: date-time, nullable: true }
+      required: [id, workspace_id, agent_id, status, created_at, revoked_at]
+    PolicyDecision:
+      type: object
+      properties:
+        mode:
+          type: string
+          enum: [allow, deny, pending_approval]
+        approval_required:
+          type: boolean
+        rule_id:
+          type: string
+          nullable: true
+        reason:
+          type: string
+          nullable: true
+        approval_reference:
+          type: string
+          nullable: true
+        requester_ring:
+          type: string
+          nullable: true
+        fulfiller_ring:
+          type: string
+          nullable: true
+        secret_name:
+          type: string
+      required: [mode, approval_required, rule_id, reason, approval_reference, requester_ring, fulfiller_ring, secret_name]
+    AnalyticsRequestVolume:
+      type: object
+      properties:
+        days:
+          type: integer
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string }
+              count: { type: integer }
+            required: [date, count]
+      required: [days, series]
+    AnalyticsExchangeMetrics:
+      type: object
+      properties:
+        days:
+          type: integer
+        series:
+          type: array
+          items:
+            type: object
+            properties:
+              date: { type: string }
+              successful: { type: integer }
+              failed_expired: { type: integer }
+              denied: { type: integer }
+            required: [date, successful, failed_expired, denied]
+      required: [days, series]
+    AnalyticsActiveAgents:
+      type: object
+      properties:
+        hours:
+          type: integer
+        active_agents:
+          type: integer
+      required: [hours, active_agents]
+    BillingRecord:
+      type: object
+      properties:
+        workspace_id: { type: string }
+        workspace_slug: { type: string }
+        tier: { type: string }
+        status: { type: string }
+        billing_provider: { type: string, nullable: true }
+        provider_customer_id: { type: string, nullable: true }
+        provider_subscription_id: { type: string, nullable: true }
+        subscription_status: { type: string }
+      required: [workspace_id, workspace_slug, tier, status, billing_provider, provider_customer_id, provider_subscription_id, subscription_status]
+    DashboardSummary:
+      type: object
+      properties:
+        workspace:
+          type: object
+          properties:
+            id: { type: string }
+            slug: { type: string }
+            display_name: { type: string }
+            tier: { type: string }
+            status: { type: string }
+          required: [id, slug, display_name, tier, status]
+        billing:
+          $ref: '#/components/schemas/BillingRecord'
+        counts:
+          type: object
+          properties:
+            active_agents: { type: integer }
+            active_members: { type: integer }
+          required: [active_agents, active_members]
+        quota:
+          type: object
+          properties:
+            secret_requests:
+              type: object
+              properties:
+                used: { type: integer }
+                limit: { type: integer }
+                reset_at: { type: integer }
+              required: [used, limit, reset_at]
+            agents:
+              type: object
+              properties:
+                used: { type: integer }
+                limit: { type: integer }
+              required: [used, limit]
+            members:
+              type: object
+              properties:
+                used: { type: integer }
+                limit: { type: integer }
+              required: [used, limit]
+            a2a_exchange_available:
+              type: boolean
+          required: [secret_requests, agents, members, a2a_exchange_available]
+      required: [workspace, billing, counts, quota]
+    BillingAllowance:
+      type: object
+      properties:
+        agent_id: { type: string }
+        display_name: { type: string, nullable: true }
+        status: { type: string, nullable: true }
+        monthly_budget_cents: { type: integer }
+        current_spend_cents: { type: integer }
+        remaining_budget_cents: { type: integer }
+        budget_reset_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+      required: [agent_id, display_name, status, monthly_budget_cents, current_spend_cents, remaining_budget_cents, budget_reset_at, updated_at]
+    SecretRegistryEntry:
+      type: object
+      properties:
+        secretName:
+          type: string
+        classification:
+          type: string
+        description:
+          type: string
+      required: [secretName, classification]
+    ExchangePolicyRule:
+      type: object
+      properties:
+        ruleId:
+          type: string
+        secretName:
+          type: string
+        requesterIds:
+          type: array
+          items: { type: string }
+        fulfillerIds:
+          type: array
+          items: { type: string }
+        approverIds:
+          type: array
+          items: { type: string }
+        requesterRings:
+          type: array
+          items: { type: string }
+        fulfillerRings:
+          type: array
+          items: { type: string }
+        approverRings:
+          type: array
+          items: { type: string }
+        purposes:
+          type: array
+          items: { type: string }
+        sameRing:
+          type: boolean
+        allowedRings:
+          type: array
+          items: { type: string }
+        mode:
+          type: string
+          enum: [allow, deny, pending_approval]
+        approvalReference:
+          type: string
+          nullable: true
+        reason:
+          type: string
+      required: [ruleId, secretName]
+    WorkspacePolicyDocument:
+      type: object
+      properties:
+        id: { type: string }
+        workspace_id: { type: string }
+        version: { type: integer }
+        source:
+          type: string
+          enum: [bootstrap, env_seed, manual, test]
+        secret_registry:
+          type: array
+          items:
+            $ref: '#/components/schemas/SecretRegistryEntry'
+        exchange_policy:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExchangePolicyRule'
+        updated_by_user_id:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required: [id, workspace_id, version, source, secret_registry, exchange_policy, updated_by_user_id, created_at, updated_at]
+    WorkspacePolicyEnvelope:
+      type: object
+      properties:
+        policy:
+          $ref: '#/components/schemas/WorkspacePolicyDocument'
+      required: [policy]
+    PolicyValidationIssue:
+      type: object
+      properties:
+        path: { type: string }
+        code: { type: string }
+        message: { type: string }
+      required: [path, code, message]

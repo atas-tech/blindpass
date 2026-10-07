@@ -11,7 +11,6 @@ export * from "./key-manager.js";
 export * from "./secret-store.js";
 export * from "./sps-client.js";
 export * from "./transport.js";
-export * from "./x402.js";
 
 export interface AgentSecretRuntimeOptions {
   spsBaseUrl: string;
@@ -19,8 +18,6 @@ export interface AgentSecretRuntimeOptions {
   apiKey?: string;
   fetchImpl?: typeof fetch;
   agentId?: string;
-  x402PaymentProvider?: import("./sps-client.js").X402PaymentProvider;
-  x402BudgetProvider?: import("./sps-client.js").X402BudgetProvider;
 }
 
 export interface RequestExchangeParams {
@@ -51,9 +48,7 @@ export class AgentSecretRuntime {
       baseUrl: options.spsBaseUrl,
       gatewayBearerToken: options.gatewayBearerToken,
       bootstrapApiKey: options.apiKey,
-      fetchImpl: options.fetchImpl,
-      x402PaymentProvider: options.x402PaymentProvider,
-      x402BudgetProvider: options.x402BudgetProvider
+      fetchImpl: options.fetchImpl
     });
     this.agentId = options.agentId ?? null;
   }

@@ -1,0 +1,25 @@
+
+> blindpass@0.1.0 test:controller-openapi
+> node scripts/tests/controller-openapi.test.mjs
+
+✔ generated TypeScript declarations match the OpenAPI source (13.304867ms)
+✔ controller OpenAPI lists the retained machine contract exactly once (1.964709ms)
+✔ retained operations document every response status observed by CT02-CT13 (1.505367ms)
+✔ controller OpenAPI keeps hosted user refresh outside the Rust API (1.324277ms)
+✔ controller OpenAPI includes the reviewed local admin and capability surfaces (1.557779ms)
+✔ controller OpenAPI declares secret-free readiness and the adopted CT19 routes (2.059928ms)
+✔ P03 OpenAPI defines the fleet and node channel contracts (1.565244ms)
+✔ PV06-C01: fleet source binding contract requires administrator cookie and CSRF (1.204987ms)
+✔ test seed schema matches the exercised compatibility fixture response (2.023878ms)
+✔ controller OpenAPI server matches the default listen address (1.377017ms)
+✔ every mounted controller route is documented exactly (8.488209ms)
+✔ admin session scheme documents the forced password change gate (1.073185ms)
+✔ P04-D3 desktop bearer is limited to the session and unified approval routes (1.675584ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 50.26222

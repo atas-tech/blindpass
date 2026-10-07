@@ -133,3 +133,43 @@ describe("controller client", () => {
     expect(newIdempotencyKey()).not.toBe(key);
   });
 });
+
+describe("controller client bounds (P07 client timeouts)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  function hangUntilAborted() {
+    const fetchMock = vi.fn((_url: URL, init: RequestInit) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    return fetchMock;
+  }
+
+  it("gives up on a silent controller after the default budget, inside the 30 s total bound", async () => {
+    vi.useFakeTimers();
+    hangUntilAborted();
+    const result = api.get("/api/v3/nodes").catch((caught: unknown) => caught);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(((await result) as ApiError).kind).toBe("timeout");
+  });
+
+  it("clamps a longer per-call timeout to 30 s", async () => {
+    vi.useFakeTimers();
+    hangUntilAborted();
+    const result = api.get("/api/v3/nodes", { timeoutMs: 600_000 }).catch((caught: unknown) => caught);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(((await result) as ApiError).kind).toBe("timeout");
+  });
+
+  it("classifies a 423 lock as its own kind and carries the wait", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(423, { error: "locked", retry_after: 840 }, { "retry-after": "840" })));
+    const locked = (await api.post("/api/v3/admin/session/login", {}, { authenticated: false }).catch((caught: unknown) => caught)) as ApiError;
+    expect(locked.kind).toBe("locked");
+    expect(locked.status).toBe(423);
+    expect(locked.retryAfterSeconds).toBe(840);
+    expect(locked.outcomeUnknown).toBe(false);
+  });
+});

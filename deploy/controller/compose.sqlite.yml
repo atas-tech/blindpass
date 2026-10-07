@@ -9,16 +9,28 @@ services:
     ulimits:
       core: 0
     stop_grace_period: 10s
-    restart: unless-stopped
+    # A started process consumes its one-use authority revision; an automatic
+    # restart would only be refused. Restart is an administrator action
+    # (authority-activate.sql, then compose up).
+    restart: "no"
     environment:
-      BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:-https://blindpass.example}
-      BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:-https://input.example}
+      BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:?set the public HTTPS origin}
+      BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:?set the public HTTPS input origin}
       BLINDPASS_PROXY_REQUIRED: "1"
       BLINDPASS_TRUST_PROXY: ${BLINDPASS_TRUST_PROXY:?set the exact trusted HTTPS edge peer}
+      BLINDPASS_CONTROLLER_TENANT_ID: ${BLINDPASS_CONTROLLER_TENANT_ID:?set the tenant ID registered in the recovery authority}
+      BLINDPASS_CONTROLLER_OWNER_ID: ${BLINDPASS_CONTROLLER_OWNER_ID:?set the owner ID registered in the recovery authority}
+      BLINDPASS_AUTHORITY_URL_FILE: /authority/authority-url
     expose: ["3200"]
     volumes:
       - blindpass-data:/data
       - blindpass-keys:/keys:ro
+      - type: bind
+        source: ${BLINDPASS_AUTHORITY_CONFIG_DIR:?set the private UID10001 authority config directory}
+        target: /authority
+        read_only: true
+        bind:
+          create_host_path: false
     tmpfs:
       - /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
     networks:

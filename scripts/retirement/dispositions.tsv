@@ -1,0 +1,71 @@
+# Retirement dispositions for scripts/retirement/inventory.sh (P08.4). Hand-maintained; the generator only reads it.
+# Columns separated by TABs: glob, owner, disposition, status, note. The first matching rule wins, so keep specific
+# rules above general ones. Globs are relative to the repository root: * stays inside a directory, ** crosses them.
+# Owners are component labels, not people. Disposition: retain | relocate | delete | archive. Status: proposed | accepted.
+# The product owner accepted every rule on 2026-10-07 (recorded in the P08 plan, "Owner decisions"): there are no live
+# SPS installations or backups, so no transition period applies, and the old code can be cleaned up. A deletion
+# commit needs `inventory.sh --check --accepted` to pass, and removes the rules of the files it deletes in the same
+# commit (stale rules fail --check).
+#
+# Legacy packages
+#
+# Contract harness (slice 5 extracts the oracles; the TS adapter goes only after retirement approval)
+packages/contract-tests/fixtures/snapshots/ts-baseline.json	contract-harness	retain	accepted	Frozen by P08-D2 (PROVENANCE.md); never regenerated: the suite has no TypeScript adapter and SPS is removed. The two redis hits are recorded SPS readiness output
+packages/contract-tests/fixtures/**	contract-harness	retain	accepted	CV fixtures keep independent TypeScript and Rust consumers (fixtures/PROVENANCE.md). required-cases.json (formerly rust-pending.json) feeds assert-contract-progress.mjs
+packages/contract-tests/src/adapter.ts	contract-harness	retain	accepted	Slice 5 done 2026-10-07: the TypeScript adapter, Redis and SPS seeding are removed; only the Rust adapter and the base-URL adapter remain. `startRustServerForBaseContract` serves scripts/tests/rust-base-contract.mjs (P08-D7)
+packages/contract-tests/src/vectors.ts	contract-harness	retain	accepted	Done in slice 5: uses src/oracle, no SPS import
+packages/contract-tests/tests/vectors.test.ts	contract-harness	retain	accepted	Done in slice 5: asserts the oracles against the frozen CV fixtures and the CV05 matrix, no SPS import
+packages/contract-tests/tests/http-contract.test.ts	contract-harness	retain	accepted	Rust-only since 2026-10-07: the TS branches, the SPS-backed CT18 readiness case and ts-sut are gone; CT18.error.503 is its own case
+packages/contract-tests/**	contract-harness	retain	accepted	Package docs and snapshot normalisers: reword the SUT=ts/base and Redis statements when the TS adapter is removed
+#
+# Retained machine clients (P08-D6: they keep working against the Rust controller by base URL)
+packages/agent-skill/**	clients	retain	accepted	SpsClient and the other legacy names stay: they are the client of the Rust controller. x402/viem was removed 2026-10-07 on the owner decision that x402 is not needed (dependency guard: removal only, lockfile diff showed 17 removals and nothing added)
+packages/gateway/**	clients	retain	accepted	GatewaySpsClient talks to the API by base URL; tests use fakes, no SPS source import
+packages/openclaw-plugin/**	clients	retain	accepted	sps-bridge.mjs keeps its name unless a rename has concrete value and tested packaging compatibility (P08-D6); SPS_BASE_URL is the retained client setting
+agents/*.json	clients	retain	accepted	MCP client configs set SPS_BASE_URL for the retained bundle, which has no default endpoint (P07 owner decision 2026-10-07)
+#
+# Controller UI and console (retained)
+packages/browser-ui/Dockerfile	controller-ui	retain	accepted	The npm ci stage no longer copies the removed dashboard and sps-server manifests (2026-10-07); VITE_SPS_API_URL stays
+packages/browser-ui/**	controller-ui	retain	accepted	VITE_SPS_API_URL is the older name of VITE_BLINDPASS_API_ORIGIN; keep both until a rename has tested compatibility
+packages/console/**	console	retain	accepted	The relocated CC02/CC03 runner and the input E2E still set VITE_SPS_API_URL and SPS_E2E_* names
+#
+# Scripts
+scripts/e2e-human.mjs	harness	retain	accepted	CC02 runs this against the Rust controller. Slice 6 done 2026-10-07: the in-process SPS mode and its import are removed; --base-url and SPS_E2E_BEARER_TOKEN are now required
+scripts/tests/rust-base-contract.mjs	contract-harness	retain	accepted	Runs the contract suite against a controller the suite does not own; replaces the SPS base launcher (P08-D7)
+scripts/tests/p02-rust-client-flows.mjs	harness	retain	accepted	CC02 client flows against Rust
+scripts/tests/assert-contract-progress.test.mjs	harness	retain	accepted	Contract progress gate
+scripts/tests/run-workspace-tests.mjs	harness	retain	accepted	Workspace test runner; iterates packages with a test script, so deleting sps-server and dashboard needs no edit here
+scripts/tests/mcp-bundle-endpoint.test.mjs	release	retain	accepted	Proves the bundle refuses until SPS_BASE_URL is set (P07 F-3)
+scripts/tests/mcp-bundle-package.test.mjs	release	retain	accepted	Bundle packaging checks
+scripts/tests/release-*.test.mjs	release	retain	accepted	Release tooling tests; release-workflow asserts no build step reaches sps.atas, release-docs asserts the docs exclude the legacy images from release claims
+scripts/build_bundle.sh	release	retain	accepted	Builds the retained MCP bundle
+scripts/publish_dist.sh	release	retain	accepted	Developer-run publication of the retained bundle
+scripts/publish_clawhub.sh	release	retain	accepted	Developer-run ClawHub publication
+scripts/strip-sps-default.mjs	release	retain	accepted	Removes the default SPS endpoint from the published bundle
+#
+# CI, packaging and root files
+.env.example	dev-infra	retain	accepted	Rewritten 2026-10-07: only the disposable PostgreSQL settings and the retained client settings; SPS_BASE_URL, SPS_AGENT_API_KEY and VITE_SPS_API_URL stay while the clients keep those names
+LICENSES.md	legal	retain	accepted	The sps-server and dashboard rows were removed 2026-10-07 with a dated note
+README.md	docs	retain	accepted	Reword where it names the SPS stack
+SECURITY.md	docs	retain	accepted	Reword
+landing/dist/*	landing	retain	accepted	Reword llms.txt and the script's SPS mentions with the landing copy
+tests/deployment/*	deploy	retain	accepted	Assertions that controller profiles run without Redis
+#
+# Rust controller (retained): SPS appears as compatibility vocabulary, not as a dependency
+crates/**	controller	retain	accepted	Comments and test names that cite the SPS wire contract. The fulfillment-token issuer "sps" (exchanges.rs, CV03) is wire format and stays; the sps_ hits are only test and function names, so only comments and names may be reworded
+#
+# Documentation
+docs/legacy/**	legacy-docs	archive	accepted	Archived 2026-10-07 with a banner: the SPS quick start, self-hosting guide, Unraid templates, manual demos and OpenAPI snapshot. Links to removed files are plain text
+docs/testing/evidence/**	history	archive	accepted	Dated execution records; frozen history, not reworded
+docs/product/p00-baseline-manifest.json	history	archive	accepted	P00 baseline of the legacy tree; frozen
+docs/product/p00-compatibility-matrix.md	history	archive	accepted	P00 compatibility matrix; frozen history of the SPS contract
+docs/product/decisions/*	history	retain	accepted	Decision records; SPS wording is the historical record
+docs/guides/policy.md	docs	retain	accepted	Exchange policy is a retained contract (CT05, CV05); reword the SPS route references for the controller
+docs/api/*	docs	retain	accepted	API reference and controller OpenAPI notes; reword the SPS snapshot statements
+docs/architecture/*	docs	retain	accepted	Architecture pages describe the Rust controller; the dashboard maintainability page was deleted 2026-10-07 with the dashboard
+docs/security/*	docs	retain	accepted	Threat model, finding disposition and dependency evidence stay accessible as archived security history; reword statements that name removed code
+docs/release/**	release	retain	accepted	Release docs, licence inventory and SBOMs; the npm workspaces and bundle SBOMs were regenerated 2026-10-07 from a clean install
+docs/testing/*	docs	retain	accepted	Test setup and the Controller Contract Suite: reword the SUT=ts, base and Redis statements when the TS adapter goes
+docs/plugins/*	docs	retain	accepted	OpenClaw plugin notes
+docs/deploy/*	deploy	retain	accepted	Controller quickstarts; the hits state that no Redis is needed
+docs/README.md	docs	retain	accepted	Documentation index

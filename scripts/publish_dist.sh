@@ -16,7 +16,8 @@ Options:
   --skip-validate               Skip publish_clawhub dry-run validation gate
   --push                        Commit + push synced changes in --repo-dir
   --publish-clawhub             Run clawhub publish from stage dir
-  --publish-npm                 Run npm publish from stage dir
+  --publish-npm                 Run npm publish from stage dir (only inside the approved Release
+                                workflow for a version tag; refused on any other machine)
   --npm-tag <tag>               npm publish tag (default: latest)
   --yes                         Non-interactive overwrite/sync confirmation
   --dry-run                     Print actions without mutating files or publishing
@@ -25,13 +26,17 @@ Options:
 Examples:
   scripts/publish_dist.sh --dry-run
   scripts/publish_dist.sh --repo-dir ../blindpass-skill --yes --push
-  scripts/publish_dist.sh --publish-clawhub --publish-npm
+  scripts/publish_dist.sh --publish-clawhub
 USAGE
 }
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PLUGIN_DIR="${ROOT_DIR}/packages/openclaw-plugin"
 DIST_DIR="${PLUGIN_DIR}/dist"
+# Stage a bundle that scripts/build_bundle.sh wrote elsewhere (BLINDPASS_BUNDLE_OUT); used with --skip-build.
+if [[ -n "${BLINDPASS_BUNDLE_OUT:-}" ]]; then
+  DIST_DIR="$(realpath -m "${BLINDPASS_BUNDLE_OUT}")"
+fi
 SKILL_FILE="${PLUGIN_DIR}/skills/blindpass/SKILL.md"
 PLUGIN_MANIFEST_JSON="${PLUGIN_DIR}/openclaw.plugin.json"
 PLUGIN_LICENSE_FILE="${PLUGIN_DIR}/LICENSE"
@@ -122,6 +127,16 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# P07 guardrail: nothing is published to npm from a developer machine. The approved Release workflow
+# (.github/workflows/release.yml, environment release-approval) publishes the signed candidate tarball;
+# this flag exists for that context only and refuses before any build, staging or network work.
+if [[ "$DO_PUBLISH_NPM" -eq 1 && "$DRY_RUN" -eq 0 ]]; then
+  if ! node "$ROOT_DIR/scripts/release/check-publish-context.mjs" >&2; then
+    echo "[blindpass] --publish-npm refused: npm publication belongs to the approved Release workflow (docs/release/README.md)." >&2
+    exit 1
+  fi
+fi
+
 if [[ "$DO_PUSH" -eq 1 && -z "$REPO_DIR" ]]; then
   echo "[blindpass] --push requires --repo-dir pointing to a git checkout" >&2
   exit 1
@@ -149,6 +164,10 @@ read_skill_version() {
 }
 
 skill_version="$(read_skill_version)"
+if [[ ! "$skill_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$ ]]; then
+  echo "[blindpass] SKILL.md version is not a plain semantic version: $skill_version" >&2
+  exit 1
+fi
 
 read_plugin_manifest_version() {
   node -e '
@@ -191,6 +210,11 @@ ensure_dist_artifacts() {
   if [[ "$missing" -ne 0 ]]; then
     exit 1
   fi
+  # A dist built before P07 F-3 still carries the default SPS endpoint; never stage it.
+  if grep -qs 'sps\.blindpass\.dev' "${DIST_DIR}/blindpass.mjs" "${DIST_DIR}/mcp-server.mjs" "${DIST_DIR}/index.mjs" "${DIST_DIR}/openclaw.plugin.json"; then
+    echo "[blindpass] dist still names a default SPS endpoint; rebuild it with scripts/build_bundle.sh" >&2
+    exit 1
+  fi
 }
 
 confirm_or_exit() {
@@ -224,28 +248,49 @@ copy_if_exists() {
 generate_dist_package_json() {
   local target="$1"
 
+  # This is the public npm package: the esbuild bundle (no runtime dependencies) with executables, so
+  # `npx @blindpass/mcp-server` works on a clean host. `mcp-server` is the executable npx selects because
+  # npm picks the bin named like the unscoped package when a package has several different targets.
+  # prepack/prepublishOnly run the guards copied into .release/ (not packed; see prepare_stage_layout).
   cat > "$target" <<JSON
 {
     "name": "@blindpass/mcp-server",
     "version": "${skill_version}",
-    "private": false,
+    "description": "BlindPass MCP server (stdio) and OpenClaw plugin: a self-contained bundle for broker-mediated secret delivery.",
     "license": "MIT",
     "type": "module",
-    "description": "BlindPass MCP server and OpenClaw plugin distribution artifacts.",
     "bin": {
+        "mcp-server": "./dist/mcp-server.mjs",
         "blindpass-mcp-server": "./dist/mcp-server.mjs",
         "blindpass-resolver": "./dist/blindpass-resolver.mjs"
     },
     "files": [
         "dist",
         "SKILL.md",
-        "AGENTS.md",
-        "agents",
         "openclaw.plugin.json",
         "scripts",
         "LICENSE",
         "README.md"
-    ]
+    ],
+    "engines": {
+        "node": "^24.21.0 || ^26.10.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/atas-tech/blindpass.git"
+    },
+    "bugs": {
+        "url": "https://github.com/atas-tech/blindpass/issues"
+    },
+    "homepage": "https://github.com/atas-tech/blindpass#readme",
+    "publishConfig": {
+        "access": "public",
+        "provenance": true
+    },
+    "scripts": {
+        "prepack": "node .release/check-npm-pack.mjs --self-contained --quiet",
+        "prepublishOnly": "node .release/check-publish-context.mjs"
+    }
 }
 JSON
 }
@@ -264,14 +309,18 @@ prepare_stage_layout() {
 
   cp -R "$DIST_DIR" "$stage/dist"
   cp "$DIST_DIR/skills/blindpass/SKILL.md" "$stage/SKILL.md"
-  cp "$PLUGIN_MANIFEST_JSON" "$stage/openclaw.plugin.json"
+  # The package manifest is the bundle copy: no default SPS endpoint (P07 F-3), unlike the unbundled plugin's.
+  node "$ROOT_DIR/scripts/strip-sps-default.mjs" "$PLUGIN_MANIFEST_JSON" "$stage/openclaw.plugin.json"
   cp "$PLUGIN_LICENSE_FILE" "$stage/LICENSE"
   cp "$ROOT_DIR/scripts/install_skill.sh" "$stage/scripts/install_skill.sh"
 
-  # Optional agent-specific instructions/configs are copied when present.
-  copy_if_exists "$ROOT_DIR/AGENTS.md" "$stage/AGENTS.md"
-  copy_if_exists "$ROOT_DIR/agents" "$stage/agents"
+  # Contributor instructions (AGENTS.md) and client config examples (agents/) are not part of the package.
   copy_if_exists "$ROOT_DIR/README.md" "$stage/README.md"
+
+  # The package's own guards travel with the stage byte for byte but stay out of `files`: a copy of
+  # the repository tools that npm lifecycle scripts can run without the monorepo.
+  mkdir -p "$stage/.release"
+  cp "$ROOT_DIR/scripts/release/check-npm-pack.mjs" "$ROOT_DIR/scripts/release/check-publish-context.mjs" "$stage/.release/"
 
   generate_dist_package_json "$stage/package.json"
 

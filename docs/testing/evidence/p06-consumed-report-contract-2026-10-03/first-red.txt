@@ -1,0 +1,9 @@
+   Compiling blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+error[E0432]: unresolved import `blindpass_core::recovery`
+ --> crates/blindpass-core/tests/consumed_report.rs:5:21
+  |
+5 | use blindpass_core::recovery::{
+  |                     ^^^^^^^^ could not find `recovery` in `blindpass_core`
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `blindpass-core` (test "consumed_report") due to 1 previous error

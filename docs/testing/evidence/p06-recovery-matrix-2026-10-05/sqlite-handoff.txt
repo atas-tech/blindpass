@@ -1,0 +1,22 @@
+P06-RR S1 PASS production controller (authority-backed, built-in TLS) serving; operator session established
+P06-RR S2 PASS real broker+node in a QEMU guest enrolled over verified HTTPS; node online; authority holds its broker trust
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-HO H0 PASS source controller serving with node nd_df48d online (key version 1) and one consumed grant; guest status gate passes
+P06-HO H1a SKIPPED BLINDPASS_P06_FAILPOINT_CONTROLLER is not set
+P06-HO H1 PASS fenced source exported (epoch 1, revision 3); retirement marker written 0600; authority record unchanged (active:1:2 -> fenced:1:3)
+P06-HO H2 PASS the same handoff id repeats to the same archive digest; a different handoff id is refused while the marker exists
+P06-HO H3 PASS a retired source refuses migrate
+P06-HO H4 PASS abort before any activation removed the marker and the transfer package; record still the exported one
+P06-HO H5 PASS after abort the original source activated again, served, and the same node came back online
+P06-HO H6 PASS source fenced and exported again under a new handoff id (fenced:1:5)
+P06-HO H7a SKIPPED BLINDPASS_P06_FAILPOINT_CONTROLLER is not set
+P06-HO H7 PASS wrong-owner import refused, then imported into a new private root; record still fenced and unchanged; a second import into it refused
+P06-HO H8 PASS authority fenced:1:5 -> active:1:6; destination ready 0.3 s after start and the unchanged node, seen by the destination itself, passes `status --nodes --require-online` 4.7 s after start (bound 120 s); operator login and node key version carried over; no re-enrollment
+P06-HO H9 PASS while the destination holds the active record the stale source refuses to serve (it cannot register as a second active holder) and to migrate; the destination stayed ready and the record unchanged
+P06-HO H10 PASS abort after activation refused; marker and transfer package untouched (rollback is restore-only)
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-HO H11 PASS a grant issued after the handoff was approved, delivered to the node and consumed by a workload in the guest
+P06-HO H12a PASS with the destination stopped and the record freshly activated, the stale source still refuses, now by its retirement marker (reason handoff_retired); the authority record is unchanged
+P06-HO H12 PASS the destination restarted without its marker after the stale attempt and the node was seen online by it again
+P06-RR R3 PASS controller and guest broker/node logs contain no operator or approver password, bootstrap password, enrollment token, authority password or PEM private key
+P06-HO H13 PASS no credential, enrollment token, authority password or PEM private key appeared in any controller or guest log

@@ -1,0 +1,14 @@
+......F.
+======================================================================
+FAIL: test_sb04_valid_descriptor_hash_cannot_hide_wrong_uncompressed_layer_hash (__main__.Verification.test_sb04_valid_descriptor_hash_cannot_hide_wrong_uncompressed_layer_hash)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "$REPOSITORY/tests/deployment/controller-sbom-test.py", line 119, in test_sb04_valid_descriptor_hash_cannot_hide_wrong_uncompressed_layer_hash
+    with self.assertRaises(AssertionError):self.check(digest)
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^
+AssertionError: AssertionError not raised
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.131s
+
+FAILED (failures=1)

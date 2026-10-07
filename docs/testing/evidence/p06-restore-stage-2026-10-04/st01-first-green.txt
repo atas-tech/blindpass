@@ -1,0 +1,24 @@
+   Compiling blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 45.70s
+     Running tests/restore_stage.rs (target/debug/deps/restore_stage-d45506280fd80b22)
+
+running 5 tests
+test p06_st01_actual_authenticated_restore_publishes_only_fenced_invalidated_state ... ok
+test p06_st02_authenticated_input_context_and_authority_refusals_publish_nothing ... 
+thread 'p06_st02_authenticated_input_context_and_authority_refusals_publish_nothing' (1090428) panicked at crates/blindpass-controller/tests/restore_stage.rs:364:85:
+called `Result::unwrap()` on an `Err` value: Database(PgDatabaseError { severity: Error, code: "P0001", message: "invalid authority transition", detail: None, hint: None, position: None, where: Some("PL/pgSQL function blindpass_authority.protect_recovery_authority() line 10 at RAISE"), schema: None, table: None, column: None, data_type: None, constraint: None, file: Some("pl_exec.c"), line: Some(3897), routine: Some("exec_stmt_raise") })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_st03_private_destination_and_credential_custody_preserve_existing_state ... ok
+test p06_st04_live_competing_recovery_holder_prevents_publication ... ok
+test p06_st06_authenticated_schema16_forward_migration_retains_original_archive ... ok
+
+failures:
+
+failures:
+    p06_st02_authenticated_input_context_and_authority_refusals_publish_nothing
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.83s
+
+error: test failed, to rerun pass `-p blindpass-controller --test restore_stage`

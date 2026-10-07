@@ -28,6 +28,7 @@ export interface components {
     "AdminError": {
       "error": string;
       "message"?: string;
+      "retry_after"?: number;
     };
     "Agent": {
       "id": string;
@@ -137,7 +138,7 @@ export interface components {
     "CapabilitiesResponse": {
       "api": Array<"compat.v2" | "admin.v3" | "fleet.v3">;
       "version": string;
-      "schema_version": 16;
+      "schema_version": 19;
       "setup_required": boolean;
       "issuer_pub"?: string;
       "issuer_kid"?: string;
@@ -145,6 +146,20 @@ export interface components {
       "features": {
         "browser_status": true;
         "fleet_authorization": boolean;
+      };
+      "limits": components["schemas"]["CapabilitiesLimits"];
+    };
+    "CapabilitiesLimits": {
+      "login": {
+        "account_failures": number;
+        "account_total_failures": number;
+        "ip_failures": number;
+        "window_seconds": number;
+        "lockout_seconds": number;
+      };
+      "session": {
+        "absolute_seconds": number;
+        "idle_seconds": 43200;
       };
     };
     "NodeStatus": "online" | "stale" | "offline" | "revoked";
@@ -742,6 +757,70 @@ export interface components {
 }
 
 export interface operations {
+  "recoveryReportRequest": {
+  parameters: {
+    path: never;
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": {
+  "version": 1;
+  "node_id": string;
+  "node_key_version": number;
+  "broker_challenge": string;
+};
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": Record<string, unknown>;
+      };
+    };
+    "400": Record<string, never>;
+    "429": Record<string, never>;
+    "503": Record<string, never>;
+  };
+  security: never;
+  };
+  "recoveryReportPage": {
+  parameters: {
+    path: never;
+    query: never;
+    header: never;
+    cookie: never;
+  };
+  requestBody: {
+    required: true;
+    content: {
+    "application/json": {
+  "body": Record<string, unknown>;
+  "broker_signature": string;
+};
+    };
+  };
+  responses: {
+    "200": {
+      content: {
+        "application/json": {
+  "version": 1;
+  "state": "collecting" | "covered" | "incomplete" | "rebase_required";
+  "next_page": number;
+  "application"?: Record<string, unknown> | null;
+  "activation_permitted": false;
+};
+      };
+    };
+    "400": Record<string, never>;
+    "429": Record<string, never>;
+    "503": Record<string, never>;
+  };
+  security: never;
+  };
   "healthz": {
   parameters: {
     path: never;
@@ -1318,6 +1397,11 @@ export interface operations {
         "application/json": components["schemas"]["AdminError"];
       };
     };
+    "429": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
   };
   security: ReadonlyArray<readonly ["bootstrapCapability"]>;
   };
@@ -1354,6 +1438,16 @@ export interface operations {
       };
     };
     "403": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "423": {
+      content: {
+        "application/json": components["schemas"]["AdminError"];
+      };
+    };
+    "429": {
       content: {
         "application/json": components["schemas"]["AdminError"];
       };
@@ -3833,6 +3927,12 @@ export interface operations {
 }
 
 export interface paths {
+  "/api/recovery/request": {
+    post?: operations["recoveryReportRequest"];
+  };
+  "/api/recovery/page": {
+    post?: operations["recoveryReportPage"];
+  };
   "/healthz": {
     get?: operations["healthz"];
   };

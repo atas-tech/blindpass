@@ -1,0 +1,236 @@
+{
+ "step": "s03",
+ "date": "2026-10-06T14:00:37.749Z",
+ "checks": [
+  {
+   "name": "no bp_ cookie and empty storage before sign-in",
+   "ok": true
+  },
+  {
+   "name": "bp_session is HttpOnly, Secure, SameSite=Strict, Path=/",
+   "ok": true,
+   "cookie": {
+    "name": "bp_session",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Strict",
+    "path": "/",
+    "domain": "blindpass.example",
+    "expires": 1791338439.087604,
+    "valueSha256Prefix": "40b8471b",
+    "valueLength": 43
+   }
+  },
+  {
+   "name": "bp_refresh is HttpOnly, Secure, SameSite=Strict and scoped to the refresh path",
+   "ok": true,
+   "cookie": {
+    "name": "bp_refresh",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Strict",
+    "path": "/api/v3/admin/session/refresh",
+    "domain": "blindpass.example",
+    "expires": 1793887239.087676,
+    "valueSha256Prefix": "849b5534",
+    "valueLength": 43
+   }
+  },
+  {
+   "name": "bp_csrf is Secure, SameSite=Strict, Path=/ and readable by script (double-submit)",
+   "ok": true,
+   "cookie": {
+    "name": "bp_csrf",
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Strict",
+    "path": "/",
+    "domain": "blindpass.example",
+    "expires": 1793887239.087694,
+    "valueSha256Prefix": "393823ec",
+    "valueLength": 43
+   }
+  },
+  {
+   "name": "every bp_ cookie is host-only on blindpass.example",
+   "ok": true
+  },
+  {
+   "name": "no credential in localStorage, sessionStorage or IndexedDB",
+   "ok": true,
+   "storage": {
+    "localStorageKeys": [],
+    "sessionStorageKeys": [],
+    "indexedDbNames": [],
+    "indexedDbBytes": 0,
+    "localStorageHoldsSecret": false,
+    "sessionStorageHoldsSecret": false,
+    "indexedDbHoldsSecret": false,
+    "documentCookieNames": [
+     "bp_csrf"
+    ]
+   }
+  },
+  {
+   "name": "script-readable cookies are only the CSRF value",
+   "ok": true,
+   "names": [
+    "bp_csrf"
+   ]
+  },
+  {
+   "name": "no secret in the rendered DOM",
+   "ok": true
+  },
+  {
+   "name": "state-changing call without the CSRF header is denied (403 csrf_denied)",
+   "ok": true,
+   "result": {
+    "status": 403,
+    "error": "csrf_denied",
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "state-changing call with a wrong CSRF value is denied",
+   "ok": true,
+   "result": {
+    "status": 403,
+    "error": "csrf_denied",
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "session read works with the cookie (200)",
+   "ok": true,
+   "result": {
+    "status": 200,
+    "error": null,
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "cross-origin forged state change with credentials never reaches a response (CORS/SameSite)",
+   "ok": true,
+   "forged": {
+    "reached": false,
+    "error": "TypeError: Failed to fetch"
+   }
+  },
+  {
+   "name": "refresh rotates the session (200)",
+   "ok": true,
+   "result": {
+    "status": 200,
+    "error": null,
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "refresh issued a new refresh credential",
+   "ok": true,
+   "before": "849b5534",
+   "after": "94a1bdce"
+  },
+  {
+   "name": "replaying the rotated-out refresh credential is refused (401)",
+   "ok": true,
+   "result": {
+    "status": 401,
+    "error": "refresh_invalid",
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "replay revoked the whole session family (current session now 401)",
+   "ok": true,
+   "result": {
+    "status": 401,
+    "error": "session_expired",
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "sign-out clears the bp_ cookies in the browser",
+   "ok": true,
+   "remaining": []
+  },
+  {
+   "name": "the signed-out session cookie is refused server-side (401)",
+   "ok": true,
+   "result": {
+    "status": 401,
+    "error": "session_expired",
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "the signed-out refresh credential is refused server-side (401)",
+   "ok": true,
+   "result": {
+    "status": 401,
+    "error": "refresh_invalid",
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "no CSP violation during the S03 journey",
+   "ok": true,
+   "violations": []
+  },
+  {
+   "name": "every request of the journey is same-origin",
+   "ok": true,
+   "origins": [
+    "https://blindpass.example"
+   ]
+  }
+ ],
+ "cookies": [
+  {
+   "name": "bp_refresh",
+   "httpOnly": true,
+   "secure": true,
+   "sameSite": "Strict",
+   "path": "/api/v3/admin/session/refresh",
+   "domain": "blindpass.example",
+   "expires": 1793887239.087676,
+   "valueSha256Prefix": "849b5534",
+   "valueLength": 43
+  },
+  {
+   "name": "bp_session",
+   "httpOnly": true,
+   "secure": true,
+   "sameSite": "Strict",
+   "path": "/",
+   "domain": "blindpass.example",
+   "expires": 1791338439.087604,
+   "valueSha256Prefix": "40b8471b",
+   "valueLength": 43
+  },
+  {
+   "name": "bp_csrf",
+   "httpOnly": false,
+   "secure": true,
+   "sameSite": "Strict",
+   "path": "/",
+   "domain": "blindpass.example",
+   "expires": 1793887239.087694,
+   "valueSha256Prefix": "393823ec",
+   "valueLength": 43
+  }
+ ],
+ "storage": {
+  "localStorageKeys": [],
+  "sessionStorageKeys": [],
+  "indexedDbNames": [],
+  "indexedDbBytes": 0,
+  "localStorageHoldsSecret": false,
+  "sessionStorageHoldsSecret": false,
+  "indexedDbHoldsSecret": false,
+  "documentCookieNames": [
+   "bp_csrf"
+  ]
+ }
+}

@@ -1,0 +1,66 @@
+    Checking blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error: this `if` statement can be collapsed
+   --> crates/blindpass-controller/src/recovery_authority.rs:297:9
+    |
+297 | /         if *operations == 0 {
+298 | |             if let Ok(mut connection) = self.connection.try_lock() {
+299 | |                 connection.take();
+300 | |             }
+301 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+    = note: `-D clippy::collapsible-if` implied by `-D clippy::all`
+    = help: to override `-D clippy::all` add `#[allow(clippy::collapsible_if)]`
+help: collapse nested if block
+    |
+297 ~         if *operations == 0
+298 ~             && let Ok(mut connection) = self.connection.try_lock() {
+299 |                 connection.take();
+300 ~             }
+    |
+
+error: this `if` statement can be collapsed
+   --> crates/blindpass-controller/src/recovery_authority.rs:425:13
+    |
+425 | /             if self.owner.is_fenced() {
+426 | |                 if let Ok(mut connection) = self.owner.connection.try_lock() {
+427 | |                     connection.take();
+428 | |                 }
+429 | |             }
+    | |_____________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+425 ~             if self.owner.is_fenced()
+426 ~                 && let Ok(mut connection) = self.owner.connection.try_lock() {
+427 |                     connection.take();
+428 ~                 }
+    |
+
+error: this `if` statement can be collapsed
+   --> crates/blindpass-controller/src/store/mod.rs:650:9
+    |
+650 | /         if let Some(current) = binding.as_ref() {
+651 | |             if !Arc::ptr_eq(current, &owner) {
+652 | |                 current.fence();
+653 | |                 owner.fence();
+...   |
+656 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#collapsible_if
+help: collapse nested if block
+    |
+650 ~         if let Some(current) = binding.as_ref()
+651 ~             && !Arc::ptr_eq(current, &owner) {
+652 |                 current.fence();
+653 |                 owner.fence();
+654 |                 return Err(StoreError::AuthorityFenced);
+655 ~             }
+    |
+
+error: could not compile `blindpass-controller` (lib) due to 3 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `blindpass-controller` (lib test) due to 3 previous errors

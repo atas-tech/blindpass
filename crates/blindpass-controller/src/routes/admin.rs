@@ -2,9 +2,10 @@
 
 use crate::app::AppState;
 use crate::routes::admin_session::{session_response, valid_origin};
+use crate::routes::agents::client_ip;
 use crate::routes::auth::hash_api_key;
-use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
+use axum::extract::{ConnectInfo, State};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{Json, Router};
@@ -12,6 +13,7 @@ use blindpass_core::custody::sha256;
 use rand::{RngCore, rngs::OsRng};
 use serde::Deserialize;
 use serde_json::json;
+use std::net::SocketAddr;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -27,6 +29,7 @@ pub(crate) fn routes() -> Router<AppState> {
 
 async fn bootstrap(
     State(state): State<AppState>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     Json(body): Json<BootstrapBody>,
 ) -> Response {
@@ -71,17 +74,6 @@ async fn bootstrap(
         )
             .into_response();
     }
-    let password_hash = match hash_api_key(&body.password) {
-        Ok(hash) => hash,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error":"bootstrap_failed","message":"administrator setup failed"})),
-            )
-                .into_response();
-        }
-    };
-    let operator_id = random_uuid();
     let token_hash = match token_hash(bootstrap_token) {
         Some(hash) => hash,
         None => {
@@ -92,6 +84,73 @@ async fn bootstrap(
                 .into_response();
         }
     };
+    // Look the token up before any password work. The token is the whole
+    // capability and is only ever compared whole, so a wrong guess reads one
+    // row and changes nothing: it cannot burn a valid token. Invalid attempts
+    // spend a bounded failure budget (peer shard and global); a request that
+    // holds the valid token is never refused for what others did.
+    match store.bootstrap_token_usable(&token_hash).await {
+        Ok(true) => {}
+        Ok(false) => {
+            let ip = client_ip(&headers, peer, &state);
+            return match store.record_bootstrap_failure(&ip, &state.abuse_limits).await {
+                Ok(Some(retry_after)) => {
+                    let mut response = (
+                        StatusCode::TOO_MANY_REQUESTS,
+                        Json(json!({
+                            "error":"bootstrap_rate_limited",
+                            "message":"too many failed bootstrap attempts; try again later",
+                            "retry_after":retry_after
+                        })),
+                    )
+                        .into_response();
+                    if let Ok(value) = HeaderValue::from_str(&retry_after.to_string()) {
+                        response.headers_mut().insert(header::RETRY_AFTER, value);
+                    }
+                    response
+                }
+                Ok(None) => (StatusCode::CONFLICT, Json(json!({"error":"bootstrap_unavailable","message":"bootstrap is expired, used, or setup is already complete"}))).into_response(),
+                Err(_) => (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({"error":"bootstrap_failed","message":"administrator setup failed"})),
+                )
+                    .into_response(),
+            };
+        }
+        Err(_) => {
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"error":"bootstrap_failed","message":"administrator setup failed"})),
+            )
+                .into_response();
+        }
+    }
+    // Argon2 runs on the blocking pool behind the same bounded slots as
+    // sign-in, never inline on the async runtime.
+    let Ok(permit) = state.login_hash_slots.clone().try_acquire_owned() else {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({"error":"bootstrap_busy","message":"setup is busy; try again shortly"})),
+        )
+            .into_response();
+    };
+    let password = body.password;
+    let password_hash = match tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        hash_api_key(&password)
+    })
+    .await
+    {
+        Ok(Ok(hash)) => hash,
+        _ => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"error":"bootstrap_failed","message":"administrator setup failed"})),
+            )
+                .into_response();
+        }
+    };
+    let operator_id = random_uuid();
     match store.bootstrap_operator_with_token(&token_hash, &operator_id, username, display_name, &password_hash).await {
         Ok(true) => {
             let refresh_token = random_token();

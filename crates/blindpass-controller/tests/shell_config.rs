@@ -672,7 +672,7 @@ async fn damaged_existing_schema_prevents_startup_without_recreation() {
 }
 
 #[test]
-fn migrate_command_initializes_database_without_starting_listener() {
+fn test_mode_migrate_command_initializes_fixture_without_starting_listener() {
     let files = TestFiles::new();
     let database_path = files.0.join("migrated.db");
     let database_url = format!("sqlite://{}?mode=rwc", database_path.display());
@@ -683,6 +683,7 @@ fn migrate_command_initializes_database_without_starting_listener() {
     let output = Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
         .arg("migrate")
         .env_clear()
+        .env("BLINDPASS_TEST_MODE", "1")
         .env("BLINDPASS_DATABASE_URL_FILE", &database)
         .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
         .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
@@ -904,6 +905,7 @@ async fn reconcile_clock_command_repairs_a_regressed_database_without_test_mode(
         Command::new(env!("CARGO_BIN_EXE_blindpass-controller"))
             .arg("reconcile-clock")
             .env_clear()
+            .env("BLINDPASS_TEST_MODE", "1")
             .env("BLINDPASS_DATABASE_URL_FILE", &database)
             .env("BLINDPASS_ROOT_SECRET_FILE", &root_secret)
             .env("BLINDPASS_AGENT_JWT_SECRET_FILE", &agent_secret)
@@ -953,7 +955,7 @@ async fn reconcile_clock_command_repairs_a_regressed_database_without_test_mode(
 }
 
 #[tokio::test]
-async fn production_shell_has_no_seed_route_or_test_override() {
+async fn unowned_production_shell_fences_test_seed_without_sensitive_details() {
     let files = TestFiles::new();
     let database = files.credential("database.url", b"sqlite::memory:");
     let root_secret = files.credential("root.secret", &[b'R'; 32]);
@@ -1002,7 +1004,9 @@ async fn production_shell_has_no_seed_route_or_test_override() {
     });
 
     let (status, body) = raw_request(&address.to_string(), "POST", "/api/v3/admin/test/seed").await;
-    assert_eq!(status, 404);
+    // Production requests require a genuine owner before route admission.
+    // PW02 asserts 404 for this route on the owned production process.
+    assert_eq!(status, 503);
     assert!(!body.contains("RRRR"));
     assert!(!body.contains("AAAA"));
     server.abort();

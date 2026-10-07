@@ -1,0 +1,9 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0432]: unresolved import `blindpass_controller::recovery_authority`
+ --> crates/blindpass-controller/tests/recovery_authority.rs:2:27
+  |
+2 | use blindpass_controller::recovery_authority::{Authority, AuthorityError, AuthorityContext};
+  |                           ^^^^^^^^^^^^^^^^^^ could not find `recovery_authority` in `blindpass_controller`
+
+For more information about this error, try `rustc --explain E0432`.
+error: could not compile `blindpass-controller` (test "recovery_authority") due to 1 previous error

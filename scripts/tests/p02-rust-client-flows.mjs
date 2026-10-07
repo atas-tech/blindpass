@@ -104,6 +104,27 @@ try {
     assert.ok(exchangeOpened.equals(exchangePlaintext));
     addCanaries(fixture, exchangePlaintext.toString("utf8"));
 
+    // The high-level agent runtime exchange that packages/agent-skill/tests/exchange-runtime.test.ts used to run
+    // against an in-process SPS app: requester asks, the fulfiller's runtime fulfils the token, the requester
+    // stores the decrypted secret. Running it against Rust is the replacement coverage for that test (P08 slice 6).
+    const runtimeOptions = (agent) => ({ spsBaseUrl: adapter.baseUrl, gatewayBearerToken: fixture.agents[agent].accessToken });
+    const requesterRuntime = new AgentSkillRuntimeModule.AgentSecretRuntime(runtimeOptions("requester"));
+    const fulfillerRuntime = new AgentSkillRuntimeModule.AgentSecretRuntime(runtimeOptions("fulfiller"));
+    const runtimePlaintext = "dummy-cc02-runtime-exchange";
+    fulfillerRuntime.store.storeSecret(SECRET_NAMES.allowed, Buffer.from(runtimePlaintext));
+    const runtimeResult = await requesterRuntime.requestAndStoreExchangeSecret({
+      secretName: SECRET_NAMES.allowed,
+      purpose: "CC02 agent runtime exchange",
+      fulfillerHint: AGENT_IDS.fulfiller,
+      reservedTimeoutMs: 2000,
+      deliverToken: async (fulfillmentToken) => {
+        await fulfillerRuntime.fulfillExchange(fulfillmentToken);
+      }
+    });
+    assert.equal(runtimeResult.fulfilledBy, AGENT_IDS.fulfiller);
+    assert.equal(requesterRuntime.checkSecretOrThrow(SECRET_NAMES.allowed).toString("utf8"), runtimePlaintext);
+    addCanaries(fixture, runtimePlaintext);
+
     const audit = await httpRequest(
       adapter.baseUrl,
       "/api/v3/admin/audit?limit=100",
@@ -115,7 +136,7 @@ try {
     agentKeyManager.destroyKeyPair(requesterKeyPair);
   }
 
-  process.stdout.write("CC02 passed: gateway request, OpenClaw poll/decrypt, agent exchange and OpenClaw fulfillment against Rust.\n");
+  process.stdout.write("CC02 passed: gateway request, OpenClaw poll/decrypt, agent exchange, agent runtime exchange and OpenClaw fulfillment against Rust.\n");
 } finally {
   if (inheritedApiKey === undefined) delete process.env.BLINDPASS_API_KEY;
   else process.env.BLINDPASS_API_KEY = inheritedApiKey;

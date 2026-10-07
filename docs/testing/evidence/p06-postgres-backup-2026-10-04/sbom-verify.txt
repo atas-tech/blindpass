@@ -1,0 +1,2 @@
+PASS P06-O10 bound OCI/SPDX attestation: 1 runtime manifest(s), 3 inventory document(s), 1681 unique package names
+PASS P06-SB01 exact runtime Debian package/version inventory: 125 packages

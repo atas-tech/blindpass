@@ -1,0 +1,4 @@
+{
+  "crates/blindpass-controller/src/recovery_authority/report_reader.rs": "0a6b972f2bb166aad7ac2d638d713c41a40c6af4ec18ba8cbac29b23b1c1f36f",
+  "crates/blindpass-controller/src/store/recovery/application.rs": "f12090d068e3dfe60b97450e567192ee884cec23e39f8357e389828e1fc3a6e6"
+}

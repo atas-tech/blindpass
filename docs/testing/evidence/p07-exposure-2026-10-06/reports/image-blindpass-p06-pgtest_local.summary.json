@@ -1,0 +1,1879 @@
+{
+ "allowlist": {
+  "entries": 1,
+  "unused": [],
+  "used": [
+   0
+  ]
+ },
+ "artifacts": [
+  {
+   "bytes": 7312393294,
+   "classes": {
+    "dump": 19,
+    "log": 54
+   },
+   "entries": 108416,
+   "files": 93737,
+   "findings": [
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!etc/ssl/private/ssl-cert-snakeoil.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": ".env",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/.env",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/ca.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/client.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/server.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0.crate!gz!untrusted-0.9.0/mk/llvm-snapshot.gpg.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": ".env",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/.env",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/ca.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/client.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/server.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/mk/llvm-snapshot.gpg.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": ".env",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/.env",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/ca.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/client.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/server.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0.crate!gz!untrusted-0.9.0/mk/llvm-snapshot.gpg.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": ".env",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/.env",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/ca.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/client.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/server.key",
+     "reason": null
+    },
+    {
+     "allowlisted": false,
+     "detail": "",
+     "id": "private-key-file",
+     "kind": "forbidden-name",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/untrusted-0.9.0/mk/llvm-snapshot.gpg.key",
+     "reason": null
+    }
+   ],
+   "formats": [
+    "ar",
+    "empty",
+    "gz",
+    "other",
+    "tar",
+    "xz"
+   ],
+   "hits": [
+    {
+     "allowlisted": false,
+     "canary": "c614b60b",
+     "count": 2,
+     "encoding": "raw|url|json|html",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!source/crates/blindpass-cli/tests/keys.rs",
+     "offset": 3122,
+     "reason": null,
+     "source": "canary"
+    },
+    {
+     "allowlisted": false,
+     "canary": "c614b60b",
+     "count": 1,
+     "encoding": "raw|url|json|html",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!source/crates/blindpass-controller/tests/deployment_health.rs",
+     "offset": 2474,
+     "reason": null,
+     "source": "canary"
+    },
+    {
+     "allowlisted": false,
+     "canary": "c614b60b",
+     "count": 2,
+     "encoding": "raw|url|json|html",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/d531961e627249ffb12c3f2aa01cc7f9ce811f26b14471493d13fe251bb922c7!source/crates/blindpass-cli/tests/keys.rs",
+     "offset": 3122,
+     "reason": null,
+     "source": "canary"
+    },
+    {
+     "allowlisted": false,
+     "canary": "c614b60b",
+     "count": 1,
+     "encoding": "raw|url|json|html",
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/d531961e627249ffb12c3f2aa01cc7f9ce811f26b14471493d13fe251bb922c7!source/crates/blindpass-controller/tests/deployment_health.rs",
+     "offset": 2474,
+     "reason": null,
+     "source": "canary"
+    }
+   ],
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 4,
+   "path": "docker:blindpass-p06-pgtest:local",
+   "patterns": [
+    {
+     "allowlisted": true,
+     "count": 3,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/737d268d6aa353999a322965e8e9874052e8e73359ae648db6e84a9cf8c7d3a3!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1586912,
+     "pattern": "pem-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "15f8b684"
+    },
+    {
+     "allowlisted": true,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/737d268d6aa353999a322965e8e9874052e8e73359ae648db6e84a9cf8c7d3a3!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1589056,
+     "pattern": "pem-ec-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "8938474b"
+    },
+    {
+     "allowlisted": true,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/737d268d6aa353999a322965e8e9874052e8e73359ae648db6e84a9cf8c7d3a3!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1589376,
+     "pattern": "pem-dsa-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "ffe872bd"
+    },
+    {
+     "allowlisted": true,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/737d268d6aa353999a322965e8e9874052e8e73359ae648db6e84a9cf8c7d3a3!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1590880,
+     "pattern": "pem-rsa-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "9e3719bd"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!etc/ssl/private/ssl-cert-snakeoil.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "58634771"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/benches/jwt.rs",
+     "offset": 699,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "da816f9f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "eecae31b"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-ec-private-key",
+     "reason": null,
+     "sha256_prefix": "813330ce"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5294152f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "83de13b8"
+    },
+    {
+     "allowlisted": false,
+     "count": 7,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/hmac.rs",
+     "offset": 2309,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "79a4d652"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "efd73fc9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "e560fdd6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "a8d14651"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-3.0.6.crate!gz!pem-3.0.6/README.md",
+     "offset": 443,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 4,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-3.0.6.crate!gz!pem-3.0.6/src/lib.rs",
+     "offset": 20799,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/README.md",
+     "offset": 955,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/chosen_header.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4fd81622"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs1_with_preceeding_junk.pem",
+     "offset": 939,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs8-enc.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/ssh_rsa_pem_password.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "1b3f737d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5.crate!gz!pkcs1-0.7.5/tests/examples/rsa2048-priv-3prime.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "2e9c66dc"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5.crate!gz!pkcs1-0.7.5/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5.crate!gz!pkcs1-0.7.5/tests/examples/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-pbkdf2-sha256.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-scrypt.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "52a2bba2"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v1.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v2.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "e876644e"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/p256-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "4f202ac9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/x25519-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "0c10e1d6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10.crate!gz!rsa-0.9.10/tests/examples/pkcs1/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10.crate!gz!rsa-0.9.10/tests/examples/pkcs1/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10.crate!gz!rsa-0.9.10/tests/examples/pkcs8/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/ca.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "99971165"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/client.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "d4fe49ab"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/server.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "c234459f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/benches/jwt.rs",
+     "offset": 699,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "da816f9f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "eecae31b"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-ec-private-key",
+     "reason": null,
+     "sha256_prefix": "813330ce"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5294152f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "83de13b8"
+    },
+    {
+     "allowlisted": false,
+     "count": 7,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/hmac.rs",
+     "offset": 2309,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "79a4d652"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "efd73fc9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "e560fdd6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "a8d14651"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-3.0.6/README.md",
+     "offset": 443,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 4,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-3.0.6/src/lib.rs",
+     "offset": 20799,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/README.md",
+     "offset": 955,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/chosen_header.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4fd81622"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs1_with_preceeding_junk.pem",
+     "offset": 939,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs8-enc.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/ssh_rsa_pem_password.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "1b3f737d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5/tests/examples/rsa2048-priv-3prime.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "2e9c66dc"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5/tests/examples/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-pbkdf2-sha256.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-scrypt.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "52a2bba2"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v1.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v2.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "e876644e"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/p256-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "4f202ac9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/x25519-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "0c10e1d6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10/tests/examples/pkcs1/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10/tests/examples/pkcs1/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10/tests/examples/pkcs8/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/ca.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "99971165"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/client.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "d4fe49ab"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!home/tester/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/server.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "c234459f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/a5eedafebcdd49f74557b351c9ec403db416dbb562d05d21ff515f221c02611e!source/crates/blindpass-controller/tests/fleet_roles.rs",
+     "offset": 7427,
+     "pattern": "bearer-token",
+     "reason": null,
+     "sha256_prefix": "6b98420f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/d531961e627249ffb12c3f2aa01cc7f9ce811f26b14471493d13fe251bb922c7!source/crates/blindpass-controller/tests/fleet_roles.rs",
+     "offset": 7427,
+     "pattern": "bearer-token",
+     "reason": null,
+     "sha256_prefix": "6b98420f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/benches/jwt.rs",
+     "offset": 699,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "da816f9f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "eecae31b"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-ec-private-key",
+     "reason": null,
+     "sha256_prefix": "813330ce"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5294152f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "83de13b8"
+    },
+    {
+     "allowlisted": false,
+     "count": 7,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/hmac.rs",
+     "offset": 2309,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "79a4d652"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "efd73fc9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "e560fdd6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1.crate!gz!jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "a8d14651"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-3.0.6.crate!gz!pem-3.0.6/README.md",
+     "offset": 443,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 4,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-3.0.6.crate!gz!pem-3.0.6/src/lib.rs",
+     "offset": 20799,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/README.md",
+     "offset": 955,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/chosen_header.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4fd81622"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs1_with_preceeding_junk.pem",
+     "offset": 939,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs8-enc.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0.crate!gz!pem-rfc7468-0.7.0/tests/examples/ssh_rsa_pem_password.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "1b3f737d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5.crate!gz!pkcs1-0.7.5/tests/examples/rsa2048-priv-3prime.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "2e9c66dc"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5.crate!gz!pkcs1-0.7.5/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5.crate!gz!pkcs1-0.7.5/tests/examples/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-pbkdf2-sha256.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-scrypt.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "52a2bba2"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v1.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v2.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "e876644e"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/p256-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "4f202ac9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2.crate!gz!pkcs8-0.10.2/tests/examples/x25519-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "0c10e1d6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10.crate!gz!rsa-0.9.10/tests/examples/pkcs1/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10.crate!gz!rsa-0.9.10/tests/examples/pkcs1/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10.crate!gz!rsa-0.9.10/tests/examples/pkcs8/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/ca.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "99971165"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/client.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "d4fe49ab"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/cache/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6.crate!gz!sqlx-0.8.6/tests/keys/server.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "c234459f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/benches/jwt.rs",
+     "offset": 699,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "da816f9f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_ecdsa_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "eecae31b"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-ec-private-key",
+     "reason": null,
+     "sha256_prefix": "813330ce"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/ecdsa/private_jwtio_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5294152f"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/eddsa/private_ed25519_key.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "83de13b8"
+    },
+    {
+     "allowlisted": false,
+     "count": 7,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/hmac.rs",
+     "offset": 2309,
+     "pattern": "jwt",
+     "reason": null,
+     "sha256_prefix": "79a4d652"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_jwtio.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "efd73fc9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "e560fdd6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/jsonwebtoken-9.3.1/tests/rsa/private_rsa_key_pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "a8d14651"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-3.0.6/README.md",
+     "offset": 443,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 4,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-3.0.6/src/lib.rs",
+     "offset": 20799,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4d666213"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/README.md",
+     "offset": 955,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/chosen_header.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "4fd81622"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs1.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs1_with_preceeding_junk.pem",
+     "offset": 939,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs8-enc.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/pkcs8.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pem-rfc7468-0.7.0/tests/examples/ssh_rsa_pem_password.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "1b3f737d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5/tests/examples/rsa2048-priv-3prime.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "2e9c66dc"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs1-0.7.5/tests/examples/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-pbkdf2-sha256.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "4ef47692"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-encpriv-aes256-scrypt.pem",
+     "offset": 0,
+     "pattern": "pem-encrypted-private-key",
+     "reason": null,
+     "sha256_prefix": "52a2bba2"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v1.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "98c0830d"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/ed25519-priv-pkcs8v2.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "e876644e"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/p256-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "4f202ac9"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pkcs8-0.10.2/tests/examples/x25519-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "0c10e1d6"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10/tests/examples/pkcs1/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "f5691520"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10/tests/examples/pkcs1/rsa4096-priv.pem",
+     "offset": 0,
+     "pattern": "pem-rsa-private-key",
+     "reason": null,
+     "sha256_prefix": "35aed9d3"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rsa-0.9.10/tests/examples/pkcs8/rsa2048-priv.pem",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "5a443d45"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/ca.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "99971165"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/client.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "d4fe49ab"
+    },
+    {
+     "allowlisted": false,
+     "count": 1,
+     "location": "docker:blindpass-p06-pgtest:local!blobs/sha256/eadb378f8eddb93fdffe74d73ac1547e1b13032cd51a1fb8c122443f1c922975!usr/local/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/sqlx-0.8.6/tests/keys/server.key",
+     "offset": 0,
+     "pattern": "pem-private-key",
+     "reason": null,
+     "sha256_prefix": "c234459f"
+    }
+   ]
+  }
+ ],
+ "artifacts_clean_summary": {
+  "bytes": 0,
+  "count": 0,
+  "files": 0
+ },
+ "artifacts_total": 1,
+ "artifacts_with_results": 1,
+ "canaries": {
+  "count": 15,
+  "ids": [
+   {
+    "id": "23c6050a",
+    "source": "canary"
+   },
+   {
+    "id": "0d0f1d0b",
+    "source": "canary"
+   },
+   {
+    "id": "97155f18",
+    "source": "canary"
+   },
+   {
+    "id": "50d35be3",
+    "source": "canary"
+   },
+   {
+    "id": "5fa63dfb",
+    "source": "canary"
+   },
+   {
+    "id": "e4e47898",
+    "source": "canary"
+   },
+   {
+    "id": "1f35cbf9",
+    "source": "canary"
+   },
+   {
+    "id": "a4328765",
+    "source": "canary"
+   },
+   {
+    "id": "1c3f8812",
+    "source": "canary"
+   },
+   {
+    "id": "57a95d84",
+    "source": "canary"
+   },
+   {
+    "id": "584b6548",
+    "source": "canary"
+   },
+   {
+    "id": "ce0cceb4",
+    "source": "canary"
+   },
+   {
+    "id": "0c980342",
+    "source": "canary"
+   },
+   {
+    "id": "c614b60b",
+    "source": "canary"
+   },
+   {
+    "id": "02a5fd81",
+    "source": "canary"
+   }
+  ]
+ },
+ "controls": {
+  "detected": [
+   "tar",
+   "gz",
+   "bz2",
+   "xz",
+   "zip",
+   "ar",
+   "jsonl",
+   "wrapped",
+   "tar.gz",
+   "zst"
+  ],
+  "failed": [],
+  "ok": true,
+  "unavailable": [],
+  "zstd_backend": "module"
+ },
+ "excluded": [],
+ "finished": "2026-10-06T12:29:26Z",
+ "incomplete": [],
+ "python": "3.14.7",
+ "requested": [
+  "images"
+ ],
+ "result": "FAIL_EXPOSED",
+ "started": "2026-10-06T12:17:16Z",
+ "tool": "canary-scan",
+ "totals": {
+  "allowlisted_findings": 0,
+  "allowlisted_hits": 0,
+  "allowlisted_patterns": 4,
+  "archives": 6452,
+  "backups": 0,
+  "bytes_scanned": 7312393294,
+  "dumps": 19,
+  "entries": 108416,
+  "exposed": 192,
+  "files": 93737,
+  "findings": 49,
+  "hits": 4,
+  "image_layers": 18,
+  "images": 1,
+  "incomplete": 0,
+  "logs": 54,
+  "patterns": 143,
+  "transcripts": 0,
+  "zero_bytes_skipped": 2096636
+ },
+ "version": 1
+}

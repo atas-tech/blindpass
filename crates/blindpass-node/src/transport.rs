@@ -105,6 +105,18 @@ impl HttpsTransport {
         self.request_json("GET", api_path, None, None, timeout)
     }
 
+    /// Public JSON POST to one of the two recovering-controller paths only. The
+    /// recovery lane is metadata-only and carries no node credential.
+    pub fn post_recovery_json(
+        &self,
+        api_path: &str,
+        body: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, TransportError> {
+        validate_recovery_path(api_path)?;
+        self.request_checked("POST", api_path, None, Some(body), timeout)
+    }
+
     fn request_json(
         &self,
         method: &str,
@@ -114,6 +126,18 @@ impl HttpsTransport {
         timeout: Duration,
     ) -> Result<Vec<u8>, TransportError> {
         validate_path(api_path)?;
+        self.request_checked(method, api_path, token, body, timeout)
+    }
+
+    /// The caller has already validated `api_path` for its own API.
+    fn request_checked(
+        &self,
+        method: &str,
+        api_path: &str,
+        token: Option<&str>,
+        body: Option<&[u8]>,
+        timeout: Duration,
+    ) -> Result<Vec<u8>, TransportError> {
         if let Some(token) = token {
             validate_token(token)?;
         }
@@ -236,6 +260,14 @@ fn validate_path(path: &str) -> Result<(), TransportError> {
     Ok(())
 }
 
+fn validate_recovery_path(path: &str) -> Result<(), TransportError> {
+    if matches!(path, "/api/recovery/request" | "/api/recovery/page") {
+        Ok(())
+    } else {
+        Err(TransportError::InvalidPath)
+    }
+}
+
 fn validate_token(token: &str) -> Result<(), TransportError> {
     if token.is_empty()
         || token.len() > 4_096
@@ -336,7 +368,8 @@ fn parse_response(response: &[u8]) -> Result<Vec<u8>, TransportError> {
 #[cfg(test)]
 mod tests {
     use super::{
-        HttpsTransport, TransportError, build_config, parse_response, validate_path, validate_token,
+        HttpsTransport, TransportError, build_config, parse_response, validate_path,
+        validate_recovery_path, validate_token,
     };
     use std::time::Duration;
 
@@ -406,6 +439,60 @@ mod tests {
         assert_eq!(
             parse_response(b"response"),
             Err(TransportError::InvalidResponse)
+        );
+    }
+
+    #[test]
+    fn p06_rr03_recovery_posts_reach_exactly_two_public_paths_and_never_the_node_api() {
+        assert!(validate_recovery_path("/api/recovery/request").is_ok());
+        assert!(validate_recovery_path("/api/recovery/page").is_ok());
+        for path in [
+            "/api/recovery/other",
+            "/api/recovery/request/",
+            "/api/recovery/request?x=1",
+            "/api/recovery/../auth/me",
+            "/api/v3/node/poll",
+            "https://elsewhere.invalid/api/recovery/page",
+            "",
+        ] {
+            assert_eq!(
+                validate_recovery_path(path),
+                Err(TransportError::InvalidPath),
+                "{path}"
+            );
+        }
+        // The ordinary node API never reaches the recovery lane.
+        assert!(validate_path("/api/recovery/request").is_err());
+        let client = HttpsTransport::new("https://controller.example").unwrap();
+        assert_eq!(
+            client.post_recovery_json("/api/recovery/other", b"{}", Duration::from_secs(5)),
+            Err(TransportError::InvalidPath)
+        );
+        assert_eq!(
+            client.post_recovery_json("/api/recovery/page", b"{\"n\":1.5}", Duration::from_secs(5)),
+            Err(TransportError::InvalidJson)
+        );
+        assert_eq!(
+            client.post_json("/api/recovery/page", "token", b"{}", Duration::from_secs(5)),
+            Err(TransportError::InvalidPath)
+        );
+    }
+
+    #[test]
+    fn p06_rr03_recovery_requests_are_https_only_unauthenticated_and_do_not_follow_redirects() {
+        let config = String::from_utf8(build_config(
+            "https://controller.example/api/recovery/request",
+            "POST",
+            None,
+            Some(br#"{"version":1}"#),
+            15,
+        ))
+        .unwrap();
+        assert!(config.contains("proto = \"=https\""));
+        assert!(!config.contains("Authorization"));
+        assert!(!config.to_lowercase().contains("location"));
+        assert!(
+            !config.contains("insecure") && !config.contains("cacert") && !config.contains("proxy")
         );
     }
 

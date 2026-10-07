@@ -1,0 +1,3 @@
+sqlite_exit=0
+postgres_exit=0
+startup_exit=101

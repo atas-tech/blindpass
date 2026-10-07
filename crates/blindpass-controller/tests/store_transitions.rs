@@ -3085,6 +3085,67 @@ async fn schema_v3_clock_migrates_to_v4_and_fences_unknown_boot_anchor() {
 }
 
 #[tokio::test]
+async fn p06_reconcile_resolves_a_changed_boot_id_before_the_first_start_after_reboot() {
+    // With the external authority a reboot-time start is refused before it
+    // touches the database, so nothing has fenced the clock yet. Reconciliation
+    // must still treat the stale boot anchor as the regression it would fence.
+    let fixture = StoreFixture::new().await;
+    let store = fixture.store();
+    let request_id = store
+        .create_secret_request("boot-agent", "dummy-public-key", "reboot", "123456", 60)
+        .await
+        .expect("create request before reboot");
+    let stale = "p06-previous-boot-id";
+    if fixture.postgres_schema.is_some() {
+        let pool = PgPool::connect(&fixture.url)
+            .await
+            .expect("connect PostgreSQL fixture");
+        sqlx::query("UPDATE controller_clock SET boot_id = $1 WHERE id = 1")
+            .bind(stale)
+            .execute(&pool)
+            .await
+            .expect("simulate the previous boot");
+        pool.close().await;
+    } else {
+        let pool = sqlx::SqlitePool::connect(&fixture.url)
+            .await
+            .expect("connect SQLite fixture");
+        sqlx::query("UPDATE controller_clock SET boot_id = ? WHERE id = 1")
+            .bind(stale)
+            .execute(&pool)
+            .await
+            .expect("simulate the previous boot");
+        pool.close().await;
+    }
+    let repaired = Store::reconcile_clock(&fixture.url)
+        .await
+        .expect("reconcile the changed boot");
+    assert!(
+        repaired.regression_detected,
+        "a changed boot ID is a regression"
+    );
+    assert_eq!(repaired.removed_secret_requests, 1);
+    let reopened = Store::connect(&fixture.url)
+        .await
+        .expect("startup succeeds after reconciling the boot change");
+    assert!(
+        reopened
+            .secret_request_metadata(&request_id)
+            .await
+            .expect("read request")
+            .is_none(),
+        "state that depended on the old boot is purged"
+    );
+    // A second reconciliation on the same boot changes nothing.
+    let healthy = Store::reconcile_clock(&fixture.url)
+        .await
+        .expect("healthy reconciliation");
+    assert!(!healthy.regression_detected);
+    reopened.close().await;
+    fixture.close().await;
+}
+
+#[tokio::test]
 async fn clock_reconciliation_purges_expiring_state_and_restores_startup() {
     let fixture = StoreFixture::new().await;
     let store = fixture.store();

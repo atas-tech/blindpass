@@ -12,7 +12,14 @@
  */
 
 import { buildExchangeDeliveryMessage, createOpenClawAgentTransport, resolveOpenClawAgentTarget } from "./agent-transport.mjs";
-import { fulfillExchangeFlow, requestExchangeFlow, requestSecretFlow, cleanup } from "./sps-bridge.mjs";
+import {
+    SpsBaseUrlRequiredError,
+    cleanup,
+    fulfillExchangeFlow,
+    requestExchangeFlow,
+    requestSecretFlow,
+    resolveSpsBaseUrl,
+} from "./sps-bridge.mjs";
 import {
     deleteManagedSecret as deleteManagedSecretFromEncryptedStore,
     emitManagedStoreBootstrapReminder as emitManagedStoreBootstrapReminderFromEncryptedStore,
@@ -505,6 +512,21 @@ export function disposeStoredSecret(name = "default") {
 
 export { buildExchangeDeliveryMessage, createOpenClawAgentTransport, resolveOpenClawAgentTarget };
 
+// Resolved once per tool call, before anything is sent. In the published bundle (no default endpoint) an unset
+// SPS_BASE_URL is refused here with a fixed message: no flow starts and no agent key leaves the process. The
+// "Error:" prefix follows the other validation messages; the MCP adapter turns "Failed ..." text into the fixed
+// "Operation failed" and would hide the cause.
+function spsBaseUrlOrRefusal() {
+    try {
+        return { spsBaseUrl: resolveSpsBaseUrl() };
+    } catch (error) {
+        if (error instanceof SpsBaseUrlRequiredError) {
+            return { refusal: { content: [{ type: "text", text: `Error: ${error.message}` }] } };
+        }
+        throw error;
+    }
+}
+
 export default function register(api, runtime = {}) {
     const runRequestSecretFlow = runtime.requestSecretFlowFn ?? requestSecretFlow;
     const runRequestExchangeFlow = runtime.requestExchangeFlowFn ?? requestExchangeFlow;
@@ -616,6 +638,9 @@ export default function register(api, runtime = {}) {
                 };
             }
 
+            const endpoint = spsBaseUrlOrRefusal();
+            if (endpoint.refusal) return endpoint.refusal;
+
             try {
                 const exposePlaintext = shouldExposePlaintextToModel(process.env);
                 const transport = buildAgentTransport(api, runtime.agentTransportOptions ?? {});
@@ -625,7 +650,7 @@ export default function register(api, runtime = {}) {
                     fulfillerId,
                     priorExchangeId,
                     reservedTimeoutMs,
-                    spsBaseUrl: process.env.SPS_BASE_URL ?? "https://sps.blindpass.dev",
+                    spsBaseUrl: endpoint.spsBaseUrl,
                     agentId: resolveConfiguredAgentId(),
                     transport,
                 });
@@ -759,9 +784,12 @@ export default function register(api, runtime = {}) {
             // Routing params are optional if the context runtime provides sendText/sendMessage helpers.
             // We defer routing failures to the actual transport loop below to allow graceful fallbacks.
 
+            const endpoint = spsBaseUrlOrRefusal();
+            if (endpoint.refusal) return endpoint.refusal;
+
             try {
                 const exposePlaintext = shouldExposePlaintextToModel(process.env);
-                const spsBaseUrl = process.env.SPS_BASE_URL ?? "https://sps.blindpass.dev";
+                const spsBaseUrl = endpoint.spsBaseUrl;
 
                 const secret = await runRequestSecretFlow({
                     description,
@@ -922,10 +950,13 @@ export default function register(api, runtime = {}) {
                 };
             }
 
+            const endpoint = spsBaseUrlOrRefusal();
+            if (endpoint.refusal) return endpoint.refusal;
+
             try {
                 const result = await runFulfillExchangeFlow({
                     fulfillmentToken,
-                    spsBaseUrl: process.env.SPS_BASE_URL ?? "https://sps.blindpass.dev",
+                    spsBaseUrl: endpoint.spsBaseUrl,
                     agentId: resolveConfiguredAgentId(),
                     resolveSecret: async (secretName) => resolveStoredSecret(api, context, secretName),
                 });

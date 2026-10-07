@@ -1,0 +1,8 @@
+canary-scan PASS: 1068 files, 2339 entries, 62503264 bytes scanned; 0 exposed, 0 allowlisted, 0 incomplete
+  controls: ok (tar, gz, bz2, xz, zip, ar, jsonl, wrapped, tar.gz, zst; zstd backend module)
+  classes: archives=18, images=1, image_layers=10, logs=2
+  unused allowlist entry: pattern * *!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3
+
+real	0m17.689s
+user	0m1.921s
+sys	0m0.122s

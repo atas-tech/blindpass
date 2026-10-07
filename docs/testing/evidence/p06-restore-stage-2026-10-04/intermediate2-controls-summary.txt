@@ -1,0 +1,9 @@
+overwrite_control_exit=101
+authority_postgres_gate_exit=101
+owned_authority_cleanup_errors=0
+invalidation_control_exit=101
+Traceback (most recent call last):
+  File "/tmp/p06-restore-controls.py", line 34, in <module>
+    for path,value in pins.items():assert hashlib.sha256((repo/path).read_bytes()).hexdigest()==value
+                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

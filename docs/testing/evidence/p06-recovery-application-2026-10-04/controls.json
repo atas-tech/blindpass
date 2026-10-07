@@ -1,0 +1,16 @@
+{
+  "controls": [
+    {
+      "control": "stored-signature-control",
+      "exit_code": 101,
+      "actual_assertion_failure": true
+    },
+    {
+      "control": "rollback-control",
+      "exit_code": 101,
+      "actual_assertion_failure": true
+    }
+  ],
+  "production_sources_unchanged": true,
+  "private_tree_removed": true
+}

@@ -16,9 +16,11 @@ pub mod delivery;
 pub mod deployment;
 pub mod fleet;
 pub mod identity;
+pub mod open_flags;
 pub mod policy;
 pub mod protocol;
 pub mod provisioning;
+pub mod recovery;
 pub mod secret;
 pub mod signing;
 

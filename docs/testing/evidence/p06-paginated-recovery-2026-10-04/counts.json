@@ -1,0 +1,11 @@
+{
+  "workspace_passed": 726,
+  "workspace_failed": 0,
+  "workspace_ignored": 72,
+  "workspace_result_targets": 78,
+  "broker_final_library": 325,
+  "core_page_tests": 7,
+  "new_control_tests": 8,
+  "negative_controls": 2,
+  "overlapping_counts": true
+}

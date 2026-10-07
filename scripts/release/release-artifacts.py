@@ -5,7 +5,7 @@ import argparse
 import hashlib
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 import subprocess
@@ -149,6 +149,147 @@ def copy_tree(source, target, omitted_launchers=None):
             raise ReleaseError('non-regular runtime input')
 
 
+REPOSITORY_URL = 'https://github.com/atas-tech/blindpass'
+COMPOSE_FILES = ('compose.sqlite.yml', 'compose.initialize.yml', 'compose.postgres.yml',
+                 'compose.backup-sqlite.yml', 'compose.backup-postgres.yml',
+                 'compose.restore-sqlite.yml', 'compose.restore-postgres.yml',
+                 'compose.upgrade-sqlite.yml', 'compose.upgrade-postgres.yml',
+                 'compose.handoff-sqlite.yml', '.env.example')
+# Operator-facing documents shipped inside the archives. Repository-only files they link to (evidence,
+# decision records, tests) are not shipped; their links are pinned to the release tag when the archive is built.
+CONTROLLER_DOCS = ('docs/deploy/README.md', 'docs/deploy/native-quickstart.md', 'docs/deploy/compose-quickstart.md',
+                   'docs/deploy/controller-ingress.md', 'docs/deploy/handoff.md', 'docs/deploy/recovery-activation.md',
+                   'docs/deploy/recovery-stage.md', 'docs/deploy/release-layout.md', 'docs/deploy/upgrade.md',
+                   'docs/deploy/node-candidate.md', 'docs/security/operator-auth-and-headers.md',
+                   'docs/release/README.md', 'docs/release/known-limitations.md', 'docs/release/rollback.md')
+NODE_DOCS = ('docs/deploy/node-candidate.md',)
+LINK = re.compile(r'(\[[^\]]*\]\()([^)\s]+)(\))')
+
+
+def _outside_fences(text):
+    """Yield (is_prose, chunk) so links inside fenced code blocks are neither rewritten nor checked."""
+    prose, fenced, chunk = True, False, []
+    for line in text.splitlines(keepends=True):
+        if line.lstrip().startswith('```'):
+            if chunk: yield (not fenced), ''.join(chunk); chunk = []
+            fenced = not fenced
+            yield False, line
+            continue
+        chunk.append(line)
+    if chunk: yield (not fenced), ''.join(chunk)
+
+
+def _split_link(target):
+    path, hash_, anchor = target.partition('#')
+    return path, (hash_ + anchor)
+
+
+def _is_external(target):
+    return '://' in target or target.startswith(('mailto:', '#'))
+
+
+def rewrite_links(text, doc_path, shipped, version, exists=None):
+    """Keep links that resolve inside the archive; pin repository-only targets to the release tag; refuse dead ones."""
+    exists = exists or (lambda path: (ROOT / path).exists())
+    base = PurePosixPath(doc_path).parent
+
+    def replace(match):
+        target = match.group(2)
+        if _is_external(target):
+            return match.group(0)
+        path, anchor = _split_link(target)
+        resolved = os.path.normpath((base / path).as_posix())
+        if resolved.startswith('..') or resolved.startswith('/'):
+            raise ReleaseError(f'shipped document link leaves the repository: {doc_path} -> {target}')
+        inside = resolved in shipped or any(name.startswith(resolved.rstrip('/') + '/') for name in shipped)
+        if inside:
+            return match.group(0)
+        if not exists(resolved):
+            raise ReleaseError(f'dead link in shipped document: {doc_path} -> {target}')
+        kind = 'tree' if (ROOT / resolved).is_dir() or resolved in ('docs/product/decisions',) else 'blob'
+        return f'{match.group(1)}{REPOSITORY_URL}/{kind}/v{version}/{resolved}{anchor}{match.group(3)}'
+
+    return ''.join(LINK.sub(replace, chunk) if prose else chunk for prose, chunk in _outside_fences(text))
+
+
+def unresolved_links(stage):
+    """Relative links in shipped documents that do not resolve to a file or directory inside the archive."""
+    stage = stage.resolve()
+    problems = []
+    for document in sorted(stage.rglob('*.md')):
+        for prose, chunk in _outside_fences(document.read_text()):
+            if not prose:
+                continue
+            for _, target, _ in LINK.findall(chunk):
+                if _is_external(target):
+                    continue
+                path, _anchor = _split_link(target)
+                resolved = (document.parent / path).resolve()
+                if not resolved.is_relative_to(stage) or not resolved.exists():
+                    problems.append((document.relative_to(stage).as_posix(), target))
+    return problems
+
+
+def stage_operator_docs(stage, version, docs):
+    for name in docs:
+        copy_file(ROOT / name, stage / name)
+    shipped = {p.relative_to(stage).as_posix() for p in stage.rglob('*') if p.is_file()}
+    # LICENSES.md ships at the archive root and links to repository files like the guides do.
+    for name in (*docs, 'LICENSES.md'):
+        document = stage / name
+        document.write_text(rewrite_links(document.read_text(), name, shipped, version))
+    problems = unresolved_links(stage)
+    if problems:
+        raise ReleaseError(f'shipped documents have unresolved links: {problems[0][0]} -> {problems[0][1]}')
+
+
+def stage_common_files(stage):
+    copy_file(ROOT / 'packages/console/LICENSE', stage / 'LICENSE')
+    copy_file(ROOT / 'LICENSES.md', stage / 'LICENSES.md')
+
+
+def stage_controller_files(stage, version):
+    """Everything in the controller archive that is not a built binary."""
+    copy_file(ROOT / 'deploy/native/controller.env.example', stage / 'config/controller.env.example')
+    copy_file(ROOT / 'deploy/native/controller.env.example', stage / 'deploy/native/controller.env.example')
+    for name in ['controller-install.py', 'controller-backup-credential-check.py', 'install.sh', 'uninstall.sh',
+                 'blindpass-controller.service', 'blindpass-controller-initialize.service',
+                 'blindpass-controller-reconcile-clock.service', 'blindpass-controller-upgrade.service',
+                 'blindpass-controller-restore.service',
+                 'blindpass-controller-backup.service',
+                 'blindpass-controller-backup-credential-check.service',
+                 'blindpass-controller-backup.timer', 'blindpass-controller.sysusers', 'blindpass-controller.tmpfiles']:
+        copy_file(ROOT / 'deploy/native' / name, stage / 'deploy/native' / name, executable=name.endswith(('.sh','.py')))
+    for name in ('recovery-authority.sql', 'recovery-authority-v2-to-v3.sql', 'recovery-authority-v3-to-v4.sql',
+                 'recovery-authority-v4-to-v5.sql', 'authority-runtime-role.sql', 'authority-register.sql',
+                 'authority-activate.sql', 'authority-fence.sql', 'authority-recover-attest.sql',
+                 'authority-recover-status.sql', 'authority-recover-activate.sql'):
+        copy_file(ROOT / 'deploy/controller' / name, stage / 'deploy/controller' / name)
+    for name in COMPOSE_FILES:
+        copy_file(ROOT / 'deploy/controller' / name, stage / 'deploy/controller' / name)
+    init = ROOT / 'deploy/controller/postgres-init'
+    for file in sorted(init.iterdir()):
+        copy_file(file, stage / 'deploy/controller/postgres-init' / file.name)
+    for name in ('nginx.conf.example', 'Caddyfile.example'):
+        copy_file(ROOT / 'deploy/proxy' / name, stage / 'deploy/proxy' / name)
+    stage_common_files(stage)
+    (stage / 'README.md').write_text(
+        f'# BlindPass controller {version}\n\n'
+        'Start with [docs/deploy/README.md](docs/deploy/README.md): prerequisites, the native and Docker Compose '
+        'paths, upgrade and recovery runbooks, and what this release does and does not support.\n\n'
+        'Verify the downloaded assets first ([docs/release/README.md](docs/release/README.md)).\n')
+    stage_operator_docs(stage, version, CONTROLLER_DOCS)
+
+
+def stage_node_files(stage, version):
+    stage_common_files(stage)
+    (stage / 'README.md').write_text(
+        f'# BlindPass node {version}\n\n'
+        'This package is an unaccepted candidate with no installer. Read '
+        '[docs/deploy/node-candidate.md](docs/deploy/node-candidate.md) before using it.\n')
+    stage_operator_docs(stage, version, NODE_DOCS)
+
+
 def prepare(profile, stage, options, version):
     binaries = ['blindpass-controller', 'blindpass'] if profile == 'controller' else [
         'blindpass-broker', 'blindpass-node', 'blindpass-provision', 'blindpass-credential-loader', 'blindpass-consumer',
@@ -168,18 +309,7 @@ def prepare(profile, stage, options, version):
         if info.get('version') != version or not info.get('console_embedded') or not info.get('input_embedded'):
             raise ReleaseError('controller must embed both UI surfaces at this version')
         metadata['controller'] = info
-        copy_file(ROOT / 'deploy/native/controller.env.example', stage / 'config/controller.env.example')
-        copy_file(ROOT / 'deploy/native/controller.env.example', stage / 'deploy/native/controller.env.example')
-        copy_file(ROOT / 'docs/deploy/release-layout.md', stage / 'docs/deploy/release-layout.md')
-        copy_file(ROOT / 'docs/deploy/controller-ingress.md', stage / 'docs/deploy/controller-ingress.md')
-        copy_file(ROOT / 'docs/deploy/native-quickstart.md', stage / 'docs/deploy/native-quickstart.md')
-        for name in ['controller-install.py', 'install.sh', 'uninstall.sh',
-                     'blindpass-controller.service', 'blindpass-controller-initialize.service',
-                     'blindpass-controller-reconcile-clock.service', 'blindpass-controller-backup.service',
-                     'blindpass-controller-backup.timer', 'blindpass-controller.sysusers', 'blindpass-controller.tmpfiles']:
-            copy_file(ROOT / 'deploy/native' / name, stage / 'deploy/native' / name, executable=name.endswith(('.sh','.py')))
-        for name in ('nginx.conf.example', 'Caddyfile.example'):
-            copy_file(ROOT / 'deploy/proxy' / name, stage / 'deploy/proxy' / name)
+        stage_controller_files(stage, version)
     else:
         if not options.node_root or not options.browser_root:
             raise ReleaseError('node profile requires reviewed Node root and pinned browser root')
@@ -224,12 +354,11 @@ def prepare(profile, stage, options, version):
         metadata['node_runtime_version'] = node_version
         metadata['host_support'] = 'unaccepted candidate; broker requires exact P01 profile and runtime checks'
         metadata['probe_units'] = 'P01 examples only; never enable as a production backup/workload'
+        stage_node_files(stage, version)
         copy_file(ROOT / 'deploy/native/blindpass-node.env.example', stage / 'config/blindpass-node.env.example')
         for file in sorted((ROOT / 'deploy/native').iterdir()):
             if file.suffix in ('.service', '.socket', '.sysusers', '.tmpfiles') and not file.name.startswith('blindpass-controller'):
                 copy_file(file, stage / 'deploy/native' / file.name)
-    copy_file(ROOT / 'packages/console/LICENSE', stage / 'LICENSE')
-    copy_file(ROOT / 'LICENSES.md', stage / 'LICENSES.md')
     metadata.update({'format_version': 1, 'profile': profile, 'version': version, 'architecture': options.arch,
                      'build_baseline': 'debian-bookworm/glibc-2.36', 'elf': elf,
                      'source_commit': run(['git', '-C', str(ROOT), 'rev-parse', 'HEAD']).strip(),
@@ -247,7 +376,11 @@ def main():
     parser.add_argument('--arch', choices=ARCHITECTURES, required=True)
     parser.add_argument('--node-root', type=Path)
     parser.add_argument('--browser-root', type=Path)
+    parser.add_argument('--allow-dirty', action='store_true',
+                        help='package a tree with uncommitted changes; the manifest records source_dirty=true')
     options = parser.parse_args()
+    if not options.allow_dirty and run(['git', '-C', str(ROOT), 'status', '--porcelain']).strip():
+        raise ReleaseError('refusing to package uncommitted changes; commit them or pass --allow-dirty for a local candidate')
     version = tomllib.loads((ROOT / 'Cargo.toml').read_text())['workspace']['package']['version']
     if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[a-zA-Z0-9.-]+)?', version):
         raise ReleaseError('unsafe release version')

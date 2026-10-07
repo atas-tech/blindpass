@@ -1,0 +1,13 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.71s
+     Running tests/postgres_config_diagnostics.rs (target/debug/deps/postgres_config_diagnostics-ff40c42059c99d6b)
+
+running 3 tests
+test p06_pgq01_actual_startup_refuses_unknown_options_without_logging_credentials ... P06-PGQ01 format=json dummy_canary_logged=false startup_timed_out=false
+P06-PGQ01 format=text dummy_canary_logged=false startup_timed_out=false
+ok
+test p06_pgq02_supported_and_encoded_names_work_unknown_or_malformed_names_refuse ... ok
+test p06_pgq03_production_file_and_test_mode_url_have_the_same_safe_refusal ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

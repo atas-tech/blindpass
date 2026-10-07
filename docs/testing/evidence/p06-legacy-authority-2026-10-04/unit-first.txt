@@ -1,0 +1,11 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 17.78s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_controller-e28e5bf0bb37d821)
+
+running 3 tests
+test legacy_authority::tests::p06_la06_baseline_is_compatible_and_later_contexts_are_distinct ... ok
+test legacy_authority::tests::p06_la06_independent_dummy_hmac_vectors_match_explicit_context ... ok
+test legacy_authority::tests::p06_la06_invalid_context_and_unversioned_later_claims_refuse ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.00s
+

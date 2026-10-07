@@ -1,0 +1,18 @@
+[
+  {
+    "broker_sha256": "977a0637a4f3357182d49e089174c79e6c8310cf7f2df189bd1f60833b963542",
+    "guest_helper_sha256": "ad13fe6e225205b44c48793519d40e615e7b191dacf7b2d511a7a87e40af1051",
+    "kernel": "6.8.0-139-generic",
+    "systemd": "systemd 255 (255.4-1ubuntu8.17)",
+    "python": "3.12.3",
+    "guest": "a"
+  },
+  {
+    "broker_sha256": "977a0637a4f3357182d49e089174c79e6c8310cf7f2df189bd1f60833b963542",
+    "guest_helper_sha256": "ad13fe6e225205b44c48793519d40e615e7b191dacf7b2d511a7a87e40af1051",
+    "kernel": "6.8.0-139-generic",
+    "systemd": "systemd 255 (255.4-1ubuntu8.17)",
+    "python": "3.12.3",
+    "guest": "b"
+  }
+]

@@ -1,0 +1,9 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 2 tests
+test p06_pw01_inline_partial_unsafe_and_invalid_authority_configuration_refuses_without_echo ... ok
+test p06_pw01_missing_production_authority_refuses_configuration_and_writes ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.22s
+

@@ -1,0 +1,2 @@
+    Checking blindpass-controller v0.1.0 ($REPOSITORY/crates/blindpass-controller)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 8.14s

@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0425]: cannot find function `build_app_with_ownership` in module `blindpass_controller::app`
+   --> crates/blindpass-controller/tests/recovery_authority.rs:738:63
+    |
+738 |     let server = HttpServer::start(blindpass_controller::app::build_app_with_ownership(http_config(&directory),Some(store.clone()),...
+    |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^ not found in `blindpass_controller::app`
+
+error[E0425]: cannot find function `build_app_with_ownership` in module `blindpass_controller::app`
+   --> crates/blindpass-controller/tests/recovery_authority.rs:754:63
+    |
+754 |     let server = HttpServer::start(blindpass_controller::app::build_app_with_ownership(http_config(&directory),Some(store.clone()),...
+    |                                                               ^^^^^^^^^^^^^^^^^^^^^^^^ not found in `blindpass_controller::app`
+
+error[E0425]: cannot find value `ownership_gate` in module `blindpass_controller::recovery_authority`
+   --> crates/blindpass-controller/tests/recovery_authority.rs:808:109
+    |
+808 |     })).layer(axum::middleware::from_fn_with_state(holder.clone(),blindpass_controller::recovery_authority::ownership_gate));
+    |                                                                                                             ^^^^^^^^^^^^^^ not found in `blindpass_controller::recovery_authority`
+
+For more information about this error, try `rustc --explain E0425`.
+error: could not compile `blindpass-controller` (test "recovery_authority") due to 3 previous errors

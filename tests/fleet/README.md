@@ -277,6 +277,149 @@ They verify the revoked grant remains denied after a fresh signed time reply.
 The VM scenarios above exercise policy, grant revocation and node revocation
 replay through the node HTTPS transport.
 
+## P06 journal checks
+
+The P06 [journal checkpoint](../../docs/testing/evidence/p06-consumption-journal-2026-10-03.md)
+adds operation/epoch inspection to the existing crash-after-intent scenario.
+The full normal SQLite driver must reach the actual abort/restart/no-marker and
+replay assertions before CJ06 is claimed; earlier main-stage failures do not
+establish that scenario. `python3 tests/fleet/p03-broker-event-test.py` executes
+four isolated cases for the exact guest queue assertion, including schema-5
+header references and the broker's stored three-field events. It cannot replace
+the VM. An original waiter may settle first on grant or node revocation; the
+subsequent fresh invocation after restart still requires node-revoked denial.
+
+## P06 recovery relay rehearsal
+
+`p06-relay-vm.py` is the RC09-RR03 actual / RR04 subset harness (the
+[evidence record](../../docs/testing/evidence/p06-relay-vm-2026-10-05.md) lists what
+it proves and what it does not). A production-mode, authority-backed controller
+with built-in TLS runs on the host; a real broker and node in the pinned P01 guest
+enroll over verified HTTPS, one grant is consumed, an authenticated backup is
+restored under a `recovering` authority record, and the guest runs
+`blindpass-node recovery-relay` against the real broker socket. It also covers TLS
+name/trust failures, a stalled and a restarted controller, an expired nonce,
+malformed frames, a broker restart and the lost-page `rebase_required` case.
+
+```
+cargo build --release -p blindpass-controller -p blindpass-cli -p blindpass-broker -p blindpass-node
+PATH=$HOME/.local/bin:$PATH python3 tests/fleet/p06-relay-vm.py [--until source|enroll|grant|restore|faults|rebase|relay]
+```
+
+It needs `/dev/kvm`, QEMU, `cloud-localds`, the pinned image and the
+`blindpass-postgres` container on 5433 (a random authority database and roles are
+created and dropped). Exit 78 with `P06-RR-UNSUPPORTED` means a prerequisite is
+missing and is not a pass. `BLINDPASS_P06_DEBUG=1` prints guest stderr and
+`BLINDPASS_P06_KEEP_ARTIFACTS=1` keeps the run directory and authority database.
+This is not RR05: nothing is activated and no SourceStopProof exists.
+
+## P06 recovery activation, PostgreSQL store and two-node matrix
+
+`p06-recovery-activation-vm.py` takes the relay rehearsal through review, source-stop attestation, activation, an ordinary grant,
+the refused old source and a restore-based rollback (`--scenario main`) or a named node waiver (`--scenario waiver`).
+`p06-recovery-matrix-vm.py` runs the same recovery with **two** real broker+node pairs in two guests (SSH ports 22231 and
+22232, override with `BLINDPASS_P06_SSH_PORT` and `BLINDPASS_P06_SSH_PORT_B`):
+
+| Scenario | What it proves |
+|----------|----------------|
+| `refusal` | A covered, B neither covered nor waived: review completion and activation are refused, the controller is not fenced, the record is unchanged |
+| `waiver` | B waived by name: activation succeeds, A online and consuming a grant, B stays revoked and a workload registration for B is refused (`node_unavailable`) |
+| `both` | activation refused while only A is covered; B relays after A; both nodes online and each consumes an ordinary grant |
+
+`--backend postgres` (or `BLINDPASS_P06_BACKEND=postgres`) on the relay, activation and matrix harnesses keeps the controller
+store in a PostgreSQL schema of the `blindpass-postgres` fixture. The host has no PGDG toolkit, so `backup create`,
+`backup verify` and `restore` run in the controller image (`BLINDPASS_P06_TOOLKIT_IMAGE`, default
+`blindpass-p06-controller:pkgrec`, a locally built image of `deploy/controller/Dockerfile` from the same tree): the run directory is handed to UID 10001 for the
+duration of the call and returned afterwards, and the image defaults `BLINDPASS_PROXY_REQUIRED` and `BLINDPASS_DATA_DIR` are
+overridden. The controller process itself still runs on the host. The PostgreSQL relay harness runs the `source`, `enroll`,
+`grant`, `restore` and `relay` stages only (the fault and rebase stages stay SQLite-only).
+
+```
+PATH=$HOME/.local/bin:$PATH python3 tests/fleet/p06-recovery-activation-vm.py [--backend postgres] --scenario main|waiver
+PATH=$HOME/.local/bin:$PATH python3 tests/fleet/p06-recovery-matrix-vm.py [--backend postgres] --scenario refusal|waiver|both
+```
+
+The prerequisites and exit-78 convention are those of the relay rehearsal. Records:
+[recovery activation](../../docs/testing/evidence/p06-recovery-activation-2026-10-05.md),
+[recovery matrix](../../docs/testing/evidence/p06-recovery-matrix-2026-10-05.md). Run the harnesses one at a time: they share the
+fixed ports 8443 and 22231 and the PostgreSQL fixture.
+
+## P06 real broker and node on the shipped Compose profiles
+
+`p06-compose-node-vm.py` ([evidence record](../../docs/testing/evidence/p06-compose-node-2026-10-05.md)) runs the recovery
+path against the **packaged Compose stack** instead of a host controller process. The controller is the shipped
+`deploy/controller/compose.<profile>.yml` project (pinned image, authority in its own `verify-full` TLS container, shipped
+backup and restore jobs) behind an nginx edge generated from `deploy/proxy/nginx.conf.example` (the harness rewrites only the
+names, the `:8443` suffix of the `Host` headers and the upstream address). A real broker and node in a QEMU guest enroll over
+verified HTTPS through that edge, consume a grant, and the guest then recovers into a **second** Compose project restored by the
+shipped restore jobs; the edge container keeps its name, port and certificate and is only pointed at the new project.
+
+| Scenario | What it proves |
+|----------|----------------|
+| `main` | node enrollment and a grant through the edge; shipped backup job while serving; fence and stop; restore into a second project (host custody refused, PostgreSQL init-hook schema refused with its fixed reason until dropped); gate refusals; original stack refused while recovering; completion refused for an uncovered node, then the real relay covers it; review, attestation, activation; the unchanged node returns (`status --nodes --require-online`, reconnect time recorded); an ordinary grant; original stack refused and its SQLite database byte-unchanged; no credential in any log |
+| `waiver` | the node never reports: waived by name, stays revoked, the controller still activates and serves, the online gate fails for it |
+
+```
+PATH=$HOME/.local/bin:$PATH python3 tests/fleet/p06-compose-node-vm.py --profile sqlite|postgres [--scenario main|waiver]
+```
+
+Prerequisites: those of the relay rehearsal (`/dev/kvm`, QEMU, the pinned guest image, release `blindpass`, `blindpass-broker`,
+`blindpass-node` and `blindpass-workload-client` built from the same tree), plus Docker, the controller image
+(`BLINDPASS_P06_CONTROLLER_IMAGE`, default `blindpass-p06-controller:node`, built from `deploy/controller/Dockerfile`) and the edge image
+(`BLINDPASS_P06_EDGE_IMAGE`, default `blindpass-p06-edge:local`, from `tests/deployment/edge.Dockerfile`). It does **not** need the
+`blindpass-postgres` fixture. It uses the fixed ports 127.0.0.1:8443 and SSH 22231 and the Docker subnets 172.29.81-84.0/24, so run it
+alone, not beside another harness. Exit 78 means a prerequisite is missing. `BLINDPASS_P06_DEBUG=1` prints tool diagnostics from
+disposable containers and `BLINDPASS_P06_KEEP_ARTIFACTS=1` keeps the run directory.
+
+## P06 real broker and node on the packaged native controller
+
+`p06-native-node-vm.py` ([evidence record](../../docs/testing/evidence/p06-native-node-2026-10-05.md)) uses **two** QEMU/KVM
+guests. Guest C runs the packaged native controller (the bookworm-baseline archive installed by `controller-install.py`, built-in
+TLS from a throwaway test CA, the documented `BLINDPASS_LISTEN` step for a remote direct-TLS controller, the guest's own PostgreSQL
+as the authority). Guest N runs a real `blindpass-broker` and `blindpass-node` enrolled over verified HTTPS: C forwards host
+`127.0.0.1:8443` to its listener and N resolves `p03-controller` to the QEMU gateway `10.0.2.2`. The flow is the Compose one:
+enrollment and a grant, the packaged backup unit, fence, restore through `blindpass-controller-restore.service` into a second
+private path on C (then installed into the service paths), relay, review, attestation, activation, reconnect, an ordinary grant
+and the stale-source drills (the original state refused as a second instance of the packaged unit while the restored controller
+serves, and when swapped into the service paths). `tests/deployment/native-node-guest.py` is the controller-guest driver.
+
+| Scenario | What it proves |
+|----------|----------------|
+| `main` | enrollment and a grant; packaged backup while serving; fence; restore (host custody refused, no operator input skipped); gate refusals; completion refused while the real node is uncovered, then the real relay covers it; review, attestation, activation; the unchanged node returns (`status --nodes --require-online`, reconnect time); an ordinary grant; original controller refused (authority guard and recovered-epoch state check; its SQLite file byte-unchanged); no credential in any log |
+| `waiver` | the node never reports: waived by name, stays revoked, the controller still activates and serves, the online gate fails for it |
+
+```
+BUNDLE=$(mktemp -d)
+docker build --file scripts/release/Dockerfile --target export --output type=local,dest=$BUNDLE/bin .
+scripts/release/build-tarballs.sh --profile controller --arch x86_64 --bin-dir $BUNDLE/bin --output-dir $BUNDLE/out --allow-dirty
+PATH=$HOME/.local/bin:$PATH python3 tests/fleet/p06-native-node-vm.py \
+  --archive $BUNDLE/out/blindpass-controller-0.1.0-linux-x86_64.tar.zst --bin-dir $BUNDLE/bin \
+  [--os ubuntu-24.04|debian-12 --controller-image IMAGE --controller-image-sha256 HEX] [--scenario main|waiver]
+```
+
+Prerequisites: `/dev/kvm`, QEMU, `cloud-localds`, OpenSSL, the pinned Ubuntu image for guest N (and for guest C unless
+`--controller-image` names the pinned Debian 12 image), and the `blindpass`, `blindpass-broker`, `blindpass-node` and
+`blindpass-workload-client` binaries (`--bin-dir`, default `target/release`; use the export the archive was built from). It needs
+no Docker at run time and no PostgreSQL fixture, but uses the fixed ports 127.0.0.1:8443, SSH 22262 (guest C) and 22231 (guest N), so
+run it alone. Exit 78 means a prerequisite is missing. `BLINDPASS_P06_KEEP_ARTIFACTS=1` keeps the run directory.
+
+`--scenario serving-faults` ([record](../../docs/testing/evidence/p06-serving-faults-2026-10-06.md)) runs the `main` recovery
+sequence and then, on the activated controller: `browser` (a stock Chromium, `p06-console-browser.mjs`, signs in to the embedded
+console over verified HTTPS with the served leaf's public key pinned, reads the nodes and approvals pages, checks CSP and origin
+use, signs out through the UI and replays the old cookie; needs `node`, the locked Playwright package and a Chromium, taken from
+`BLINDPASS_PLAYWRIGHT_EXECUTABLE_PATH` or `/usr/bin/chromium`), `ui_logout` (logout without CSRF or from a foreign origin, replay,
+second logout, another session and the node unaffected) and `disk_full` (every free block of the data filesystem is taken, then
+released; D12 fencing, session and node recovery and an ordinary grant afterwards). Wrap the command in
+`tests/deployment/loaded-bounds.py --factor 2 --` for the loaded runs. The harness polls the node list through one operator
+session because each login counts against the controller's 10-a-minute account limit.
+
+`--scenario ai-task` ([record](../../docs/testing/evidence/p06-stock-ai-client-2026-10-06.md)) runs the P05 managed Grafana workflow in a
+fresh node guest against the packaged controller (`p06-ai-guest.sh`, `fleet-browser-guest.mjs` with
+`BLINDPASS_P06_REMOTE_CONTROLLER=1`). Needs `P05_GRAFANA_HOME` (a verified Grafana 13.2.3 distribution), the Node 26.10 and Playwright 1.58.2
+prerequisites of the P05 helper harness, `BLINDPASS_P06_NODE_MEMORY_MB=2048` and `BLINDPASS_P06_NODE_DISK_GB=8`. Set
+`BLINDPASS_P05_AI_CLIENT=claude` or `codex` to run the stock client on this host's own sign-in (it spends that account's usage); without it
+only the managed workflow runs.
+
 ## P05 native restic backup runner (blocked, never run)
 
 `p05-backup.sh` and `p05-backup-guest.sh` are the P05-I05 / P05-E02 harness for
@@ -301,3 +444,28 @@ alive across operator logout, repeats the cycle with a native
 `LoadCredentialEncrypted=` unit derived from the same example, and scans files,
 process arguments and the journal for generated canaries with positive controls.
 See `docs/product/p05-native-service.md` for the scope and what stays open.
+
+## P06 planned handoff rehearsal
+
+`p06-handoff-vm.py` ([evidence record](../../docs/testing/evidence/p06-handoff-2026-10-05.md),
+[runbook](../../docs/deploy/handoff.md)) reuses the relay harness: a production-mode controller on the host
+enrolls a real broker and node in the pinned guest and consumes one grant, is fenced and handed off
+(`blindpass handoff export|import`, `authority-activate.sql`) to a second host controller with new
+directories on the same TLS endpoint, while the guest node stays enrolled. It covers abort before
+activation (and the source serving again), a second export, interrupted export and import, refusals,
+the destination coming up, the node being seen by the destination (`status --nodes --require-online`
+run inside the guest, bound 120 s, measured time printed), a grant issued and consumed after the
+handoff, the stale source refusing with the record active and the destination down, abort refusing
+after activation, a destination restart and a credential scan of every log.
+
+```
+cargo build --release -p blindpass-controller -p blindpass-cli -p blindpass-broker -p blindpass-node
+cargo build --release --locked -p blindpass-controller --features p02-test-failpoints --target-dir /tmp/bp-failpoint-target
+BLINDPASS_P06_FAILPOINT_CONTROLLER=/tmp/bp-failpoint-target/release/blindpass-controller \
+  PATH=$HOME/.local/bin:$PATH python3 tests/fleet/p06-handoff-vm.py [--until source|export|abort|import|activate|grant|restart]
+```
+
+Same prerequisites and exit codes as the relay rehearsal (exit 78 is not a pass). Without
+`BLINDPASS_P06_FAILPOINT_CONTROLLER` the two interrupted-step cases (`H1a`, `H7a`) print `SKIPPED`.
+The failpoint binary is used only for those two commands; everything else runs the release build.
+The scenario uses the host SSH port 22231 like the relay harness, so the two cannot run together.

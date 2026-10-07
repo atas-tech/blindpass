@@ -1,0 +1,30 @@
+[
+  {
+    "check": "node-build",
+    "exit_code": 0
+  },
+  {
+    "check": "node-test",
+    "exit_code": 0
+  },
+  {
+    "check": "rust-workspace",
+    "exit_code": 0
+  },
+  {
+    "check": "clippy-workspace",
+    "exit_code": 0
+  },
+  {
+    "check": "format",
+    "exit_code": 0
+  },
+  {
+    "check": "openapi",
+    "exit_code": 0
+  },
+  {
+    "check": "diff-check",
+    "exit_code": 0
+  }
+]

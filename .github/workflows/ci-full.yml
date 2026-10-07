@@ -12,10 +12,6 @@ concurrency:
 
 env:
   DATABASE_URL: postgresql://blindpass:localdev@127.0.0.1:5433/blindpass
-  REDIS_URL: redis://127.0.0.1:6380
-  SPS_HMAC_SECRET: ci-only-hmac-canary
-  SPS_USER_JWT_SECRET: ci-only-user-jwt-canary
-  SPS_AGENT_JWT_SECRET: ci-only-agent-jwt-canary
 
 jobs:
   workspace:
@@ -26,29 +22,6 @@ jobs:
       fail-fast: false
       matrix:
         node-version: ["24.21.0", "26.10.0"]
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: blindpass
-          POSTGRES_USER: blindpass
-          POSTGRES_PASSWORD: localdev
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U blindpass -d blindpass"
-          --health-interval 1s
-          --health-timeout 3s
-          --health-retries 30
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6380:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 1s
-          --health-timeout 3s
-          --health-retries 30
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -71,86 +44,14 @@ jobs:
       - name: Run default workspace tests
         run: npm test
 
-      - name: Run Redis integration tests
-        run: npm run test:integration
-
-      - name: Run PostgreSQL SPS tests
-        run: |
-          SPS_PG_INTEGRATION=1 npm test --workspace=packages/sps-server -- --reporter=json --outputFile=/tmp/sps-pg-results.json
-          node scripts/tests/assert-pg-vitest-gate.mjs /tmp/sps-pg-results.json
-
-      - name: Run PostgreSQL SPS E2E suite
-        run: npm run test:e2e --workspace=packages/sps-server
-
-      - name: Install Playwright Chromium
-        run: npm exec --workspace=packages/dashboard -- playwright install --with-deps chromium
-
-      - name: Run dashboard Playwright E2E
-        run: npm run test:e2e
-
-  contract:
-    name: P00 HTTP contract suite (Node ${{ matrix.node-version }})
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: ["24.21.0", "26.10.0"]
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: blindpass
-          POSTGRES_USER: blindpass
-          POSTGRES_PASSWORD: localdev
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd "pg_isready -U blindpass -d blindpass"
-          --health-interval 1s
-          --health-timeout 3s
-          --health-retries 30
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6380:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 1s
-          --health-timeout 3s
-          --health-retries 30
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
-
-      - name: Install lockfile dependencies
-        run: npm ci
-
-      - name: Build workspace and contract harness
-        run: npm run build
-
-      - name: Run P00 CT01–CT18, CC01 and CV01–CV06
-        env:
-          SUT: ts
-          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
-          CONTRACT_REDIS_URL: ${{ env.REDIS_URL }}
-        run: |
-          npm test --workspace=@blindpass/contract-tests -- --reporter=json --outputFile=/tmp/p00-contract-results.json
-          node scripts/tests/assert-no-vitest-skips.mjs /tmp/p00-contract-results.json
-
   base-contract:
-    name: P00 harness-spawned base URL adapter (Node ${{ matrix.node-version }})
+    name: Rust controller through a base URL (${{ matrix.backend }}, Node ${{ matrix.node-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
+        backend: [sqlite, postgres]
         node-version: ["24.21.0", "26.10.0"]
     services:
       postgres:
@@ -166,21 +67,6 @@ jobs:
           --health-interval 1s
           --health-timeout 3s
           --health-retries 30
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6380:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 1s
-          --health-timeout 3s
-          --health-retries 30
-    env:
-      DATABASE_URL: postgresql://blindpass:localdev@127.0.0.1:5433/blindpass
-      REDIS_URL: redis://127.0.0.1:6380
-      SPS_HMAC_SECRET: ci-only-hmac-canary
-      SPS_USER_JWT_SECRET: ci-only-user-jwt-canary
-      SPS_AGENT_JWT_SECRET: ci-only-agent-jwt-canary
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -194,11 +80,26 @@ jobs:
       - name: Install lockfile dependencies
         run: npm ci
 
-      - name: Build workspace and contract harness
+      - name: Install native controller libraries
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends libssl-dev
+
+      - name: Set up pinned Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+
+      # The controller embeds packages/console/dist and packages/browser-ui/dist-embedded at compile time.
+      - name: Build the workspace
         run: npm run build
 
-      - name: Run P00 contract suite through SUT=base
-        run: node --import tsx scripts/tests/p00-base-contract.mjs
+      - name: Build the controller executable
+        run: cargo build -p blindpass-controller --locked
+
+      - name: Run the contract suite against a controller it does not own
+        env:
+          CONTRACT_RUST_BACKEND: ${{ matrix.backend }}
+          CONTRACT_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: node --import tsx scripts/tests/rust-base-contract.mjs
 
   contract-rust:
     # The Rust controller is Node-independent, but this job also runs the TS
@@ -359,7 +260,7 @@ jobs:
           fi
           node scripts/tests/assert-no-vitest-skips.mjs /tmp/p02-rust-${{ matrix.backend }}-mismatch.json
           set +e
-          node scripts/tests/assert-contract-progress.mjs /tmp/p02-rust-${{ matrix.backend }}-mismatch.json packages/contract-tests/fixtures/rust-pending.json >/tmp/p02-rust-${{ matrix.backend }}-mismatch-gate.log 2>&1
+          node scripts/tests/assert-contract-progress.mjs /tmp/p02-rust-${{ matrix.backend }}-mismatch.json packages/contract-tests/fixtures/required-cases.json >/tmp/p02-rust-${{ matrix.backend }}-mismatch-gate.log 2>&1
           progress_status=$?
           set -e
           if [ "$progress_status" -eq 0 ] || ! grep -Fq "Unexpected failure for CT01" /tmp/p02-rust-${{ matrix.backend }}-mismatch-gate.log; then
@@ -380,7 +281,7 @@ jobs:
           test_status=$?
           node scripts/tests/assert-no-vitest-skips.mjs /tmp/p02-rust-${{ matrix.backend }}-results.json
           skip_status=$?
-          node scripts/tests/assert-contract-progress.mjs /tmp/p02-rust-${{ matrix.backend }}-results.json packages/contract-tests/fixtures/rust-pending.json
+          node scripts/tests/assert-contract-progress.mjs /tmp/p02-rust-${{ matrix.backend }}-results.json packages/contract-tests/fixtures/required-cases.json
           progress_status=$?
           if [ "$test_status" -ne 0 ] || [ "$skip_status" -ne 0 ] || [ "$progress_status" -ne 0 ]; then
             exit 1

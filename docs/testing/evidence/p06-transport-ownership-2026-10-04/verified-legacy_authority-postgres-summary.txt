@@ -1,0 +1,4 @@
+authority_postgres_gate_exit=0
+recovery_invalidation_backend=postgres
+controller_test_target=legacy_authority
+owned_authority_cleanup_errors=0

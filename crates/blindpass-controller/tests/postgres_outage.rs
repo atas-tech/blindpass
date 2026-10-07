@@ -146,6 +146,7 @@ async fn readiness_fails_during_postgres_outage_and_recovers_with_state_intact()
     }
     let file = |name: &str| directory.0.join(name).to_str().unwrap().to_owned();
     let config = Config::from_variables([
+        ("BLINDPASS_TEST_MODE", "1"),
         ("BLINDPASS_LISTEN", "127.0.0.1:0"),
         ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
         ("BLINDPASS_UI_BASE_URL", "http://127.0.0.1:5175"),

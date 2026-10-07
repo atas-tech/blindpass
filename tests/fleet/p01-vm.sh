@@ -226,6 +226,9 @@ guest_environment=(env)
 [[ "$inject_failure" == 1 ]] && guest_environment+=(BLINDPASS_P01_INJECT_FAILURE=1)
 [[ -n "$cancel_after_boot" ]] && guest_environment+=(BLINDPASS_P01_CANCEL_AFTER_BOOT_SECONDS="$cancel_after_boot")
 (( ${#tpm_debs[@]} > 0 )) && guest_environment+=(BLINDPASS_P01_TPM_DEB_DIR=/tmp/p01-tpm-debs)
+[[ -n "${P07_RUN:-}" ]] && guest_environment+=(BLINDPASS_P01_EXPORT_DIR=/tmp/p07-export)
+# P07 S07 (ii): also run the crash probe with the core limit lifted on purpose (disposable guest only).
+[[ "${P07_LIFT_CORE:-0}" == 1 ]] && guest_environment+=(BLINDPASS_P01_LIFT_CORE=1)
 ssh "${ssh_options[@]}" "$guest_target" \
     "sudo install -m 0755 /tmp/p01-guest.sh /usr/local/sbin/blindpass-p01-guest && sudo ${guest_environment[*]} /usr/local/sbin/blindpass-p01-guest" \
     >"$run_dir/guest-result.log" 2>&1 &
@@ -236,6 +239,18 @@ guest_result=$?
 set -e
 guest_ssh_pid=
 cat "$run_dir/guest-result.log"
+if [[ -n "${P07_RUN:-}" ]]; then
+    # P07-I04: bring the guest's canary list, journal and crash artifacts to the host for the offline scan.
+    install -d -m 0700 "$P07_RUN/p01"
+    cp "$run_dir/guest-result.log" "$P07_RUN/p01/guest-result.log"
+    if ssh "${ssh_options[@]}" "$guest_target" 'sudo chmod -R a+rX /tmp/p07-export && test -d /tmp/p07-export' 2>/dev/null; then
+        scp -q -r "${scp_options[@]}" "$guest_target:/tmp/p07-export/." "$P07_RUN/p01/" \
+            && cp "$P07_RUN/p01/canaries.txt" "$P07_RUN/canaries.txt" \
+            || printf 'P01-P07-EXPORT-FAIL could not copy the guest export\n' >&2
+    else
+        printf 'P01-P07-EXPORT-FAIL the guest produced no export directory\n' >&2
+    fi
+fi
 
 if [[ "$guest_result" != 0 ]]; then
     exit "$guest_result"

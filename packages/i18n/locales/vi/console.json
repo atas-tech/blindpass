@@ -688,6 +688,7 @@
       "credentials": "Tên đăng nhập hoặc mật khẩu không đúng.",
       "missing": "Hãy nhập tên đăng nhập và mật khẩu.",
       "rate": "Quá nhiều lần thử. Hãy chờ một lát rồi thử lại.",
+      "locked": "Tài khoản bị khóa sau quá nhiều lần đăng nhập sai. Hãy thử lại sau khoảng {{minutes}} phút, hoặc nhờ quản trị viên đặt lại mật khẩu.",
       "failed": "Đăng nhập chưa hoàn tất. Hãy thử lại."
     },
     "submitting": "Đang đăng nhập…",

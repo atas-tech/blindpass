@@ -1,0 +1,10 @@
+production_ownership-sqlite_exit=0
+production_ownership-postgres_exit=0
+legacy_authority-sqlite_exit=0
+legacy_authority-postgres_exit=0
+fleet_provisioning_submit-sqlite_exit=0
+fleet_provisioning_submit-postgres_exit=0
+recovery_invalidation-sqlite_exit=0
+recovery_invalidation-postgres_exit=0
+startup_exit=0
+ownership_exit=0

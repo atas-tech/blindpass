@@ -252,118 +252,123 @@ impl Store {
         limit: u32,
         cursor: Option<(i64, String)>,
     ) -> Result<Vec<WorkloadRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        let limit = i64::from(limit.clamp(1, 101));
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let rows = match (node_id, cursor) {
-                    (Some(node_id), Some((created_at, id))) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ? AND node_id = ?
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let limit = i64::from(limit.clamp(1, 101));
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let rows = match (node_id, cursor) {
+                        (Some(node_id), Some((created_at, id))) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ? AND node_id = ?
                              AND (created_at < ? OR (created_at = ? AND id < ?))
                              ORDER BY created_at DESC, id DESC LIMIT ?"
-                        );
-                        sqlx::query(&sql)
-                            .bind(&self.tenant_id).bind(node_id).bind(created_at).bind(created_at)
-                            .bind(id).bind(limit).fetch_all(pool).await
-                    }
-                    (Some(node_id), None) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ? AND node_id = ?
+                            );
+                            sqlx::query(&sql)
+                                .bind(&self.tenant_id).bind(node_id).bind(created_at).bind(created_at)
+                                .bind(id).bind(limit).fetch_all(pool).await
+                        }
+                        (Some(node_id), None) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ? AND node_id = ?
                              ORDER BY created_at DESC, id DESC LIMIT ?"
-                        );
-                        sqlx::query(&sql).bind(&self.tenant_id).bind(node_id).bind(limit)
-                            .fetch_all(pool).await
-                    }
-                    (None, Some((created_at, id))) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ?
+                            );
+                            sqlx::query(&sql).bind(&self.tenant_id).bind(node_id).bind(limit)
+                                .fetch_all(pool).await
+                        }
+                        (None, Some((created_at, id))) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ?
                              AND (created_at < ? OR (created_at = ? AND id < ?))
                              ORDER BY created_at DESC, id DESC LIMIT ?"
-                        );
-                        sqlx::query(&sql).bind(&self.tenant_id).bind(created_at).bind(created_at)
-                            .bind(id).bind(limit).fetch_all(pool).await
-                    }
-                    (None, None) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ?
+                            );
+                            sqlx::query(&sql).bind(&self.tenant_id).bind(created_at).bind(created_at)
+                                .bind(id).bind(limit).fetch_all(pool).await
+                        }
+                        (None, None) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = ?
                              ORDER BY created_at DESC, id DESC LIMIT ?"
-                        );
-                        sqlx::query(&sql).bind(&self.tenant_id).bind(limit).fetch_all(pool).await
-                    }
-                }.map_err(StoreError::Database)?;
-                rows.iter().map(workload_from_sqlite).collect()
-            }
-            Database::Postgres(pool) => {
-                let rows = match (node_id, cursor) {
-                    (Some(node_id), Some((created_at, id))) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1 AND node_id = $2
+                            );
+                            sqlx::query(&sql).bind(&self.tenant_id).bind(limit).fetch_all(pool).await
+                        }
+                    }.map_err(StoreError::Database)?;
+                    rows.iter().map(workload_from_sqlite).collect()
+                }
+                Database::Postgres(pool) => {
+                    let rows = match (node_id, cursor) {
+                        (Some(node_id), Some((created_at, id))) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1 AND node_id = $2
                              AND (created_at < $3 OR (created_at = $3 AND id < $4))
                              ORDER BY created_at DESC, id DESC LIMIT $5"
-                        );
-                        sqlx::query(&sql).bind(&self.tenant_id).bind(node_id).bind(created_at)
-                            .bind(id).bind(limit).fetch_all(pool).await
-                    }
-                    (Some(node_id), None) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1 AND node_id = $2
+                            );
+                            sqlx::query(&sql).bind(&self.tenant_id).bind(node_id).bind(created_at)
+                                .bind(id).bind(limit).fetch_all(pool).await
+                        }
+                        (Some(node_id), None) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1 AND node_id = $2
                              ORDER BY created_at DESC, id DESC LIMIT $3"
-                        );
-                        sqlx::query(&sql).bind(&self.tenant_id).bind(node_id).bind(limit)
-                            .fetch_all(pool).await
-                    }
-                    (None, Some((created_at, id))) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1
+                            );
+                            sqlx::query(&sql).bind(&self.tenant_id).bind(node_id).bind(limit)
+                                .fetch_all(pool).await
+                        }
+                        (None, Some((created_at, id))) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1
                              AND (created_at < $2 OR (created_at = $2 AND id < $3))
                              ORDER BY created_at DESC, id DESC LIMIT $4"
-                        );
-                        sqlx::query(&sql).bind(&self.tenant_id).bind(created_at).bind(id)
-                            .bind(limit).fetch_all(pool).await
-                    }
-                    (None, None) => {
-                        let sql = format!(
-                            "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1
+                            );
+                            sqlx::query(&sql).bind(&self.tenant_id).bind(created_at).bind(id)
+                                .bind(limit).fetch_all(pool).await
+                        }
+                        (None, None) => {
+                            let sql = format!(
+                                "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE tenant_id = $1
                              ORDER BY created_at DESC, id DESC LIMIT $2"
-                        );
-                        sqlx::query(&sql).bind(&self.tenant_id).bind(limit).fetch_all(pool).await
-                    }
-                }.map_err(StoreError::Database)?;
-                rows.iter().map(workload_from_postgres).collect()
+                            );
+                            sqlx::query(&sql).bind(&self.tenant_id).bind(limit).fetch_all(pool).await
+                        }
+                    }.map_err(StoreError::Database)?;
+                    rows.iter().map(workload_from_postgres).collect()
+                }
             }
-        }
+        }).await
     }
 
     pub async fn workload_by_id(&self, id: &str) -> Result<Option<WorkloadRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        let sql =
-            format!("SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE id = ? AND tenant_id = ?");
-        match &self.database {
-            Database::Sqlite(pool) => sqlx::query(&sql)
-                .bind(id)
-                .bind(&self.tenant_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database)?
-                .as_ref()
-                .map(workload_from_sqlite)
-                .transpose(),
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE id = $1 AND tenant_id = $2"
-                );
-                sqlx::query(&sql)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let sql =
+                format!("SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE id = ? AND tenant_id = ?");
+            match &self.database {
+                Database::Sqlite(pool) => sqlx::query(&sql)
                     .bind(id)
                     .bind(&self.tenant_id)
                     .fetch_optional(pool)
                     .await
                     .map_err(StoreError::Database)?
                     .as_ref()
-                    .map(workload_from_postgres)
-                    .transpose()
+                    .map(workload_from_sqlite)
+                    .transpose(),
+                Database::Postgres(pool) => {
+                    let sql = format!(
+                        "SELECT {WORKLOAD_COLUMNS} FROM workloads WHERE id = $1 AND tenant_id = $2"
+                    );
+                    sqlx::query(&sql)
+                        .bind(id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .as_ref()
+                        .map(workload_from_postgres)
+                        .transpose()
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn create_workload(
@@ -374,131 +379,133 @@ impl Store {
         policy_envelope_json: &str,
         audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                let locked = sqlx::query(
-                    "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'",
-                )
-                .bind(&record.node_id)
-                .bind(&self.tenant_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if locked.rows_affected() != 1 {
-                    tx.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                if unit_conflict_sqlite(
-                    &mut tx,
-                    &self.tenant_id,
-                    &record.node_id,
-                    &record.unit,
-                    &record.id,
-                )
-                .await?
-                {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
-                }
-                let sql = format!(
-                    "INSERT INTO workloads (id, tenant_id, node_id, name, unit, account,
-                     consumption_mode, local_ceiling_seconds, registration_version, status,
-                     created_by, created_at, version)
-                     SELECT ?, ?, n.id, ?, ?, ?, ?, ?, 1, 'active', ?, {SQLITE_NOW_MS}, 1
-                     FROM nodes n WHERE n.id = ? AND n.tenant_id = ? AND n.status = 'active'"
-                );
-                let result = sqlx::query(&sql)
-                    .bind(&record.id)
-                    .bind(&self.tenant_id)
-                    .bind(&record.name)
-                    .bind(&record.unit)
-                    .bind(&record.account)
-                    .bind(&record.consumption_mode)
-                    .bind(record.local_ceiling_seconds)
-                    .bind(created_by)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
+                    let locked = sqlx::query(
+                        "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'",
+                    )
                     .bind(&record.node_id)
                     .bind(&self.tenant_id)
                     .execute(&mut *tx)
                     .await
-                    .map_err(unit_conflict_error)?;
-                if result.rows_affected() == 1 {
-                    enqueue_node_document_sqlite(&mut tx, &record.node_id, policy_envelope_json)
-                        .await?;
-                    enqueue_node_document_sqlite(
+                    .map_err(StoreError::Database)?;
+                    if locked.rows_affected() != 1 {
+                        tx.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    if unit_conflict_sqlite(
                         &mut tx,
+                        &self.tenant_id,
                         &record.node_id,
-                        registration_envelope_json,
+                        &record.unit,
+                        &record.id,
                     )
-                    .await?;
-                    insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
-            }
-            Database::Postgres(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                let locked: Option<String> = sqlx::query_scalar(
-                    "SELECT id FROM nodes WHERE id = $1 AND tenant_id = $2 AND status = 'active' FOR UPDATE",
-                )
-                .bind(&record.node_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if locked.is_none() {
+                    .await?
+                    {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
+                    }
+                    let sql = format!(
+                        "INSERT INTO workloads (id, tenant_id, node_id, name, unit, account,
+                     consumption_mode, local_ceiling_seconds, registration_version, status,
+                     created_by, created_at, version)
+                     SELECT ?, ?, n.id, ?, ?, ?, ?, ?, 1, 'active', ?, {SQLITE_NOW_MS}, 1
+                     FROM nodes n WHERE n.id = ? AND n.tenant_id = ? AND n.status = 'active'"
+                    );
+                    let result = sqlx::query(&sql)
+                        .bind(&record.id)
+                        .bind(&self.tenant_id)
+                        .bind(&record.name)
+                        .bind(&record.unit)
+                        .bind(&record.account)
+                        .bind(&record.consumption_mode)
+                        .bind(record.local_ceiling_seconds)
+                        .bind(created_by)
+                        .bind(&record.node_id)
+                        .bind(&self.tenant_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(unit_conflict_error)?;
+                    if result.rows_affected() == 1 {
+                        enqueue_node_document_sqlite(&mut tx, &record.node_id, policy_envelope_json)
+                            .await?;
+                        enqueue_node_document_sqlite(
+                            &mut tx,
+                            &record.node_id,
+                            registration_envelope_json,
+                        )
+                        .await?;
+                        insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
+                    }
                     tx.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
+                    Ok(result.rows_affected() == 1)
                 }
-                if unit_conflict_postgres(
-                    &mut tx,
-                    &self.tenant_id,
-                    &record.node_id,
-                    &record.unit,
-                    &record.id,
-                )
-                .await?
-                {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
-                }
-                let sql = format!(
-                    "INSERT INTO workloads (id, tenant_id, node_id, name, unit, account,
+                Database::Postgres(pool) => {
+                    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
+                    let locked: Option<String> = sqlx::query_scalar(
+                        "SELECT id FROM nodes WHERE id = $1 AND tenant_id = $2 AND status = 'active' FOR UPDATE",
+                    )
+                    .bind(&record.node_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    if locked.is_none() {
+                        tx.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    if unit_conflict_postgres(
+                        &mut tx,
+                        &self.tenant_id,
+                        &record.node_id,
+                        &record.unit,
+                        &record.id,
+                    )
+                    .await?
+                    {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
+                    }
+                    let sql = format!(
+                        "INSERT INTO workloads (id, tenant_id, node_id, name, unit, account,
                      consumption_mode, local_ceiling_seconds, registration_version, status,
                      created_by, created_at, version)
                      SELECT $1, $2, n.id, $3, $4, $5, $6, $7, 1, 'active', $8,
                             {POSTGRES_NOW_MS}, 1
                      FROM nodes n WHERE n.id = $9 AND n.tenant_id = $2 AND n.status = 'active'"
-                );
-                let result = sqlx::query(&sql)
-                    .bind(&record.id)
-                    .bind(&self.tenant_id)
-                    .bind(&record.name)
-                    .bind(&record.unit)
-                    .bind(&record.account)
-                    .bind(&record.consumption_mode)
-                    .bind(record.local_ceiling_seconds)
-                    .bind(created_by)
-                    .bind(&record.node_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(unit_conflict_error)?;
-                if result.rows_affected() == 1 {
-                    enqueue_node_document_postgres(&mut tx, &record.node_id, policy_envelope_json)
+                    );
+                    let result = sqlx::query(&sql)
+                        .bind(&record.id)
+                        .bind(&self.tenant_id)
+                        .bind(&record.name)
+                        .bind(&record.unit)
+                        .bind(&record.account)
+                        .bind(&record.consumption_mode)
+                        .bind(record.local_ceiling_seconds)
+                        .bind(created_by)
+                        .bind(&record.node_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(unit_conflict_error)?;
+                    if result.rows_affected() == 1 {
+                        enqueue_node_document_postgres(&mut tx, &record.node_id, policy_envelope_json)
+                            .await?;
+                        enqueue_node_document_postgres(
+                            &mut tx,
+                            &record.node_id,
+                            registration_envelope_json,
+                        )
                         .await?;
-                    enqueue_node_document_postgres(
-                        &mut tx,
-                        &record.node_id,
-                        registration_envelope_json,
-                    )
-                    .await?;
-                    insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
+                        insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
+                    }
+                    tx.commit().await.map_err(StoreError::Database)?;
+                    Ok(result.rows_affected() == 1)
                 }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
             }
-        }
+        }).await
     }
 
     /// Update a workload registration. A change of unit, account or
@@ -519,106 +526,108 @@ impl Store {
         updated_by: &str,
         audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        let signer = self.fleet_signer.as_ref();
-        macro_rules! update {
-            ($pool:expr, $convert:expr, $lock:expr, $conflict:ident, $retire:ident,
-             $enqueue:path, $audit:path) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query(&$convert($lock))
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let Some(previous) = sqlx::query(&$convert(
-                    "SELECT unit, account, consumption_mode FROM workloads
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let signer = self.fleet_signer.as_ref();
+            macro_rules! update {
+                ($pool:expr, $convert:expr, $lock:expr, $conflict:ident, $retire:ident,
+                 $enqueue:path, $audit:path) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query(&$convert($lock))
+                        .bind(node_id)
+                        .bind(&self.tenant_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let Some(previous) = sqlx::query(&$convert(
+                        "SELECT unit, account, consumption_mode FROM workloads
                      WHERE id = ? AND tenant_id = ? AND status = 'active' AND version = ?",
-                ))
-                .bind(id)
-                .bind(&self.tenant_id)
-                .bind(expected_version)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?
-                else {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                };
-                let previous_unit: String =
-                    previous.try_get("unit").map_err(StoreError::Database)?;
-                let previous_account: String =
-                    previous.try_get("account").map_err(StoreError::Database)?;
-                let previous_mode: String = previous
-                    .try_get("consumption_mode")
-                    .map_err(StoreError::Database)?;
-                if previous_unit != unit
-                    && $conflict(&mut tx, &self.tenant_id, node_id, unit, id).await?
-                {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
-                }
-                let result = sqlx::query(&$convert(
-                    "UPDATE workloads SET unit = ?, account = ?, consumption_mode = ?,
+                    ))
+                    .bind(id)
+                    .bind(&self.tenant_id)
+                    .bind(expected_version)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?
+                    else {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    };
+                    let previous_unit: String =
+                        previous.try_get("unit").map_err(StoreError::Database)?;
+                    let previous_account: String =
+                        previous.try_get("account").map_err(StoreError::Database)?;
+                    let previous_mode: String = previous
+                        .try_get("consumption_mode")
+                        .map_err(StoreError::Database)?;
+                    if previous_unit != unit
+                        && $conflict(&mut tx, &self.tenant_id, node_id, unit, id).await?
+                    {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Err(StoreError::InvalidInput(WORKLOAD_UNIT_CONFLICT));
+                    }
+                    let result = sqlx::query(&$convert(
+                        "UPDATE workloads SET unit = ?, account = ?, consumption_mode = ?,
                      local_ceiling_seconds = ?, registration_version = registration_version + 1,
                      version = version + 1 WHERE id = ? AND tenant_id = ? AND status = 'active'
                      AND version = ? AND EXISTS (SELECT 1 FROM nodes n WHERE n.id = node_id
                      AND n.tenant_id = ? AND n.status = 'active')",
-                ))
-                .bind(unit)
-                .bind(account)
-                .bind(consumption_mode)
-                .bind(local_ceiling_seconds)
-                .bind(id)
-                .bind(&self.tenant_id)
-                .bind(expected_version)
-                .bind(&self.tenant_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(unit_conflict_error)?;
-                if result.rows_affected() == 1 {
-                    if previous_unit != unit
-                        || previous_account != account
-                        || previous_mode != consumption_mode
-                    {
-                        $retire(
-                            &mut tx,
-                            signer,
-                            &self.tenant_id,
-                            id,
-                            "workload_changed",
-                            updated_by,
-                        )
-                        .await?;
+                    ))
+                    .bind(unit)
+                    .bind(account)
+                    .bind(consumption_mode)
+                    .bind(local_ceiling_seconds)
+                    .bind(id)
+                    .bind(&self.tenant_id)
+                    .bind(expected_version)
+                    .bind(&self.tenant_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(unit_conflict_error)?;
+                    if result.rows_affected() == 1 {
+                        if previous_unit != unit
+                            || previous_account != account
+                            || previous_mode != consumption_mode
+                        {
+                            $retire(
+                                &mut tx,
+                                signer,
+                                &self.tenant_id,
+                                id,
+                                "workload_changed",
+                                updated_by,
+                            )
+                            .await?;
+                        }
+                        $enqueue(&mut tx, node_id, policy_envelope_json).await?;
+                        $enqueue(&mut tx, node_id, registration_envelope_json).await?;
+                        $audit(&mut tx, &self.tenant_id, audit).await?;
                     }
-                    $enqueue(&mut tx, node_id, policy_envelope_json).await?;
-                    $enqueue(&mut tx, node_id, registration_envelope_json).await?;
-                    $audit(&mut tx, &self.tenant_id, audit).await?;
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => update!(
-                pool,
-                |sql: &str| sql.to_owned(),
-                "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'",
-                unit_conflict_sqlite,
-                retire_workload_authority_sqlite,
-                enqueue_node_document_sqlite,
-                insert_audit_sqlite
-            ),
-            Database::Postgres(pool) => update!(
-                pool,
-                super::pg,
-                "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? AND status = 'active' FOR UPDATE",
-                unit_conflict_postgres,
-                retire_workload_authority_postgres,
-                enqueue_node_document_postgres,
-                insert_audit_postgres
-            ),
-        }
+                    tx.commit().await.map_err(StoreError::Database)?;
+                    Ok(result.rows_affected() == 1)
+                }};
+            }
+            match &self.database {
+                Database::Sqlite(pool) => update!(
+                    pool,
+                    |sql: &str| sql.to_owned(),
+                    "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ? AND status = 'active'",
+                    unit_conflict_sqlite,
+                    retire_workload_authority_sqlite,
+                    enqueue_node_document_sqlite,
+                    insert_audit_sqlite
+                ),
+                Database::Postgres(pool) => update!(
+                    pool,
+                    super::pg,
+                    "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? AND status = 'active' FOR UPDATE",
+                    unit_conflict_postgres,
+                    retire_workload_authority_postgres,
+                    enqueue_node_document_postgres,
+                    insert_audit_postgres
+                ),
+            }
+        }).await
     }
 
     /// Revoke a workload registration together with the grants it issued
@@ -634,116 +643,122 @@ impl Store {
         revoked_by: &str,
         audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        let signer = self.fleet_signer.as_ref();
-        macro_rules! revoke {
-            ($pool:expr, $convert:expr, $now:expr, $lock:expr, $retire:ident, $enqueue:path,
-             $audit:path) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query(&$convert($lock))
-                    .bind(node_id)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let signer = self.fleet_signer.as_ref();
+            macro_rules! revoke {
+                ($pool:expr, $convert:expr, $now:expr, $lock:expr, $retire:ident, $enqueue:path,
+                 $audit:path) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query(&$convert($lock))
+                        .bind(node_id)
+                        .bind(&self.tenant_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let result = sqlx::query(&$convert(&format!(
+                        "UPDATE workloads SET status = 'revoked', revoked_at = {},
+                     registration_version = registration_version + 1, version = version + 1
+                     WHERE id = ? AND tenant_id = ? AND status = 'active' AND version = ?",
+                        $now
+                    )))
+                    .bind(id)
                     .bind(&self.tenant_id)
+                    .bind(expected_version)
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
-                let result = sqlx::query(&$convert(&format!(
-                    "UPDATE workloads SET status = 'revoked', revoked_at = {},
-                     registration_version = registration_version + 1, version = version + 1
-                     WHERE id = ? AND tenant_id = ? AND status = 'active' AND version = ?",
-                    $now
-                )))
-                .bind(id)
-                .bind(&self.tenant_id)
-                .bind(expected_version)
-                .execute(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if result.rows_affected() == 1 {
-                    $retire(
-                        &mut tx,
-                        signer,
-                        &self.tenant_id,
-                        id,
-                        "workload_revoked",
-                        revoked_by,
-                    )
-                    .await?;
-                    $enqueue(&mut tx, node_id, policy_envelope_json).await?;
-                    $enqueue(&mut tx, node_id, registration_envelope_json).await?;
-                    $audit(&mut tx, &self.tenant_id, audit).await?;
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(result.rows_affected() == 1)
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => revoke!(
-                pool,
-                |sql: &str| sql.to_owned(),
-                SQLITE_NOW_MS,
-                "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ?",
-                retire_workload_authority_sqlite,
-                enqueue_node_document_sqlite,
-                insert_audit_sqlite
-            ),
-            Database::Postgres(pool) => revoke!(
-                pool,
-                super::pg,
-                POSTGRES_NOW_MS,
-                "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? FOR UPDATE",
-                retire_workload_authority_postgres,
-                enqueue_node_document_postgres,
-                insert_audit_postgres
-            ),
-        }
+                    if result.rows_affected() == 1 {
+                        $retire(
+                            &mut tx,
+                            signer,
+                            &self.tenant_id,
+                            id,
+                            "workload_revoked",
+                            revoked_by,
+                        )
+                        .await?;
+                        $enqueue(&mut tx, node_id, policy_envelope_json).await?;
+                        $enqueue(&mut tx, node_id, registration_envelope_json).await?;
+                        $audit(&mut tx, &self.tenant_id, audit).await?;
+                    }
+                    tx.commit().await.map_err(StoreError::Database)?;
+                    Ok(result.rows_affected() == 1)
+                }};
+            }
+            match &self.database {
+                Database::Sqlite(pool) => revoke!(
+                    pool,
+                    |sql: &str| sql.to_owned(),
+                    SQLITE_NOW_MS,
+                    "UPDATE nodes SET version = version WHERE id = ? AND tenant_id = ?",
+                    retire_workload_authority_sqlite,
+                    enqueue_node_document_sqlite,
+                    insert_audit_sqlite
+                ),
+                Database::Postgres(pool) => revoke!(
+                    pool,
+                    super::pg,
+                    POSTGRES_NOW_MS,
+                    "SELECT id FROM nodes WHERE id = ? AND tenant_id = ? FOR UPDATE",
+                    retire_workload_authority_postgres,
+                    enqueue_node_document_postgres,
+                    insert_audit_postgres
+                ),
+            }
+        })
+        .await
     }
 
     pub async fn fleet_policy(&self) -> Result<FleetPolicyRecord, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let row = sqlx::query(
-                    "SELECT version, document_json, updated_at, updated_by
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let row = sqlx::query(
+                        "SELECT version, document_json, updated_at, updated_by
                     FROM fleet_policies WHERE tenant_id = ?",
-                )
-                .bind(&self.tenant_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                row.as_ref()
-                    .map(fleet_policy_from_sqlite)
-                    .transpose()
-                    .map(|record| {
-                        record.unwrap_or(FleetPolicyRecord {
-                            version: 1,
-                            document_json: "{\"rules\":[]}".to_owned(),
-                            updated_at_ms: 0,
-                            updated_by: String::new(),
+                    )
+                    .bind(&self.tenant_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    row.as_ref()
+                        .map(fleet_policy_from_sqlite)
+                        .transpose()
+                        .map(|record| {
+                            record.unwrap_or(FleetPolicyRecord {
+                                version: 1,
+                                document_json: "{\"rules\":[]}".to_owned(),
+                                updated_at_ms: 0,
+                                updated_by: String::new(),
+                            })
                         })
-                    })
-            }
-            Database::Postgres(pool) => {
-                let row = sqlx::query(
-                    "SELECT version, document_json, updated_at, updated_by
+                }
+                Database::Postgres(pool) => {
+                    let row = sqlx::query(
+                        "SELECT version, document_json, updated_at, updated_by
                     FROM fleet_policies WHERE tenant_id = $1",
-                )
-                .bind(&self.tenant_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                row.as_ref()
-                    .map(fleet_policy_from_postgres)
-                    .transpose()
-                    .map(|record| {
-                        record.unwrap_or(FleetPolicyRecord {
-                            version: 1,
-                            document_json: "{\"rules\":[]}".to_owned(),
-                            updated_at_ms: 0,
-                            updated_by: String::new(),
+                    )
+                    .bind(&self.tenant_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    row.as_ref()
+                        .map(fleet_policy_from_postgres)
+                        .transpose()
+                        .map(|record| {
+                            record.unwrap_or(FleetPolicyRecord {
+                                version: 1,
+                                document_json: "{\"rules\":[]}".to_owned(),
+                                updated_at_ms: 0,
+                                updated_by: String::new(),
+                            })
                         })
-                    })
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn replace_fleet_policy(
@@ -754,111 +769,116 @@ impl Store {
         node_documents: &[(String, String)],
         audit: &AuditDraft,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        if expected_version <= 0 {
-            return Err(StoreError::InvalidInput("policy version"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let current: Option<i64> =
-                    sqlx::query_scalar("SELECT version FROM fleet_policies WHERE tenant_id = ?")
-                        .bind(&self.tenant_id)
-                        .fetch_optional(&mut *tx)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            if expected_version <= 0 {
+                return Err(StoreError::InvalidInput("policy version"));
+            }
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
+                        .execute(&mut *tx)
                         .await
                         .map_err(StoreError::Database)?;
-                let current = current.unwrap_or(1);
-                if current != expected_version {
-                    tx.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let next = current
-                    .checked_add(1)
-                    .ok_or(StoreError::InvalidInput("policy version"))?;
-                let sql = format!("INSERT INTO fleet_policies (tenant_id, version, document_json, updated_at, updated_by)
+                    let current: Option<i64> =
+                        sqlx::query_scalar("SELECT version FROM fleet_policies WHERE tenant_id = ?")
+                            .bind(&self.tenant_id)
+                            .fetch_optional(&mut *tx)
+                            .await
+                            .map_err(StoreError::Database)?;
+                    let current = current.unwrap_or(1);
+                    if current != expected_version {
+                        tx.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    let next = current
+                        .checked_add(1)
+                        .ok_or(StoreError::InvalidInput("policy version"))?;
+                    let sql = format!("INSERT INTO fleet_policies (tenant_id, version, document_json, updated_at, updated_by)
                     VALUES (?, ?, ?, {SQLITE_NOW_MS}, ?) ON CONFLICT(tenant_id) DO UPDATE SET
                     version = excluded.version, document_json = excluded.document_json,
                     updated_at = excluded.updated_at, updated_by = excluded.updated_by");
-                sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(next)
-                    .bind(document_json)
-                    .bind(updated_by)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                for (node_id, envelope_json) in node_documents {
-                    enqueue_node_document_sqlite(&mut tx, node_id, envelope_json).await?;
-                }
-                insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }
-            Database::Postgres(pool) => {
-                let mut tx = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
-                    .fetch_one(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let current: Option<i64> = sqlx::query_scalar(
-                    "SELECT version FROM fleet_policies WHERE tenant_id = $1 FOR UPDATE",
-                )
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let current = current.unwrap_or(1);
-                if current != expected_version {
+                    sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(next)
+                        .bind(document_json)
+                        .bind(updated_by)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    for (node_id, envelope_json) in node_documents {
+                        enqueue_node_document_sqlite(&mut tx, node_id, envelope_json).await?;
+                    }
+                    insert_audit_sqlite(&mut tx, &self.tenant_id, audit).await?;
                     tx.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
+                    Ok(true)
                 }
-                let next = current
-                    .checked_add(1)
-                    .ok_or(StoreError::InvalidInput("policy version"))?;
-                let sql = format!("INSERT INTO fleet_policies (tenant_id, version, document_json, updated_at, updated_by)
+                Database::Postgres(pool) => {
+                    let mut tx = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
+                        .fetch_one(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let current: Option<i64> = sqlx::query_scalar(
+                        "SELECT version FROM fleet_policies WHERE tenant_id = $1 FOR UPDATE",
+                    )
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let current = current.unwrap_or(1);
+                    if current != expected_version {
+                        tx.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    let next = current
+                        .checked_add(1)
+                        .ok_or(StoreError::InvalidInput("policy version"))?;
+                    let sql = format!("INSERT INTO fleet_policies (tenant_id, version, document_json, updated_at, updated_by)
                     VALUES ($1, $2, $3, {POSTGRES_NOW_MS}, $4) ON CONFLICT(tenant_id) DO UPDATE SET
                     version = EXCLUDED.version, document_json = EXCLUDED.document_json,
                     updated_at = EXCLUDED.updated_at, updated_by = EXCLUDED.updated_by");
-                sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(next)
-                    .bind(document_json)
-                    .bind(updated_by)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                for (node_id, envelope_json) in node_documents {
-                    enqueue_node_document_postgres(&mut tx, node_id, envelope_json).await?;
+                    sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(next)
+                        .bind(document_json)
+                        .bind(updated_by)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    for (node_id, envelope_json) in node_documents {
+                        enqueue_node_document_postgres(&mut tx, node_id, envelope_json).await?;
+                    }
+                    insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
+                    tx.commit().await.map_err(StoreError::Database)?;
+                    Ok(true)
                 }
-                insert_audit_postgres(&mut tx, &self.tenant_id, audit).await?;
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
             }
-        }
+        }).await
     }
 
     pub async fn active_node_ids(&self) -> Result<Vec<String>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => sqlx::query_scalar(
-                "SELECT id FROM nodes WHERE tenant_id = ? AND status = 'active' ORDER BY id",
-            )
-            .bind(&self.tenant_id)
-            .fetch_all(pool)
-            .await
-            .map_err(StoreError::Database),
-            Database::Postgres(pool) => sqlx::query_scalar(
-                "SELECT id FROM nodes WHERE tenant_id = $1 AND status = 'active' ORDER BY id",
-            )
-            .bind(&self.tenant_id)
-            .fetch_all(pool)
-            .await
-            .map_err(StoreError::Database),
-        }
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => sqlx::query_scalar(
+                    "SELECT id FROM nodes WHERE tenant_id = ? AND status = 'active' ORDER BY id",
+                )
+                .bind(&self.tenant_id)
+                .fetch_all(pool)
+                .await
+                .map_err(StoreError::Database),
+                Database::Postgres(pool) => sqlx::query_scalar(
+                    "SELECT id FROM nodes WHERE tenant_id = $1 AND status = 'active' ORDER BY id",
+                )
+                .bind(&self.tenant_id)
+                .fetch_all(pool)
+                .await
+                .map_err(StoreError::Database),
+            }
+        })
+        .await
     }
 }
 
@@ -1541,39 +1561,42 @@ impl Store {
         approval: Option<&OperationApprovalDraft>,
         audit: &AuditDraft,
     ) -> Result<OperationCreateOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                create_operation_sqlite(
-                    pool,
-                    &self.tenant_id,
-                    record,
-                    expected_unit,
-                    expected_account,
-                    effective_ttl_seconds,
-                    approval,
-                    self.fleet_signer.as_ref(),
-                    audit,
-                    None,
-                )
-                .await
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    create_operation_sqlite(
+                        pool,
+                        &self.tenant_id,
+                        record,
+                        expected_unit,
+                        expected_account,
+                        effective_ttl_seconds,
+                        approval,
+                        self.fleet_signer.as_ref(),
+                        audit,
+                        None,
+                    )
+                    .await
+                }
+                Database::Postgres(pool) => {
+                    create_operation_postgres(
+                        pool,
+                        &self.tenant_id,
+                        record,
+                        expected_unit,
+                        expected_account,
+                        effective_ttl_seconds,
+                        approval,
+                        self.fleet_signer.as_ref(),
+                        audit,
+                        None,
+                    )
+                    .await
+                }
             }
-            Database::Postgres(pool) => {
-                create_operation_postgres(
-                    pool,
-                    &self.tenant_id,
-                    record,
-                    expected_unit,
-                    expected_account,
-                    effective_ttl_seconds,
-                    approval,
-                    self.fleet_signer.as_ref(),
-                    audit,
-                    None,
-                )
-                .await
-            }
-        }
+        })
+        .await
     }
 
     /// Commit a newly verified browser intent and all request effects atomically.
@@ -1588,85 +1611,90 @@ impl Store {
         audit: &AuditDraft,
         event: &BrokerOperationEvent<'_>,
     ) -> Result<OperationCreateOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        self.fleet_signer
-            .as_ref()
-            .ok_or(StoreError::MissingState("browser request issuer"))?;
-        if record.node_id != event.node_id
-            || record.broker_event_key.as_deref() != Some(event.key)
-            || record.action != "browser.session"
-            || record.mode != "browser_session"
-            || record.request_hash != event.body_hash
-            || record.requested_by != format!("workload:{}", record.workload_id)
-        {
-            return Err(StoreError::InvalidInput("browser request binding"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                create_operation_sqlite(
-                    pool,
-                    &self.tenant_id,
-                    record,
-                    expected_unit,
-                    expected_account,
-                    effective_ttl_seconds,
-                    approval,
-                    self.fleet_signer.as_ref(),
-                    audit,
-                    Some(event),
-                )
-                .await
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            self.fleet_signer
+                .as_ref()
+                .ok_or(StoreError::MissingState("browser request issuer"))?;
+            if record.node_id != event.node_id
+                || record.broker_event_key.as_deref() != Some(event.key)
+                || record.action != "browser.session"
+                || record.mode != "browser_session"
+                || record.request_hash != event.body_hash
+                || record.requested_by != format!("workload:{}", record.workload_id)
+            {
+                return Err(StoreError::InvalidInput("browser request binding"));
             }
-            Database::Postgres(pool) => {
-                create_operation_postgres(
-                    pool,
-                    &self.tenant_id,
-                    record,
-                    expected_unit,
-                    expected_account,
-                    effective_ttl_seconds,
-                    approval,
-                    self.fleet_signer.as_ref(),
-                    audit,
-                    Some(event),
-                )
-                .await
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    create_operation_sqlite(
+                        pool,
+                        &self.tenant_id,
+                        record,
+                        expected_unit,
+                        expected_account,
+                        effective_ttl_seconds,
+                        approval,
+                        self.fleet_signer.as_ref(),
+                        audit,
+                        Some(event),
+                    )
+                    .await
+                }
+                Database::Postgres(pool) => {
+                    create_operation_postgres(
+                        pool,
+                        &self.tenant_id,
+                        record,
+                        expected_unit,
+                        expected_account,
+                        effective_ttl_seconds,
+                        approval,
+                        self.fleet_signer.as_ref(),
+                        audit,
+                        Some(event),
+                    )
+                    .await
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn operation_by_id(&self, id: &str) -> Result<Option<OperationRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!(
-                    "SELECT {OPERATION_COLUMNS} FROM operations WHERE id = ? AND tenant_id = ?"
-                );
-                sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(operation_from_sqlite)
-                    .transpose()
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!(
+                        "SELECT {OPERATION_COLUMNS} FROM operations WHERE id = ? AND tenant_id = ?"
+                    );
+                    sqlx::query(&sql)
+                        .bind(id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .as_ref()
+                        .map(operation_from_sqlite)
+                        .transpose()
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!(
+                        "SELECT {OPERATION_COLUMNS} FROM operations WHERE id = $1 AND tenant_id = $2"
+                    );
+                    sqlx::query(&sql)
+                        .bind(id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .as_ref()
+                        .map(operation_from_postgres)
+                        .transpose()
+                }
             }
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "SELECT {OPERATION_COLUMNS} FROM operations WHERE id = $1 AND tenant_id = $2"
-                );
-                sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(operation_from_postgres)
-                    .transpose()
-            }
-        }
+        }).await
     }
 
     pub async fn list_operations(
@@ -1675,84 +1703,88 @@ impl Store {
         cursor: Option<(i64, String)>,
         limit: u32,
     ) -> Result<Vec<OperationRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        let limit = i64::from(limit.clamp(1, 101));
-        let status = status.unwrap_or("");
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!("SELECT {OPERATION_COLUMNS} FROM operations WHERE tenant_id = ?
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let limit = i64::from(limit.clamp(1, 101));
+            let status = status.unwrap_or("");
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!("SELECT {OPERATION_COLUMNS} FROM operations WHERE tenant_id = ?
                     AND (? = '' OR status = ?) AND (? IS NULL OR created_at > ? OR (created_at = ? AND id > ?))
                     ORDER BY created_at, id LIMIT ?");
-                let rows = sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(status)
-                    .bind(status)
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.1.as_str()))
-                    .bind(limit)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                rows.iter().map(operation_from_sqlite).collect()
-            }
-            Database::Postgres(pool) => {
-                let sql = format!("SELECT {OPERATION_COLUMNS} FROM operations WHERE tenant_id = $1
+                    let rows = sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(status)
+                        .bind(status)
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.1.as_str()))
+                        .bind(limit)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    rows.iter().map(operation_from_sqlite).collect()
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!("SELECT {OPERATION_COLUMNS} FROM operations WHERE tenant_id = $1
                     AND ($2 = '' OR status = $3) AND ($4::BIGINT IS NULL OR created_at > $5 OR (created_at = $6 AND id > $7))
                     ORDER BY created_at, id LIMIT $8");
-                let rows = sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(status)
-                    .bind(status)
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.1.as_str()))
-                    .bind(limit)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                rows.iter().map(operation_from_postgres).collect()
+                    let rows = sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(status)
+                        .bind(status)
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.1.as_str()))
+                        .bind(limit)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    rows.iter().map(operation_from_postgres).collect()
+                }
             }
-        }
+        }).await
     }
 
     pub async fn operation_approval_by_id(
         &self,
         id: &str,
     ) -> Result<Option<OperationApprovalRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!(
-                    "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals WHERE id = ? AND tenant_id = ?"
-                );
-                sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(operation_approval_from_sqlite)
-                    .transpose()
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!(
+                        "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals WHERE id = ? AND tenant_id = ?"
+                    );
+                    sqlx::query(&sql)
+                        .bind(id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .as_ref()
+                        .map(operation_approval_from_sqlite)
+                        .transpose()
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!(
+                        "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals WHERE id = $1 AND tenant_id = $2"
+                    );
+                    sqlx::query(&sql)
+                        .bind(id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .as_ref()
+                        .map(operation_approval_from_postgres)
+                        .transpose()
+                }
             }
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals WHERE id = $1 AND tenant_id = $2"
-                );
-                sqlx::query(&sql)
-                    .bind(id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .as_ref()
-                    .map(operation_approval_from_postgres)
-                    .transpose()
-            }
-        }
+        }).await
     }
 
     pub async fn list_operation_approvals(
@@ -1761,73 +1793,77 @@ impl Store {
         cursor: Option<(i64, String)>,
         limit: u32,
     ) -> Result<Vec<OperationApprovalRecord>, StoreError> {
-        self.checkpoint_clock().await?;
-        let limit = i64::from(limit.clamp(1, 101));
-        let status = status.unwrap_or("");
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!("SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let limit = i64::from(limit.clamp(1, 101));
+            let status = status.unwrap_or("");
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!("SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals
                     WHERE tenant_id = ? AND (? = '' OR status = ?) AND (? IS NULL OR created_at > ? OR (created_at = ? AND id > ?))
                     AND (status <> 'pending' OR expires_at > {SQLITE_NOW_MS}) ORDER BY created_at, id LIMIT ?");
-                let rows = sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(status)
-                    .bind(status)
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.1.as_str()))
-                    .bind(limit)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                rows.iter().map(operation_approval_from_sqlite).collect()
-            }
-            Database::Postgres(pool) => {
-                let sql = format!("SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals
+                    let rows = sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(status)
+                        .bind(status)
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.1.as_str()))
+                        .bind(limit)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    rows.iter().map(operation_approval_from_sqlite).collect()
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!("SELECT {OPERATION_APPROVAL_COLUMNS} FROM operation_approvals
                     WHERE tenant_id = $1 AND ($2 = '' OR status = $3) AND ($4::BIGINT IS NULL OR created_at > $5 OR (created_at = $6 AND id > $7))
                     AND (status <> 'pending' OR expires_at > {POSTGRES_NOW_MS}) ORDER BY created_at, id LIMIT $8");
-                let rows = sqlx::query(&sql)
-                    .bind(&self.tenant_id)
-                    .bind(status)
-                    .bind(status)
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.0))
-                    .bind(cursor.as_ref().map(|value| value.1.as_str()))
-                    .bind(limit)
-                    .fetch_all(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                rows.iter().map(operation_approval_from_postgres).collect()
+                    let rows = sqlx::query(&sql)
+                        .bind(&self.tenant_id)
+                        .bind(status)
+                        .bind(status)
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.0))
+                        .bind(cursor.as_ref().map(|value| value.1.as_str()))
+                        .bind(limit)
+                        .fetch_all(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    rows.iter().map(operation_approval_from_postgres).collect()
+                }
             }
-        }
+        }).await
     }
 
     pub async fn count_pending_operation_approvals(&self) -> Result<i64, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let sql = format!(
-                    "SELECT COUNT(*) FROM operation_approvals WHERE tenant_id = ? AND status = 'pending' AND expires_at > {SQLITE_NOW_MS}"
-                );
-                sqlx::query_scalar(&sql)
-                    .bind(&self.tenant_id)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(StoreError::Database)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let sql = format!(
+                        "SELECT COUNT(*) FROM operation_approvals WHERE tenant_id = ? AND status = 'pending' AND expires_at > {SQLITE_NOW_MS}"
+                    );
+                    sqlx::query_scalar(&sql)
+                        .bind(&self.tenant_id)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(StoreError::Database)
+                }
+                Database::Postgres(pool) => {
+                    let sql = format!(
+                        "SELECT COUNT(*) FROM operation_approvals WHERE tenant_id = $1 AND status = 'pending' AND expires_at > {POSTGRES_NOW_MS}"
+                    );
+                    sqlx::query_scalar(&sql)
+                        .bind(&self.tenant_id)
+                        .fetch_one(pool)
+                        .await
+                        .map_err(StoreError::Database)
+                }
             }
-            Database::Postgres(pool) => {
-                let sql = format!(
-                    "SELECT COUNT(*) FROM operation_approvals WHERE tenant_id = $1 AND status = 'pending' AND expires_at > {POSTGRES_NOW_MS}"
-                );
-                sqlx::query_scalar(&sql)
-                    .bind(&self.tenant_id)
-                    .fetch_one(pool)
-                    .await
-                    .map_err(StoreError::Database)
-            }
-        }
+        }).await
     }
 }
 

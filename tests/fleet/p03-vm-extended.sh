@@ -379,6 +379,18 @@ PY
         printf 'P03-FAIL private node key material appeared in controller state or logs\n' >&2
         return 1
     }
+    if [[ -n "${P07_RUN:-}" ]]; then
+        # Register the guest private-key encodings, keep the state dump for the offline scan, and put the
+        # intentionally visible value on a SEPARATE control list: scanning the exported state with that list
+        # must find it (the scanner reads these formats), scanning with the real list must not.
+        p07 secret-lines "$canary_file"
+        p07 file state "p03-$current_backend-controller-state" "$dump"
+        local control_file=$backend_dir/p07-control.canary
+        printf '%s\n' "$visible_canary" >"$control_file"
+        chmod 0600 "$control_file"
+        P07_RUN="$P07_RUN/control" p07 text-canary "$control_file"
+        rm -f -- "$control_file"
+    fi
     rm -f -- "$canary_file" "$dump"
     printf 'P03-SCENARIO backend=%s scenario=E01-no-private-key-at-controller identities=%s patterns=%s positive_control=found exposed=0 status=passed\n' \
         "$current_backend" "$((identities_a + identities_b))" "$patterns"
@@ -390,7 +402,7 @@ PY
 # Same-invocation retry after the crash is covered by broker unit tests; here
 # systemd stops the dependent workload when the broker aborts.
 scenario_i05_crash_after_intent() {
-    local node_a=$1 crash_request crash_workload crash_operation crash_grant armed restarts_before status
+    local node_a=$1 crash_request crash_workload crash_operation crash_grant armed restarts_before status crash_epoch
     guest_call a enable-crash-hook >/dev/null
     wait_for_fresh_poll "$node_a" "$(now_ms)"
     setup_workload a "$node_a" "$current_backend-i05-crash" \
@@ -404,7 +416,10 @@ scenario_i05_crash_after_intent() {
     armed=$(guest_call a arm-crash-hook)
     restarts_before=${armed##*broker_restarts=}
     printf '%s\n' "$crash_grant" | guest_call a provide-grant >/dev/null
-    guest_call a assert-crash-after-intent "$crash_grant" "$restarts_before"
+    crash_epoch=$(json_field "$(curl --silent --show-error --fail --max-time 5 \
+        http://127.0.0.1:3200/api/v3/capabilities)" issuer_epoch)
+    [[ "$crash_epoch" =~ ^[1-9][0-9]*$ ]] || { printf 'P03-FAIL malformed current issuer epoch\n' >&2; return 1; }
+    guest_call a assert-crash-after-intent "$crash_grant" "$restarts_before" "$crash_operation" "$crash_epoch"
     # Retrying the same grant from a new invocation after the broker restart
     # must be refused by the durable consume intent, with no marker.
     printf '%s\n' "$crash_grant" | guest_call a provide-grant >/dev/null

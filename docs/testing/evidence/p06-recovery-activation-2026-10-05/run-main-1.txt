@@ -1,0 +1,30 @@
+P06-RR S1 PASS production controller (authority-backed, built-in TLS) serving; operator session established
+P06-RR S2 PASS real broker+node in a QEMU guest enrolled over verified HTTPS; node online; authority holds its broker trust
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-RR S3 PASS authenticated backup restored under a recovering authority record (epoch 2); controller serving fenced 503
+P06-RA G1 PASS authority-activate.sql refuses the recovering record (recovering:2:4); ledger unchanged
+P06-RA G2 PASS authority-recover-activate.sql with nothing done names all four open gates and changes nothing
+P06-RA G3 PASS attestation refused while a controller process holds the tenant guard; no row written
+P06-RA G4 PASS controller precheck lists fixed gate names ['source_stop_missing', 'review_incomplete', 'node_uncovered', 'review_undecided']
+P06-RA G5 PASS the old source refuses to start while the record is recovering; record unchanged
+P06-RA R1 PASS recovery_relay state=covered pages=1 activation_permitted=false; the authority and the controller precheck show the node covered
+P06-RA V1 PASS 5 items in 4 categories listed; complete refused while undecided; unknown item refused; controller not fenced
+P06-RA V2 PASS every item decided with operator ids, a changed decision recorded, review completed ({'items': 5, 'nodes_revoked': 0, 'operators_enabled': 2}); decisions closed; only source_stop_missing remains
+P06-RA A1 PASS with the controller stopped, only the missing attestation blocks activation
+P06-RA A2 PASS attested (who/host recorded) and activated: recovering:2:4 -> active:2:5; ordinary script and a second activation refused
+P06-RA S4 PASS activated controller ready 0.3 s after start; the unchanged node (key version 1) passes `status --nodes --require-online` 1.9 s after start; operator login works (accepted account re-enabled); recovered operation stays uncertain
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-RA S5 PASS an ordinary grant was approved by a second operator, delivered to the node and consumed by a workload in the guest through the activated controller
+P06-RA S6 PASS the old source refuses to serve and to migrate after activation; the activated controller stayed ready and the record unchanged
+P06-RA B1 PASS activated controller fenced and stopped; the original archive restored again under a higher recovery epoch (3)
+P06-RA R1 PASS recovery_relay state=covered pages=1 activation_permitted=false; the authority and the controller precheck show the node covered
+P06-RA V1 PASS 6 items in 5 categories listed; complete refused while undecided; unknown item refused; controller not fenced
+P06-RA V2 PASS every item decided with operator ids, a changed decision recorded, review completed ({'items': 6, 'nodes_revoked': 0, 'operators_enabled': 2}); decisions closed; only source_stop_missing remains
+P06-RA A1 PASS with the controller stopped, only the missing attestation blocks activation
+P06-RA A2 PASS attested (who/host recorded) and activated: recovering:3:7 -> active:3:8; ordinary script and a second activation refused
+P06-RA S4 PASS activated controller ready 0.3 s after start; the unchanged node (key version 1) passes `status --nodes --require-online` 2.0 s after start; operator login works (accepted account re-enabled); recovered operation stays uncertain
+P06-RA B2 PASS the rollback recovery reconciled the unknown grant through the review ([('gr_149a6fb6-1d80-4953-9e94-288c5dfafb24', 'unknown'), ('gr_578d5bc5-7adf-417c-9359-4f90fd2aad58', 'matched')]), was attested and activated separately (epochs 2,3) and serves with the node online
+P06-RR R3 PASS controller and guest broker/node logs contain no operator or approver password, bootstrap password, enrollment token, authority password or PEM private key
+P06-RA L1 PASS no credential, token, authority password or PEM private key in any controller or guest log
+rc=0
+DONE

@@ -11,6 +11,7 @@ use blindpass_core::signing::base64_url_encode;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
+use std::os::fd::AsRawFd;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -26,8 +27,30 @@ const MAX_ACCEPTED_GRANTS: usize = 10_000;
 /// A verified grant whose fate is already recorded; redelivery changes nothing.
 pub(crate) const GRANT_ALREADY_SETTLED: &str = "grant is already settled";
 const PRIVATE_FILE_MODE: u32 = 0o600;
-const NO_FOLLOW: i32 = 0x20000;
+const NO_FOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
+
+mod history;
+mod report;
+use history::ConsumptionHistory;
+
+pub(crate) fn initialize_consumption_history(path: &Path) -> Result<(), &'static str> {
+    history::initialize(path)
+}
+
+pub(crate) fn bind_consumption_history(
+    path: &Path,
+    pin: &crate::keys::PinnedIssuer,
+) -> Result<(), &'static str> {
+    history::bind(path, pin).map(|_| ())
+}
+
+pub(crate) fn bind_history_observation(
+    path: &Path,
+    pin: &crate::keys::PinnedIssuer,
+) -> Result<u64, &'static str> {
+    history::bind(path, pin)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct TimeChallenge {
@@ -69,12 +92,73 @@ pub(crate) struct GrantVerifier {
     retired_order: VecDeque<String>,
     journal: Option<GrantJournal>,
     revocations: Option<RevocationJournal>,
+    recovery_challenge: Option<report::PendingChallenge>,
+    recovery_snapshot: Option<report::HistorySnapshot>,
 }
 
 #[derive(Debug, Default)]
 struct GrantJournal {
     path: Option<PathBuf>,
     consumed: BTreeMap<String, u64>,
+    /// Immutable correlation from the same durable consume intent. Legacy
+    /// records remain unmapped; neither restart nor compaction guesses it.
+    bindings: BTreeMap<String, ConsumedBinding>,
+    /// Present only when this broker created a durable fresh identity genesis.
+    history: Option<ConsumptionHistory>,
+    revision: Option<JournalRevision>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct JournalRevision {
+    device: u64,
+    inode: u64,
+    length: u64,
+    modified: (i64, i64),
+    changed: (i64, i64),
+}
+
+impl JournalRevision {
+    fn from_file(file: &File) -> Result<Self, &'static str> {
+        let metadata = file
+            .metadata()
+            .map_err(|_| "grant journal metadata is unavailable")?;
+        Ok(Self {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            length: metadata.len(),
+            modified: (metadata.mtime(), metadata.mtime_nsec()),
+            changed: (metadata.ctime(), metadata.ctime_nsec()),
+        })
+    }
+}
+
+/// Every append, compaction and pin binding shares this private lock inode.
+/// Contention denies the current request; it never blocks a control peer.
+fn lock_consumption_journal(path: &Path) -> Result<File, &'static str> {
+    let file = open_private(&path.with_extension("lock"), true)
+        .map_err(|_| "grant journal lock could not be opened safely")?;
+    if file
+        .metadata()
+        .map_err(|_| "grant journal lock is unavailable")?
+        .len()
+        != 0
+    {
+        return Err("grant journal lock is malformed");
+    }
+    unsafe extern "C" {
+        fn flock(fd: i32, operation: i32) -> i32;
+    }
+    // SAFETY: the owned File supplies a live descriptor; 2|4 is LOCK_EX|LOCK_NB.
+    if unsafe { flock(file.as_raw_fd(), 2 | 4) } != 0 {
+        return Err("grant journal is busy");
+    }
+    Ok(file)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ConsumedBinding {
+    operation_id: String,
+    issuer_epoch: u64,
 }
 
 #[derive(Debug, Default)]
@@ -317,10 +401,10 @@ impl GrantVerifier {
             now_boottime_ms,
         )?;
         let grant_id = accepted_grant.grant.id.clone();
-        let expires_at_ms = accepted_grant.grant.expires_at_ms;
+        let consumed_grant = accepted_grant.grant.clone();
         let journal = self.journal.as_mut().ok_or(ConsumeDenial::Unavailable)?;
         journal
-            .record_consumption(&grant_id, expires_at_ms)
+            .record_bound_consumption(&consumed_grant)
             .map_err(|_| ConsumeDenial::Unavailable)?;
         let accepted = self
             .accepted
@@ -681,9 +765,17 @@ impl ConsumeDenial {
 
 impl GrantJournal {
     fn open(path: &Path) -> Result<Self, &'static str> {
+        let _lock = lock_consumption_journal(path)?;
+        Self::read_locked(path)
+    }
+
+    fn read_locked(path: &Path) -> Result<Self, &'static str> {
         let mut journal = Self {
             path: Some(path.to_owned()),
             consumed: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+            history: None,
+            revision: None,
         };
         let mut file = match open_private_for_recovery(path) {
             Ok(file) => file,
@@ -699,30 +791,170 @@ impl GrantJournal {
         let mut contents = Vec::with_capacity(metadata.len() as usize);
         file.read_to_end(&mut contents)
             .map_err(|_| "grant journal could not be read")?;
+        let has_history = contents
+            .split(|byte| *byte == b'\n')
+            .any(|line| line.starts_with(b"{\"history_version\":"));
+        if has_history
+            && (!contents.starts_with(b"{\"history_version\":") || !contents.contains(&b'\n'))
+        {
+            // A misplaced or newline-less header cannot claim complete
+            // coverage. Keep the bytes for recovery review and deny
+            // consumption at startup. An unterminated record after a complete
+            // header is a never-durable append and is cut by the repair below.
+            return Err("grant history is misplaced or its header is torn");
+        }
         truncate_torn_tail(&file, &mut contents)
             .map_err(|_| "grant journal torn record could not be truncated")?;
-        for line in contents
+        for (index, line) in contents
             .split(|byte| *byte == b'\n')
             .filter(|line| !line.is_empty())
+            .enumerate()
         {
-            let (id, expiry) = parse_journal_line(line)?;
-            if let Some(existing) = journal.consumed.insert(id.to_owned(), expiry)
-                && existing != expiry
-            {
-                return Err("grant journal contains a conflicting replay record");
+            if line.starts_with(b"{\"history_version\":") {
+                if index != 0 || journal.history.is_some() {
+                    return Err("grant history header is misplaced or duplicated");
+                }
+                journal.history = Some(ConsumptionHistory::parse(line)?);
+                continue;
+            }
+            let (id, expiry, binding) = parse_journal_line(line)?;
+            if let Some(existing) = journal.consumed.get(id) {
+                if *existing != expiry || journal.bindings.get(id) != binding.as_ref() {
+                    return Err("grant journal contains a conflicting replay record");
+                }
+                continue;
+            }
+            journal.consumed.insert(id.to_owned(), expiry);
+            if let Some(binding) = binding {
+                if let Some(history) = &mut journal.history {
+                    history.highest_issuer_epoch =
+                        history.highest_issuer_epoch.max(binding.issuer_epoch);
+                }
+                journal.bindings.insert(id.to_owned(), binding);
             }
         }
         if journal.consumed.len() > GRANT_JOURNAL_MAX_RECORDS {
             return Err("grant journal exceeds its record bound");
         }
+        if journal
+            .history
+            .as_ref()
+            .is_some_and(|history| !history.is_bound())
+            && !journal.consumed.is_empty()
+        {
+            return Err("unbound grant history contains consumption records");
+        }
+        journal.revision = Some(JournalRevision::from_file(&file)?);
         Ok(journal)
     }
 
+    /// The caller holds the journal lock. Usually metadata is unchanged;
+    /// reload the bounded durable replay map only after another writer or a
+    /// pin binding replaced/extended it. This prevents lost consume intents.
+    fn synchronize(&mut self) -> Result<(), &'static str> {
+        let path = self
+            .path
+            .as_ref()
+            .ok_or("grant journal path is unavailable")?;
+        let file = match open_private_for_recovery(path) {
+            Ok(file) => file,
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound && self.revision.is_none() =>
+            {
+                return Ok(());
+            }
+            Err(_) => return Err("grant history is unavailable"),
+        };
+        if self.revision.as_ref() == Some(&JournalRevision::from_file(&file)?) {
+            return Ok(());
+        }
+        let mut current = Self::read_locked(path)?;
+        if let Some(previous) = &self.history {
+            let history = current
+                .history
+                .as_mut()
+                .ok_or("grant history provenance disappeared")?;
+            if history.history_id != previous.history_id
+                || history.pruned_through_ms < previous.pruned_through_ms
+                || (previous.is_bound() && !history.same_scope(previous))
+            {
+                return Err("grant history identity or coverage changed");
+            }
+            // Records only leave through compaction, which advances
+            // `pruned_through_ms` past their expiry. A journal that lost any
+            // other record this process already saw is an older copy: refuse
+            // instead of re-admitting an already consumed grant.
+            let pruned_through_ms = history.pruned_through_ms;
+            if self.consumed.iter().any(|(id, expires_at_ms)| {
+                *expires_at_ms > pruned_through_ms
+                    && current.consumed.get(id) != Some(expires_at_ms)
+            }) {
+                return Err("grant history lost consumption records");
+            }
+            history.highest_issuer_epoch = history
+                .highest_issuer_epoch
+                .max(previous.highest_issuer_epoch);
+        }
+        *self = current;
+        Ok(())
+    }
+
+    #[cfg(test)]
     fn record_consumption(
         &mut self,
         grant_id: &str,
         expires_at_ms: u64,
     ) -> Result<(), &'static str> {
+        self.record(grant_id, expires_at_ms, None, None)
+    }
+
+    fn record_bound_consumption(&mut self, grant: &Grant) -> Result<(), &'static str> {
+        if !is_valid_opaque_id(&grant.operation_id)
+            || !(1..=9_007_199_254_740_991).contains(&grant.issuer_epoch)
+        {
+            return Err("grant consume correlation is invalid");
+        }
+        self.record(
+            &grant.id,
+            grant.expires_at_ms,
+            Some(ConsumedBinding {
+                operation_id: grant.operation_id.clone(),
+                issuer_epoch: grant.issuer_epoch,
+            }),
+            Some(&grant.node_id),
+        )
+    }
+
+    fn record(
+        &mut self,
+        grant_id: &str,
+        expires_at_ms: u64,
+        binding: Option<ConsumedBinding>,
+        node_id: Option<&str>,
+    ) -> Result<(), &'static str> {
+        let path = self
+            .path
+            .clone()
+            .ok_or("grant journal path is unavailable")?;
+        let _lock = lock_consumption_journal(&path)?;
+        self.synchronize()?;
+        if self
+            .history
+            .as_ref()
+            .is_some_and(|history| !history.is_bound() || node_id != Some(history.node_id.as_str()))
+        {
+            return Err("grant consumption history has the wrong node scope");
+        }
+        if self.history.as_ref().is_some_and(|history| {
+            binding
+                .as_ref()
+                .is_none_or(|binding| binding.issuer_epoch != history.highest_issuer_epoch)
+        }) {
+            return Err("grant consumption epoch does not match the durable issuer pin");
+        }
+        if !is_valid_opaque_id(grant_id) || expires_at_ms == 0 {
+            return Err("grant consumption intent is invalid");
+        }
         if self.consumed.contains_key(grant_id) {
             return Err("grant was already consumed");
         }
@@ -733,7 +965,7 @@ impl GrantJournal {
             .path
             .as_ref()
             .ok_or("grant journal path is unavailable")?;
-        let line = format!("{{\"grant_id\":\"{grant_id}\",\"expires_at_ms\":{expires_at_ms}}}\n");
+        let line = consumption_line(grant_id, expires_at_ms, binding.as_ref());
         let existed = match fs::symlink_metadata(path) {
             Ok(_) => true,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
@@ -759,6 +991,13 @@ impl GrantJournal {
             return Err("grant consumption intent could not be flushed");
         }
         self.consumed.insert(grant_id.to_owned(), expires_at_ms);
+        if let Some(binding) = binding {
+            if let Some(history) = &mut self.history {
+                history.highest_issuer_epoch =
+                    history.highest_issuer_epoch.max(binding.issuer_epoch);
+            }
+            self.bindings.insert(grant_id.to_owned(), binding);
+        }
         if !existed {
             let parent = path
                 .parent()
@@ -767,10 +1006,17 @@ impl GrantJournal {
                 .and_then(|directory| directory.sync_all())
                 .map_err(|_| "grant journal directory could not be synchronized")?;
         }
+        self.revision = Some(JournalRevision::from_file(&file)?);
         Ok(())
     }
 
     fn prune(&mut self, authenticated_time_ms: u64) -> Result<(), &'static str> {
+        let path = self
+            .path
+            .clone()
+            .ok_or("grant journal path is unavailable")?;
+        let _lock = lock_consumption_journal(&path)?;
+        self.synchronize()?;
         let pruned = self
             .consumed
             .iter()
@@ -784,6 +1030,33 @@ impl GrantJournal {
         if pruned.len() == self.consumed.len() {
             return Ok(());
         }
+        let mut history = self.history.clone();
+        if let Some(history) = &mut history {
+            let boundary = self
+                .consumed
+                .iter()
+                .filter(|(id, _)| !pruned.contains_key(*id))
+                .map(|(_, expiry)| *expiry)
+                .max()
+                .unwrap_or(0);
+            history.pruned_through_ms = history.pruned_through_ms.max(boundary);
+        }
+        self.rewrite(&pruned, history.as_ref())?;
+        self.history = history;
+        self.consumed = pruned;
+        self.bindings.retain(|id, _| self.consumed.contains_key(id));
+        self.revision = Some(JournalRevision::from_file(
+            &open_private_for_recovery(&path).map_err(|_| "grant history is unavailable")?,
+        )?);
+        Ok(())
+    }
+
+    fn rewrite(
+        &self,
+        records: &BTreeMap<String, u64>,
+        history: Option<&ConsumptionHistory>,
+    ) -> Result<(), &'static str> {
+        let header_line = history.map(ConsumptionHistory::line).transpose()?;
         let path = self
             .path
             .as_ref()
@@ -800,8 +1073,21 @@ impl GrantJournal {
             .custom_flags(NO_FOLLOW)
             .open(&temp)
             .map_err(|_| "grant journal compaction file could not be created")?;
-        for (id, expires_at) in &pruned {
-            let line = format!("{{\"grant_id\":\"{id}\",\"expires_at_ms\":{expires_at}}}\n");
+        let mut written = 0_u64;
+        if let Some(line) = header_line {
+            if file.write_all(line.as_bytes()).is_err() {
+                let _ = fs::remove_file(&temp);
+                return Err("grant journal history could not be written");
+            }
+            written = line.len() as u64;
+        }
+        for (id, expires_at) in records {
+            let line = consumption_line(id, *expires_at, self.bindings.get(id));
+            written = written.saturating_add(line.len() as u64);
+            if written > GRANT_JOURNAL_MAX_BYTES {
+                let _ = fs::remove_file(&temp);
+                return Err("grant journal compaction exceeds its size bound");
+            }
             if file.write_all(line.as_bytes()).is_err() {
                 let _ = fs::remove_file(&temp);
                 return Err("grant journal compaction could not be written");
@@ -814,7 +1100,6 @@ impl GrantJournal {
         File::open(parent)
             .and_then(|directory| directory.sync_all())
             .map_err(|_| "grant journal directory could not be synchronized")?;
-        self.consumed = pruned;
         Ok(())
     }
 }
@@ -1203,6 +1488,7 @@ fn open_private(path: &Path, append: bool) -> std::io::Result<File> {
     if !metadata.is_file()
         || metadata.uid() != effective_uid()
         || metadata.permissions().mode() & 0o777 != PRIVATE_FILE_MODE
+        || metadata.nlink() != 1
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
@@ -1224,6 +1510,7 @@ fn open_private_for_recovery(path: &Path) -> std::io::Result<File> {
     if !metadata.is_file()
         || metadata.uid() != effective_uid()
         || metadata.permissions().mode() & 0o777 != PRIVATE_FILE_MODE
+        || metadata.nlink() != 1
     {
         return Err(std::io::Error::new(
             std::io::ErrorKind::PermissionDenied,
@@ -1252,7 +1539,23 @@ fn truncate_torn_tail(file: &File, contents: &mut Vec<u8>) -> std::io::Result<()
     Ok(())
 }
 
-fn parse_journal_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
+fn consumption_line(
+    grant_id: &str,
+    expires_at_ms: u64,
+    binding: Option<&ConsumedBinding>,
+) -> String {
+    let correlation = binding.map_or(String::new(), |binding| {
+        format!(
+            ",\"operation_id\":\"{}\",\"issuer_epoch\":{}",
+            binding.operation_id, binding.issuer_epoch,
+        )
+    });
+    format!("{{\"grant_id\":\"{grant_id}\",\"expires_at_ms\":{expires_at_ms}{correlation}}}\n")
+}
+
+type ParsedConsumption<'a> = (&'a str, u64, Option<ConsumedBinding>);
+
+fn parse_journal_line(line: &[u8]) -> Result<ParsedConsumption<'_>, &'static str> {
     let text = std::str::from_utf8(line).map_err(|_| "grant journal is not UTF-8")?;
     let value = text
         .strip_prefix("{\"grant_id\":\"")
@@ -1264,12 +1567,37 @@ fn parse_journal_line(line: &[u8]) -> Result<(&str, u64), &'static str> {
     if !is_valid_opaque_id(id) {
         return Err("grant journal id is malformed");
     }
+    let (expiry, binding) = match expiry.split_once(",\"operation_id\":\"") {
+        Some((expiry, correlation)) => {
+            let (operation_id, epoch) = correlation
+                .split_once("\",\"issuer_epoch\":")
+                .ok_or("grant journal correlation is malformed")?;
+            if !is_valid_opaque_id(operation_id) {
+                return Err("grant journal correlation is malformed");
+            }
+            let issuer_epoch = epoch
+                .parse::<u64>()
+                .ok()
+                .filter(|value| {
+                    (1..=9_007_199_254_740_991).contains(value) && value.to_string() == epoch
+                })
+                .ok_or("grant journal epoch is malformed")?;
+            (
+                expiry,
+                Some(ConsumedBinding {
+                    operation_id: operation_id.into(),
+                    issuer_epoch,
+                }),
+            )
+        }
+        None => (expiry, None),
+    };
     let expiry = expiry
         .parse::<u64>()
         .ok()
         .filter(|value| *value > 0 && value.to_string() == expiry)
         .ok_or("grant journal expiry is malformed")?;
-    Ok((id, expiry))
+    Ok((id, expiry, binding))
 }
 
 fn revocation_line(grant_id: &str, retain_until_ms: u64, outcome: Option<(&str, u64)>) -> String {
@@ -2065,6 +2393,558 @@ mod tests {
                 2_000,
             )
             .unwrap();
+    }
+
+    struct ConsumptionJournalDirectory(PathBuf);
+
+    impl ConsumptionJournalDirectory {
+        fn new() -> Self {
+            use std::os::unix::fs::PermissionsExt;
+            let nonce = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos();
+            let path =
+                std::env::temp_dir().join(format!("blindpass-p06-cj-{}-{nonce}", process_id()));
+            std::fs::create_dir(&path).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for ConsumptionJournalDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn history_pin(epoch: u64) -> crate::keys::PinnedIssuer {
+        let public_key = blindpass_core::signing::base64_url_encode(&[9; 32]);
+        crate::keys::PinnedIssuer {
+            tenant_id: "tenant-a".into(),
+            node_id: "nd_node-a".into(),
+            epoch,
+            key_id: format!("ed25519-{public_key}"),
+            public_key,
+        }
+    }
+
+    #[test]
+    fn p06_br01_actual_consume_refreshes_first_pin_and_reopens_original_correlation() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let identity = crate::keys::NodeIdentity::load_or_create(&fixture.0).unwrap();
+        let path = identity.consumed_grant_journal_path();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        // Match the real first-enrollment ordering: verifier before pinning.
+        identity.pin_issuer(history_pin(1)).unwrap();
+        let grant = grant();
+        accept(&mut verifier, &grant);
+        verifier
+            .consume(&grant.id, &authorization_for(&grant), 4, 2_200)
+            .unwrap();
+        let reopened = GrantJournal::open(&path).unwrap();
+        let history = reopened.history.unwrap();
+        assert_eq!(history.tenant_id, "tenant-a");
+        assert_eq!(history.node_id, grant.node_id);
+        assert_eq!(history.highest_issuer_epoch, 1);
+        assert_eq!(
+            reopened.bindings[&grant.id].operation_id,
+            grant.operation_id
+        );
+        assert_eq!(reopened.bindings[&grant.id].issuer_epoch, 1);
+        assert_eq!(
+            verifier.consume(&grant.id, &authorization_for(&grant), 4, 2_200),
+            Err(ConsumeDenial::Consumed)
+        );
+    }
+
+    #[test]
+    fn p06_br04_existing_verifier_cannot_consume_after_durable_pin_advances() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let identity = crate::keys::NodeIdentity::load_or_create(&fixture.0).unwrap();
+        identity.pin_issuer(history_pin(1)).unwrap();
+        let path = identity.consumed_grant_journal_path();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        let grant = grant();
+        accept(&mut verifier, &grant);
+        // Real PIN_ISSUER publishes the identity pin before acquiring the
+        // broker state mutex. An already opened verifier must honor it even
+        // during that window, before its in-memory epoch is updated.
+        identity.pin_issuer(history_pin(2)).unwrap();
+        assert_eq!(
+            verifier.consume(&grant.id, &authorization_for(&grant), 4, 2_200),
+            Err(ConsumeDenial::Unavailable),
+            "stale in-memory epoch authorized an effect after durable fencing"
+        );
+        assert!(GrantJournal::open(&path).unwrap().consumed.is_empty());
+    }
+
+    #[test]
+    fn p06_br03_prune_all_retains_monotonic_coverage_and_trusted_epoch() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let identity = crate::keys::NodeIdentity::load_or_create(&fixture.0).unwrap();
+        identity.pin_issuer(history_pin(1)).unwrap();
+        let path = identity.consumed_grant_journal_path();
+        let mut journal = GrantJournal::open(&path).unwrap();
+        let first = journal.history.clone().unwrap();
+        let mut expired = grant();
+        expired.expires_at_ms = 10;
+        journal.record_bound_consumption(&expired).unwrap();
+        // A restored controller can propose an epoch below this broker's
+        // trusted high-watermark; journal compaction must never erase it.
+        identity.pin_issuer(history_pin(7)).unwrap();
+        journal
+            .prune(super::GRANT_REPLAY_RETENTION_MS + 11)
+            .unwrap();
+        let mut reopened = GrantJournal::open(&path).unwrap();
+        assert!(reopened.consumed.is_empty());
+        let history = reopened.history.clone().unwrap();
+        assert_eq!(history.history_id, first.history_id);
+        assert_eq!(history.pruned_through_ms, 10);
+        assert_eq!(history.highest_issuer_epoch, 7);
+        reopened.prune(1).unwrap();
+        assert_eq!(GrantJournal::open(&path).unwrap().history.unwrap(), history);
+        assert_eq!(std::fs::read_to_string(&path).unwrap().lines().count(), 1);
+    }
+
+    #[test]
+    fn p06_br04_different_tenant_node_or_issuer_cannot_rebind_known_history() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let identity = crate::keys::NodeIdentity::load_or_create(&fixture.0).unwrap();
+        let pin = history_pin(1);
+        identity.pin_issuer(pin.clone()).unwrap();
+        let before = std::fs::read(identity.consumed_grant_journal_path()).unwrap();
+        for (tenant, node, key) in [
+            (true, false, false),
+            (false, true, false),
+            (false, false, true),
+        ] {
+            let mut changed = history_pin(2);
+            if tenant {
+                changed.tenant_id = "other-tenant".into();
+            }
+            if node {
+                changed.node_id = "other-node".into();
+            }
+            if key {
+                changed.public_key = blindpass_core::signing::base64_url_encode(&[10; 32]);
+                changed.key_id = format!("ed25519-{}", changed.public_key);
+            }
+            assert!(identity.pin_issuer(changed).is_err());
+            assert_eq!(identity.pinned_issuer().unwrap().as_ref(), Some(&pin));
+            assert_eq!(
+                std::fs::read(identity.consumed_grant_journal_path()).unwrap(),
+                before
+            );
+        }
+    }
+
+    #[test]
+    fn p06_br02_provenance_torn_duplicate_or_unbound_history_fails_closed() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let identity = crate::keys::NodeIdentity::load_or_create(&fixture.0).unwrap();
+        let path = identity.consumed_grant_journal_path();
+        let genesis = std::fs::read_to_string(&path).unwrap();
+        let bound_line = super::consumption_line(
+            &grant().id,
+            grant().expires_at_ms,
+            Some(&super::ConsumedBinding {
+                operation_id: grant().operation_id,
+                issuer_epoch: 1,
+            }),
+        );
+        for bad in [
+            format!("{genesis}{genesis}"),
+            format!("{genesis}{bound_line}"),
+            // A header torn before its newline cannot claim any coverage.
+            genesis.trim_end_matches('\n').to_owned(),
+        ] {
+            std::fs::write(&path, &bad).unwrap();
+            assert!(GrantJournal::open(&path).is_err());
+            assert_eq!(
+                std::fs::read_to_string(&path).unwrap(),
+                bad,
+                "failed read altered evidence"
+            );
+        }
+        // An unterminated record after a complete header was never fsynced, so
+        // its effect never ran: only that tail is dropped, history is kept.
+        std::fs::write(&path, format!("{genesis}{{\"grant_id\":\"torn")).unwrap();
+        let reopened = GrantJournal::open(&path).unwrap();
+        assert!(reopened.history.is_some());
+        assert!(reopened.consumed.is_empty());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), genesis);
+        std::fs::write(&path, &genesis).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(GrantJournal::open(&path).is_err());
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let hardlink = fixture.0.join("linked");
+        std::fs::hard_link(&path, &hardlink).unwrap();
+        assert!(GrantJournal::open(&path).is_err());
+    }
+
+    #[test]
+    fn p06_br02_genesis_is_published_atomically_and_survives_a_stale_stage() {
+        use std::os::unix::fs::MetadataExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        // A crash while staging leaves a partial stage but never a final file.
+        std::fs::write(fixture.0.join(".consumed-genesis.tmp"), b"{\"history_vers").unwrap();
+        super::initialize_consumption_history(&path).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.starts_with("{\"history_version\":") && text.ends_with('\n'));
+        assert_eq!(text.matches('\n').count(), 1);
+        let metadata = std::fs::metadata(&path).unwrap();
+        assert_eq!((metadata.nlink(), metadata.mode() & 0o777), (1, 0o600));
+        assert!(!fixture.0.join(".consumed-genesis.tmp").exists());
+        assert!(super::initialize_consumption_history(&path).is_err());
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        assert!(GrantJournal::open(&path).unwrap().history.is_some());
+    }
+
+    #[test]
+    fn p06_br02_a_rolled_back_journal_is_refused_while_legitimate_pruning_is_allowed() {
+        use std::os::unix::fs::PermissionsExt;
+        let replace = |path: &std::path::Path, text: &str| {
+            std::fs::remove_file(path).unwrap();
+            std::fs::write(path, text).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        };
+        let fixture = ConsumptionJournalDirectory::new();
+        let identity = crate::keys::NodeIdentity::load_or_create(&fixture.0).unwrap();
+        identity.pin_issuer(history_pin(1)).unwrap();
+        let path = identity.consumed_grant_journal_path();
+        let bound = std::fs::read_to_string(&path).unwrap();
+        let grant_with = |id: &str, expires_at_ms: u64| {
+            let mut value = grant();
+            value.id = id.to_owned();
+            value.expires_at_ms = expires_at_ms;
+            value
+        };
+        let first = grant_with("gr_1123456789abcdef0123456789abcdef", 10_000);
+        let mut journal = GrantJournal::open(&path).unwrap();
+        journal.record_bound_consumption(&first).unwrap();
+        let longer = std::fs::read_to_string(&path).unwrap();
+        // An older copy of the same history replaces the journal.
+        replace(&path, &bound);
+        let second = grant_with("gr_2123456789abcdef0123456789abcdef", 20_000);
+        assert!(
+            journal.record_bound_consumption(&second).is_err(),
+            "a shrunken journal re-opened a consumed grant"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), bound);
+        // Restoring the longer file is accepted again; real pruning is not rollback.
+        replace(&path, &longer);
+        journal.record_bound_consumption(&second).unwrap();
+        journal
+            .prune(10_000 + super::GRANT_REPLAY_RETENTION_MS + 1)
+            .unwrap();
+        let third = grant_with("gr_3123456789abcdef0123456789abcdef", 30_000);
+        journal.record_bound_consumption(&third).unwrap();
+        assert!(journal.consumed.contains_key(&second.id));
+        assert!(!journal.consumed.contains_key(&first.id));
+    }
+
+    #[test]
+    fn p06_br02_legacy_rows_never_acquire_guessed_genesis_or_scope() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let original = super::consumption_line("legacy-grant", 1, None);
+        std::fs::write(&path, &original).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let identity = crate::keys::NodeIdentity::load_or_create(&fixture.0).unwrap();
+        identity.pin_issuer(history_pin(1)).unwrap();
+        let journal = GrantJournal::open(&path).unwrap();
+        assert!(journal.history.is_none());
+        assert!(journal.bindings.is_empty());
+        assert!(journal.consumed.contains_key("legacy-grant"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), original);
+    }
+
+    #[test]
+    fn p06_br04_busy_or_unsafe_lock_denies_without_journal_changes() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let mut journal = GrantJournal::open(&path).unwrap();
+        let held = super::lock_consumption_journal(&path).unwrap();
+        assert!(journal.record_bound_consumption(&grant()).is_err());
+        assert!(journal.prune(u64::MAX).is_err());
+        assert!(!path.exists());
+        drop(held);
+        std::fs::set_permissions(
+            path.with_extension("lock"),
+            std::fs::Permissions::from_mode(0o644),
+        )
+        .unwrap();
+        assert!(journal.record_bound_consumption(&grant()).is_err());
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn p06_br03_stale_compactor_preserves_another_writers_consume_intent() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let mut writer = GrantJournal::open(&path).unwrap();
+        writer.record_consumption("expired", 1).unwrap();
+        let mut compactor = GrantJournal::open(&path).unwrap();
+        let retained = grant();
+        writer.record_bound_consumption(&retained).unwrap();
+        compactor
+            .prune(super::GRANT_REPLAY_RETENTION_MS + 2)
+            .unwrap();
+        let reopened = GrantJournal::open(&path).unwrap();
+        assert!(
+            reopened.consumed.contains_key(&retained.id),
+            "compaction lost durable intent"
+        );
+        assert_eq!(
+            reopened.bindings[&retained.id].operation_id,
+            retained.operation_id
+        );
+    }
+
+    #[test]
+    fn p06_br04_stale_writer_cannot_consume_another_writers_grant_again() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let mut first = GrantJournal::open(&path).unwrap();
+        let mut stale = GrantJournal::open(&path).unwrap();
+        first.record_bound_consumption(&grant()).unwrap();
+        assert!(
+            stale.record_bound_consumption(&grant()).is_err(),
+            "same grant consumed twice"
+        );
+    }
+
+    #[test]
+    fn p06_cj01_durable_consumption_contains_exact_signed_correlation() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        let grant = grant();
+        accept(&mut verifier, &grant);
+        assert_eq!(
+            verifier
+                .consume(&grant.id, &authorization_for(&grant), 4, 2_200)
+                .unwrap(),
+            grant
+        );
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let value = blindpass_core::canon::parse_json(contents.trim_end()).unwrap();
+        assert_eq!(
+            value
+                .get("operation_id")
+                .and_then(blindpass_core::canon::Value::as_str),
+            Some(grant.operation_id.as_str())
+        );
+        assert_eq!(
+            value
+                .get("issuer_epoch")
+                .and_then(blindpass_core::canon::Value::as_u64),
+            Some(grant.issuer_epoch)
+        );
+        assert_eq!(
+            value
+                .get("grant_id")
+                .and_then(blindpass_core::canon::Value::as_str),
+            Some(grant.id.as_str())
+        );
+        assert_eq!(
+            value
+                .get("expires_at_ms")
+                .and_then(blindpass_core::canon::Value::as_u64),
+            Some(grant.expires_at_ms)
+        );
+        drop(verifier);
+        let mut restored = stateful_verifier_with_fresh_time(&path);
+        assert_eq!(
+            restored.consume(&grant.id, &authorization_for(&grant), 4, 2_200),
+            Err(ConsumeDenial::Consumed)
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), contents);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn p06_cj02_legacy_intent_keeps_denial_beside_new_bound_consumption() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let legacy = numbered_grant(1);
+        let original = format!(
+            "{{\"grant_id\":\"{}\",\"expires_at_ms\":{}}}\n",
+            legacy.id, legacy.expires_at_ms
+        );
+        std::fs::write(&path, &original).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        assert_eq!(
+            verifier.consume(&legacy.id, &authorization_for(&legacy), 4, 2_200),
+            Err(ConsumeDenial::Consumed)
+        );
+        let current = numbered_grant(2);
+        accept(&mut verifier, &current);
+        verifier
+            .consume(&current.id, &authorization_for(&current), 4, 2_200)
+            .unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.starts_with(&original));
+        let lines = contents.lines().collect::<Vec<_>>();
+        assert_eq!(lines.len(), 2);
+        let first = blindpass_core::canon::parse_json(lines[0]).unwrap();
+        assert!(first.get("operation_id").is_none());
+        assert!(first.get("issuer_epoch").is_none());
+        let second = blindpass_core::canon::parse_json(lines[1]).unwrap();
+        assert_eq!(
+            second
+                .get("operation_id")
+                .and_then(blindpass_core::canon::Value::as_str),
+            Some(current.operation_id.as_str())
+        );
+        assert!(
+            GrantJournal::open(&path)
+                .unwrap()
+                .consumed
+                .contains_key(&current.id)
+        );
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn p06_cj03_compaction_preserves_retained_bound_metadata_without_guessing_legacy() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let expired = numbered_grant(1);
+        let retained = numbered_grant(2);
+        let line = format!(
+            "{{\"grant_id\":\"{}\",\"expires_at_ms\":{},\"operation_id\":\"{}\",\"issuer_epoch\":{}}}\n",
+            retained.id, retained.expires_at_ms, retained.operation_id, retained.issuer_epoch
+        );
+        let original = format!(
+            "{{\"grant_id\":\"{}\",\"expires_at_ms\":1}}\n{line}",
+            expired.id
+        );
+        std::fs::write(&path, &original).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let mut journal = GrantJournal::open(&path).unwrap();
+        journal.prune(super::GRANT_REPLAY_RETENTION_MS + 2).unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), line);
+        let loaded = GrantJournal::open(&path).unwrap();
+        assert!(!loaded.consumed.contains_key(&expired.id));
+        assert_eq!(
+            loaded.consumed.get(&retained.id),
+            Some(&retained.expires_at_ms)
+        );
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn p06_cj04_complete_malformed_or_conflicting_correlations_refuse() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let grant = grant();
+        let line = format!(
+            "{{\"grant_id\":\"{}\",\"expires_at_ms\":{},\"operation_id\":\"{}\",\"issuer_epoch\":{}}}\n",
+            grant.id, grant.expires_at_ms, grant.operation_id, grant.issuer_epoch
+        );
+        let legacy = format!(
+            "{{\"grant_id\":\"{}\",\"expires_at_ms\":{}}}\n",
+            grant.id, grant.expires_at_ms
+        );
+        let mut cases = vec![
+            line.replace(&grant.operation_id, "../dummy"),
+            line.replace("\"issuer_epoch\":1", "\"issuer_epoch\":0"),
+            line.replace("\"issuer_epoch\":1", "\"issuer_epoch\":9007199254740992"),
+            line.replace("}\n", ",\"extra\":1}\n"),
+            line.replace("}\n", ",\"operation_id\":\"op_duplicate\"}\n"),
+            format!("{line}{}", line.replace(&grant.operation_id, "op_other")),
+            format!(
+                "{line}{}",
+                line.replace("\"issuer_epoch\":1", "\"issuer_epoch\":2")
+            ),
+            format!("{legacy}{line}"),
+            format!("{line}{legacy}"),
+        ];
+        cases.push(line.replace(",\"issuer_epoch\":1", ""));
+        for malformed in cases {
+            std::fs::write(&path, &malformed).unwrap();
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+            assert!(GrantJournal::open(&path).is_err());
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), malformed);
+        }
+        std::fs::write(&path, format!("{line}{line}")).unwrap();
+        assert_eq!(GrantJournal::open(&path).unwrap().consumed.len(), 1);
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
+    }
+
+    #[test]
+    fn p06_cj04b_torn_bound_record_retains_only_the_complete_intent() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let first = numbered_grant(1);
+        let next = numbered_grant(2);
+        let complete = format!(
+            "{{\"grant_id\":\"{}\",\"expires_at_ms\":{},\"operation_id\":\"{}\",\"issuer_epoch\":{}}}\n",
+            first.id, first.expires_at_ms, first.operation_id, first.issuer_epoch
+        );
+        let torn = format!(
+            "{{\"grant_id\":\"{}\",\"expires_at_ms\":{},\"operation_id\":\"{}\"",
+            next.id, next.expires_at_ms, next.operation_id
+        );
+        std::fs::write(&path, format!("{complete}{torn}")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+        let journal = GrantJournal::open(&path).unwrap();
+        assert_eq!(journal.consumed.len(), 1);
+        assert!(journal.consumed.contains_key(&first.id));
+        assert!(!journal.consumed.contains_key(&next.id));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), complete);
+        assert_eq!(GrantJournal::open(&path).unwrap().consumed.len(), 1);
+    }
+
+    #[test]
+    fn p06_cj05a_unsafe_correlation_denies_before_effect() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        let mut invalid = grant();
+        invalid.operation_id = "../dummy".into();
+        accept(&mut verifier, &invalid);
+        assert_eq!(
+            verifier.consume(&invalid.id, &authorization_for(&invalid), 4, 2_200),
+            Err(ConsumeDenial::Unavailable)
+        );
+        assert!(!path.exists());
+    }
+
+    #[test]
+    fn p06_cj05b_hardlinked_intent_denies_append_and_recovery() {
+        let fixture = ConsumptionJournalDirectory::new();
+        let path = fixture.0.join("consumed.jsonl");
+        let mut verifier = stateful_verifier_with_fresh_time(&path);
+        let first = numbered_grant(1);
+        accept(&mut verifier, &first);
+        verifier
+            .consume(&first.id, &authorization_for(&first), 4, 2_200)
+            .unwrap();
+        let contents = std::fs::read(&path).unwrap();
+        let alias = path.with_extension("alias");
+        std::fs::hard_link(&path, &alias).unwrap();
+        let next = numbered_grant(2);
+        accept(&mut verifier, &next);
+        assert_eq!(
+            verifier.consume(&next.id, &authorization_for(&next), 4, 2_200),
+            Err(ConsumeDenial::Unavailable)
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), contents);
+        assert_eq!(std::fs::read(&alias).unwrap(), contents);
+        assert!(GrantJournal::open(&path).is_err());
+        std::fs::remove_dir_all(path.parent().unwrap()).unwrap();
     }
 
     #[test]

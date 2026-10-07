@@ -233,6 +233,8 @@ async fn bootstrap_login_refresh_csrf_and_replay_are_enforced_over_http() {
             .expect("protect test credential");
     }
     let config = Config::from_variables([
+        // Isolated component fixture; production ownership runs through PW cases.
+        ("BLINDPASS_TEST_MODE", "1"),
         ("BLINDPASS_LISTEN", "127.0.0.1:0"),
         ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
         ("BLINDPASS_UI_BASE_URL", "http://127.0.0.1:5175"),
@@ -1240,6 +1242,8 @@ async fn forced_password_change_blocks_administration_until_completed() {
             .expect("protect test credential");
     }
     let config = Config::from_variables([
+        // Isolated component fixture; production ownership runs through PW cases.
+        ("BLINDPASS_TEST_MODE", "1"),
         ("BLINDPASS_LISTEN", "127.0.0.1:0"),
         ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
         ("BLINDPASS_UI_BASE_URL", "http://127.0.0.1:5175"),
@@ -1482,6 +1486,8 @@ impl AdminServer {
                 .expect("protect test credential");
         }
         let config = Config::from_variables([
+            // Isolated component fixture; production ownership runs through PW cases.
+            ("BLINDPASS_TEST_MODE", "1"),
             ("BLINDPASS_LISTEN", "127.0.0.1:0"),
             ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
             ("BLINDPASS_UI_BASE_URL", "http://127.0.0.1:5175"),

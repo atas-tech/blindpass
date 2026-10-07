@@ -1,0 +1,3 @@
+{"scenario": "P06-B06", "phase": "capture", "disk_full": "passed", "source_intact": true, "partial_publication": false}
+{"scenario": "P06-B06", "phase": "encryption", "disk_full": "passed", "source_intact": true, "partial_publication": false}
+{"scenario": "P06-B06", "phase": "verification", "disk_full": "passed", "source_intact": true, "partial_publication": false}

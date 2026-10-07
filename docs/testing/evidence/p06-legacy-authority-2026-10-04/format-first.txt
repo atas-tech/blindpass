@@ -1,0 +1,358 @@
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/app.rs:64:
+     pub(crate) async fn legacy_authority_keys(
+         &self,
+     ) -> Result<crate::legacy_authority::LegacyAuthorityKeys, StoreError> {
+[31m-        let store = self.store.as_ref().ok_or(StoreError::MissingState("store"))?;
+(B[m[32m+        let store = self
+(B[m[32m+            .store
+(B[m[32m+            .as_ref()
+(B[m[32m+            .ok_or(StoreError::MissingState("store"))?;
+(B[m         let epoch = tokio::time::timeout(Duration::from_secs(3), store.legacy_authority_epoch())
+             .await
+             .map_err(|_| StoreError::AuthorityFenced)??;
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/app.rs:77:
+         if store.recovery_required() {
+             return Err(StoreError::RecoveryRequired);
+         }
+[31m-        if self.ownership.as_ref().is_some_and(|owner| owner.is_fenced()) {
+(B[m[32m+        if self
+(B[m[32m+            .ownership
+(B[m[32m+            .as_ref()
+(B[m[32m+            .is_some_and(|owner| owner.is_fenced())
+(B[m[32m+        {
+(B[m             return Err(StoreError::AuthorityFenced);
+         }
+         Ok(keys)
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:1:
+ // SPDX-License-Identifier: AGPL-3.0-only
+ //! Explicit legacy JWT/HMAC authority versioning. No reservation or activation.
+ use crate::store::StoreError;
+[31m-use blindpass_core::{custody::hmac_sha256, secret::{SecretBytes, wipe}};
+(B[m[32m+use blindpass_core::{
+(B[m[32m+    custody::hmac_sha256,
+(B[m[32m+    secret::{SecretBytes, wipe},
+(B[m[32m+};
+(B[m 
+ const MAX_EPOCH: u64 = 9_007_199_254_740_991;
+ const DOMAIN: &[u8] = b"blindpass:controller-legacy-authority:v1\0";
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:15:
+ }
+ 
+ pub(crate) fn matches_epoch(epoch: u64, claim: Option<u64>) -> bool {
+[31m-    safe_epoch(epoch) && match claim {
+(B[m[31m-        Some(claim) => claim == epoch,
+(B[m[31m-        None => epoch == 1,
+(B[m[31m-    }
+(B[m[32m+    safe_epoch(epoch)
+(B[m[32m+        && match claim {
+(B[m[32m+            Some(claim) => claim == epoch,
+(B[m[32m+            None => epoch == 1,
+(B[m[32m+        }
+(B[m }
+ 
+ pub(crate) struct LegacyAuthorityKeys {
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:28:
+ }
+ 
+ impl LegacyAuthorityKeys {
+[31m-    pub(crate) fn derive(root: &[u8], agent_jwt: &[u8], tenant: &str, epoch: u64) -> Result<Self, StoreError> {
+(B[m[31m-        if !safe_epoch(epoch) || tenant.is_empty() || tenant.len() > 128
+(B[m[31m-            || !tenant.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b,b'_'|b'-'))
+(B[m[31m-            || root.is_empty() || agent_jwt.is_empty() {
+(B[m[32m+    pub(crate) fn derive(
+(B[m[32m+        root: &[u8],
+(B[m[32m+        agent_jwt: &[u8],
+(B[m[32m+        tenant: &str,
+(B[m[32m+        epoch: u64,
+(B[m[32m+    ) -> Result<Self, StoreError> {
+(B[m[32m+        if !safe_epoch(epoch)
+(B[m[32m+            || tenant.is_empty()
+(B[m[32m+            || tenant.len() > 128
+(B[m[32m+            || !tenant
+(B[m[32m+                .bytes()
+(B[m[32m+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-'))
+(B[m[32m+            || root.is_empty()
+(B[m[32m+            || agent_jwt.is_empty()
+(B[m[32m+        {
+(B[m             return Err(StoreError::MissingState("legacy authority context"));
+         }
+         Ok(Self {
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:38:
+[31m-            root: version_key(root,b"root",tenant,epoch)?,
+(B[m[31m-            agent_jwt: version_key(agent_jwt,b"agent-jwt",tenant,epoch)?,
+(B[m[32m+            root: version_key(root, b"root", tenant, epoch)?,
+(B[m[32m+            agent_jwt: version_key(agent_jwt, b"agent-jwt", tenant, epoch)?,
+(B[m             epoch,
+         })
+     }
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:43:
+ }
+ 
+[31m-fn version_key(master: &[u8], purpose: &[u8], tenant: &str, epoch: u64) -> Result<SecretBytes, StoreError> {
+(B[m[32m+fn version_key(
+(B[m[32m+    master: &[u8],
+(B[m[32m+    purpose: &[u8],
+(B[m[32m+    tenant: &str,
+(B[m[32m+    epoch: u64,
+(B[m[32m+) -> Result<SecretBytes, StoreError> {
+(B[m     // Generation1 is the accepted SPS wire/crypto baseline. This exception is
+     // never used for a later generation and does not permit a stale restore
+     // to reset external ownership/high-watermark or return to generation1.
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:49:
+     if epoch == 1 {
+         return Ok(SecretBytes::from_slice(master));
+     }
+[31m-    let mut context=DOMAIN.to_vec();
+(B[m[32m+    let mut context = DOMAIN.to_vec();
+(B[m     context.extend_from_slice(purpose);
+     context.push(0);
+     context.extend_from_slice(&(tenant.len() as u32).to_be_bytes());
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:56:
+     context.extend_from_slice(tenant.as_bytes());
+     context.extend_from_slice(&epoch.to_be_bytes());
+[31m-    let mut digest=hmac_sha256(master,&context).map_err(|_|StoreError::MissingState("legacy authority key"))?;
+(B[m[32m+    let mut digest = hmac_sha256(master, &context)
+(B[m[32m+        .map_err(|_| StoreError::MissingState("legacy authority key"))?;
+(B[m     wipe(&mut context);
+[31m-    let key=SecretBytes::from_slice(&digest);
+(B[m[32m+    let key = SecretBytes::from_slice(&digest);
+(B[m     wipe(&mut digest);
+     Ok(key)
+ }
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:65:
+ #[cfg(test)]
+ mod tests {
+     use super::{LegacyAuthorityKeys, matches_epoch};
+[31m-    fn keys(tenant: &str,epoch: u64) -> LegacyAuthorityKeys {
+(B[m[31m-        LegacyAuthorityKeys::derive(&[b'R';32],&[b'A';32],tenant,epoch).unwrap()
+(B[m[32m+    fn keys(tenant: &str, epoch: u64) -> LegacyAuthorityKeys {
+(B[m[32m+        LegacyAuthorityKeys::derive(&[b'R'; 32], &[b'A'; 32], tenant, epoch).unwrap()
+(B[m     }
+[31m-    fn hex(bytes: &[u8]) -> String {bytes.iter().map(|b|format!("{b:02x}")).collect()}
+(B[m[32m+    fn hex(bytes: &[u8]) -> String {
+(B[m[32m+        bytes.iter().map(|b| format!("{b:02x}")).collect()
+(B[m[32m+    }
+(B[m 
+     #[test]
+     fn p06_la06_independent_dummy_hmac_vectors_match_explicit_context() {
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:75:
+         // Independently calculated with Python stdlib HMAC-SHA256. Fixed
+         // purpose, length-prefixed tenant and big-endian epoch bind the key.
+[31m-        let k=keys("P06_DUMMY_TENANT",9);
+(B[m[31m-        assert_eq!(hex(k.root.as_bytes()),"6c9cebe8e59d188a3508adcf0dbaae988212e1bd10211c58cbeabd30c47624d7");
+(B[m[31m-        assert_eq!(hex(k.agent_jwt.as_bytes()),"ea4d12f4404469bff7641c1d37b9be285ccce732b36d20562a4d7aee574bcf0d");
+(B[m[32m+        let k = keys("P06_DUMMY_TENANT", 9);
+(B[m[32m+        assert_eq!(
+(B[m[32m+            hex(k.root.as_bytes()),
+(B[m[32m+            "6c9cebe8e59d188a3508adcf0dbaae988212e1bd10211c58cbeabd30c47624d7"
+(B[m[32m+        );
+(B[m[32m+        assert_eq!(
+(B[m[32m+            hex(k.agent_jwt.as_bytes()),
+(B[m[32m+            "ea4d12f4404469bff7641c1d37b9be285ccce732b36d20562a4d7aee574bcf0d"
+(B[m[32m+        );
+(B[m     }
+     #[test]
+     fn p06_la06_baseline_is_compatible_and_later_contexts_are_distinct() {
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:83:
+[31m-        let base=keys("P06_DUMMY_TENANT",1);
+(B[m[31m-        assert_eq!(base.root.as_bytes(),&[b'R';32]);assert_eq!(base.agent_jwt.as_bytes(),&[b'A';32]);
+(B[m[31m-        let current=keys("P06_DUMMY_TENANT",9);
+(B[m[31m-        for other in [base,keys("P06_DUMMY_TENANT",10),keys("P06_DUMMY_OTHER",9)] {
+(B[m[31m-            assert_ne!(current.root.as_bytes(),other.root.as_bytes());
+(B[m[31m-            assert_ne!(current.agent_jwt.as_bytes(),other.agent_jwt.as_bytes());
+(B[m[32m+        let base = keys("P06_DUMMY_TENANT", 1);
+(B[m[32m+        assert_eq!(base.root.as_bytes(), &[b'R'; 32]);
+(B[m[32m+        assert_eq!(base.agent_jwt.as_bytes(), &[b'A'; 32]);
+(B[m[32m+        let current = keys("P06_DUMMY_TENANT", 9);
+(B[m[32m+        for other in [
+(B[m[32m+            base,
+(B[m[32m+            keys("P06_DUMMY_TENANT", 10),
+(B[m[32m+            keys("P06_DUMMY_OTHER", 9),
+(B[m[32m+        ] {
+(B[m[32m+            assert_ne!(current.root.as_bytes(), other.root.as_bytes());
+(B[m[32m+            assert_ne!(current.agent_jwt.as_bytes(), other.agent_jwt.as_bytes());
+(B[m         }
+         // Even an installation using identical master bytes cannot mix the
+         // root-link authority with agent-JWT authority after generation1.
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:92:
+[31m-        let same=LegacyAuthorityKeys::derive(&[b'R';32],&[b'R';32],"P06_DUMMY_TENANT",9).unwrap();
+(B[m[31m-        assert_ne!(same.root.as_bytes(),same.agent_jwt.as_bytes());
+(B[m[32m+        let same =
+(B[m[32m+            LegacyAuthorityKeys::derive(&[b'R'; 32], &[b'R'; 32], "P06_DUMMY_TENANT", 9).unwrap();
+(B[m[32m+        assert_ne!(same.root.as_bytes(), same.agent_jwt.as_bytes());
+(B[m     }
+     #[test]
+     fn p06_la06_invalid_context_and_unversioned_later_claims_refuse() {
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/legacy_authority.rs:97:
+[31m-        for epoch in [0,9_007_199_254_740_992,u64::MAX] {
+(B[m[31m-            assert!(LegacyAuthorityKeys::derive(b"P06_DUMMY",b"P06_DUMMY","P06_DUMMY",epoch).is_err());
+(B[m[31m-            assert!(!matches_epoch(epoch,Some(epoch)));
+(B[m[32m+        for epoch in [0, 9_007_199_254_740_992, u64::MAX] {
+(B[m[32m+            assert!(
+(B[m[32m+                LegacyAuthorityKeys::derive(b"P06_DUMMY", b"P06_DUMMY", "P06_DUMMY", epoch)
+(B[m[32m+                    .is_err()
+(B[m[32m+            );
+(B[m[32m+            assert!(!matches_epoch(epoch, Some(epoch)));
+(B[m         }
+         for tenant in ["", "../P06_DUMMY", "P06 DUMMY"] {
+[31m-            assert!(LegacyAuthorityKeys::derive(b"P06_DUMMY",b"P06_DUMMY",tenant,9).is_err());
+(B[m[32m+            assert!(LegacyAuthorityKeys::derive(b"P06_DUMMY", b"P06_DUMMY", tenant, 9).is_err());
+(B[m         }
+[31m-        assert!(matches_epoch(1,None));assert!(matches_epoch(1,Some(1)));
+(B[m[31m-        assert!(matches_epoch(9,Some(9)));assert!(!matches_epoch(9,None));
+(B[m[31m-        assert!(!matches_epoch(9,Some(1)));assert!(!matches_epoch(9,Some(10)));
+(B[m[32m+        assert!(matches_epoch(1, None));
+(B[m[32m+        assert!(matches_epoch(1, Some(1)));
+(B[m[32m+        assert!(matches_epoch(9, Some(9)));
+(B[m[32m+        assert!(!matches_epoch(9, None));
+(B[m[32m+        assert!(!matches_epoch(9, Some(1)));
+(B[m[32m+        assert!(!matches_epoch(9, Some(10)));
+(B[m     }
+ }
+ 
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/agents.rs:99:
+         }
+     };
+     let tenant_id = store.tenant_id().to_owned();
+[31m-    let (access_token, access_token_expires_at) = match mint_agent_token(&state, &agent, &tenant_id).await
+(B[m[31m-    {
+(B[m[31m-        Ok(token) => token,
+(B[m[31m-        Err(_) => {
+(B[m[31m-            return (
+(B[m[31m-                StatusCode::SERVICE_UNAVAILABLE,
+(B[m[31m-                Json(json!({"error":"service_unavailable"})),
+(B[m[31m-            )
+(B[m[31m-                .into_response();
+(B[m[31m-        }
+(B[m[31m-    };
+(B[m[32m+    let (access_token, access_token_expires_at) =
+(B[m[32m+        match mint_agent_token(&state, &agent, &tenant_id).await {
+(B[m[32m+            Ok(token) => token,
+(B[m[32m+            Err(_) => {
+(B[m[32m+                return (
+(B[m[32m+                    StatusCode::SERVICE_UNAVAILABLE,
+(B[m[32m+                    Json(json!({"error":"service_unavailable"})),
+(B[m[32m+                )
+(B[m[32m+                    .into_response();
+(B[m[32m+            }
+(B[m[32m+        };
+(B[m     let _ = store
+         .append_audit(
+             "agent_token_minted",
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/auth.rs:156:
+     agent: &AgentCredential,
+     tenant_id: &str,
+ ) -> Result<(String, u64), &'static str> {
+[31m-    let keys = state.legacy_authority_keys().await.map_err(|_| "agent authority unavailable")?;
+(B[m[32m+    let keys = state
+(B[m[32m+        .legacy_authority_keys()
+(B[m[32m+        .await
+(B[m[32m+        .map_err(|_| "agent authority unavailable")?;
+(B[m     let now = current_seconds();
+     let expiry = now + AGENT_ACCESS_TTL_SECONDS;
+     let claims = TokenClaims {
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/auth.rs:187:
+     headers: &HeaderMap,
+ ) -> Result<WorkloadIdentity, AuthError> {
+     let token = bearer_token(headers).ok_or(AuthError::MissingBearer)?;
+[31m-    let keys = state.legacy_authority_keys().await.map_err(|_| AuthError::AuthorityUnavailable)?;
+(B[m[32m+    let keys = state
+(B[m[32m+        .legacy_authority_keys()
+(B[m[32m+        .await
+(B[m[32m+        .map_err(|_| AuthError::AuthorityUnavailable)?;
+(B[m     if let Some(identity) = verify_agent_token(&keys, token) {
+         return Ok(identity);
+     }
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/auth.rs:194:
+     verify_external_token(state, token)
+ }
+ 
+[31m-fn verify_agent_token(keys: &crate::legacy_authority::LegacyAuthorityKeys, token: &str) -> Option<WorkloadIdentity> {
+(B[m[32m+fn verify_agent_token(
+(B[m[32m+    keys: &crate::legacy_authority::LegacyAuthorityKeys,
+(B[m[32m+    token: &str,
+(B[m[32m+) -> Option<WorkloadIdentity> {
+(B[m     let mut validation = jwt_validation(Algorithm::HS256);
+     validation.set_issuer(&["sps"]);
+     validation.set_audience(&["sps-agent"]);
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/auth.rs:205:
+     )
+     .ok()?
+     .claims;
+[31m-    if claims.role != "gateway" || !crate::legacy_authority::matches_epoch(keys.epoch, claims.issuer_epoch) {
+(B[m[32m+    if claims.role != "gateway"
+(B[m[32m+        || !crate::legacy_authority::matches_epoch(keys.epoch, claims.issuer_epoch)
+(B[m[32m+    {
+(B[m         return None;
+     }
+     Some(WorkloadIdentity {
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/exchanges.rs:1106:
+     issuer_epoch: u64,
+     root_secret: &[u8],
+ ) -> Result<String, ()> {
+[31m-    if !crate::legacy_authority::safe_epoch(issuer_epoch) { return Err(()); }
+(B[m[32m+    if !crate::legacy_authority::safe_epoch(issuer_epoch) {
+(B[m[32m+        return Err(());
+(B[m[32m+    }
+(B[m     let secret = derive_secret(root_secret, "agent-fulfillment").map_err(|_| ())?;
+     let claims = FulfillmentClaims {
+         exchange_id: exchange_id.to_owned(),
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/exchanges.rs:1138:
+     Ok(format!("{signing_input}.{signature}"))
+ }
+ 
+[31m-fn verify_fulfillment_token(token: &str, root_secret: &[u8], issuer_epoch: u64) -> Result<FulfillmentClaims, ()> {
+(B[m[32m+fn verify_fulfillment_token(
+(B[m[32m+    token: &str,
+(B[m[32m+    root_secret: &[u8],
+(B[m[32m+    issuer_epoch: u64,
+(B[m[32m+) -> Result<FulfillmentClaims, ()> {
+(B[m     let secret = derive_secret(root_secret, "agent-fulfillment").map_err(|_| ())?;
+     let mut validation = jwt_validation(Algorithm::HS256);
+     validation.set_issuer(&["sps"]);
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/exchanges.rs:1151:
+     .map_err(|_| ())
+     .and_then(|data| {
+         crate::legacy_authority::matches_epoch(issuer_epoch, data.claims.issuer_epoch)
+[31m-            .then_some(data.claims).ok_or(())
+(B[m[32m+            .then_some(data.claims)
+(B[m[32m+            .ok_or(())
+(B[m     })
+ }
+ 
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/provisioning.rs:203:
+             "a signed provisioning capability is required",
+         ));
+     };
+[31m-    let keys = state.legacy_authority_keys().await.map_err(|_| unavailable())?;
+(B[m[32m+    let keys = state
+(B[m[32m+        .legacy_authority_keys()
+(B[m[32m+        .await
+(B[m[32m+        .map_err(|_| unavailable())?;
+(B[m     match verify_fleet_provisioning_capability(
+         id,
+         scope,
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/provisioning.rs:443:
+     if !valid_link_id(&id) {
+         return unavailable_link();
+     }
+[31m-    if let Err(response) = check_capability(&state, &id, BrowserScope::Submit, query.sig.as_deref()).await
+(B[m[32m+    if let Err(response) =
+(B[m[32m+        check_capability(&state, &id, BrowserScope::Submit, query.sig.as_deref()).await
+(B[m     {
+         return response;
+     }
+Diff in /home/hvo/Projects/blindpass/crates/blindpass-controller/src/routes/secrets.rs:425:
+         }
+         _ => return gone_status(),
+     };
+[31m-    match sign_browser_payload(
+(B[m[31m-        &id,
+(B[m[31m-        expiry,
+(B[m[31m-        BrowserScope::Status,
+(B[m[31m-        keys.root.as_bytes(),
+(B[m[31m-    ) {
+(B[m[32m+    match sign_browser_payload(&id, expiry, BrowserScope::Status, keys.root.as_bytes()) {
+(B[m         Ok(status_sig) => Json(json!({"status_sig":status_sig})).into_response(),
+         Err(_) => (
+             StatusCode::INTERNAL_SERVER_ERROR,

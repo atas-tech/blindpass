@@ -1,0 +1,27 @@
+   Compiling blindpass-core v0.1.0 (/tmp/blindpass-p06-cr-control-369bt_bd/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.36s
+     Running tests/consumed_report.rs (target/debug/deps/consumed_report-3e58ff1897d36bf6)
+
+running 5 tests
+test p06_cr05_generic_event_admission_stays_closed ... ok
+test p06_cr02_signature_binds_every_context_field_and_event_key ... FAILED
+test p06_cr03_strict_fields_order_bounds_and_no_truncation ... ok
+test p06_cr04_stale_observation_and_future_or_zero_epochs_refuse ... ok
+test p06_cr01_canonical_round_trip_and_authentic_all_outcomes ... ok
+
+failures:
+
+---- p06_cr02_signature_binds_every_context_field_and_event_key stdout ----
+
+thread 'p06_cr02_signature_binds_every_context_field_and_event_key' (559) panicked at core/tests/consumed_report.rs:142:9:
+assertion failed: changed.verify(EVENT, &context(&changed), key.public_key(),
+        &signature).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    p06_cr02_signature_binds_every_context_field_and_event_key
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p blindpass-core --test consumed_report`

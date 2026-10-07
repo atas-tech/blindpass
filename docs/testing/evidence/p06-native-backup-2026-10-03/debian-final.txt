@@ -1,0 +1,22 @@
+P06-NATIVE profile=debian-12 artifact_sha256=86796930032b8231476c58659e5bb3458f1e8e80b093879cfd6ad9686abc2ea8
+P06-NATIVE guest_test_sha256=7597e108cc7d7528a8f7ff69ffadc3f9e3be1d4e4d03a56a6a0dac9b82f2e6c6
+P06-N01 PASS
+P06-N02 install={"backup_timer": "disabled unless separately configured", "initialized": true, "ok": true, "version": "0.1.0"}
+P06-N02 PASS
+P06-N03 PASS
+P06-N04 stop_seconds=0.008
+P06-N04-restart PASS
+P06-N04-reboot PASS
+P06-N05 PASS
+P06-N06 PASS
+P06-N07 PASS
+P06-B10 openssl=OpenSSL 3.0.22 25 Aug 2026 (Library: OpenSSL 3.0.22 25 Aug 2026)
+P06-B10 package=libssl3 3.0.22-1~deb12u1
+P06-B10 package=openssl 3.0.22-1~deb12u1
+P06-B08 native_backup_seconds=0.408
+P06-B08 PASS
+P06-N08 PASS
+P06-N09 PASS
+P06-NATIVE kernel=6.1.0-53-cloud-amd64 systemd=systemd 252 (252.39-1~deb12u2)
+P06-NATIVE debian-12 PASS
+P06-NATIVE teardown complete

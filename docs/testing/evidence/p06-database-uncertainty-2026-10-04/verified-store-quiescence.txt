@@ -1,0 +1,12 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.19s
+     Running tests/store_quiescence.rs (target/debug/deps/store_quiescence-3cbba4666e374ef6)
+
+running 4 tests
+test p06_qf07a_cancelled_autocommit_cannot_report_quiescence ... ok
+test p06_qf07b_cancelled_commit_may_still_commit_on_server ... ok
+test p06_qf07c_aborted_store_task_cannot_release_uncertain_guard ... ok
+test p06_qf07d_completed_store_work_can_drain_normally ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.27s
+

@@ -1,0 +1,23 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running tests/recovery_invalidation.rs (target/debug/deps/recovery_invalidation-c07524c8ea7d0b21)
+
+running 6 tests
+test p06_ri01_atomic_invalidation_and_quarantine_cover_all_restored_authority ... ok
+test p06_ri02_failure_rolls_back_bulk_state_but_intent_survives_restart_and_retry ... ok
+test p06_ri03_prepared_intent_fences_all_http_and_clones_after_restart ... ok
+test p06_ri04_invalid_input_and_lost_holder_cannot_invalidate_or_guess_epoch ... ok
+test p06_ri05_damaged_or_future_schema_is_refused_without_repair ... 
+thread 'p06_ri05_damaged_or_future_schema_is_refused_without_repair' (3323697) panicked at crates/blindpass-controller/tests/support/mod.rs:710:45:
+harness scalar: ColumnDecode { index: "0", source: "mismatched types; Rust type `i64` (as SQL type `INT8`) is not compatible with SQL type `INT4`" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_ri06_authority_loss_cancels_write_locked_recovery_and_keeps_intent ... ok
+
+failures:
+
+failures:
+    p06_ri05_damaged_or_future_schema_is_refused_without_repair
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 12.06s
+
+error: test failed, to rerun pass `-p blindpass-controller --test recovery_invalidation`

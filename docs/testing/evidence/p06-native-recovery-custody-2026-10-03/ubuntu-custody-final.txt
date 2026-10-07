@@ -1,0 +1,39 @@
+P06-NATIVE profile=ubuntu-24.04 artifact_sha256=fad2c7b884ff2575cefb25b1e2f0a15b0a22e93e194271b31a94bf7f6dd84b10
+P06-NATIVE guest_test_sha256=d585bf31719b624fd4eb461cd083ff6053f7981899dd57f36bc5494abd9b0aad
+P06-N01 PASS
+P06-N02 install={"backup_timer": "disabled unless separately configured", "initialized": true, "ok": true, "version": "0.1.0"}
+P06-N02 PASS
+P06-N03 PASS
+P06-N04 stop_seconds=0.012
+P06-N04-restart PASS
+P06-N04-reboot PASS
+P06-N05 PASS
+P06-N06 PASS
+P06-N07 PASS
+P06-B10 openssl=OpenSSL 3.0.13 30 Jan 2024 (Library: OpenSSL 3.0.13 30 Jan 2024)
+P06-B10 package=libssl3t64 3.0.13-0ubuntu3.16
+P06-B10 package=openssl 3.0.13-0ubuntu3.16
+P06-B08 native_backup_seconds=0.545
+P06-B08 PASS
+P06-NB07 checking=recovery-mode expected_refusal=True
+P06-NB07-recovery-mode PASS
+P06-NB07 checking=recovery-owner expected_refusal=True
+P06-NB07-recovery-owner PASS
+P06-NB07 checking=recovery-hardlink expected_refusal=True
+P06-NB07-recovery-hardlink PASS
+P06-NB07 checking=recovery-symlink expected_refusal=True
+P06-NB07-recovery-symlink PASS
+P06-NB07 checking=recovery-fifo expected_refusal=True
+P06-NB07-recovery-fifo PASS
+P06-NB07 checking=recovery-oversized expected_refusal=True
+P06-NB07-recovery-oversized PASS
+P06-NB07 checking=marker-mode expected_refusal=True
+P06-NB07-marker-mode PASS
+P06-NB07 checking=parent-mode expected_refusal=True
+P06-NB07-parent-mode PASS
+P06-NB07 PASS
+P06-N08 PASS
+P06-N09 PASS
+P06-NATIVE kernel=6.8.0-139-generic systemd=systemd 255 (255.4-1ubuntu8.17)
+P06-NATIVE ubuntu-24.04 PASS
+P06-NATIVE teardown complete

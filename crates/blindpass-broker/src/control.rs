@@ -45,6 +45,52 @@ fn handle_command(
 ) -> Result<(), BrokerError> {
     match command {
         b"STATUS\n" => stream.write_all(b"OK blindpass-control/1\n")?,
+        b"RECOVERY_CHALLENGE\n" => {
+            let value = state
+                .lock()
+                .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?
+                .grant_verifier
+                .begin_recovery_challenge(identity)?;
+            let encoded = canonicalize_value(&value)
+                .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?;
+            writeln!(stream, "RECOVERY_CHALLENGE {}", encoded.len())?;
+            stream.write_all(&encoded)?;
+        }
+        _ if command.starts_with(b"RECOVERY_REPORT ") => {
+            let framed = command
+                .strip_prefix(b"RECOVERY_REPORT ")
+                .ok_or(BrokerError::Configuration("recovery_report_denied"))?;
+            let mut relay = b"RELAY ".to_vec();
+            relay.extend_from_slice(framed);
+            let length = parse_relay_length(&relay)?;
+            if length > 4_096 {
+                return Err(BrokerError::Configuration("recovery_report_denied"));
+            }
+            let mut bytes = vec![0_u8; length];
+            read_exact_until(stream, &mut bytes, deadline)?;
+            let request = std::str::from_utf8(&bytes).ok().and_then(|text| {
+                blindpass_core::recovery::pages::SignedReportRequest::from_json(text).ok()
+            });
+            wipe(&mut bytes);
+            let result = request
+                .ok_or(BrokerError::Configuration("recovery_report_denied"))
+                .and_then(|request| {
+                    state
+                        .lock()
+                        .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?
+                        .grant_verifier
+                        .recovery_page(&request, identity)
+                });
+            match result {
+                Ok(value) => {
+                    let encoded = canonicalize_value(&value)
+                        .map_err(|_| BrokerError::Configuration("recovery_report_denied"))?;
+                    writeln!(stream, "RECOVERY_REPORT {}", encoded.len())?;
+                    stream.write_all(&encoded)?;
+                }
+                Err(_) => stream.write_all(b"ERR recovery_report_denied\n")?,
+            }
+        }
         b"PULL_EVENTS\n" => {
             let mut state = state
                 .lock()
@@ -232,12 +278,11 @@ fn handle_command(
             require_root_peer(stream)?;
             let pin = parse_pin(command)?;
             let epoch = pin.epoch;
-            identity.pin_issuer(pin)?;
-            state
+            let mut state = state
                 .lock()
-                .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?
-                .grant_verifier
-                .observe_issuer_epoch(epoch);
+                .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?;
+            identity.pin_issuer(pin)?;
+            state.grant_verifier.observe_issuer_epoch(epoch);
             stream.write_all(b"OK issuer_pinned\n")?;
         }
         _ if command.starts_with(b"RELAY ") => {
@@ -832,6 +877,7 @@ fn read_exact_until(
 
 #[cfg(test)]
 mod tests {
+    mod recovery_reports;
     use super::{
         MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_provision_length,
         parse_relay_length, restore_controller_documents,

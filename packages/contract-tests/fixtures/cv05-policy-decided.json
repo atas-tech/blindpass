@@ -1,0 +1,294 @@
+{
+  "description": "CV05 decided policy semantics: shapes the legacy TypeScript engine and the Rust controller handled differently, with the Rust behaviour the owner chose on 2026-10-07 (empty identity list matches every agent; a blank reason falls back to the generated text, a padded one is trimmed; rule ids and rule secret names are trimmed). Hand-authored; only policy_hash is computed, with hashPolicyDecision. Read by vectors.test.ts (TypeScript oracle) and the Rust controller. A change needs a decision record",
+  "provenance": {
+    "authoredBy": "hand, from the owner decision of 2026-10-07",
+    "workspaceId": "workspace-p00",
+    "hashFrom": "packages/contract-tests/src/oracle/policy.ts hashPolicyDecision, pinned by cv05-hash-escaping.json"
+  },
+  "registry": [
+    {
+      "secretName": "finance.api_key",
+      "classification": "finance"
+    }
+  ],
+  "groups": [
+    {
+      "rules": [
+        {
+          "ruleId": "any-requester",
+          "secretName": "finance.api_key",
+          "requesterIds": []
+        }
+      ],
+      "cases": [
+        {
+          "input": {
+            "requesterId": "anyone-at-all",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "any-requester",
+            "allowedFulfillerId": "agent-b",
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "exchange allowed by static policy for finance",
+            "approvalReference": null,
+            "policy_hash": "058888d31d230aa24b65e6a61f3014fd3a0f931035950d5593ae928445727f8f"
+          }
+        },
+        {
+          "input": {
+            "requesterId": "agent-q/ring/blue",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "any-requester",
+            "allowedFulfillerId": "agent-b",
+            "requesterRing": "blue",
+            "fulfillerRing": null,
+            "reason": "exchange allowed by static policy for finance",
+            "approvalReference": null,
+            "policy_hash": "9c579f446305283a6b6b43402d64e8a37a28676a833146013bf212d013f7db59"
+          }
+        }
+      ]
+    },
+    {
+      "rules": [
+        {
+          "ruleId": "any-fulfiller",
+          "secretName": "finance.api_key",
+          "fulfillerIds": []
+        }
+      ],
+      "cases": [
+        {
+          "input": {
+            "requesterId": "agent-a",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "whoever"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "any-fulfiller",
+            "allowedFulfillerId": "whoever",
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "exchange allowed by static policy for finance",
+            "approvalReference": null,
+            "policy_hash": "7002738dd5a8d8bc791dbf353fe8bc82da8dd65ab01213a5cc8826156075e165"
+          }
+        }
+      ]
+    },
+    {
+      "rules": [
+        {
+          "ruleId": "mixed",
+          "secretName": "finance.api_key",
+          "requesterIds": [
+            "agent-a"
+          ],
+          "fulfillerIds": []
+        }
+      ],
+      "cases": [
+        {
+          "input": {
+            "requesterId": "agent-a",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "whoever"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "mixed",
+            "allowedFulfillerId": "whoever",
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "exchange allowed by static policy for finance",
+            "approvalReference": null,
+            "policy_hash": "c6194cede03187bb9e48015a99a1ce766685427f37d45fad419c930e0a1f7457"
+          }
+        },
+        {
+          "input": {
+            "requesterId": "agent-z",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "whoever"
+          },
+          "expected": null
+        }
+      ]
+    },
+    {
+      "rules": [
+        {
+          "ruleId": "named",
+          "secretName": "finance.api_key",
+          "requesterIds": [
+            "agent-a"
+          ],
+          "mode": "deny"
+        },
+        {
+          "ruleId": "open",
+          "secretName": "finance.api_key",
+          "requesterIds": []
+        }
+      ],
+      "cases": [
+        {
+          "input": {
+            "requesterId": "agent-a",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": {
+            "mode": "deny",
+            "ruleId": "named",
+            "allowedFulfillerId": null,
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "exchange for finance is denied by policy",
+            "approvalReference": null,
+            "policy_hash": "d6db21b99ed03a770ea4a713170a676ff6a80cf5eaec5c539c1b639422970845"
+          }
+        },
+        {
+          "input": {
+            "requesterId": "agent-z",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "open",
+            "allowedFulfillerId": "agent-b",
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "exchange allowed by static policy for finance",
+            "approvalReference": null,
+            "policy_hash": "148ebaa5b8ad394e86f06ea6240f56a676aa6b265aea965deeb367a82c00321c"
+          }
+        }
+      ]
+    },
+    {
+      "rules": [
+        {
+          "ruleId": "any-requester",
+          "secretName": "finance.api_key",
+          "requesterIds": []
+        }
+      ],
+      "cases": [
+        {
+          "input": {
+            "requesterId": "anyone",
+            "secretName": "restricted.other",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": null
+        }
+      ]
+    },
+    {
+      "rules": [
+        {
+          "ruleId": "blank-reason",
+          "secretName": "finance.api_key",
+          "requesterIds": [
+            "blank"
+          ],
+          "reason": ""
+        },
+        {
+          "ruleId": "padded-reason",
+          "secretName": "finance.api_key",
+          "requesterIds": [
+            "padded"
+          ],
+          "reason": "  padded reason  "
+        }
+      ],
+      "cases": [
+        {
+          "input": {
+            "requesterId": "blank",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "blank-reason",
+            "allowedFulfillerId": "agent-b",
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "exchange allowed by static policy for finance",
+            "approvalReference": null,
+            "policy_hash": "cd30fb8d5c447ab61e810d3fc6af719a26265f1ad02b70deca87ba40a8be7569"
+          }
+        },
+        {
+          "input": {
+            "requesterId": "padded",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "padded-reason",
+            "allowedFulfillerId": "agent-b",
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "padded reason",
+            "approvalReference": null,
+            "policy_hash": "9b3ee7783846d6081647f6ef8a6c8eed92f0f0ebad612cfdc8a6fdfc365c0f03"
+          }
+        }
+      ]
+    },
+    {
+      "rules": [
+        {
+          "ruleId": " padded-id ",
+          "secretName": " finance.api_key "
+        }
+      ],
+      "cases": [
+        {
+          "input": {
+            "requesterId": "agent-a",
+            "secretName": "finance.api_key",
+            "purpose": "deploy",
+            "fulfillerHint": "agent-b"
+          },
+          "expected": {
+            "mode": "allow",
+            "ruleId": "padded-id",
+            "allowedFulfillerId": "agent-b",
+            "requesterRing": null,
+            "fulfillerRing": null,
+            "reason": "exchange allowed by static policy for finance",
+            "approvalReference": null,
+            "policy_hash": "d9bb8c335a8e07ad191f479c9051cd090faed29d5a150fd95cbbc92d19d030b7"
+          }
+        }
+      ]
+    }
+  ]
+}

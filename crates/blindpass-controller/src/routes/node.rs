@@ -17,8 +17,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blindpass_core::canon::{canonicalize_json, parse_json};
 use blindpass_core::custody::sha256;
 use blindpass_core::fleet::{
-    ApplicationAck, DocumentKind, SignedEnvelope, TimeReply, node_event_message,
-    node_session_challenge_message,
+    ApplicationAck, DocumentKind, TimeReply, node_event_message, node_session_challenge_message,
 };
 use blindpass_core::secret::SecretBytes;
 use blindpass_core::signing::ed25519::verify;
@@ -522,7 +521,7 @@ async fn poll_response(
         Err(_) => return unavailable(),
     };
     let time_reply = if let Some(challenge) = time_challenge {
-        let (Some(issuer), Some(key_id)) = (
+        let (Some(_issuer), Some(_key_id)) = (
             state.issuer_keypair.as_ref(),
             state.issuer_key_id.as_deref(),
         ) else {
@@ -550,15 +549,13 @@ async fn poll_response(
         let Ok(body) = reply.to_value() else {
             return unavailable();
         };
-        let Ok(envelope) =
-            SignedEnvelope::sign(DocumentKind::TimeReply, body, key_id, issuer_epoch, issuer)
+        let Ok(envelope) = store
+            .sign_node_document(DocumentKind::TimeReply, body, issuer_epoch)
+            .await
         else {
             return unavailable();
         };
-        let Ok(bytes) = envelope.to_json() else {
-            return unavailable();
-        };
-        let Ok(document) = serde_json::from_slice::<JsonValue>(&bytes) else {
+        let Ok(document) = serde_json::from_str::<JsonValue>(&envelope) else {
             return unavailable();
         };
         Some(document)
@@ -672,7 +669,7 @@ async fn node_events(
         return Json(json!({"accepted": accepted, "duplicates": duplicates, "ack": null}))
             .into_response();
     }
-    let (Some(issuer), Some(key_id)) = (
+    let (Some(_issuer), Some(_key_id)) = (
         state.issuer_keypair.as_ref(),
         state.issuer_key_id.as_deref(),
     ) else {
@@ -698,19 +695,13 @@ async fn node_events(
     let Ok(ack_body) = ack.to_value() else {
         return unavailable();
     };
-    let Ok(envelope) = SignedEnvelope::sign(
-        DocumentKind::ApplicationAck,
-        ack_body,
-        key_id,
-        issuer_epoch,
-        issuer,
-    ) else {
+    let Ok(envelope) = store
+        .sign_node_document(DocumentKind::ApplicationAck, ack_body, issuer_epoch)
+        .await
+    else {
         return unavailable();
     };
-    let Ok(envelope_bytes) = envelope.to_json() else {
-        return unavailable();
-    };
-    let Ok(envelope_json) = serde_json::from_slice::<JsonValue>(&envelope_bytes) else {
+    let Ok(envelope_json) = serde_json::from_str::<JsonValue>(&envelope) else {
         return unavailable();
     };
     Json(json!({

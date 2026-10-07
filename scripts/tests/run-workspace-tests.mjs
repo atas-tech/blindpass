@@ -36,7 +36,22 @@ const oauth = spawnSync(process.execPath,
 if (oauth.error) throw oauth.error;
 if (oauth.status !== 0) process.exit(oauth.status ?? 1);
 const notices = spawnSync(process.execPath,
-  ['--test', '--test-isolation=none', 'scripts/tests/mcp-bundle-notices.test.mjs', 'scripts/tests/node-runtime.test.mjs'], { stdio: 'inherit' });
+  ['--test', '--test-isolation=none', 'scripts/tests/mcp-bundle-notices.test.mjs', 'scripts/tests/node-runtime.test.mjs',
+    'scripts/tests/confirmation-code-role.test.mjs', 'scripts/tests/bundle-localhost-check.test.mjs',
+    // P07 release tooling: signing, checksums, publish gate, workflow policy, evidence collector,
+    // image SBOM extraction, desktop archive and PKGBUILD (the makepkg case skips without makepkg).
+    'scripts/tests/release-signing.test.mjs', 'scripts/tests/release-sums.test.mjs', 'scripts/tests/release-gate.test.mjs',
+    'scripts/tests/release-workflow.test.mjs', 'scripts/tests/release-evidence.test.mjs', 'scripts/tests/release-image-sbom.test.mjs',
+    'scripts/tests/release-desktop-archive.test.mjs', 'scripts/tests/release-pkgbuild.test.mjs',
+    'scripts/tests/release-image-docker-archive.test.mjs',
+    // The published npm candidate is the staged esbuild bundle (the workspace library is the private
+    // @blindpass/mcp-server-lib).
+    'scripts/tests/mcp-bundle-package.test.mjs', 'scripts/tests/release-bundle-sbom.test.mjs',
+    'scripts/tests/release-docs.test.mjs',
+    // P07 F-3: the published bundle has no default SPS endpoint (fresh esbuild build, then stdio MCP calls).
+    'scripts/tests/mcp-bundle-endpoint.test.mjs',
+    // P08.4: the retirement inventory generator and its checks (fixture repositories, no network).
+    'scripts/tests/retirement-inventory.test.mjs'], { stdio: 'inherit' });
 if (notices.error) throw notices.error;
 if (notices.status !== 0) process.exit(notices.status ?? 1);
 const helper = spawnSync(process.execPath,

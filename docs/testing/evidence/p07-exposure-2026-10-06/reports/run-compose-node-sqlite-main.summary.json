@@ -1,0 +1,190 @@
+{
+ "allowlist": {
+  "entries": 0,
+  "unused": [],
+  "used": []
+ },
+ "artifacts": [
+  {
+   "bytes": 3437,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "harness.log",
+   "patterns": []
+  },
+  {
+   "bytes": 102,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "logs/P06-L1_controller_A_Compose_logs.log",
+   "patterns": []
+  },
+  {
+   "bytes": 44275,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "logs/P06-L1_controller_B_Compose_logs.log",
+   "patterns": []
+  },
+  {
+   "bytes": 33339,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "logs/P06-L1_guest_broker_and_node_journal.log",
+   "patterns": []
+  },
+  {
+   "bytes": 189,
+   "classes": {},
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "notes/P06-L1_edge_logs-empty-by-design.txt",
+   "patterns": []
+  }
+ ],
+ "canaries": {
+  "count": 7,
+  "ids": [
+   {
+    "id": "17ec1c8d",
+    "source": "canary"
+   },
+   {
+    "id": "6bacc7f6",
+    "source": "canary"
+   },
+   {
+    "id": "d38760a2",
+    "source": "canary"
+   },
+   {
+    "id": "6cab1369",
+    "source": "canary"
+   },
+   {
+    "id": "3212e10f",
+    "source": "canary"
+   },
+   {
+    "id": "ee5bd97e",
+    "source": "canary"
+   },
+   {
+    "id": "7ede6702",
+    "source": "canary"
+   }
+  ]
+ },
+ "controls": {
+  "detected": [
+   "tar",
+   "gz",
+   "bz2",
+   "xz",
+   "zip",
+   "ar",
+   "jsonl",
+   "wrapped",
+   "tar.gz",
+   "zst"
+  ],
+  "failed": [],
+  "ok": true,
+  "unavailable": [],
+  "zstd_backend": "module"
+ },
+ "excluded": [
+  {
+   "glob": "*/canaries.txt",
+   "path": "canaries.txt"
+  }
+ ],
+ "finished": "2026-10-06T13:27:36Z",
+ "incomplete": [],
+ "python": "3.14.7",
+ "requested": [
+  "logs"
+ ],
+ "result": "PASS",
+ "started": "2026-10-06T13:27:36Z",
+ "tool": "canary-scan",
+ "totals": {
+  "allowlisted_findings": 0,
+  "allowlisted_hits": 0,
+  "allowlisted_patterns": 0,
+  "archives": 0,
+  "backups": 0,
+  "bytes_scanned": 81342,
+  "dumps": 0,
+  "entries": 0,
+  "exposed": 0,
+  "files": 5,
+  "findings": 0,
+  "hits": 0,
+  "image_layers": 0,
+  "images": 0,
+  "incomplete": 0,
+  "logs": 4,
+  "patterns": 0,
+  "transcripts": 0,
+  "zero_bytes_skipped": 0
+ },
+ "version": 1
+}

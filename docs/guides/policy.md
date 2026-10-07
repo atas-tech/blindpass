@@ -1,20 +1,18 @@
 # Exchange policy configuration
 
-This documents the implemented SPS **payload-exchange policy**, not the proposed Linux operation-grant model. Policy examples contain secret names and classifications, never credential values. Source: [workspace routes](../../packages/sps-server/src/routes/workspace-policy.ts), [workspace service](../../packages/sps-server/src/services/workspace-policy.ts), [policy engine](../../packages/sps-server/src/services/policy.ts).
+This documents the implemented **payload-exchange policy** of the Rust controller, not the proposed Linux operation-grant model. Policy examples contain secret names and classifications, never credential values. Source: [policy routes](../../crates/blindpass-controller/src/routes/admin_policy.rs), [exchange routes](../../crates/blindpass-controller/src/routes/exchanges.rs) and the [policy engine](../../crates/blindpass-core/src/policy.rs). The legacy SPS had per-workspace policy and its own policy API; it was removed on 2026-10-07 and is in git history before the removal commit.
 
 ## Storage and roles
 
-With `SPS_HOSTED_MODE=1`, each workspace has versioned PostgreSQL policy. Startup/registration can seed it from bootstrap inputs; normal hosted requests require the workspace's row and do not silently fall back to env policy when it is missing. Updating bootstrap env values does not modify an existing workspace policy.
-
-Without hosted mode, startup values `SPS_SECRET_REGISTRY_JSON` and `SPS_EXCHANGE_POLICY_JSON` can define the process-wide policy. This is appropriate only when you intentionally administer that scope.
+The controller keeps one versioned policy document for its tenant in its database (SQLite or PostgreSQL). Until an administrator saves one, exchanges are evaluated against the optional startup values `BLINDPASS_SECRET_REGISTRY_JSON` and `BLINDPASS_EXCHANGE_POLICY_JSON`, which the controller validates like an administrator write and refuses to start on if invalid ([controller configuration](../architecture/README.md#controller-configuration)). That startup policy reads as version 1. Once a document is stored it is the one in force, and changing the environment values does not modify it.
 
 | API | Authorization | Behavior |
 |---|---|---|
-| `GET /api/v2/workspace/policy` | Admin or operator | Read current document/version |
-| `POST /api/v2/workspace/policy/validate` | Admin | Validate a draft without persisting it |
-| `PATCH /api/v2/workspace/policy` | Admin | Replace both documents using `expected_version` |
+| `GET /api/v3/admin/policy` | Any signed-in operator | Read the current document and version |
+| `POST /api/v3/admin/policy/validate` | Administrator, CSRF and Origin | Validate a draft without persisting it |
+| `PUT /api/v3/admin/policy` | Administrator, CSRF and Origin | Replace both documents; `If-Match` must carry the current version |
 
-Workspace viewers do not have policy-route access. Validation/update audit events record metadata, not credential values. Workspace IDs, trust-provider settings, cryptography, quotas and exchange lifecycle state are controlled by the platform/runtime, not these policy documents.
+The [console](../../packages/console) Policy page uses these routes. Tenant identity, trust-provider settings, cryptography, rate limits and exchange lifecycle state are controlled by the controller's configuration and runtime, not by these policy documents.
 
 ## Document fields
 
@@ -22,13 +20,14 @@ Registry entries require `secretName` and `classification`, with optional `descr
 
 Exchange rules support `requesterIds`, `fulfillerIds`, `requesterRings`, `fulfillerRings`, `purposes`, `sameRing`, `allowedRings`, `mode` and `reason`. Modes are `allow`, `pending_approval` and `deny`. A `pending_approval` rule must name one or more `approverIds`. `approverRings` is not supported by the Rust controller and is rejected, as is a pending rule without an approver ID; the controller does not infer approvers from ring membership.
 
-Routes bound input to 256 registry entries and 512 exchange rules, with further service-level field validation. PATCH requires the complete replacement documents; omission is not a partial-rule update. Read the current version first and handle version conflicts by refreshing/reviewing the policy rather than blindly retrying an overwrite.
+**Empty and absent lists.** A requester, fulfiller, purpose or ring list that is absent or empty matches everything. In particular, `"requesterIds": []` or `"fulfillerIds": []` matches every agent, so an allow rule whose identity list was emptied is open to all of them. (The legacy SPS matched no agent; the owner chose the controller's behaviour on 2026-10-07.) A list entry that is blank or only whitespace is rejected rather than trimmed, because trimming it would leave an empty list. To restrict a rule, list the agents. To refuse everyone, use `mode: "deny"`. Rule ids, rule secret names and reasons are trimmed, and a blank `reason` is replaced by the generated text. An unrecognised `mode` is rejected, and one that still reaches evaluation denies. The shared cases that pin all of this are `packages/contract-tests/fixtures/cv05-policy-decided.json`, which both the controller and the TypeScript oracle replay.
 
-Example PATCH body, using the version returned by GET:
+The controller bounds a document to 2,000 registry entries and 5,000 exchange rules, with further field validation. PUT requires the complete replacement documents; omission is not a partial-rule update. Read the current version first and handle a `409 policy_version_conflict` by refreshing and reviewing the policy rather than blindly retrying an overwrite.
+
+Example PUT body, sent with `If-Match: 1` (the version returned by GET):
 
 ```json
 {
-  "expected_version": 1,
   "secret_registry": [
     {"secretName": "staging.read_token", "classification": "internal"}
   ],
@@ -47,17 +46,17 @@ Example PATCH body, using the version returned by GET:
 }
 ```
 
-Validation uses the same two arrays without `expected_version`. A validation response may be HTTP 200 with `valid: false` and an `issues` array; inspect the result, not only the HTTP status.
+Validation uses the same two arrays. A validation response may be HTTP 200 with `valid: false` and an `errors` array; inspect the result, not only the HTTP status. A PUT that fails validation answers `400 invalid_policy` with an `issues` array.
 
 ## Bootstrap configuration
 
-For a new disposable workspace or an intentionally non-hosted process:
+For a new disposable controller before an administrator has saved a policy:
 
 ```bash
-export SPS_SECRET_REGISTRY_JSON='[{"secretName":"staging.read_token","classification":"internal"}]'
-export SPS_EXCHANGE_POLICY_JSON='[{"ruleId":"approve-staging-read","secretName":"staging.read_token","requesterIds":["staging-reader"],"fulfillerIds":["credential-owner"],"mode":"pending_approval"}]'
+export BLINDPASS_SECRET_REGISTRY_JSON='[{"secretName":"staging.read_token","classification":"internal"}]'
+export BLINDPASS_EXCHANGE_POLICY_JSON='[{"ruleId":"approve-staging-read","secretName":"staging.read_token","requesterIds":["staging-reader"],"fulfillerIds":["credential-owner"],"mode":"pending_approval"}]'
 ```
 
-Do not copy a broad development allow rule into an unrelated workspace. Use the dashboard Policy page to inspect/save existing hosted policy. [Demos](../testing/Manual%20Demos.md) document their own dummy-data fixtures; the [API snapshot](../api/openapi.yaml) describes request envelopes.
+Do not copy a broad development allow rule into an unrelated controller. Use the console Policy page or the API to inspect and save the stored policy; the [controller contract](../api/controller.openapi.yaml) describes the request envelopes.
 
 The fleet pilot needs workload/invocation identity, local authority ceilings and operation/session lifetime enforcement beyond this exchange engine. Its proposed contract is in the [specification](https://github.com/tuthan/docs-vault/blob/main/blindpass/docs/product/Specification.md#identity-and-authorization).

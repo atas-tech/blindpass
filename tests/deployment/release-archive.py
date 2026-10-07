@@ -38,7 +38,8 @@ with tempfile.TemporaryDirectory(prefix='p06-artifact-') as temporary:
     (binaries / 'root-secret').write_bytes(canary)
     output = root / 'release'
     args = [str(ROOT / 'scripts/release/build-tarballs.sh'), '--profile', 'controller',
-            '--arch', options.arch, '--bin-dir', str(binaries), '--output-dir', str(output)]
+            '--arch', options.arch, '--bin-dir', str(binaries), '--output-dir', str(output),
+            '--allow-dirty']
     invoke(args)
     invoke([str(ROOT / 'scripts/release/checksums.sh'), str(output)])
     invoke(['sha256sum', '--check', 'SHA256SUMS'], cwd=output)
@@ -70,14 +71,26 @@ with tempfile.TemporaryDirectory(prefix='p06-artifact-') as temporary:
         assert file.stat().st_size == record['size']
         assert f'{file.stat().st_mode & 0o777:04o}' == record['mode']
     assert manifest['controller']['console_embedded'] and manifest['controller']['input_embedded']
-    # Preserve source-relative guide/config links inside the extracted bundle.
-    for name in ('release-layout.md', 'controller-ingress.md', 'native-quickstart.md'):
-        guide = package / 'docs/deploy' / name
-        for link in re.findall(r'\]\(([^)]+)\)', guide.read_text()):
-            if '://' in link or link.startswith('#'):
+    # P07 slice 7: the operator path ships complete. Every Markdown file in the extracted archive keeps only
+    # absolute links or relative links that resolve inside it (links to repository-only files are pinned to the tag).
+    for name in ('deploy/controller/compose.sqlite.yml', 'deploy/controller/compose.initialize.yml',
+                 'deploy/controller/compose.postgres.yml', 'deploy/controller/.env.example',
+                 'deploy/controller/postgres-init/10-controller-schema.sql', 'docs/deploy/compose-quickstart.md',
+                 'docs/deploy/README.md', 'README.md'):
+        assert (package / name).is_file(), f'operator file missing from the archive: {name}'
+    for guide in sorted(package.rglob('*.md')):
+        in_fence = False
+        for line in guide.read_text().splitlines():
+            if line.lstrip().startswith('```'):
+                in_fence = not in_fence
                 continue
-            target = (guide.parent / link.split('#')[0]).resolve()
-            assert target.is_relative_to(package.resolve()) and target.exists(), 'broken archive guide link'
+            if in_fence:
+                continue
+            for link in re.findall(r'\]\(([^)\s]+)\)', line):
+                if '://' in link or link.startswith(('#', 'mailto:')):
+                    continue
+                target = (guide.parent / link.split('#')[0]).resolve()
+                assert target.is_relative_to(package.resolve()) and target.exists(), f'broken archive guide link: {guide.name} -> {link}'
     assert manifest['architecture'] == options.arch
     data = root / 'data'; data.mkdir(mode=0o700)
     keys = root / 'keys'

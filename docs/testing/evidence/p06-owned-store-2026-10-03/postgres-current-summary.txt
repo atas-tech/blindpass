@@ -1,0 +1,2 @@
+authority_postgres_gate_exit=0
+owned_authority_cleanup_errors=0

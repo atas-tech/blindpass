@@ -1,0 +1,34 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.51s
+     Running tests/store_quiescence.rs (target/debug/deps/store_quiescence-3cbba4666e374ef6)
+
+running 4 tests
+test p06_qf07a_cancelled_autocommit_cannot_report_quiescence ... 
+thread 'p06_qf07a_cancelled_autocommit_cannot_report_quiescence' (729218) panicked at crates/blindpass-controller/tests/store_quiescence.rs:195:5:
+assertion `left == right` failed: the cancelled autocommit's server outcome must be observed
+  left: 0
+ right: 1
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_qf07b_cancelled_commit_may_still_commit_on_server ... 
+thread 'p06_qf07b_cancelled_commit_may_still_commit_on_server' (729268) panicked at crates/blindpass-controller/tests/store_quiescence.rs:270:5:
+cancelled COMMIT reported quiescence while the server still ran
+FAILED
+test p06_qf07c_aborted_store_task_cannot_release_uncertain_guard ... 
+thread 'p06_qf07c_aborted_store_task_cannot_release_uncertain_guard' (729315) panicked at crates/blindpass-controller/tests/store_quiescence.rs:195:5:
+assertion `left == right` failed: the cancelled autocommit's server outcome must be observed
+  left: 0
+ right: 1
+FAILED
+test p06_qf07d_completed_store_work_can_drain_normally ... ok
+
+failures:
+
+failures:
+    p06_qf07a_cancelled_autocommit_cannot_report_quiescence
+    p06_qf07b_cancelled_commit_may_still_commit_on_server
+    p06_qf07c_aborted_store_task_cannot_release_uncertain_guard
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.92s
+
+error: test failed, to rerun pass `-p blindpass-controller --test store_quiescence`

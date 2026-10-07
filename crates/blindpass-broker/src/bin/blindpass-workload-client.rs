@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 const ROOT_OWNED_GRANT_FILE_MODE: u32 = 0o640;
-const O_NOFOLLOW: i32 = 0x20000;
+const O_NOFOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 
 fn main() {
     if let Err(error) = run(std::env::args().skip(1).collect()) {

@@ -1,0 +1,9 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0599]: no method named `contains` found for enum `JsonValue` in the current scope
+   --> crates/blindpass-controller/tests/restore_stage.rs:230:28
+    |
+230 |         assert!(ready.body.contains("recovery_required"));
+    |                            ^^^^^^^^ method not found in `JsonValue`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `blindpass-controller` (test "restore_stage") due to 1 previous error

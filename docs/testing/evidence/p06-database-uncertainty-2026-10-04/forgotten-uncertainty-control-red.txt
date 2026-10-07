@@ -1,0 +1,42 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-database-control-2r2p7dc0/crates/blindpass-controller)
+warning: method `mark_uncertain_database_work` is never used
+   --> crates/blindpass-controller/src/recovery_authority.rs:297:8
+    |
+264 | impl ProcessOwnership {
+    | --------------------- method in this implementation
+...
+297 |     fn mark_uncertain_database_work(&self) {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `blindpass-controller` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.24s
+     Running tests/store_quiescence.rs (/home/hvo/Projects/blindpass/target/debug/deps/store_quiescence-3cbba4666e374ef6)
+
+running 4 tests
+test p06_qf07a_cancelled_autocommit_cannot_report_quiescence ... 
+thread 'p06_qf07a_cancelled_autocommit_cannot_report_quiescence' (888183) panicked at crates/blindpass-controller/tests/store_quiescence.rs:187:5:
+cancelled Store work did not latch database uncertainty
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_qf07b_cancelled_commit_may_still_commit_on_server ... 
+thread 'p06_qf07b_cancelled_commit_may_still_commit_on_server' (888199) panicked at crates/blindpass-controller/tests/store_quiescence.rs:291:5:
+cancelled COMMIT reported quiescence while the server still ran
+FAILED
+test p06_qf07c_aborted_store_task_cannot_release_uncertain_guard ... 
+thread 'p06_qf07c_aborted_store_task_cannot_release_uncertain_guard' (888249) panicked at crates/blindpass-controller/tests/store_quiescence.rs:187:5:
+cancelled Store work did not latch database uncertainty
+FAILED
+test p06_qf07d_completed_store_work_can_drain_normally ... ok
+
+failures:
+
+failures:
+    p06_qf07a_cancelled_autocommit_cannot_report_quiescence
+    p06_qf07b_cancelled_commit_may_still_commit_on_server
+    p06_qf07c_aborted_store_task_cannot_release_uncertain_guard
+
+test result: FAILED. 1 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.89s
+
+error: test failed, to rerun pass `-p blindpass-controller --test store_quiescence`

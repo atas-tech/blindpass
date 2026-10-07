@@ -1,0 +1,152 @@
+{
+ "allowlist": {
+  "entries": 0,
+  "unused": [],
+  "used": []
+ },
+ "artifacts": [],
+ "artifacts_clean_summary": {
+  "bytes": 2937790,
+  "count": 341,
+  "files": 341
+ },
+ "artifacts_total": 341,
+ "artifacts_with_results": 0,
+ "canaries": {
+  "count": 15,
+  "ids": [
+   {
+    "id": "23c6050a",
+    "source": "canary"
+   },
+   {
+    "id": "0d0f1d0b",
+    "source": "canary"
+   },
+   {
+    "id": "97155f18",
+    "source": "canary"
+   },
+   {
+    "id": "50d35be3",
+    "source": "canary"
+   },
+   {
+    "id": "5fa63dfb",
+    "source": "canary"
+   },
+   {
+    "id": "e4e47898",
+    "source": "canary"
+   },
+   {
+    "id": "1f35cbf9",
+    "source": "canary"
+   },
+   {
+    "id": "a4328765",
+    "source": "canary"
+   },
+   {
+    "id": "1c3f8812",
+    "source": "canary"
+   },
+   {
+    "id": "57a95d84",
+    "source": "canary"
+   },
+   {
+    "id": "584b6548",
+    "source": "canary"
+   },
+   {
+    "id": "ce0cceb4",
+    "source": "canary"
+   },
+   {
+    "id": "0c980342",
+    "source": "canary"
+   },
+   {
+    "id": "c614b60b",
+    "source": "canary"
+   },
+   {
+    "id": "02a5fd81",
+    "source": "canary"
+   }
+  ]
+ },
+ "controls": {
+  "detected": [
+   "tar",
+   "gz",
+   "bz2",
+   "xz",
+   "zip",
+   "ar",
+   "jsonl",
+   "wrapped",
+   "tar.gz",
+   "zst"
+  ],
+  "failed": [],
+  "ok": true,
+  "unavailable": [],
+  "zstd_backend": "module"
+ },
+ "excluded": [
+  {
+   "glob": "p05-*-fmt.log",
+   "path": "p05-broker-offer-fmt.log"
+  },
+  {
+   "glob": "p05-*-fmt.log",
+   "path": "p05-controller-offer-fmt.log"
+  },
+  {
+   "glob": "p05-node24",
+   "path": "p05-node24"
+  },
+  {
+   "glob": "p05-*-fmt.log",
+   "path": "p05-signed-offer-fmt.log"
+  },
+  {
+   "glob": "p05-*-fmt.log",
+   "path": "p05-signed-offer-targeted-fmt.log"
+  }
+ ],
+ "finished": "2026-10-06T11:46:26Z",
+ "incomplete": [],
+ "python": "3.14.7",
+ "requested": [
+  "transcripts",
+  "logs"
+ ],
+ "result": "PASS",
+ "started": "2026-10-06T11:46:26Z",
+ "tool": "canary-scan",
+ "totals": {
+  "allowlisted_findings": 0,
+  "allowlisted_hits": 0,
+  "allowlisted_patterns": 0,
+  "archives": 0,
+  "backups": 0,
+  "bytes_scanned": 2937790,
+  "dumps": 0,
+  "entries": 0,
+  "exposed": 0,
+  "files": 341,
+  "findings": 0,
+  "hits": 0,
+  "image_layers": 0,
+  "images": 0,
+  "incomplete": 0,
+  "logs": 304,
+  "patterns": 0,
+  "transcripts": 3,
+  "zero_bytes_skipped": 0
+ },
+ "version": 1
+}

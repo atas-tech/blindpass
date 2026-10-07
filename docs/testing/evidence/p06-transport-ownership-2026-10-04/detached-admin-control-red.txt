@@ -1,0 +1,42 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-transport-control-81vkukwx/crates/blindpass-controller)
+warning: unused import: `tokio::task::JoinSet`
+  --> crates/blindpass-controller/src/admin_socket.rs:20:5
+   |
+20 | use tokio::task::JoinSet;
+   |     ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `MAX_ADMIN_CONNECTIONS` is never used
+  --> crates/blindpass-controller/src/admin_socket.rs:87:7
+   |
+87 | const MAX_ADMIN_CONNECTIONS: usize = 64;
+   |       ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `StopAdminTransports` is never constructed
+  --> crates/blindpass-controller/src/admin_socket.rs:90:8
+   |
+90 | struct StopAdminTransports(Arc<TransportShutdown>);
+   |        ^^^^^^^^^^^^^^^^^^^
+
+warning: `blindpass-controller` (lib) generated 3 warnings (run `cargo fix --lib -p blindpass-controller` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.46s
+     Running tests/admin_socket.rs (/home/hvo/Projects/blindpass/target/debug/deps/admin_socket-0d83a9376cbde744)
+
+running 1 test
+test p06_qf05_stopping_admin_listener_cancels_its_accepted_partial_client ... 
+thread 'p06_qf05_stopping_admin_listener_cancels_its_accepted_partial_client' (561434) panicked at crates/blindpass-controller/tests/admin_socket.rs:203:5:
+accepted child delivered bytes after its admin listener stopped
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_qf05_stopping_admin_listener_cancels_its_accepted_partial_client
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.11s
+
+error: test failed, to rerun pass `-p blindpass-controller --test admin_socket`

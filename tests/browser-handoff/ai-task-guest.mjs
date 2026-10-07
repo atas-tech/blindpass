@@ -40,7 +40,7 @@ export async function runAiTask({ name, child, controller, app, browserProfile, 
       progress('approval');
       operation = await approveBrowserOperation(controller, key);
       progress('login-observation');
-      await waitFor(() => loginState().count === 1);
+      await waitFor(() => loginState().count === 1 && (loginState().verified === 1 || loginState().failed));
       assert.equal(loginState().verified, 1); assert.equal(loginState().failed, false);
       progress('provisional-result');
       await waitFor(async () => isProvisionalBrowserOperation(await controller.api(`/api/v3/operations/${operation.id}`)));

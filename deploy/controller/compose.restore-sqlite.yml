@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Opt-in SQLite restore jobs (P06 recovery). Never include this file for ordinary up.
+# Run them with the controller stopped and the authority record RESERVED for recovery
+# (`reserve_recovery`, see docs/deploy/recovery-stage.md). `controller-restore` verifies
+# the sealed archive with the OFFLINE recipient key and the signer's certificate and writes
+# the fenced restore into a NEW root below the staging directory; `controller-restore-install`
+# copies it into EMPTY destination volume(s). The restored controller then starts fenced
+# (`recovery_required`); activate it only through docs/deploy/recovery-activation.md.
+x-restore-job: &restore-job
+  image: ${BLINDPASS_CONTROLLER_IMAGE:-ghcr.io/atas-tech/blindpass-controller:0.1.0}
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  ulimits:
+    core: 0
+  stop_grace_period: 10s
+  restart: "no"
+  healthcheck:
+    disable: true
+  entrypoint: [/usr/bin/timeout, --signal=TERM, --kill-after=10s, 30m, /usr/local/bin/blindpass]
+  environment:
+    BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:?set the public HTTPS origin}
+    BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:?set the public HTTPS input origin}
+    BLINDPASS_PROXY_REQUIRED: "1"
+    BLINDPASS_TRUST_PROXY: ${BLINDPASS_TRUST_PROXY:?set the exact trusted HTTPS edge peer}
+    BLINDPASS_CONTROLLER_TENANT_ID: ${BLINDPASS_CONTROLLER_TENANT_ID:?set the tenant ID registered in the recovery authority}
+    BLINDPASS_CONTROLLER_OWNER_ID: ${BLINDPASS_CONTROLLER_OWNER_ID:?set the owner ID registered in the recovery authority}
+    BLINDPASS_AUTHORITY_URL_FILE: /authority/authority-url
+
+services:
+  controller-restore:
+    <<: *restore-job
+    profiles: [restore]
+    networks: [edge]
+    command:
+      - restore
+      - --archive
+      - /archives/${BLINDPASS_RESTORE_ARCHIVE:?set the archive file name}
+      - --recipient-key-file
+      - /recovery/recipient.pem
+      - --signing-certificate-file
+      - /recovery/signing-certificate.pem
+      - --staging-directory
+      - /restore-staging
+      - --destination
+      - /staging/root
+      - --authority-url-file
+      - /authority/authority-url
+      - --tenant-id
+      - ${BLINDPASS_CONTROLLER_TENANT_ID}
+      - --owner-id
+      - ${BLINDPASS_CONTROLLER_OWNER_ID}
+      - --recovery-id
+      - ${BLINDPASS_RESTORE_ID:?set a unique recovery id}
+    # Decrypted material is staged only in memory (ADR 0013): twice the archive plus 8 MiB.
+    tmpfs:
+      - /run:rw,noexec,nosuid,size=16m,uid=10001,gid=10001,mode=0700
+      - /restore-staging:rw,noexec,nosuid,size=${BLINDPASS_RESTORE_TMPFS_SIZE:-1g},uid=10001,gid=10001,mode=0700
+    volumes:
+      - type: bind
+        source: ${BLINDPASS_AUTHORITY_CONFIG_DIR:?set the private UID10001 authority config directory}
+        target: /authority
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_BACKUP_RECOVERY_DIR:?set the protected UID10001 directory holding recipient.pem and signing-certificate.pem}
+        target: /recovery
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_RESTORE_ARCHIVE_DIR:?set the private UID10001 directory holding the archive}
+        target: /archives
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_RESTORE_STAGING_DIR:?set the private UID10001 staging directory}
+        target: /staging
+        bind:
+          create_host_path: false
+
+  # Copy the restored keys and database into the EMPTY destination volume(s). No network.
+  controller-restore-install:
+    <<: *restore-job
+    profiles: [restore]
+    network_mode: none
+    entrypoint: [/usr/bin/timeout, --signal=TERM, --kill-after=10s, 5m, /bin/sh, -ec]
+    command:
+      - |
+        test -z "$$(ls -A /keys)$$(ls -A /data)" || { echo "destination volumes are not empty" >&2; exit 1; }
+        test -d /staging/root/keys && test -f /staging/root/data/controller.db || { echo "staging root is not a restored controller" >&2; exit 1; }
+        cp -a /staging/root/keys/. /keys/
+        cp -a /staging/root/data/. /data/
+        sync
+        echo '{"restore":"installed"}'
+    volumes:
+      - blindpass-data:/data
+      - blindpass-keys:/keys
+      - type: bind
+        source: ${BLINDPASS_RESTORE_STAGING_DIR:?set the private UID10001 staging directory}
+        target: /staging
+        read_only: true
+        bind:
+          create_host_path: false
+volumes:
+  blindpass-data: {}
+  blindpass-keys: {}
+networks:
+  edge: {}

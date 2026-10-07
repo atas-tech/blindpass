@@ -1,0 +1,11 @@
+{
+  "relative_links_checked": 311,
+  "broken_links": [],
+  "source_pins_checked": 11,
+  "source_pin_mismatches": [],
+  "retained_logs_checked": 39,
+  "credential_marker_hits": [],
+  "protected_p03_66_additions_zero_removals": true,
+  "index_empty": true,
+  "dependency_manifests_unchanged": true
+}

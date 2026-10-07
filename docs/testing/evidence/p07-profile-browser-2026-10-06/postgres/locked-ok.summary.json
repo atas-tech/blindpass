@@ -1,0 +1,28 @@
+{
+ "step": "locked",
+ "date": "2026-10-06T14:02:46.942Z",
+ "checks": [
+  {
+   "name": "console sign-in succeeds",
+   "ok": true,
+   "responses": [
+    {
+     "status": 200,
+     "retryAfter": null
+    }
+   ],
+   "stillOnLogin": false,
+   "lockNotice": null
+  }
+ ],
+ "lockedView": {
+  "responses": [
+   {
+    "status": 200,
+    "retryAfter": null
+   }
+  ],
+  "stillOnLogin": false,
+  "lockNotice": null
+ }
+}

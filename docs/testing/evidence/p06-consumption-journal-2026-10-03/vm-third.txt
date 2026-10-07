@@ -1,0 +1,198 @@
+P03-HOST-ENV runner_owner=hvo qemu=QEMU emulator version 11.1.1 kvm=crw-rw-rw-:666 image_sha256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `release` profile [optimized] target(s) in 1m 20s
+-----
+Controller database migrations complete.
+P01-PROVISIONED overlay=/tmp/blindpass-p03.J1EGoZ04/sqlite/a/image/guest-overlay.qcow2 seed=/tmp/blindpass-p03.J1EGoZ04/sqlite/a/image/seed.iso image_sha256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+Creating group 'blindpass-node' with GID 988.
+Creating group 'blindpass-workload' with GID 987.
+Creating user 'blindpass-node' (BlindPass controller channel relay) with UID 988 and GID 988.
+Creating group 'blindpass-agent' with GID 986.
+Creating user 'blindpass-agent' (BlindPass registered workload) with UID 986 and GID 986.
+Creating group 'blindpass-consumer' with GID 985.
+Creating user 'blindpass-consumer' (BlindPass credential consumer) with UID 985 and GID 985.
+Creating group 'blindpass-backup' with GID 984.
+Creating user 'blindpass-backup' (BlindPass backup probe) with UID 984 and GID 984.
+Created symlink /etc/systemd/system/multi-user.target.wants/blindpass-broker.service → /etc/systemd/system/blindpass-broker.service.
+P03-GUEST-PREPARED
+P03-GUEST-READY backend=sqlite guest=a ssh_port=22272
+P01-PROVISIONED overlay=/tmp/blindpass-p03.J1EGoZ04/sqlite/b/image/guest-overlay.qcow2 seed=/tmp/blindpass-p03.J1EGoZ04/sqlite/b/image/seed.iso image_sha256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+Creating group 'blindpass-node' with GID 988.
+Creating group 'blindpass-workload' with GID 987.
+Creating user 'blindpass-node' (BlindPass controller channel relay) with UID 988 and GID 988.
+Creating group 'blindpass-agent' with GID 986.
+Creating user 'blindpass-agent' (BlindPass registered workload) with UID 986 and GID 986.
+Creating group 'blindpass-consumer' with GID 985.
+Creating user 'blindpass-consumer' (BlindPass credential consumer) with UID 985 and GID 985.
+Creating group 'blindpass-backup' with GID 984.
+Creating user 'blindpass-backup' (BlindPass backup probe) with UID 984 and GID 984.
+Created symlink /etc/systemd/system/multi-user.target.wants/blindpass-broker.service → /etc/systemd/system/blindpass-broker.service.
+P03-GUEST-PREPARED
+P03-GUEST-READY backend=sqlite guest=b ssh_port=22273
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+enrollment_id=en_96153be9-697f-443d-a0d7-419d8b1e8c62 node_id=nd_2b215b6a-3187-41ea-8173-5cdff1ac01c3 fingerprint=a9687464dade11b0f0d3b10c77562f84e29398792228d76a33c5da6572b6dfcd status=submitted
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Created symlink /etc/systemd/system/multi-user.target.wants/blindpass-node.service → /etc/systemd/system/blindpass-node.service.
+P03-GUEST-NODE-STARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-CONFIGURED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=a32746d3274c4730a5bc4ad67b27b4d1
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CHANNEL-RESTARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-BROKER-EVENT-PERSISTED
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-OUTBOX-PERSISTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-RESTARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-EVENT-QUEUES-DRAINED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STOPPED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=bf4bba6fe4f94a74935badd6d0e78d01
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-RESTARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-GRANT-DELIVERED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-OPERATION-COMPLETED grant_id=gr_4429f9f5-ac2e-454a-b875-41291c81c8c8 operation_id=op_4696c616-ddee-4b21-abf9-a4cad2044a3d
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-EVENT-QUEUES-DRAINED
+{"node_id":"nd_2b215b6a-3187-41ea-8173-5cdff1ac01c3","workload_id":"wl_26d596c1-e7f5-4698-bd49-04813314fafc","invocation_id":"bf4bba6fe4f94a74935badd6d0e78d01","operation_id":"op_4696c616-ddee-4b21-abf9-a4cad2044a3d","grant_id":"gr_4429f9f5-ac2e-454a-b875-41291c81c8c8","operation_status":"completed","grant_status":"consumed","result_audited":true,"result_events":1}
+P03-SCENARIO backend=sqlite scenario=P03-I06-partition-restart-replay status=passed
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-STOPPED
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-START-QUEUED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-PROTOCOL-MISMATCH-STOPPED exit_status=78 restarts=0
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CHANNEL-RESTARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-CHANNEL-ACTIVE
+P03-SCENARIO backend=sqlite scenario=P03-I06-protocol-mismatch incompatible_exit=78 restart_loop=false recovery=passed status=passed
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-STOPPED
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-STARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-CHANNEL-STABLE restarts=0
+P03-SCENARIO backend=sqlite scenario=P03-I06-reconnect-storm failures=3 backoff_ms=1054,2089 service_restarts=0 recovery=passed status=passed
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-STOPPED
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-STARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CHANNEL-RESTARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-TIME-REPLY-REPLAY-REJECTED rejected=1 node_restarts=0
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-CHANNEL-STABLE restarts=0
+P03-SCENARIO backend=sqlite scenario=P03-I06-time-challenge-replay broker_restart=true rejected=true fresh_time_recovered=true node_restarts=0 status=passed
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-SCENARIO backend=sqlite scenario=P03-I01-in-place-key-rotation key_version=2 status=passed
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-CONFIGURED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=e65221797b014ba6b8f50c3a5e8705ad
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-BOOT-CHANGED guest=a
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CHANNEL-ACTIVE-AFTER-BOOT restarts=0
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-GRANT-DELIVERED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=21bdb43e32c84b289e2ceb823c2034c0
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CONSUME-DENIED grant_id=gr_04223c99-3ba4-4d3d-8a2d-009182a92744 code=grant_unknown
+P03-GUEST-REBOOTED-GRANT-DENIED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-EVENT-QUEUES-DRAINED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=43ed24e427374a80b30579b07e7c99a2
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-GRANT-DELIVERED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-OPERATION-COMPLETED grant_id=gr_cd616cb9-888e-4c7c-b001-843636af2b3f operation_id=op_c6b60d20-6f57-4309-92bb-a142263f2dcc
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-EVENT-QUEUES-DRAINED
+{"node_id":"nd_2b215b6a-3187-41ea-8173-5cdff1ac01c3","workload_id":"wl_20afa46e-a113-4409-9cb2-c4eb367ff8e8","invocation_id":"43ed24e427374a80b30579b07e7c99a2","operation_id":"op_c6b60d20-6f57-4309-92bb-a142263f2dcc","grant_id":"gr_cd616cb9-888e-4c7c-b001-843636af2b3f","operation_status":"completed","grant_status":"consumed","result_audited":true,"result_events":1}
+P03-SCENARIO backend=sqlite scenario=P03-I06-guest-reboot-unconsumed-grant boot_changed=true channel_recovered=true grant_live_after_boot_ms=103498 old_grant_denied=true fresh_operation_completed=true marker_created=false status=passed
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-CONFIGURED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=e2badd32833a463893deb2fb8a6ad526
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-SUSPEND-RESUME boottime_elapsed_ms=26230
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CLOCK-ROLLED-BACK seconds=7200 current_epoch=1791004580
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-GRANT-DELIVERED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CONSUME-DENIED grant_id=gr_0624da85-c339-46fa-ab61-55d3885fd9f2 code=grant_expired
+P03-GUEST-EXPIRED-GRANT-DENIED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CLOCK-RESTORED epoch=1791011781
+P03-SCENARIO backend=sqlite scenario=P03-I06-suspend-clock-rollback ttl_seconds=20 suspend_seconds=25 grant_live_before_suspend_ms=19390 operation_id=op_bc662f3e-4849-4518-bd2e-e801429a3d7d grant_denied=true marker_created=false status=passed
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+enrollment_id=en_5cbec671-d43f-4ddf-9e83-ac9ed02caa69 node_id=nd_2e1b12f6-cc33-4f03-ba2c-563bc92ade42 fingerprint=e60522cd60f1a4d5f7e8091e4adcb41f1d5419b065683c2aaf722d5f765f4334 status=submitted
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-CONFIGURED
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Created symlink /etc/systemd/system/multi-user.target.wants/blindpass-node.service → /etc/systemd/system/blindpass-node.service.
+P03-GUEST-NODE-STARTED
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=23842492b64741c9a8845b6f27f9d014
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+P03-GUEST-NODE-RESTARTED
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+P03-GUEST-GRANT-DELIVERED
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+P03-GUEST-OPERATION-COMPLETED grant_id=gr_0714a571-5fd4-4a71-9f4c-de18ca168711 operation_id=op_1e6dad37-db7f-443e-88a7-929acebdd53b
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+P03-GUEST-EVENT-QUEUES-DRAINED
+{"node_id":"nd_2e1b12f6-cc33-4f03-ba2c-563bc92ade42","workload_id":"wl_8c832592-f09a-414e-8ddd-fa817ff20843","invocation_id":"23842492b64741c9a8845b6f27f9d014","operation_id":"op_1e6dad37-db7f-443e-88a7-929acebdd53b","grant_id":"gr_0714a571-5fd4-4a71-9f4c-de18ca168711","operation_status":"completed","grant_status":"consumed","result_audited":true,"result_events":1}
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-CONFIGURED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=c5d08e7cf3d14808bcf60272ea5bd014
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-TLS-PROXY-READY
+P03-SCENARIO backend=sqlite scenario=P03-I06-delayed-expired-grant response_delay_seconds=10 ttl_seconds=8 status=observed
+P03-PENDING-OPERATION operation_id=op_1b1a20d5-838c-4a5c-b92f-716cb204168a grant_id=gr_42d6634c-9958-4f2d-8833-4364069a5dc5
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-EVENT-QUEUES-DRAINED
+P03-SCENARIO backend=sqlite scenario=P03-I06-node-revocation-transport-replay replayed=true application_events=1 status=passed
+{"node_id":"nd_2b215b6a-3187-41ea-8173-5cdff1ac01c3","grant_id":"gr_42d6634c-9958-4f2d-8833-4364069a5dc5","reason_code":"expired_before_receipt","audit_events":1}
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-FAIL grant was denied for grant_revoked, expected node_revoked

@@ -10,6 +10,7 @@ use blindpass_core::secret::wipe;
 use blindpass_core::signing::{base64_url_decode, ed25519::verify};
 mod outbox;
 mod provisioning_relay;
+mod recovery_relay;
 use blindpass_node::transport::{HttpsTransport, TransportError};
 use outbox::{NodeEvent, Outbox};
 use std::io::{Read, Write};
@@ -77,6 +78,13 @@ fn run(arguments: Vec<String>) -> Result<(), String> {
                 .as_deref()
                 .ok_or("run requires --controller")?,
         ),
+        "recovery-relay" => recovery_relay_command(
+            &socket,
+            options
+                .controller
+                .as_deref()
+                .ok_or("recovery-relay requires --controller")?,
+        ),
         "enroll" => enroll(
             &socket,
             options
@@ -115,7 +123,7 @@ fn parse_options(command: &str, arguments: &[String]) -> Result<Options, String>
                 }
                 options.state_dir = Some(directory);
             }
-            "--controller" if matches!(command, "enroll" | "run") => {
+            "--controller" if matches!(command, "enroll" | "run" | "recovery-relay") => {
                 index += 1;
                 options.controller = Some(
                     arguments
@@ -146,7 +154,27 @@ fn parse_options(command: &str, arguments: &[String]) -> Result<Options, String>
     if command == "run" && options.controller.is_none() {
         return Err("run requires --controller".to_owned());
     }
+    if command == "recovery-relay" && options.controller.is_none() {
+        return Err("recovery-relay requires --controller".to_owned());
+    }
     Ok(options)
+}
+
+/// One bounded recovery report relay run: broker challenge, controller-signed
+/// request, broker-signed page, controller status. Prints only a fixed summary.
+fn recovery_relay_command(socket: &Path, controller: &str) -> Result<(), String> {
+    let transport = HttpsTransport::new(controller).map_err(|error| error.to_string())?;
+    let outcome = recovery_relay::relay(
+        &recovery_relay::ControlSocket(socket),
+        &recovery_relay::HttpsController(transport),
+        recovery_relay::RELAY_DEADLINE,
+    )
+    .map_err(|error| error.to_string())?;
+    println!(
+        "recovery_relay state={} pages={} activation_permitted=false",
+        outcome.state, outcome.pages
+    );
+    Ok(())
 }
 
 fn status(socket: &Path) -> Result<(), String> {
@@ -1114,12 +1142,13 @@ fn decode_base64url(value: &str, expected_len: usize) -> Option<Vec<u8>> {
 
 fn print_help() {
     println!(
-        "blindpass-node <run|enroll|rotate-prepare|status> [options]\n\n\
+        "blindpass-node <run|enroll|rotate-prepare|status|recovery-relay> [options]\n\n\
          status [--socket PATH] queries the local broker control socket.\n\
          enroll --controller HTTPS_ORIGIN --issuer-fingerprint SHA256 --token-stdin [--socket PATH]\n\
          reads the one-use token from stdin, proves broker key possession, and pins the verified issuer.\n\
          rotate-prepare [--socket PATH] stages broker-owned keys and prints public rotation metadata.\n\
-         run --controller HTTPS_ORIGIN [--socket PATH] [--state-dir PATH] opens the outbound authenticated node channel."
+         run --controller HTTPS_ORIGIN [--socket PATH] [--state-dir PATH] opens the outbound authenticated node channel.\n\
+         recovery-relay --controller HTTPS_ORIGIN [--socket PATH] relays one recovery report between a recovering controller and the local broker."
     );
 }
 
@@ -1203,6 +1232,24 @@ mod tests {
 
     #[test]
     fn enrollment_cli_requires_stdin_and_operator_issuer_pin() {
+        assert!(parse_options("recovery-relay", &[]).is_err());
+        assert!(
+            parse_options(
+                "recovery-relay",
+                &[
+                    "--controller".to_owned(),
+                    "https://controller.example".to_owned()
+                ]
+            )
+            .is_ok()
+        );
+        assert!(
+            parse_options(
+                "status",
+                &["--controller".to_owned(), "https://c.example".to_owned()]
+            )
+            .is_err()
+        );
         assert!(parse_options("enroll", &[]).is_err());
         let options = parse_options(
             "enroll",

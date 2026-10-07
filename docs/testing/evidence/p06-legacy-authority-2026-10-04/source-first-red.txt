@@ -1,0 +1,24 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.65s
+     Running tests/fleet_provisioning_submit.rs (target/debug/deps/fleet_provisioning_submit-7dada275acc6a9bd)
+
+running 1 test
+test p06_la05_later_generation_source_link_refuses_raw_key_and_delivers_current_hpke ... FAILED
+
+failures:
+
+---- p06_la05_later_generation_source_link_refuses_raw_key_and_delivers_current_hpke stdout ----
+
+thread 'p06_la05_later_generation_source_link_refuses_raw_key_and_delivers_current_hpke' (3649497) panicked at crates/blindpass-controller/tests/fleet_provisioning_submit.rs:198:9:
+assertion `left == right` failed: {"error":"provisioning_owner_required","message":"only the named Source owner may use this link"}
+  left: 403
+ right: 201
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    p06_la05_later_generation_source_link_refuses_raw_key_and_delivers_current_hpke
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 24 filtered out; finished in 1.44s
+
+error: test failed, to rerun pass `-p blindpass-controller --test fleet_provisioning_submit`

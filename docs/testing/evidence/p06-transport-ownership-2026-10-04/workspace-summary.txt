@@ -1,0 +1,6 @@
+node26-build_exit=0
+node26-test_exit=0
+rust-workspace_exit=0
+clippy_exit=0
+format_exit=0
+openapi_exit=0

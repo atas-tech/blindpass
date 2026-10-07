@@ -1,0 +1,26 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.55s
+     Running tests/restore_stage.rs (target/debug/deps/restore_stage-d45506280fd80b22)
+
+running 7 tests
+test p06_st01_actual_authenticated_restore_publishes_only_fenced_invalidated_state ... ok
+test p06_st02_authenticated_input_context_and_authority_refusals_publish_nothing ... ok
+test p06_st03_private_destination_and_credential_custody_preserve_existing_state ... ok
+test p06_st04_live_competing_recovery_holder_prevents_publication ... ok
+test p06_st06_authenticated_schema16_forward_migration_retains_original_archive ... ok
+test p06_st07_actual_restore_with_10000_audit_rows_and_512mib_process_limit ... st07_process_address_space_bytes=536870912 tokio_worker_threads=2 audit_rows=10000 restore_seconds=0.317
+ok
+test p06_st08_colocated_cli_forwards_real_fenced_restore_and_refuses_overwrite ... 
+thread 'p06_st08_colocated_cli_forwards_real_fenced_restore_and_refuses_overwrite' (1103093) panicked at crates/blindpass-controller/tests/restore_stage.rs:709:5:
+colocated restore command failed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_st08_colocated_cli_forwards_real_fenced_restore_and_refuses_overwrite
+
+test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.42s
+
+error: test failed, to rerun pass `-p blindpass-controller --test restore_stage`

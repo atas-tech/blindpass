@@ -1,0 +1,58 @@
+[
+  {
+    "check": "authority-full-sqlite",
+    "exit_code": 0
+  },
+  {
+    "check": "authority-full-postgres",
+    "exit_code": 0
+  },
+  {
+    "check": "invalidation-sqlite",
+    "exit_code": 0
+  },
+  {
+    "check": "invalidation-postgres",
+    "exit_code": 0
+  },
+  {
+    "check": "legacy-sqlite",
+    "exit_code": 0
+  },
+  {
+    "check": "legacy-postgres",
+    "exit_code": 0
+  },
+  {
+    "check": "production-sqlite",
+    "exit_code": 0
+  },
+  {
+    "check": "production-postgres",
+    "exit_code": 0
+  },
+  {
+    "check": "startup-sqlite",
+    "exit_code": 0
+  },
+  {
+    "check": "quiescence-postgres",
+    "exit_code": 0
+  },
+  {
+    "check": "restore-sqlite",
+    "exit_code": 0
+  },
+  {
+    "check": "migration-regression",
+    "exit_code": 0
+  },
+  {
+    "check": "restore-failpoints",
+    "exit_code": 0
+  },
+  {
+    "check": "receipts-regression",
+    "exit_code": 0
+  }
+]

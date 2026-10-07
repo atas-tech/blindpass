@@ -74,6 +74,8 @@ struct FulfillmentClaims {
     aud: String,
     iat: u64,
     exp: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    issuer_epoch: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -290,6 +292,10 @@ async fn create_exchange(
         Err(_) => return unavailable(),
     };
     let expires_at = (created.expires_at_ms / 1_000) as u64;
+    let keys = match state.legacy_authority_keys().await {
+        Ok(keys) => keys,
+        Err(_) => return unavailable(),
+    };
     let token = match sign_fulfillment_token(
         &exchange_id,
         &identity.sub,
@@ -300,7 +306,8 @@ async fn create_exchange(
         decision.policy.approval_reference.as_deref(),
         current_seconds(),
         expires_at,
-        state.root_secret.as_bytes(),
+        keys.epoch,
+        keys.root.as_bytes(),
     ) {
         Ok(token) => token,
         Err(_) => return unavailable(),
@@ -349,8 +356,12 @@ async fn fulfill_exchange(
         Ok(identity) => identity,
         Err(error) => return workload_auth_error(error),
     };
+    let keys = match state.legacy_authority_keys().await {
+        Ok(keys) => keys,
+        Err(_) => return unavailable(),
+    };
     let claims =
-        match verify_fulfillment_token(&body.fulfillment_token, state.root_secret.as_bytes()) {
+        match verify_fulfillment_token(&body.fulfillment_token, keys.root.as_bytes(), keys.epoch) {
             Ok(claims) => claims,
             Err(()) => {
                 return (
@@ -1092,8 +1103,12 @@ fn sign_fulfillment_token(
     approval_reference: Option<&str>,
     issued_at: u64,
     expires_at: u64,
+    issuer_epoch: u64,
     root_secret: &[u8],
 ) -> Result<String, ()> {
+    if !crate::legacy_authority::safe_epoch(issuer_epoch) {
+        return Err(());
+    }
     let secret = derive_secret(root_secret, "agent-fulfillment").map_err(|_| ())?;
     let claims = FulfillmentClaims {
         exchange_id: exchange_id.to_owned(),
@@ -1108,6 +1123,7 @@ fn sign_fulfillment_token(
         aud: "agent-fulfill".to_owned(),
         iat: issued_at,
         exp: expires_at,
+        issuer_epoch: crate::legacy_authority::epoch_claim(issuer_epoch),
     };
     // SPS (jose) writes the protected header as {"alg","typ"}; jsonwebtoken's
     // `Header` serializes `typ` first. Build the header in jose's order so the
@@ -1124,7 +1140,11 @@ fn sign_fulfillment_token(
     Ok(format!("{signing_input}.{signature}"))
 }
 
-fn verify_fulfillment_token(token: &str, root_secret: &[u8]) -> Result<FulfillmentClaims, ()> {
+fn verify_fulfillment_token(
+    token: &str,
+    root_secret: &[u8],
+    issuer_epoch: u64,
+) -> Result<FulfillmentClaims, ()> {
     let secret = derive_secret(root_secret, "agent-fulfillment").map_err(|_| ())?;
     let mut validation = jwt_validation(Algorithm::HS256);
     validation.set_issuer(&["sps"]);
@@ -1134,8 +1154,12 @@ fn verify_fulfillment_token(token: &str, root_secret: &[u8]) -> Result<Fulfillme
         &DecodingKey::from_secret(secret.as_bytes()),
         &validation,
     )
-    .map(|data| data.claims)
     .map_err(|_| ())
+    .and_then(|data| {
+        crate::legacy_authority::matches_epoch(issuer_epoch, data.claims.issuer_epoch)
+            .then_some(data.claims)
+            .ok_or(())
+    })
 }
 
 fn valid_base64(value: &str) -> bool {
@@ -1206,6 +1230,14 @@ mod tests {
         env!("CARGO_MANIFEST_DIR"),
         "/../../packages/contract-tests/fixtures/cv05-hash-escaping.json"
     ));
+    const CV05_MATRIX: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/contract-tests/fixtures/cv05-policy-matrix.json"
+    ));
+    const CV05_DECIDED: &str = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../packages/contract-tests/fixtures/cv05-policy-decided.json"
+    ));
 
     fn fixture(text: &str) -> Value {
         serde_json::from_str(text).expect("shared contract fixture is JSON")
@@ -1243,6 +1275,7 @@ mod tests {
                 claims["approval_reference"].as_str(),
                 issued_at,
                 vector["expires_at"].as_u64().expect("expires_at"),
+                1,
                 root_secret.as_bytes(),
             )
             .expect("sign fulfillment token");
@@ -1250,14 +1283,14 @@ mod tests {
         }
 
         // The far-future SPS token verifies; the 2023 one is expired.
-        let live = verify_fulfillment_token(text(&tokens[1], "token"), root_secret.as_bytes())
+        let live = verify_fulfillment_token(text(&tokens[1], "token"), root_secret.as_bytes(), 1)
             .expect("SPS-minted live token verifies");
         assert_eq!(live.exchange_id, text(claims, "exchange_id"));
         assert_eq!(live.workspace_id.as_deref(), Some("workspace-p00"));
         assert_eq!(live.policy_hash, text(claims, "policy_hash"));
         assert_eq!(live.approval_reference, None);
         assert!(
-            verify_fulfillment_token(text(&tokens[0], "token"), root_secret.as_bytes()).is_err()
+            verify_fulfillment_token(text(&tokens[0], "token"), root_secret.as_bytes(), 1).is_err()
         );
 
         let secret = derive_secret(root_secret.as_bytes(), "agent-fulfillment").unwrap();
@@ -1270,7 +1303,7 @@ mod tests {
             &EncodingKey::from_secret(secret.as_bytes()),
         )
         .unwrap();
-        assert!(verify_fulfillment_token(&wrong_audience, root_secret.as_bytes()).is_err());
+        assert!(verify_fulfillment_token(&wrong_audience, root_secret.as_bytes(), 1).is_err());
     }
 
     #[test]
@@ -1320,6 +1353,180 @@ mod tests {
             });
             assert_eq!(hash.as_deref(), expected_hash, "{case}");
         }
+    }
+
+    // Replays one shared policy matrix through the controller parser and engine and returns how many cases were
+    // compared and which differ, for every field the contract exposes.
+    fn replay_policy_matrix(matrix_json: &str) -> (usize, Vec<String>) {
+        let matrix = fixture(matrix_json);
+        let registry = matrix["registry"].as_array().expect("registry");
+        let groups = matrix["groups"].as_array().expect("groups");
+        let strings = |value: &Value| -> Option<Vec<String>> {
+            value.as_array().map(|items| {
+                items
+                    .iter()
+                    .map(|item| item.as_str().expect("string").to_owned())
+                    .collect()
+            })
+        };
+        let mut compared = 0;
+        let mut mismatches = Vec::new();
+        for (index, group) in groups.iter().enumerate() {
+            let policy =
+                policy_document_from_values(registry, group["rules"].as_array().expect("rules"));
+            for case in group["cases"].as_array().expect("cases") {
+                let input = &case["input"];
+                let evaluation = policy.evaluate(&PolicyInput {
+                    requester_id: text(input, "requesterId"),
+                    requester_workspace_id: input["requesterWorkspaceId"].as_str(),
+                    secret_name: text(input, "secretName"),
+                    purpose: text(input, "purpose"),
+                    fulfiller_hint: text(input, "fulfillerHint"),
+                    fulfiller_workspace_id: input["fulfillerWorkspaceId"].as_str(),
+                });
+                compared += 1;
+                let expected = &case["expected"];
+                let outcome = match (&evaluation, expected.is_null()) {
+                    (None, true) => continue,
+                    (Some(_), true) => "matched a rule the legacy engine did not".to_owned(),
+                    (None, false) => "matched no rule where the legacy engine decided".to_owned(),
+                    (Some(evaluation), false) => {
+                        let hash = hash_policy_decision(
+                            &evaluation.decision,
+                            evaluation.allowed_fulfiller_id.as_deref(),
+                            Some("workspace-p00"),
+                        )
+                        .expect("hash decision");
+                        let decision = &evaluation.decision;
+                        let differences = [
+                            ("mode", decision.mode.as_str() == text(expected, "mode")),
+                            ("ruleId", decision.rule_id == text(expected, "ruleId")),
+                            (
+                                "allowedFulfillerId",
+                                evaluation.allowed_fulfiller_id.as_deref()
+                                    == expected["allowedFulfillerId"].as_str(),
+                            ),
+                            (
+                                "approverIds",
+                                evaluation.approver_ids == strings(&expected["approverIds"]),
+                            ),
+                            (
+                                "approverRings",
+                                evaluation.approver_rings == strings(&expected["approverRings"]),
+                            ),
+                            (
+                                "requesterRing",
+                                decision.requester_ring.as_deref()
+                                    == expected["requesterRing"].as_str(),
+                            ),
+                            (
+                                "fulfillerRing",
+                                decision.fulfiller_ring.as_deref()
+                                    == expected["fulfillerRing"].as_str(),
+                            ),
+                            ("reason", decision.reason == text(expected, "reason")),
+                            (
+                                "approvalReference",
+                                decision.approval_reference.as_deref()
+                                    == expected["approvalReference"].as_str(),
+                            ),
+                            ("policy_hash", hash == text(expected, "policy_hash")),
+                        ]
+                        .iter()
+                        .filter(|(_, same)| !same)
+                        .map(|(field, _)| *field)
+                        .collect::<Vec<_>>();
+                        if differences.is_empty() {
+                            continue;
+                        }
+                        format!("fields differ: {}", differences.join(", "))
+                    }
+                };
+                mismatches.push(format!("group {index}: {outcome}: {}", case["input"]));
+            }
+        }
+        (compared, mismatches)
+    }
+
+    // The frozen matrix holds decisions the legacy TypeScript engine produced for seeded rule sets (recognised
+    // modes only). The Rust engine must reproduce every field the contract exposes, including the edge cases of
+    // blank lists, ring matching and cross-workspace refusal.
+    #[test]
+    fn cv05_policy_matrix_matches_the_frozen_legacy_decisions() {
+        let (compared, mismatches) = replay_policy_matrix(CV05_MATRIX);
+        assert!(compared >= 300, "the frozen matrix lost cases: {compared}");
+        assert!(
+            mismatches.is_empty(),
+            "{} of {compared} frozen cases differ:\n{}",
+            mismatches.len(),
+            mismatches
+                .iter()
+                .take(12)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+    }
+
+    // Owner decision 2026-10-07: the Rust behaviour is the contract for the shapes the legacy engine handled
+    // differently (empty identity list matches every agent; blank reason falls back to the generated text; padded
+    // reason, rule id and rule secret name are trimmed). The TypeScript oracle replays the same file.
+    #[test]
+    fn cv05_decided_policy_semantics_match_the_oracle_fixture() {
+        let (compared, mismatches) = replay_policy_matrix(CV05_DECIDED);
+        assert_eq!(compared, 11, "the decided fixture changed shape");
+        assert!(
+            mismatches.is_empty(),
+            "decided cases differ:\n{}",
+            mismatches.join("\n")
+        );
+    }
+
+    // Owner decision 2026-10-07: for the shapes the retired SPS engine handled differently, this engine's behaviour
+    // is the contract. The shared cases are in cv05-policy-decided.json; this test keeps the direct engine checks,
+    // including the restriction that a populated list still applies.
+    #[test]
+    fn decided_policy_shapes_the_legacy_engine_handled_differently() {
+        let registry =
+            [serde_json::json!({"secretName": "finance.api_key", "classification": "finance"})];
+        let input = PolicyInput {
+            requester_id: "anyone-at-all",
+            requester_workspace_id: None,
+            secret_name: "finance.api_key",
+            purpose: "deploy",
+            fulfiller_hint: "agent-b",
+            fulfiller_workspace_id: None,
+        };
+        let evaluate =
+            |rule: Value| policy_document_from_values(&registry, &[rule]).evaluate(&input);
+
+        // Decided: an empty identity list matches every agent. The retired SPS engine matched no agent.
+        for key in ["requesterIds", "fulfillerIds"] {
+            let rule = serde_json::json!({"ruleId": "r", "secretName": "finance.api_key", key: []});
+            assert!(evaluate(rule).is_some(), "{key}: [] matches any agent");
+        }
+        // The same list with a member still restricts, in both engines.
+        let restricted = serde_json::json!({
+            "ruleId": "r", "secretName": "finance.api_key", "requesterIds": ["someone-else"]
+        });
+        assert!(evaluate(restricted).is_none());
+
+        // Decided: a blank reason falls back to the generated text and a padded one is trimmed (the decision hash
+        // covers the reason). The retired SPS engine kept both verbatim.
+        let reason = |value: &str| {
+            evaluate(serde_json::json!({"ruleId": "r", "secretName": "finance.api_key", "reason": value}))
+                .expect("rule matches")
+                .decision
+                .reason
+        };
+        assert_eq!(reason(""), "exchange allowed by static policy for finance");
+        assert_eq!(reason("  padded reason  "), "padded reason");
+
+        // Decided: rule identifiers are trimmed before use. The retired SPS engine compared them verbatim.
+        let padded =
+            evaluate(serde_json::json!({"ruleId": " r ", "secretName": " finance.api_key "}))
+                .expect("padded rule matches");
+        assert_eq!(padded.decision.rule_id, "r");
     }
 
     #[test]

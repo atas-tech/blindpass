@@ -1,0 +1,509 @@
+# P07-D2 release candidate and approved publication. See docs/release/README.md.
+#
+# Staging (every job up to draft-release) builds one immutable candidate from the exact commit,
+# signs its SHA256SUMS and proves the signature, tamper rejection and a clean npm install.
+# Nothing leaves the candidate stage there: the image is exported to an OCI archive, the npm
+# package is a tarball and the GitHub release is a draft.
+#
+# Publication (publish-image, publish-npm, publish-release) runs only for a version tag, only
+# behind the protected `release-approval` environment (required reviewers = the P07.6 go/no-go),
+# and only after check-publish-gate.sh accepts the committed evidence. It publishes the staged
+# bytes, not a rebuild. Nothing is published from a developer machine.
+#
+# Owner setup before the first run (docs/release/README.md): docs/release/RELEASE_KEY.pub, the
+# RELEASE_KEY_FINGERPRINT repository variable, environments `release-signing` (secret
+# RELEASE_SIGNING_KEY) and `release-approval` (required reviewers; secret NPM_TOKEN), and the
+# npm @blindpass scope. Without them this workflow fails closed in its first job.
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE_REPOSITORY: ghcr.io/atas-tech/blindpass-controller
+  NODE_VERSION: 26.10.0
+
+jobs:
+  source:
+    name: Check source and release prerequisites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Read and cross-check the version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RELEASE_KEY_FINGERPRINT: ${{ vars.RELEASE_KEY_FINGERPRINT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["workspace"]["package"]["version"])')"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "workspace version is not X.Y.Z"; exit 1; }
+          # The npm package is the staged bundle: its version comes from the skill and the plugin manifests.
+          skill="$(python3 -c 'import re; print(re.search(r"^version:\s*\"?([^\"\n]+)\"?\s*$", open("packages/openclaw-plugin/skills/blindpass/SKILL.md").read(), re.M).group(1))')"
+          manifest="$(python3 -c 'import json; print(json.load(open("packages/openclaw-plugin/openclaw.plugin.json"))["version"])')"
+          plugin="$(python3 -c 'import json; print(json.load(open("packages/openclaw-plugin/package.json"))["version"])')"
+          for entry in "SKILL.md:$skill" "openclaw.plugin.json:$manifest" "openclaw-plugin package.json:$plugin"; do
+            [[ "${entry#*:}" == "$version" ]] || { echo "${entry%%:*} version ${entry#*:} differs from workspace $version"; exit 1; }
+          done
+          if [[ "$REF_TYPE" == tag && "$REF_NAME" != "v$version" ]]; then
+            echo "tag $REF_NAME does not match workspace version v$version"; exit 1
+          fi
+          test -s docs/release/RELEASE_KEY.pub || { echo "docs/release/RELEASE_KEY.pub is missing: the maintainer release key is an owner-provided file (docs/release/README.md)"; exit 1; }
+          [[ -n "$RELEASE_KEY_FINGERPRINT" ]] || { echo "repository variable RELEASE_KEY_FINGERPRINT is not set"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  archives:
+    name: Controller and node archives (${{ matrix.arch }})
+    needs: source
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            node-image: node:26.10.0-bookworm@sha256:abbacf6ecd105ed33c408bdca7701c8a54f50e317eabfb3ed31733d4e6951db5
+            rust-image: rust:1.98.1-bookworm@sha256:c49256cbe5ea0188bc658a689500d70c41eb51f009a7a7be209caf60a944f3ec
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            node-image: node:26.10.0-bookworm@sha256:838c3eef085968cb818717aeb58f0880be18afa10792df051d049501565f724e
+            rust-image: rust:1.98.1-bookworm@sha256:5b993f23fb69746405496e76f91e511d96c82b5b23304fd5d20b4a80a8b223ea
+    env:
+      NODE_IMAGE: ${{ matrix.node-image }}
+      RUST_IMAGE: ${{ matrix.rust-image }}
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the reviewed Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install lockfile dependencies and build the workspace (MCP bundle for the node archive)
+        run: |
+          npm ci
+          npm run build
+      - name: Install the pinned Chromium headless shell
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright
+        run: npm exec --workspace=helpers/login -- playwright install chromium-headless-shell
+      - name: Build binaries at the bookworm baseline
+        run: |
+          docker build --file scripts/release/Dockerfile --target export \
+            --build-arg NODE_IMAGE="$NODE_IMAGE" --build-arg RUST_IMAGE="$RUST_IMAGE" \
+            --output type=local,dest=${{ runner.temp }}/binaries .
+      - name: Package both archives
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd binutils
+          node_root="$(dirname "$(dirname "$(command -v node)")")"
+          scripts/release/build-tarballs.sh --profile all --arch '${{ matrix.arch }}' \
+            --bin-dir ${{ runner.temp }}/binaries --output-dir ${{ runner.temp }}/release \
+            --node-root "$node_root" --browser-root "$PLAYWRIGHT_BROWSERS_PATH"
+      - name: Archive-level checksums (P06 gate; the release inventory is built later)
+        run: |
+          mkdir ${{ runner.temp }}/checksum-check
+          cp ${{ runner.temp }}/release/*.tar.zst ${{ runner.temp }}/checksum-check/
+          scripts/release/checksums.sh ${{ runner.temp }}/checksum-check
+          (cd ${{ runner.temp }}/checksum-check && sha256sum --check SHA256SUMS)
+      - name: Test the extracted archives
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: ${{ runner.temp }}/playwright
+        run: |
+          # Ubuntu 24.04 restricts unprivileged user namespaces, which the packaged Chromium sandbox needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          python3 tests/deployment/release-artifacts-test.py
+          python3 tests/deployment/native-package-test.py
+          python3 tests/deployment/release-archive.py --arch '${{ matrix.arch }}' --bin-dir ${{ runner.temp }}/binaries
+          python3 tests/deployment/controller-tls.py --binary ${{ runner.temp }}/binaries/blindpass-controller
+          node_root="$(dirname "$(dirname "$(command -v node)")")"
+          python3 tests/deployment/release-node-archive.py --arch '${{ matrix.arch }}' \
+            --bin-dir ${{ runner.temp }}/binaries --node-root "$node_root" --browser-root "$PLAYWRIGHT_BROWSERS_PATH"
+      - name: Stage the archives
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: archives-${{ matrix.arch }}
+          path: ${{ runner.temp }}/release/*.tar.zst
+          if-no-files-found: error
+          retention-days: 30
+
+  image:
+    name: Controller image candidate (OCI archive, linux/amd64)
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+      REVISION: ${{ github.sha }}
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the candidate with the reviewed SBOM scanner (exported, not pushed)
+        run: |
+          set -euo pipefail
+          docker buildx create --name release-builder --driver docker-container --driver-opt image=moby/buildkit:buildx-stable-1@sha256:cec9f139f45e93c5c69c60f8b07cfad9f43f4ef6b6a6cd917527fea5ff2e3dea --use
+          sbom='type=sbom,generator=docker/buildkit-syft-scanner:stable-1@sha256:ae4f3b554449e7e25548e7d8ccc029d17357348e30c6e3df01b92bc93654d6a9,"SELECT_CATALOGERS=+sbom-cataloger,+rust-cargo-lock-cataloger,+javascript-package-cataloger,+dpkg-db-cataloger"'
+          mkdir -p ${{ runner.temp }}/image
+          docker buildx build --builder release-builder --file deploy/controller/Dockerfile --platform linux/amd64 \
+            --build-arg VERSION="$VERSION" --build-arg REVISION="$REVISION" \
+            --attest "$sbom" --attest type=provenance,mode=min \
+            --tag "$IMAGE_REPOSITORY:$VERSION" \
+            --output type=oci,dest=${{ runner.temp }}/image/blindpass-controller-image-"$VERSION"-linux-amd64.oci.tar .
+      - name: Verify the attestation graph and extract the digest and SBOM
+        run: |
+          set -euo pipefail
+          archive=${{ runner.temp }}/image/blindpass-controller-image-"$VERSION"-linux-amd64.oci.tar
+          python3 tests/deployment/controller-sbom.py --archive "$archive"
+          python3 scripts/release/extract-image-sbom.py --archive "$archive" --repository "$IMAGE_REPOSITORY" \
+            --sbom-out ${{ runner.temp }}/image/blindpass-controller-image-"$VERSION".spdx.json \
+            --digest-out ${{ runner.temp }}/image/controller-image.digest
+      - name: Derive the docker-load archive from the verified OCI archive
+        run: |
+          set -euo pipefail
+          # A stock Docker (overlay2 store) cannot `docker load` an OCI archive, so operators load this companion.
+          # Same config and layer bytes; the registry identity stays the index digest in controller-image.digest.
+          python3 scripts/release/oci-to-docker-archive.py \
+            --archive ${{ runner.temp }}/image/blindpass-controller-image-"$VERSION"-linux-amd64.oci.tar \
+            --output ${{ runner.temp }}/image/blindpass-controller-image-"$VERSION"-linux-amd64.docker.tar \
+            --tag "$IMAGE_REPOSITORY:$VERSION"
+      - name: Stage the image candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image
+          path: ${{ runner.temp }}/image/*
+          if-no-files-found: error
+          retention-days: 30
+
+  desktop:
+    name: Desktop approval app archive
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the archive from tracked files
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y zstd
+          python3 scripts/release/build-desktop-archive.py --output-dir ${{ runner.temp }}/desktop
+      - name: Stage the archive
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: desktop
+          path: ${{ runner.temp }}/desktop/*.tar.zst
+          if-no-files-found: error
+          retention-days: 30
+
+  npm-package:
+    name: MCP bundle tarball and SBOM
+    needs: source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the reviewed Node runtime
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - name: Install lockfile dependencies, test the private library and the bundle tooling
+        run: |
+          npm ci
+          npm run build --workspace=@blindpass/mcp-server-lib
+          npm test --workspace=@blindpass/mcp-server-lib
+          node --test scripts/tests/mcp-bundle-package.test.mjs scripts/tests/mcp-bundle-notices.test.mjs scripts/tests/release-bundle-sbom.test.mjs
+      - name: Build the bundle from the exact commit and stage the package
+        run: |
+          set -euo pipefail
+          bash scripts/build_bundle.sh
+          scripts/publish_dist.sh --skip-build --skip-validate --stage-dir ${{ runner.temp }}/mcp-package
+      - name: Pack (the prepack check runs) and verify outside the repository
+        run: |
+          set -euo pipefail
+          mkdir ${{ runner.temp }}/npm
+          (cd ${{ runner.temp }}/mcp-package && npm pack --pack-destination ${{ runner.temp }}/npm)
+          node scripts/release/verify-npm-candidate.mjs ${{ runner.temp }}/npm/blindpass-mcp-server-"$VERSION".tgz \
+            --sbom ${{ runner.temp }}/npm/blindpass-mcp-server-"$VERSION".cdx.json
+      - name: Stage the package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: npm
+          path: ${{ runner.temp }}/npm/*
+          if-no-files-found: error
+          retention-days: 30
+
+  assemble-and-sign:
+    name: Assemble the candidate and sign SHA256SUMS
+    needs: [source, archives, image, desktop, npm-package]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: release-signing
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Collect the staged assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: candidate
+          merge-multiple: true
+      - name: Add the license snapshot and the rendered PKGBUILD, then write the inventory
+        run: |
+          set -euo pipefail
+          cp LICENSES.md candidate/LICENSES-"$VERSION".md
+          desktop_sha="$(sha256sum candidate/blindpass-approval-app-"$VERSION"-linux-x86_64.tar.zst | cut -d' ' -f1)"
+          scripts/release/render-pkgbuild.sh desktop/packaging/arch/PKGBUILD "$VERSION" "$desktop_sha" > candidate/PKGBUILD
+          scripts/release/make-sums.sh candidate "$VERSION"
+      - name: Sign SHA256SUMS
+        env:
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$RELEASE_SIGNING_KEY" > "${{ runner.temp }}/release_signing_key"
+          scripts/release/sign.sh --key "${{ runner.temp }}/release_signing_key" candidate/SHA256SUMS
+      - name: Remove the signing key file
+        if: always()
+        run: shred -u "${{ runner.temp }}/release_signing_key" 2>/dev/null || rm -f "${{ runner.temp }}/release_signing_key"
+      - name: Verify the signature against the independently supplied fingerprint
+        env:
+          RELEASE_KEY_FINGERPRINT: ${{ vars.RELEASE_KEY_FINGERPRINT }}
+        run: scripts/release/verify.sh --fingerprint "$RELEASE_KEY_FINGERPRINT" --check-dir candidate candidate/SHA256SUMS candidate/SHA256SUMS.sig docs/release/RELEASE_KEY.pub
+      - name: Stage the signed candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate
+          path: candidate/*
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-candidate:
+    name: Clean verification (Node ${{ matrix.node }})
+    needs: [source, assemble-and-sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['24.21.0', '26.10.0']
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+    steps:
+      - name: Check out the exact commit (scripts and public key only are used)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Fetch the signed candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate
+          path: candidate
+      - name: Verify signature and checksums, then prove tampering is rejected
+        env:
+          RELEASE_KEY_FINGERPRINT: ${{ vars.RELEASE_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          verify() { scripts/release/verify.sh --fingerprint "$RELEASE_KEY_FINGERPRINT" --check-dir "$1" "$1/SHA256SUMS" "$1/SHA256SUMS.sig" docs/release/RELEASE_KEY.pub; }
+          verify candidate
+          # Tamper checks on copies: a changed asset and a changed inventory must both fail.
+          cp -r candidate tamper-asset
+          printf 'x' >> tamper-asset/PKGBUILD
+          if verify tamper-asset; then echo "tampered asset was accepted"; exit 1; fi
+          cp -r candidate tamper-inventory
+          sed -i '1s/^./0/' tamper-inventory/SHA256SUMS
+          if verify tamper-inventory; then echo "tampered inventory was accepted"; exit 1; fi
+          echo "tamper rejection confirmed"
+      - name: Install the package outside the repository, run its executables and npx
+        run: node scripts/release/verify-npm-candidate.mjs candidate/blindpass-mcp-server-"$VERSION".tgz
+
+  draft-release:
+    name: Stage the draft GitHub release
+    if: github.ref_type == 'tag'
+    needs: [source, verify-candidate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+      TAG: ${{ github.ref_name }}
+      RELEASE_KEY_FINGERPRINT: ${{ vars.RELEASE_KEY_FINGERPRINT }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Fetch the signed candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate
+          path: candidate
+      - name: Create a draft release holding the candidate (not public)
+        run: |
+          set -euo pipefail
+          image="$(cat candidate/controller-image.digest)"
+          printf '%s\n' \
+            "Release candidate $TAG. This draft is not published." \
+            "" \
+            "Verify before use (docs/release/README.md): SHA256SUMS.sig is an SSH signature in namespace blindpass-release-v1; the release key fingerprint is $RELEASE_KEY_FINGERPRINT and must also match the value the maintainers published elsewhere." \
+            "" \
+            "Controller image (pushed on approval, same digest): $image" > notes.md
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "BlindPass $VERSION" --notes-file notes.md candidate/*
+
+  publish-image:
+    name: Publish the controller image
+    if: github.ref_type == 'tag'
+    needs: [source, verify-candidate, draft-release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: release-approval
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+      RELEASE_KEY_FINGERPRINT: ${{ vars.RELEASE_KEY_FINGERPRINT }}
+      REGISTRY_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the tag with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Evidence gate
+        run: scripts/release/check-publish-gate.sh "$VERSION"
+      - name: Fetch and re-verify the signed candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate
+          path: candidate
+      - name: Verify signature and checksums
+        run: scripts/release/verify.sh --fingerprint "$RELEASE_KEY_FINGERPRINT" --check-dir candidate candidate/SHA256SUMS candidate/SHA256SUMS.sig docs/release/RELEASE_KEY.pub
+      - name: Push the staged archive with its digests and check the registry digest
+        run: |
+          set -euo pipefail
+          command -v skopeo >/dev/null || { sudo apt-get update; sudo apt-get install -y --no-install-recommends skopeo; }
+          expected="$(sed 's/.*@//' candidate/controller-image.digest)"
+          minor="${VERSION%.*}"
+          printf '%s' "$REGISTRY_TOKEN" | skopeo login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          skopeo copy --all --preserve-digests oci-archive:candidate/blindpass-controller-image-"$VERSION"-linux-amd64.oci.tar docker://"$IMAGE_REPOSITORY":"$VERSION"
+          skopeo copy --all --preserve-digests docker://"$IMAGE_REPOSITORY":"$VERSION" docker://"$IMAGE_REPOSITORY":"$minor"
+          for tag in "$VERSION" "$minor"; do
+            actual="sha256:$(skopeo inspect --raw docker://"$IMAGE_REPOSITORY":"$tag" | sha256sum | cut -d' ' -f1)"
+            [[ "$actual" == "$expected" ]] || { echo "registry digest for $tag is $actual, expected $expected"; exit 1; }
+          done
+
+  publish-npm:
+    name: Publish the MCP package
+    if: github.ref_type == 'tag'
+    needs: [source, verify-candidate, draft-release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: release-approval
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+      RELEASE_KEY_FINGERPRINT: ${{ vars.RELEASE_KEY_FINGERPRINT }}
+    steps:
+      - name: Check out the tag with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Evidence gate
+        run: scripts/release/check-publish-gate.sh "$VERSION"
+      - name: Set up Node with the registry
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          registry-url: https://registry.npmjs.org
+      - name: Fetch and re-verify the signed candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate
+          path: candidate
+      - name: Verify signature and checksums
+        run: scripts/release/verify.sh --fingerprint "$RELEASE_KEY_FINGERPRINT" --check-dir candidate candidate/SHA256SUMS candidate/SHA256SUMS.sig docs/release/RELEASE_KEY.pub
+      - name: Publish the staged tarball under provenance
+        env:
+          BLINDPASS_RELEASE_APPROVED: '1'
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/release/check-publish-context.mjs
+          npm publish "candidate/blindpass-mcp-server-$VERSION.tgz" --provenance --access public
+
+  publish-release:
+    name: Make the GitHub release public
+    if: github.ref_type == 'tag'
+    needs: [source, verify-candidate, draft-release, publish-image, publish-npm]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release-approval
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.source.outputs.version }}
+      TAG: ${{ github.ref_name }}
+      RELEASE_KEY_FINGERPRINT: ${{ vars.RELEASE_KEY_FINGERPRINT }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out the tag with history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Evidence gate
+        run: scripts/release/check-publish-gate.sh "$VERSION"
+      - name: Fetch and re-verify the signed candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: candidate
+          path: candidate
+      - name: Verify signature and checksums
+        run: scripts/release/verify.sh --fingerprint "$RELEASE_KEY_FINGERPRINT" --check-dir candidate candidate/SHA256SUMS candidate/SHA256SUMS.sig docs/release/RELEASE_KEY.pub
+      - name: Publish the draft
+        run: |
+          set -euo pipefail
+          # The draft must hold exactly the verified candidate before it becomes public.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | sort > published-assets.txt
+          (cd candidate && ls -1 | sort) | diff -u - published-assets.txt
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --latest

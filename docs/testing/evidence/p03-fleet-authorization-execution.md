@@ -507,6 +507,72 @@ skipped across 17 files); `test:controller-openapi`, `test:openapi-types` and
 `test:contract-progress`; shell syntax, proxy Python compilation, Node syntax
 and `git diff --check`.
 
+## Second review and fixes — 2026-09-27 (evening)
+
+A second review of `5792e89` against the vault plans found two liveness
+defects, one undocumented timing rule and several places where this record
+claimed more than the harness asserted. None of the findings let a relay,
+workload or operator gain authority. The fixes are local commits `31d08af`
+to `5b6d018`, not pushed, and no hosted workflow was dispatched.
+
+Corrections to the 2026-09-27 run above:
+
+- **I05 retry.** The `2100222` VM run never presented the grant again
+  after the crash. "Retry denied" came from a Rust test only.
+- **E07 denial.** The held grant was denied with `trusted_time_unavailable`
+  on both backends in a rerun of `5792e89`, not with `grant_expired`. The
+  harness accepted either code, so "denied after expiry" was not established.
+- **PostgreSQL count.** The 109 controller tests run with
+  `P02_TEST_BACKEND=postgres` include about 21 that hard-code SQLite or use
+  no database.
+- **E01 scan.** It covered only live identities and lowercase encodings.
+  SQLite dumps render BLOB values as uppercase hexadecimal.
+- **Enrollment approval.** The VM approved with the fingerprint the
+  controller displayed, so no operator comparison was exercised.
+- **I10.** The workload-account attempt is an unauthenticated request; the
+  local IPC approval path is not exercised.
+
+Fixes:
+
+| Commit | Change |
+|---|---|
+| `31d08af` | The broker settles a redelivered grant that is already accepted, consumed, revoked or retired before any binding check. A verified grant that can never be accepted is discarded with one `grant_rejected` audit event (`binding_mismatch` or `stale_at_receipt`). Before this, a relay restart between applying and acknowledging documents could leave such a grant rejected on every redelivery, blocking all later revocations and policy until expiry or, for a binding change, indefinitely. A signed key rotation now retires grants bound to the old recipient key (`grant_key_rotated`). |
+| `7b3acf2` | A retried `node_revocation_applied` event finalizes the revocation. Before this, a finalize failure followed by a retry left the node revoked with `revocation_pending` and open channel sessions. |
+| `f0f14bb` | A correctly signed event the controller can never apply is audited as `node_event_rejected`, listed in `discarded` and acknowledged. This replaces the poison-event limit above. Events with an invalid broker signature are still refused without acknowledgement. |
+| `222f1f6` | HTTP 426 on the events route stops the relay with exit status 78, like session and poll. |
+| `e37a223` | The marker directory is mode 0711, so other local users cannot list consumed grant IDs. |
+| `da79c15` | Fleet operator routes answer 503 `controller_clock_fenced` while the clock is fenced, replacing the 401 limit above. |
+| `a158bd7`, `db27f24` | RFC 8032 vectors 2 and 3; a broker test pins the signed-time bound on consuming a live grant. |
+| `faf0205`, `ca8ae12` | VM: I05 retries the grant and requires `grant_consumed`; E01 scans archived identities and uppercase hex; E05 asserts the controller status; I10 requires 401; E11 reads every audit page and counts the consumed journal; enrollment approval uses the node-printed fingerprint; kept failure artifacts drop key canaries and state dumps. |
+| `5b6d018` | `ci-full.yml` runs the fleet controller tests on both backends; `fleet-vm.yml` gains a P03 job. |
+
+**Proposed decision P03-D12, owner confirmation pending.** Consuming a grant
+requires signed controller time received within the last 35 seconds. An
+outage longer than that denies a grant whose local deadline has not passed.
+This is stricter than the plan's "existing grants stop at expiry" and never
+widens access. The alternative is to let consumption run to the local
+BOOTTIME deadline, which would need another source for the observation time
+in the result event.
+
+Known limits after these fixes:
+
+- A revoked node keeps its channel until the broker acknowledges the signed
+  revocation; grants are revoked at once. The plan says sessions close on
+  revoke; the implementation needs the channel to deliver the revocation.
+- Migration 0013 still fails on duplicate active (node, unit) workloads.
+- Request bodies are still parsed before authentication.
+- Deferred revocation outcomes under audit overflow are lost on broker
+  restart; the tombstone itself is durable.
+- The relay exits on any issuer-epoch change; P06 must define how a broker
+  learns a new epoch.
+- No default grant TTL; the signed grant body carries no tenant; the
+  unauthenticated session challenge reveals approval state by node ID and
+  has no rate limit.
+- A registration-retired grant can be re-accepted after a broker restart if
+  it is still unacknowledged and its bindings still match.
+
+VM_RESULTS_PLACEHOLDER
+
 ## Remaining acceptance work
 
 This record does not establish P03 acceptance. Open items:

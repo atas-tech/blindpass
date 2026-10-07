@@ -1,0 +1,14 @@
+[
+  {
+    "check": "node-build",
+    "exit_code": 0
+  },
+  {
+    "check": "node-test",
+    "exit_code": 0
+  },
+  {
+    "check": "rust-workspace",
+    "exit_code": 101
+  }
+]

@@ -342,3 +342,38 @@ fn unavailable() -> Response {
         "controller is not ready",
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{PolicyDocumentInput, validate_policy};
+    use serde_json::json;
+
+    fn document(rule: serde_json::Value) -> PolicyDocumentInput {
+        serde_json::from_value(json!({
+            "secret_registry": [{"secretName": "finance.api_key", "classification": "finance"}],
+            "exchange_policy": [rule]
+        }))
+        .expect("policy document parses")
+    }
+
+    // Owner decision 2026-10-07: an EMPTY requesterIds or fulfillerIds list is valid and means "any agent" (the
+    // retired SPS engine matched no agent). A blank entry stays invalid because trimming it would leave an empty
+    // list and silently widen the rule. The cases are shared with the TypeScript oracle in
+    // fixtures/cv05-policy-decided.json.
+    #[test]
+    fn an_empty_identity_list_passes_validation_while_a_blank_entry_does_not() {
+        for key in ["requesterIds", "fulfillerIds"] {
+            let empty = document(json!({"ruleId": "r", "secretName": "finance.api_key", key: []}));
+            assert!(
+                validate_policy(&empty).is_empty(),
+                "{key}: [] is valid and matches every agent"
+            );
+            let blank =
+                document(json!({"ruleId": "r", "secretName": "finance.api_key", key: [" "]}));
+            assert!(
+                !validate_policy(&blank).is_empty(),
+                "{key}: a blank entry is invalid"
+            );
+        }
+    }
+}

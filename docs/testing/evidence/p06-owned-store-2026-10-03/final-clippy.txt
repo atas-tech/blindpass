@@ -1,0 +1,44 @@
+    Checking blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error: mismatched closing delimiter: `}`
+    --> crates/blindpass-controller/src/store/mod.rs:2390:23
+     |
+ 409 | impl Store {
+     |            - closing delimiter possibly meant for this
+...
+2390 |         self.run_owned(async {
+     |                       ^ unclosed delimiter
+...
+2514 | }
+     | ^ mismatched closing delimiter
+
+error: this file contains an unclosed delimiter
+    --> crates/blindpass-controller/src/store/mod.rs:3620:3
+     |
+ 409 | impl Store {
+     |            - unclosed delimiter
+...
+1498 |     ) -> Result<Option<i64>, StoreError> {
+     |                                          - unclosed delimiter
+1499 |         self.run_owned(async {
+     |                       - unclosed delimiter
+...
+1624 |     pub async fn sweep_expired(&self, retention_grace_seconds: u64) -> Result<u64, StoreError> {
+     |                                                                                                - unclosed delimiter
+1625 |         self.run_owned(async {
+     |                       - unclosed delimiter
+...
+1720 |     pub async fn sweep_audit(&self, retention_days: u32) -> Result<u64, StoreError> {
+     |                                                                                     - another 16 unclosed delimiters begin from here
+...
+2390 |         self.run_owned(async {
+     |                              - this delimiter might not be properly closed...
+...
+2428 |     }
+     |     - ...as it matches this but it has different indentation
+...
+3620 | }
+     |  ^
+
+error: could not compile `blindpass-controller` (lib test) due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `blindpass-controller` (lib) due to 2 previous errors

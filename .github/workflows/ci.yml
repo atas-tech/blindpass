@@ -47,6 +47,11 @@ jobs:
       - name: Check landing workflow demos
         run: npm run test:landing
 
+      # P07-I04: the fail-closed canary scanner's own tests and the core-dump limit audit of the
+      # shipped units and Compose files.
+      - name: Check exposure scanner and core-dump limits
+        run: npm run test:exposure
+
       # P05 helper library, private worker framing and actual Chromium fixture
       # checks (chromiumSandbox: true, no root-only or VM prerequisites).
       - name: Install Playwright Chromium for P05 helper checks
@@ -111,6 +116,7 @@ jobs:
         run: |
           python3 tests/deployment/release-artifacts-test.py
           python3 tests/deployment/native-package-test.py
+          python3 tests/deployment/native-start-test.py
           python3 tests/deployment/release-archive.py --arch '${{ matrix.arch }}' \
             --bin-dir /tmp/blindpass-p06-binaries
       - name: Verify candidate HTTPS and bounded handshakes

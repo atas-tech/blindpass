@@ -1,0 +1,144 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0599]: no method named `bind_ownership` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1412:11
+     |
+1412 |     store.bind_ownership(owner.clone(), &f.context.issuer_key_id).unwrap();
+     |           ^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `bind_ownership` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1413:15
+     |
+1413 |     old_clone.bind_ownership(owner.clone(), &f.context.issuer_key_id).unwrap();
+     |               ^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `sign_node_document` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1415:23
+     |
+1415 |     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 1).is_ok());
+     |                       ^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0308]: mismatched types
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1415:78
+     |
+1415 |     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 1).is_ok());
+     |                                                                   ---------- ^^^^^ expected `&str`, found `&[u8; 2]`
+     |                                                                   |
+     |                                                                   arguments to this function are incorrect
+     |
+     = note: expected reference `&str`
+                found reference `&'static [u8; 2]`
+note: function defined here
+    --> crates/blindpass-core/src/canon.rs:109:8
+     |
+ 109 | pub fn parse_json(source: &str) -> Result<Value, CanonicalError> {
+     |        ^^^^^^^^^^
+help: consider removing the leading `b`
+     |
+1415 -     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 1).is_ok());
+1415 +     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json("{}").unwrap(), 1).is_ok());
+     |
+
+error[E0599]: no method named `sign_node_document` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1416:23
+     |
+1416 |     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 2).is_err());
+     |                       ^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0308]: mismatched types
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1416:78
+     |
+1416 |     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 2).is_err());
+     |                                                                   ---------- ^^^^^ expected `&str`, found `&[u8; 2]`
+     |                                                                   |
+     |                                                                   arguments to this function are incorrect
+     |
+     = note: expected reference `&str`
+                found reference `&'static [u8; 2]`
+note: function defined here
+    --> crates/blindpass-core/src/canon.rs:109:8
+     |
+ 109 | pub fn parse_json(source: &str) -> Result<Value, CanonicalError> {
+     |        ^^^^^^^^^^
+help: consider removing the leading `b`
+     |
+1416 -     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 2).is_err());
+1416 +     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json("{}").unwrap(), 2).is_err());
+     |
+
+error[E0061]: this method takes 5 arguments but 4 arguments were supplied
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1419:23
+     |
+1419 |     assert!(old_clone.create_agent_with_id("P06_DUMMY_AGENT", "dummy", "hash", None).await.is_err());
+     |                       ^^^^^^^^^^^^^^^^^^^^------------------------------------------ argument #5 of type `&str` is missing
+     |
+note: method defined here
+    --> crates/blindpass-controller/src/store/mod.rs:1636:18
+     |
+1636 |     pub async fn create_agent_with_id(
+     |                  ^^^^^^^^^^^^^^^^^^^^
+help: provide the argument
+     |
+1419 |     assert!(old_clone.create_agent_with_id("P06_DUMMY_AGENT", "dummy", "hash", None, /* &str */).await.is_err());
+     |                                                                                    ++++++++++++
+
+error[E0599]: no method named `sign_node_document` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1422:23
+     |
+1422 |     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 1).is_err());
+     |                       ^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0308]: mismatched types
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1422:78
+     |
+1422 |     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 1).is_err());
+     |                                                                   ---------- ^^^^^ expected `&str`, found `&[u8; 2]`
+     |                                                                   |
+     |                                                                   arguments to this function are incorrect
+     |
+     = note: expected reference `&str`
+                found reference `&'static [u8; 2]`
+note: function defined here
+    --> crates/blindpass-core/src/canon.rs:109:8
+     |
+ 109 | pub fn parse_json(source: &str) -> Result<Value, CanonicalError> {
+     |        ^^^^^^^^^^
+help: consider removing the leading `b`
+     |
+1422 -     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json(b"{}").unwrap(), 1).is_err());
+1422 +     assert!(old_clone.sign_node_document(DocumentKind::TimeReply, parse_json("{}").unwrap(), 1).is_err());
+     |
+
+error[E0599]: no method named `bind_ownership` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1426:23
+     |
+1426 |     assert!(old_clone.bind_ownership(other.clone(), &f.context.issuer_key_id).is_err());
+     |                       ^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0308]: arguments to this function are incorrect
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1448:17
+     |
+1448 |     let store = Store::connect_with_clock_source(&url, 1000, Arc::new(ObservedClock(entered.clone())))
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^       ----  ---------------------------------------- expected `u64`, found `Arc<ObservedClock>`
+     |                                                        |
+     |                                                        expected `Arc<(dyn ClockSource + 'static)>`, found `{integer}`
+     |
+note: associated function defined here
+    --> crates/blindpass-controller/src/store/mod.rs:467:18
+     |
+ 467 |     pub async fn connect_with_clock_source(
+     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+help: swap these arguments
+     |
+1448 -     let store = Store::connect_with_clock_source(&url, 1000, Arc::new(ObservedClock(entered.clone())))
+1448 +     let store = Store::connect_with_clock_source(&url, Arc::new(ObservedClock(entered.clone())), 1000)
+     |
+
+error[E0599]: no method named `bind_ownership` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1457:11
+     |
+1457 |     store.bind_ownership(owner.clone(), &f.context.issuer_key_id).unwrap();
+     |           ^^^^^^^^^^^^^^ method not found in `Store`
+
+Some errors have detailed explanations: E0061, E0308, E0599.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `blindpass-controller` (test "recovery_authority") due to 12 previous errors

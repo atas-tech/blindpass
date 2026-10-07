@@ -2,7 +2,10 @@
 
 //! Local operator and browser-session state.
 
-use super::{Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, positive_milliseconds};
+use super::{
+    Database, POSTGRES_NOW_MS, SQLITE_NOW_MS, Store, StoreError, account_row_keys,
+    login_account_key, positive_milliseconds,
+};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use blindpass_core::custody::sha256;
@@ -28,6 +31,7 @@ pub struct LocalSession {
     pub expires_at_ms: i64,
 }
 
+pub const SESSION_IDLE_SECONDS: u64 = 12 * 60 * 60;
 pub(super) const SESSION_IDLE_MS: i64 = 12 * 60 * 60 * 1_000;
 
 /// Which transport a local session belongs to. Browser sessions are the
@@ -68,21 +72,23 @@ const DESKTOP_ACCESS_MS: i64 = 20 * 60 * 1_000;
 
 impl Store {
     pub async fn has_active_admin(&self) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let row = sqlx::query("SELECT EXISTS(SELECT 1 FROM operators WHERE role = 'admin' AND disabled_at IS NULL)")
-                    .fetch_one(pool).await.map_err(StoreError::Database)?;
-                row.try_get::<i64, _>(0)
-                    .map(|value| value != 0)
-                    .map_err(StoreError::Database)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let row = sqlx::query("SELECT EXISTS(SELECT 1 FROM operators WHERE role = 'admin' AND disabled_at IS NULL)")
+                        .fetch_one(pool).await.map_err(StoreError::Database)?;
+                    row.try_get::<i64, _>(0)
+                        .map(|value| value != 0)
+                        .map_err(StoreError::Database)
+                }
+                Database::Postgres(pool) => {
+                    let row = sqlx::query("SELECT EXISTS(SELECT 1 FROM operators WHERE role = 'admin' AND disabled_at IS NULL)")
+                        .fetch_one(pool).await.map_err(StoreError::Database)?;
+                    row.try_get(0).map_err(StoreError::Database)
+                }
             }
-            Database::Postgres(pool) => {
-                let row = sqlx::query("SELECT EXISTS(SELECT 1 FROM operators WHERE role = 'admin' AND disabled_at IS NULL)")
-                    .fetch_one(pool).await.map_err(StoreError::Database)?;
-                row.try_get(0).map_err(StoreError::Database)
-            }
-        }
+        }).await
     }
 
     pub async fn bootstrap_local_operator(
@@ -92,53 +98,58 @@ impl Store {
         display_name: &str,
         password_hash: &str,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query(
+                        "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
+                    )
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
-                if active_admin_exists_sqlite(&mut transaction).await? {
+                    if active_admin_exists_sqlite(&mut transaction).await? {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    insert_operator_sqlite(
+                        &mut transaction,
+                        id,
+                        username,
+                        display_name,
+                        password_hash,
+                        true,
+                    )
+                    .await?;
                     transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
+                    Ok(true)
                 }
-                insert_operator_sqlite(
-                    &mut transaction,
-                    id,
-                    username,
-                    display_name,
-                    password_hash,
-                    true,
-                )
-                .await?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
-                    .fetch_one(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if active_admin_exists_postgres(&mut transaction).await? {
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if active_admin_exists_postgres(&mut transaction).await? {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    insert_operator_postgres(
+                        &mut transaction,
+                        id,
+                        username,
+                        display_name,
+                        password_hash,
+                        true,
+                    )
+                    .await?;
                     transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
+                    Ok(true)
                 }
-                insert_operator_postgres(
-                    &mut transaction,
-                    id,
-                    username,
-                    display_name,
-                    password_hash,
-                    true,
-                )
-                .await?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
             }
-        }
+        })
+        .await
     }
 
     pub async fn issue_bootstrap_token(
@@ -146,56 +157,71 @@ impl Store {
         token_hash: &str,
         ttl_seconds: u64,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        let ttl_ms = positive_milliseconds(ttl_seconds, "bootstrap token TTL")?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let ttl_ms = positive_milliseconds(ttl_seconds, "bootstrap token TTL")?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query(
+                        "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
+                    )
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
-                if active_admin_exists_sqlite(&mut transaction).await? {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let sql = format!(
-                    "INSERT INTO bootstrap_tokens (token_hash, expires_at, used_at)
+                    if active_admin_exists_sqlite(&mut transaction).await? {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    // Reissue is the abuse recovery: an exposed token stops
+                    // working the moment the administrator asks for another.
+                    sqlx::query("DELETE FROM bootstrap_tokens WHERE used_at IS NULL")
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let sql = format!(
+                        "INSERT INTO bootstrap_tokens (token_hash, expires_at, used_at)
                     VALUES (?, {SQLITE_NOW_MS} + ?, NULL)"
-                );
-                sqlx::query(&sql)
-                    .bind(token_hash)
-                    .bind(ttl_ms)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
-                    .fetch_one(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if active_admin_exists_postgres(&mut transaction).await? {
+                    );
+                    sqlx::query(&sql)
+                        .bind(token_hash)
+                        .bind(ttl_ms)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
                     transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
+                    Ok(true)
                 }
-                let sql = format!(
-                    "INSERT INTO bootstrap_tokens (token_hash, expires_at, used_at)
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if active_admin_exists_postgres(&mut transaction).await? {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    sqlx::query("DELETE FROM bootstrap_tokens WHERE used_at IS NULL")
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let sql = format!(
+                        "INSERT INTO bootstrap_tokens (token_hash, expires_at, used_at)
                     VALUES ($1, {POSTGRES_NOW_MS} + $2::BIGINT, NULL)"
-                );
-                sqlx::query(&sql)
-                    .bind(token_hash)
-                    .bind(ttl_ms)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
+                    );
+                    sqlx::query(&sql)
+                        .bind(token_hash)
+                        .bind(ttl_ms)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok(true)
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn bootstrap_operator_with_token(
@@ -206,132 +232,140 @@ impl Store {
         display_name: &str,
         password_hash: &str,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if active_admin_exists_sqlite(&mut transaction).await? {
-                    return Ok(false);
-                }
-                let update = format!("UPDATE bootstrap_tokens SET used_at = {SQLITE_NOW_MS}
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if active_admin_exists_sqlite(&mut transaction).await? {
+                        return Ok(false);
+                    }
+                    let update = format!("UPDATE bootstrap_tokens SET used_at = {SQLITE_NOW_MS}
                     WHERE token_hash = ? AND used_at IS NULL AND expires_at > {SQLITE_NOW_MS} RETURNING token_hash");
-                if sqlx::query(&update)
-                    .bind(token_hash)
-                    .fetch_optional(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .is_none()
-                {
-                    return Ok(false);
+                    if sqlx::query(&update)
+                        .bind(token_hash)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .is_none()
+                    {
+                        return Ok(false);
+                    }
+                    insert_operator_sqlite(
+                        &mut transaction,
+                        id,
+                        username,
+                        display_name,
+                        password_hash,
+                        false,
+                    )
+                    .await?;
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok(true)
                 }
-                insert_operator_sqlite(
-                    &mut transaction,
-                    id,
-                    username,
-                    display_name,
-                    password_hash,
-                    false,
-                )
-                .await?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
-                    .fetch_one(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if active_admin_exists_postgres(&mut transaction).await? {
-                    return Ok(false);
-                }
-                let update = format!("UPDATE bootstrap_tokens SET used_at = {POSTGRES_NOW_MS}
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if active_admin_exists_postgres(&mut transaction).await? {
+                        return Ok(false);
+                    }
+                    let update = format!("UPDATE bootstrap_tokens SET used_at = {POSTGRES_NOW_MS}
                     WHERE token_hash = $1 AND used_at IS NULL AND expires_at > {POSTGRES_NOW_MS} RETURNING token_hash");
-                if sqlx::query(&update)
-                    .bind(token_hash)
-                    .fetch_optional(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .is_none()
-                {
-                    return Ok(false);
+                    if sqlx::query(&update)
+                        .bind(token_hash)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .is_none()
+                    {
+                        return Ok(false);
+                    }
+                    insert_operator_postgres(
+                        &mut transaction,
+                        id,
+                        username,
+                        display_name,
+                        password_hash,
+                        false,
+                    )
+                    .await?;
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok(true)
                 }
-                insert_operator_postgres(
-                    &mut transaction,
-                    id,
-                    username,
-                    display_name,
-                    password_hash,
-                    false,
-                )
-                .await?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
             }
-        }
+        }).await
     }
 
     pub async fn operator_by_username(
         &self,
         username: &str,
     ) -> Result<Option<LocalOperator>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let row = sqlx::query(
-                    "SELECT id, username, display_name, password_hash, role,
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let row = sqlx::query(
+                        "SELECT id, username, display_name, password_hash, role,
                     must_change_password, disabled_at FROM operators WHERE username = ?",
-                )
-                .bind(username)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                row.as_ref().map(local_operator_from_sqlite).transpose()
-            }
-            Database::Postgres(pool) => {
-                let row = sqlx::query(
-                    "SELECT id, username, display_name, password_hash, role,
+                    )
+                    .bind(username)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_operator_from_sqlite).transpose()
+                }
+                Database::Postgres(pool) => {
+                    let row = sqlx::query(
+                        "SELECT id, username, display_name, password_hash, role,
                     must_change_password, disabled_at FROM operators WHERE username = $1",
-                )
-                .bind(username)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                row.as_ref().map(local_operator_from_postgres).transpose()
+                    )
+                    .bind(username)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_operator_from_postgres).transpose()
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn operator_by_id(&self, id: &str) -> Result<Option<LocalOperator>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let row = sqlx::query(
-                    "SELECT id, username, display_name, password_hash, role,
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let row = sqlx::query(
+                        "SELECT id, username, display_name, password_hash, role,
                     must_change_password, disabled_at FROM operators WHERE id = ?",
-                )
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                row.as_ref().map(local_operator_from_sqlite).transpose()
-            }
-            Database::Postgres(pool) => {
-                let row = sqlx::query(
-                    "SELECT id, username, display_name, password_hash, role,
+                    )
+                    .bind(id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_operator_from_sqlite).transpose()
+                }
+                Database::Postgres(pool) => {
+                    let row = sqlx::query(
+                        "SELECT id, username, display_name, password_hash, role,
                     must_change_password, disabled_at FROM operators WHERE id = $1",
-                )
-                .bind(id)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                row.as_ref().map(local_operator_from_postgres).transpose()
+                    )
+                    .bind(id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_operator_from_postgres).transpose()
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn create_browser_session(
@@ -341,13 +375,16 @@ impl Store {
         refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.create_session(
-            SessionKind::Browser,
-            operator_id,
-            verified_password_hash,
-            refresh_hash,
-            ttl_seconds,
-        )
+        self.run_owned(async {
+            self.create_session(
+                SessionKind::Browser,
+                operator_id,
+                verified_password_hash,
+                refresh_hash,
+                ttl_seconds,
+            )
+            .await
+        })
         .await
     }
 
@@ -355,15 +392,19 @@ impl Store {
         &self,
         session_id: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.session_by_id(SessionKind::Browser, session_id).await
+        self.run_owned(async { self.session_by_id(SessionKind::Browser, session_id).await })
+            .await
     }
 
     pub async fn browser_session_for_refresh_hash(
         &self,
         refresh_hash: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.session_for_refresh_hash(SessionKind::Browser, refresh_hash)
-            .await
+        self.run_owned(async {
+            self.session_for_refresh_hash(SessionKind::Browser, refresh_hash)
+                .await
+        })
+        .await
     }
 
     pub async fn rotate_browser_session(
@@ -372,21 +413,26 @@ impl Store {
         new_refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.rotate_session(
-            SessionKind::Browser,
-            old_refresh_hash,
-            new_refresh_hash,
-            ttl_seconds,
-        )
+        self.run_owned(async {
+            self.rotate_session(
+                SessionKind::Browser,
+                old_refresh_hash,
+                new_refresh_hash,
+                ttl_seconds,
+            )
+            .await
+        })
         .await
     }
 
     pub async fn touch_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
-        self.touch_session(SessionKind::Browser, session_id).await
+        self.run_owned(async { self.touch_session(SessionKind::Browser, session_id).await })
+            .await
     }
 
     pub async fn revoke_browser_session(&self, session_id: &str) -> Result<bool, StoreError> {
-        self.revoke_session(SessionKind::Browser, session_id).await
+        self.run_owned(async { self.revoke_session(SessionKind::Browser, session_id).await })
+            .await
     }
 
     pub async fn create_session(
@@ -397,63 +443,68 @@ impl Store {
         refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.checkpoint_clock().await?;
-        let kind = session_kind.as_str();
-        if refresh_hash.is_empty() {
-            return Err(StoreError::InvalidInput("refresh hash"));
-        }
-        let ttl_ms = positive_milliseconds(ttl_seconds, "refresh TTL")?;
-        let session_id = random_token();
-        let session_hash = hash_session_token(&session_id)?;
-        let csrf_secret = random_token();
-        let created = match &self.database {
-            Database::Sqlite(pool) => {
-                let insert = format!("INSERT INTO operator_sessions
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let kind = session_kind.as_str();
+            if refresh_hash.is_empty() {
+                return Err(StoreError::InvalidInput("refresh hash"));
+            }
+            // Sign-in starts the family clock: the session never outlives the
+            // absolute lifetime, whatever the refresh TTL says.
+            let ttl_ms = positive_milliseconds(ttl_seconds, "refresh TTL")?
+                .min(self.session_absolute_ms);
+            let session_id = random_token();
+            let session_hash = hash_session_token(&session_id)?;
+            let csrf_secret = random_token();
+            let created = match &self.database {
+                Database::Sqlite(pool) => {
+                    let insert = format!("INSERT INTO operator_sessions
                     (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
                      rotated_from, family_id, last_seen_at)
                     SELECT ?, id, ?, ?, '{kind}', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, NULL, ?, {SQLITE_NOW_MS}
                     FROM operators WHERE id = ? AND disabled_at IS NULL AND password_hash = ?");
-                sqlx::query(&insert)
-                    .bind(&session_hash)
-                    .bind(refresh_hash)
-                    .bind(&csrf_secret)
-                    .bind(ttl_ms)
-                    .bind(&session_hash)
-                    .bind(operator_id)
-                    .bind(verified_password_hash)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected()
-            }
-            Database::Postgres(pool) => {
-                // FOR SHARE waits for a password change, reset or removal
-                // holding the operator row and then re-checks the hash, so
-                // a login verified before that change cannot outlive it.
-                let insert = format!("INSERT INTO operator_sessions
+                    sqlx::query(&insert)
+                        .bind(&session_hash)
+                        .bind(refresh_hash)
+                        .bind(&csrf_secret)
+                        .bind(ttl_ms)
+                        .bind(&session_hash)
+                        .bind(operator_id)
+                        .bind(verified_password_hash)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected()
+                }
+                Database::Postgres(pool) => {
+                    // FOR SHARE waits for a password change, reset or removal
+                    // holding the operator row and then re-checks the hash, so
+                    // a login verified before that change cannot outlive it.
+                    let insert = format!("INSERT INTO operator_sessions
                     (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
                      rotated_from, family_id, last_seen_at)
                     SELECT $1, id, $2, $3, '{kind}', {POSTGRES_NOW_MS}, {POSTGRES_NOW_MS} + $4::BIGINT, NULL, $5, {POSTGRES_NOW_MS}
                     FROM operators WHERE id = $6 AND disabled_at IS NULL AND password_hash = $7
                     FOR SHARE");
-                sqlx::query(&insert)
-                    .bind(&session_hash)
-                    .bind(refresh_hash)
-                    .bind(&csrf_secret)
-                    .bind(ttl_ms)
-                    .bind(&session_hash)
-                    .bind(operator_id)
-                    .bind(verified_password_hash)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected()
+                    sqlx::query(&insert)
+                        .bind(&session_hash)
+                        .bind(refresh_hash)
+                        .bind(&csrf_secret)
+                        .bind(ttl_ms)
+                        .bind(&session_hash)
+                        .bind(operator_id)
+                        .bind(verified_password_hash)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected()
+                }
+            };
+            if created != 1 {
+                return Ok(None);
             }
-        };
-        if created != 1 {
-            return Ok(None);
-        }
-        self.session_by_id(session_kind, &session_id).await
+            self.session_by_id(session_kind, &session_id).await
+        }).await
     }
 
     pub async fn session_by_id(
@@ -461,15 +512,16 @@ impl Store {
         session_kind: SessionKind,
         session_id: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.checkpoint_clock().await?;
-        let session_hash = hash_session_token(session_id)?;
-        let kind = session_kind.as_str();
-        let (sqlite_end, sqlite_live) = session_kind.access_bound("s.", SQLITE_NOW_MS);
-        let (postgres_end, postgres_live) = session_kind.access_bound("s.", POSTGRES_NOW_MS);
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let query = format!(
-                    "SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}{sqlite_end}),
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let session_hash = hash_session_token(session_id)?;
+            let kind = session_kind.as_str();
+            let (sqlite_end, sqlite_live) = session_kind.access_bound("s.", SQLITE_NOW_MS);
+            let (postgres_end, postgres_live) = session_kind.access_bound("s.", POSTGRES_NOW_MS);
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let query = format!(
+                        "SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}{sqlite_end}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
@@ -477,25 +529,25 @@ impl Store {
                     AND s.expires_at > {SQLITE_NOW_MS}
                     AND s.last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}{sqlite_live}
                     AND o.disabled_at IS NULL"
-                );
-                let row = sqlx::query(&query)
-                    .bind(&session_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                row.as_ref()
-                    .map(local_session_from_sqlite)
-                    .transpose()
-                    .map(|session| {
-                        session.map(|mut session| {
-                            session.session_id = session_id.to_owned();
-                            session
+                    );
+                    let row = sqlx::query(&query)
+                        .bind(&session_hash)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    row.as_ref()
+                        .map(local_session_from_sqlite)
+                        .transpose()
+                        .map(|session| {
+                            session.map(|mut session| {
+                                session.session_id = session_id.to_owned();
+                                session
+                            })
                         })
-                    })
-            }
-            Database::Postgres(pool) => {
-                let query = format!(
-                    "SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}{postgres_end}),
+                }
+                Database::Postgres(pool) => {
+                    let query = format!(
+                        "SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}{postgres_end}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
@@ -503,34 +555,36 @@ impl Store {
                     AND s.expires_at > {POSTGRES_NOW_MS}
                     AND s.last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}{postgres_live}
                     AND o.disabled_at IS NULL"
-                );
-                let row = sqlx::query(&query)
-                    .bind(&session_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                row.as_ref()
-                    .map(local_session_from_postgres)
-                    .transpose()
-                    .map(|session| {
-                        session.map(|mut session| {
-                            session.session_id = session_id.to_owned();
-                            session
+                    );
+                    let row = sqlx::query(&query)
+                        .bind(&session_hash)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    row.as_ref()
+                        .map(local_session_from_postgres)
+                        .transpose()
+                        .map(|session| {
+                            session.map(|mut session| {
+                                session.session_id = session_id.to_owned();
+                                session
+                            })
                         })
-                    })
+                }
             }
-        }
+        }).await
     }
 
     pub async fn browser_session_by_refresh_hash(
         &self,
         refresh_hash: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let query = format!(
-                    "SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let query = format!(
+                        "SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
@@ -538,17 +592,17 @@ impl Store {
                     AND s.expires_at > {SQLITE_NOW_MS}
                     AND s.last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}
                     AND o.disabled_at IS NULL"
-                );
-                let row = sqlx::query(&query)
-                    .bind(refresh_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                row.as_ref().map(local_session_from_sqlite).transpose()
-            }
-            Database::Postgres(pool) => {
-                let query = format!(
-                    "SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
+                    );
+                    let row = sqlx::query(&query)
+                        .bind(refresh_hash)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_session_from_sqlite).transpose()
+                }
+                Database::Postgres(pool) => {
+                    let query = format!(
+                        "SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
@@ -556,15 +610,16 @@ impl Store {
                     AND s.expires_at > {POSTGRES_NOW_MS}
                     AND s.last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}
                     AND o.disabled_at IS NULL"
-                );
-                let row = sqlx::query(&query)
-                    .bind(refresh_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                row.as_ref().map(local_session_from_postgres).transpose()
+                    );
+                    let row = sqlx::query(&query)
+                        .bind(refresh_hash)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_session_from_postgres).transpose()
+                }
             }
-        }
+        }).await
     }
 
     pub async fn session_for_refresh_hash(
@@ -572,36 +627,38 @@ impl Store {
         session_kind: SessionKind,
         refresh_hash: &str,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.checkpoint_clock().await?;
-        let kind = session_kind.as_str();
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let query = format!("SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let kind = session_kind.as_str();
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let query = format!("SELECT s.id, s.csrf_secret, MIN(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
                     WHERE s.refresh_hash = ? AND s.kind = '{kind}'");
-                let row = sqlx::query(&query)
-                    .bind(refresh_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                row.as_ref().map(local_session_from_sqlite).transpose()
-            }
-            Database::Postgres(pool) => {
-                let query = format!("SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
+                    let row = sqlx::query(&query)
+                        .bind(refresh_hash)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_session_from_sqlite).transpose()
+                }
+                Database::Postgres(pool) => {
+                    let query = format!("SELECT s.id, s.csrf_secret, LEAST(s.expires_at, s.last_seen_at + {SESSION_IDLE_MS}),
                     o.id, o.username, o.display_name, o.password_hash, o.role,
                     o.must_change_password, o.disabled_at
                     FROM operator_sessions s JOIN operators o ON o.id = s.operator_id
                     WHERE s.refresh_hash = $1 AND s.kind = '{kind}'");
-                let row = sqlx::query(&query)
-                    .bind(refresh_hash)
-                    .fetch_optional(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-                row.as_ref().map(local_session_from_postgres).transpose()
+                    let row = sqlx::query(&query)
+                        .bind(refresh_hash)
+                        .fetch_optional(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    row.as_ref().map(local_session_from_postgres).transpose()
+                }
             }
-        }
+        }).await
     }
 
     pub async fn rotate_session(
@@ -611,186 +668,235 @@ impl Store {
         new_refresh_hash: &str,
         ttl_seconds: u64,
     ) -> Result<Option<LocalSession>, StoreError> {
-        self.checkpoint_clock().await?;
-        let kind = session_kind.as_str();
-        if new_refresh_hash.is_empty() {
-            return Err(StoreError::InvalidInput("refresh hash"));
-        }
-        let ttl_ms = positive_milliseconds(ttl_seconds, "refresh TTL")?;
-        let new_session_id = random_token();
-        let new_session_hash = hash_session_token(&new_session_id)?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                // Take the writer lock before reading the refresh row. A
-                // deferred transaction cannot upgrade after a concurrent
-                // write, so a replayed token would fail with SQLITE_BUSY
-                // instead of revoking the session family.
-                let mut transaction = pool
-                    .begin_with("BEGIN IMMEDIATE")
-                    .await
-                    .map_err(StoreError::Database)?;
-                let query = format!(
-                    "SELECT id, operator_id, family_id, csrf_secret, revoked_at,
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let kind = session_kind.as_str();
+            if new_refresh_hash.is_empty() {
+                return Err(StoreError::InvalidInput("refresh hash"));
+            }
+            let refresh_ttl_ms = positive_milliseconds(ttl_seconds, "refresh TTL")?;
+            let new_session_id = random_token();
+            let new_session_hash = hash_session_token(&new_session_id)?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    // Take the writer lock before reading the refresh row. A
+                    // deferred transaction cannot upgrade after a concurrent
+                    // write, so a replayed token would fail with SQLITE_BUSY
+                    // instead of revoking the session family.
+                    let mut transaction = pool
+                        .begin_with("BEGIN IMMEDIATE")
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let query = format!(
+                        "SELECT id, operator_id, family_id, csrf_secret, revoked_at,
                     expires_at > {SQLITE_NOW_MS},
                     last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}
                     FROM operator_sessions WHERE refresh_hash = ? AND kind = '{kind}'"
-                );
-                let row = sqlx::query(&query)
+                    );
+                    let row = sqlx::query(&query)
+                        .bind(old_refresh_hash)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let Some(row) = row else {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    };
+                    let old_session_id: String = row.try_get(0).map_err(StoreError::Database)?;
+                    let operator_id: String = row.try_get(1).map_err(StoreError::Database)?;
+                    let family_id: String = row.try_get(2).map_err(StoreError::Database)?;
+                    let csrf_secret: String = row.try_get(3).map_err(StoreError::Database)?;
+                    let revoked_at: Option<i64> = row.try_get(4).map_err(StoreError::Database)?;
+                    let not_expired: i64 = row.try_get(5).map_err(StoreError::Database)?;
+                    let not_idle: i64 = row.try_get(6).map_err(StoreError::Database)?;
+                    if revoked_at.is_some() {
+                        revoke_session_family_sqlite(&mut transaction, &family_id).await?;
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    if not_expired == 0 || not_idle == 0 {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    // The family's first row holds the sign-in time. Sessions
+                    // are never pruned while their operator exists, so the
+                    // root is always there to cap the rotation by.
+                    let family_started: i64 = sqlx::query_scalar(
+                        "SELECT MIN(created_at) FROM operator_sessions WHERE family_id = ?",
+                    )
+                    .bind(&family_id)
+                    .fetch_one(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let now_ms: i64 = sqlx::query_scalar(&format!("SELECT {SQLITE_NOW_MS}"))
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let remaining_ms = family_started
+                        .saturating_add(self.session_absolute_ms)
+                        .saturating_sub(now_ms);
+                    if remaining_ms <= 0 {
+                        revoke_session_family_sqlite(&mut transaction, &family_id).await?;
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    // An absolute expiry, not now + TTL: the insert below reads the
+                    // clock again and would otherwise overshoot the cap by the gap.
+                    let expires_at_ms = now_ms
+                        .saturating_add(refresh_ttl_ms.min(remaining_ms));
+                    let update = format!("UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}, last_seen_at = {SQLITE_NOW_MS}
+                    WHERE id = ? AND revoked_at IS NULL AND expires_at > {SQLITE_NOW_MS}
+                    AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}");
+                    let changed = sqlx::query(&update)
+                        .bind(&old_session_id)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                    if changed != 1 {
+                        revoke_session_family_sqlite(&mut transaction, &family_id).await?;
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    let insert = format!("INSERT INTO operator_sessions
+                    (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
+                     rotated_from, family_id, last_seen_at)
+                    SELECT ?, ?, ?, ?, '{kind}', {SQLITE_NOW_MS}, ?, ?, ?, {SQLITE_NOW_MS}
+                    WHERE EXISTS (SELECT 1 FROM operators WHERE id = ? AND disabled_at IS NULL)");
+                    let inserted = sqlx::query(&insert)
+                        .bind(&new_session_hash)
+                        .bind(&operator_id)
+                        .bind(new_refresh_hash)
+                        .bind(&csrf_secret)
+                        .bind(expires_at_ms)
+                        .bind(&old_session_id)
+                        .bind(&family_id)
+                        .bind(&operator_id)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                    if inserted != 1 {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                }
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    // Lock the operator before the session, in the order a
+                    // password change, reset or removal takes them. A refresh
+                    // that committed while such a change waited on the session
+                    // row would insert a successor the change cannot see.
+                    let locked_operator: Option<String> = sqlx::query_scalar(&format!(
+                        "SELECT operator_id FROM operator_sessions WHERE refresh_hash = $1 AND kind = '{kind}'"
+                    ))
                     .bind(old_refresh_hash)
                     .fetch_optional(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
-                let Some(row) = row else {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                };
-                let old_session_id: String = row.try_get(0).map_err(StoreError::Database)?;
-                let operator_id: String = row.try_get(1).map_err(StoreError::Database)?;
-                let family_id: String = row.try_get(2).map_err(StoreError::Database)?;
-                let csrf_secret: String = row.try_get(3).map_err(StoreError::Database)?;
-                let revoked_at: Option<i64> = row.try_get(4).map_err(StoreError::Database)?;
-                let not_expired: i64 = row.try_get(5).map_err(StoreError::Database)?;
-                let not_idle: i64 = row.try_get(6).map_err(StoreError::Database)?;
-                if revoked_at.is_some() {
-                    revoke_session_family_sqlite(&mut transaction, &family_id).await?;
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                }
-                if not_expired == 0 || not_idle == 0 {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                }
-                let update = format!("UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}, last_seen_at = {SQLITE_NOW_MS}
-                    WHERE id = ? AND revoked_at IS NULL AND expires_at > {SQLITE_NOW_MS}
-                    AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}");
-                let changed = sqlx::query(&update)
-                    .bind(&old_session_id)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if changed != 1 {
-                    revoke_session_family_sqlite(&mut transaction, &family_id).await?;
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                }
-                let insert = format!("INSERT INTO operator_sessions
-                    (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
-                     rotated_from, family_id, last_seen_at)
-                    SELECT ?, ?, ?, ?, '{kind}', {SQLITE_NOW_MS}, {SQLITE_NOW_MS} + ?, ?, ?, {SQLITE_NOW_MS}
-                    WHERE EXISTS (SELECT 1 FROM operators WHERE id = ? AND disabled_at IS NULL)");
-                let inserted = sqlx::query(&insert)
-                    .bind(&new_session_hash)
-                    .bind(&operator_id)
-                    .bind(new_refresh_hash)
-                    .bind(&csrf_secret)
-                    .bind(ttl_ms)
-                    .bind(&old_session_id)
-                    .bind(&family_id)
-                    .bind(&operator_id)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if inserted != 1 {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                }
-                transaction.commit().await.map_err(StoreError::Database)?;
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                // Lock the operator before the session, in the order a
-                // password change, reset or removal takes them. A refresh
-                // that committed while such a change waited on the session
-                // row would insert a successor the change cannot see.
-                let locked_operator: Option<String> = sqlx::query_scalar(&format!(
-                    "SELECT operator_id FROM operator_sessions WHERE refresh_hash = $1 AND kind = '{kind}'"
-                ))
-                .bind(old_refresh_hash)
-                .fetch_optional(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?;
-                let Some(locked_operator) = locked_operator else {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                };
-                sqlx::query("SELECT 1 FROM operators WHERE id = $1 FOR SHARE")
-                    .bind(&locked_operator)
-                    .fetch_optional(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let query = format!(
-                    "SELECT id, operator_id, family_id, csrf_secret, revoked_at,
+                    let Some(locked_operator) = locked_operator else {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    };
+                    sqlx::query("SELECT 1 FROM operators WHERE id = $1 FOR SHARE")
+                        .bind(&locked_operator)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let query = format!(
+                        "SELECT id, operator_id, family_id, csrf_secret, revoked_at,
                     expires_at > {POSTGRES_NOW_MS},
                     last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}
                     FROM operator_sessions WHERE refresh_hash = $1 AND kind = '{kind}' FOR UPDATE"
-                );
-                let row = sqlx::query(&query)
-                    .bind(old_refresh_hash)
-                    .fetch_optional(&mut *transaction)
+                    );
+                    let row = sqlx::query(&query)
+                        .bind(old_refresh_hash)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let Some(row) = row else {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    };
+                    let old_session_id: String = row.try_get(0).map_err(StoreError::Database)?;
+                    let operator_id: String = row.try_get(1).map_err(StoreError::Database)?;
+                    let family_id: String = row.try_get(2).map_err(StoreError::Database)?;
+                    let csrf_secret: String = row.try_get(3).map_err(StoreError::Database)?;
+                    let revoked_at: Option<i64> = row.try_get(4).map_err(StoreError::Database)?;
+                    let not_expired: bool = row.try_get(5).map_err(StoreError::Database)?;
+                    let not_idle: bool = row.try_get(6).map_err(StoreError::Database)?;
+                    if revoked_at.is_some() {
+                        revoke_session_family_postgres(&mut transaction, &family_id).await?;
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    if !not_expired || !not_idle {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    let family_started: i64 = sqlx::query_scalar(
+                        "SELECT MIN(created_at) FROM operator_sessions WHERE family_id = $1",
+                    )
+                    .bind(&family_id)
+                    .fetch_one(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
-                let Some(row) = row else {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                };
-                let old_session_id: String = row.try_get(0).map_err(StoreError::Database)?;
-                let operator_id: String = row.try_get(1).map_err(StoreError::Database)?;
-                let family_id: String = row.try_get(2).map_err(StoreError::Database)?;
-                let csrf_secret: String = row.try_get(3).map_err(StoreError::Database)?;
-                let revoked_at: Option<i64> = row.try_get(4).map_err(StoreError::Database)?;
-                let not_expired: bool = row.try_get(5).map_err(StoreError::Database)?;
-                let not_idle: bool = row.try_get(6).map_err(StoreError::Database)?;
-                if revoked_at.is_some() {
-                    revoke_session_family_postgres(&mut transaction, &family_id).await?;
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                }
-                if !not_expired || !not_idle {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                }
-                let update = format!("UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}, last_seen_at = {POSTGRES_NOW_MS}
+                    let now_ms: i64 = sqlx::query_scalar(&format!("SELECT {POSTGRES_NOW_MS}"))
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let remaining_ms = family_started
+                        .saturating_add(self.session_absolute_ms)
+                        .saturating_sub(now_ms);
+                    if remaining_ms <= 0 {
+                        revoke_session_family_postgres(&mut transaction, &family_id).await?;
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    let expires_at_ms = now_ms
+                        .saturating_add(refresh_ttl_ms.min(remaining_ms));
+                    let update = format!("UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}, last_seen_at = {POSTGRES_NOW_MS}
                     WHERE id = $1 AND revoked_at IS NULL AND expires_at > {POSTGRES_NOW_MS}
                     AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}");
-                let changed = sqlx::query(&update)
-                    .bind(&old_session_id)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if changed != 1 {
-                    revoke_session_family_postgres(&mut transaction, &family_id).await?;
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                }
-                let insert = format!("INSERT INTO operator_sessions
+                    let changed = sqlx::query(&update)
+                        .bind(&old_session_id)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                    if changed != 1 {
+                        revoke_session_family_postgres(&mut transaction, &family_id).await?;
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
+                    let insert = format!("INSERT INTO operator_sessions
                     (id, operator_id, refresh_hash, csrf_secret, kind, created_at, expires_at,
                      rotated_from, family_id, last_seen_at)
-                    SELECT $1, $2, $3, $4, '{kind}', {POSTGRES_NOW_MS}, {POSTGRES_NOW_MS} + $5::BIGINT, $6, $7, {POSTGRES_NOW_MS}
+                    SELECT $1, $2, $3, $4, '{kind}', {POSTGRES_NOW_MS}, $5::BIGINT, $6, $7, {POSTGRES_NOW_MS}
                     WHERE EXISTS (SELECT 1 FROM operators WHERE id = $8 AND disabled_at IS NULL)");
-                let inserted = sqlx::query(&insert)
-                    .bind(&new_session_hash)
-                    .bind(&operator_id)
-                    .bind(new_refresh_hash)
-                    .bind(&csrf_secret)
-                    .bind(ttl_ms)
-                    .bind(&old_session_id)
-                    .bind(&family_id)
-                    .bind(&operator_id)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected();
-                if inserted != 1 {
+                    let inserted = sqlx::query(&insert)
+                        .bind(&new_session_hash)
+                        .bind(&operator_id)
+                        .bind(new_refresh_hash)
+                        .bind(&csrf_secret)
+                        .bind(expires_at_ms)
+                        .bind(&old_session_id)
+                        .bind(&family_id)
+                        .bind(&operator_id)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected();
+                    if inserted != 1 {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    }
                     transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
                 }
-                transaction.commit().await.map_err(StoreError::Database)?;
             }
-        }
-        self.session_by_id(session_kind, &new_session_id).await
+            self.session_by_id(session_kind, &new_session_id).await
+        }).await
     }
 
     pub async fn touch_session(
@@ -798,40 +904,42 @@ impl Store {
         session_kind: SessionKind,
         session_id: &str,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        let session_hash = hash_session_token(session_id)?;
-        let kind = session_kind.as_str();
-        let (_, sqlite_live) = session_kind.access_bound("", SQLITE_NOW_MS);
-        let (_, postgres_live) = session_kind.access_bound("operator_sessions.", POSTGRES_NOW_MS);
-        let updated = match &self.database {
-            Database::Sqlite(pool) => {
-                let query = format!("UPDATE operator_sessions SET last_seen_at = {SQLITE_NOW_MS}
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let session_hash = hash_session_token(session_id)?;
+            let kind = session_kind.as_str();
+            let (_, sqlite_live) = session_kind.access_bound("", SQLITE_NOW_MS);
+            let (_, postgres_live) = session_kind.access_bound("operator_sessions.", POSTGRES_NOW_MS);
+            let updated = match &self.database {
+                Database::Sqlite(pool) => {
+                    let query = format!("UPDATE operator_sessions SET last_seen_at = {SQLITE_NOW_MS}
                     WHERE id = ? AND kind = '{kind}' AND revoked_at IS NULL
                     AND expires_at > {SQLITE_NOW_MS}
                     AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}{sqlite_live}
                     AND EXISTS (SELECT 1 FROM operators o WHERE o.id = operator_id AND o.disabled_at IS NULL)");
-                sqlx::query(&query)
-                    .bind(&session_hash)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected()
-            }
-            Database::Postgres(pool) => {
-                let query = format!("UPDATE operator_sessions SET last_seen_at = {POSTGRES_NOW_MS}
+                    sqlx::query(&query)
+                        .bind(&session_hash)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected()
+                }
+                Database::Postgres(pool) => {
+                    let query = format!("UPDATE operator_sessions SET last_seen_at = {POSTGRES_NOW_MS}
                     WHERE id = $1 AND kind = '{kind}' AND revoked_at IS NULL
                     AND expires_at > {POSTGRES_NOW_MS}
                     AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}{postgres_live}
                     AND EXISTS (SELECT 1 FROM operators o WHERE o.id = operator_sessions.operator_id AND o.disabled_at IS NULL)");
-                sqlx::query(&query)
-                    .bind(&session_hash)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected()
-            }
-        };
-        Ok(updated == 1)
+                    sqlx::query(&query)
+                        .bind(&session_hash)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected()
+                }
+            };
+            Ok(updated == 1)
+        }).await
     }
 
     pub async fn revoke_session(
@@ -839,38 +947,41 @@ impl Store {
         session_kind: SessionKind,
         session_id: &str,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        let session_hash = hash_session_token(session_id)?;
-        let kind = session_kind.as_str();
-        let updated = match &self.database {
-            Database::Sqlite(pool) => {
-                let query = format!(
-                    "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let session_hash = hash_session_token(session_id)?;
+            let kind = session_kind.as_str();
+            let updated = match &self.database {
+                Database::Sqlite(pool) => {
+                    let query = format!(
+                        "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
                     WHERE id = ? AND kind = '{kind}' AND revoked_at IS NULL
                       AND {SQLITE_NOW_MS} IS NOT NULL"
-                );
-                sqlx::query(&query)
-                    .bind(&session_hash)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected()
-            }
-            Database::Postgres(pool) => {
-                let query = format!(
-                    "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
+                    );
+                    sqlx::query(&query)
+                        .bind(&session_hash)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected()
+                }
+                Database::Postgres(pool) => {
+                    let query = format!(
+                        "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
                     WHERE id = $1 AND kind = '{kind}' AND revoked_at IS NULL
                       AND {POSTGRES_NOW_MS} IS NOT NULL"
-                );
-                sqlx::query(&query)
-                    .bind(&session_hash)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected()
-            }
-        };
-        Ok(updated == 1)
+                    );
+                    sqlx::query(&query)
+                        .bind(&session_hash)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .rows_affected()
+                }
+            };
+            Ok(updated == 1)
+        })
+        .await
     }
 
     pub async fn change_operator_password(
@@ -880,137 +991,143 @@ impl Store {
         verified_password_hash: &str,
         new_password_hash: &str,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        let current_session_hash = hash_session_token(current_session_id)?;
-        if new_password_hash.is_empty() {
-            return Err(StoreError::InvalidInput("password hash"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                // The change applies only to the hash the caller verified
-                // and only from a live session, so a concurrent reset or
-                // revocation is not overwritten.
-                let updated = sqlx::query(
-                    "UPDATE operators SET password_hash = ?,
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let current_session_hash = hash_session_token(current_session_id)?;
+            if new_password_hash.is_empty() {
+                return Err(StoreError::InvalidInput("password hash"));
+            }
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    // The change applies only to the hash the caller verified
+                    // and only from a live session, so a concurrent reset or
+                    // revocation is not overwritten.
+                    let updated = sqlx::query(
+                        "UPDATE operators SET password_hash = ?,
                     must_change_password = 0 WHERE id = ? AND disabled_at IS NULL
                     AND password_hash = ?",
-                )
-                .bind(new_password_hash)
-                .bind(operator_id)
-                .bind(verified_password_hash)
-                .execute(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?
-                .rows_affected();
-                if updated != 1 {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let live = format!(
-                    "SELECT 1 FROM operator_sessions WHERE id = ? AND operator_id = ?
+                    )
+                    .bind(new_password_hash)
+                    .bind(operator_id)
+                    .bind(verified_password_hash)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                    if updated != 1 {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    let live = format!(
+                        "SELECT 1 FROM operator_sessions WHERE id = ? AND operator_id = ?
                     AND kind = 'browser' AND revoked_at IS NULL AND expires_at > {SQLITE_NOW_MS}
                     AND last_seen_at + {SESSION_IDLE_MS} > {SQLITE_NOW_MS}"
-                );
-                let current = sqlx::query(&live)
-                    .bind(&current_session_hash)
-                    .bind(operator_id)
-                    .fetch_optional(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if current.is_none() {
-                    transaction.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let sql = format!(
-                    "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
+                    );
+                    let current = sqlx::query(&live)
+                        .bind(&current_session_hash)
+                        .bind(operator_id)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if current.is_none() {
+                        transaction.rollback().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    let sql = format!(
+                        "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
                     WHERE operator_id = ? AND id <> ? AND revoked_at IS NULL"
-                );
-                sqlx::query(&sql)
-                    .bind(operator_id)
-                    .bind(&current_session_hash)
-                    .execute(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                // The change applies only to the hash the caller verified
-                // and only from a live session, so a concurrent reset or
-                // revocation is not overwritten.
-                let updated = sqlx::query(
-                    "UPDATE operators SET password_hash = $1,
+                    );
+                    sqlx::query(&sql)
+                        .bind(operator_id)
+                        .bind(&current_session_hash)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok(true)
+                }
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    // The change applies only to the hash the caller verified
+                    // and only from a live session, so a concurrent reset or
+                    // revocation is not overwritten.
+                    let updated = sqlx::query(
+                        "UPDATE operators SET password_hash = $1,
                     must_change_password = FALSE WHERE id = $2 AND disabled_at IS NULL
                     AND password_hash = $3",
-                )
-                .bind(new_password_hash)
-                .bind(operator_id)
-                .bind(verified_password_hash)
-                .execute(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?
-                .rows_affected();
-                if updated != 1 {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let live = format!(
-                    "SELECT 1 FROM operator_sessions WHERE id = $1 AND operator_id = $2
-                    AND kind = 'browser' AND revoked_at IS NULL AND expires_at > {POSTGRES_NOW_MS}
-                    AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}"
-                );
-                let current = sqlx::query(&live)
-                    .bind(&current_session_hash)
+                    )
+                    .bind(new_password_hash)
                     .bind(operator_id)
-                    .fetch_optional(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if current.is_none() {
-                    transaction.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                let sql = format!(
-                    "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
-                    WHERE operator_id = $1 AND id <> $2 AND revoked_at IS NULL"
-                );
-                sqlx::query(&sql)
-                    .bind(operator_id)
-                    .bind(&current_session_hash)
+                    .bind(verified_password_hash)
                     .execute(&mut *transaction)
                     .await
-                    .map_err(StoreError::Database)?;
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                    if updated != 1 {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    let live = format!(
+                        "SELECT 1 FROM operator_sessions WHERE id = $1 AND operator_id = $2
+                    AND kind = 'browser' AND revoked_at IS NULL AND expires_at > {POSTGRES_NOW_MS}
+                    AND last_seen_at + {SESSION_IDLE_MS} > {POSTGRES_NOW_MS}"
+                    );
+                    let current = sqlx::query(&live)
+                        .bind(&current_session_hash)
+                        .bind(operator_id)
+                        .fetch_optional(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if current.is_none() {
+                        transaction.rollback().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    }
+                    let sql = format!(
+                        "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
+                    WHERE operator_id = $1 AND id <> $2 AND revoked_at IS NULL"
+                    );
+                    sqlx::query(&sql)
+                        .bind(operator_id)
+                        .bind(&current_session_hash)
+                        .execute(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok(true)
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn list_local_operators(&self) -> Result<Vec<LocalOperator>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let rows = sqlx::query(
-                    "SELECT id, username, display_name, password_hash, role,
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let rows = sqlx::query(
+                        "SELECT id, username, display_name, password_hash, role,
                     must_change_password, disabled_at FROM operators ORDER BY username, id",
-                )
-                .fetch_all(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                rows.iter().map(local_operator_from_sqlite).collect()
-            }
-            Database::Postgres(pool) => {
-                let rows = sqlx::query(
-                    "SELECT id, username, display_name, password_hash, role,
+                    )
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    rows.iter().map(local_operator_from_sqlite).collect()
+                }
+                Database::Postgres(pool) => {
+                    let rows = sqlx::query(
+                        "SELECT id, username, display_name, password_hash, role,
                     must_change_password, disabled_at FROM operators ORDER BY username, id",
-                )
-                .fetch_all(pool)
-                .await
-                .map_err(StoreError::Database)?;
-                rows.iter().map(local_operator_from_postgres).collect()
+                    )
+                    .fetch_all(pool)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    rows.iter().map(local_operator_from_postgres).collect()
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn create_local_operator(
@@ -1021,41 +1138,43 @@ impl Store {
         role: &str,
         password_hash: &str,
     ) -> Result<(), StoreError> {
-        self.checkpoint_clock().await?;
-        if !matches!(role, "admin" | "operator" | "viewer") {
-            return Err(StoreError::InvalidInput("operator role"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let query = format!("INSERT INTO operators
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            if !matches!(role, "admin" | "operator" | "viewer") {
+                return Err(StoreError::InvalidInput("operator role"));
+            }
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let query = format!("INSERT INTO operators
                     (id, username, display_name, password_hash, role, must_change_password, created_at)
                     VALUES (?, ?, ?, ?, ?, 0, {SQLITE_NOW_MS})");
-                sqlx::query(&query)
-                    .bind(id)
-                    .bind(username)
-                    .bind(display_name)
-                    .bind(password_hash)
-                    .bind(role)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
-            }
-            Database::Postgres(pool) => {
-                let query = format!("INSERT INTO operators
+                    sqlx::query(&query)
+                        .bind(id)
+                        .bind(username)
+                        .bind(display_name)
+                        .bind(password_hash)
+                        .bind(role)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
+                Database::Postgres(pool) => {
+                    let query = format!("INSERT INTO operators
                     (id, username, display_name, password_hash, role, must_change_password, created_at)
                     VALUES ($1, $2, $3, $4, $5, FALSE, {POSTGRES_NOW_MS})");
-                sqlx::query(&query)
-                    .bind(id)
-                    .bind(username)
-                    .bind(display_name)
-                    .bind(password_hash)
-                    .bind(role)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?;
+                    sqlx::query(&query)
+                        .bind(id)
+                        .bind(username)
+                        .bind(display_name)
+                        .bind(password_hash)
+                        .bind(role)
+                        .execute(pool)
+                        .await
+                        .map_err(StoreError::Database)?;
+                }
             }
-        }
-        Ok(())
+            Ok(())
+        }).await
     }
 
     pub async fn update_local_operator(
@@ -1064,200 +1183,212 @@ impl Store {
         display_name: &str,
         role: &str,
     ) -> Result<Option<bool>, StoreError> {
-        self.checkpoint_clock().await?;
-        if !matches!(role, "admin" | "operator" | "viewer") {
-            return Err(StoreError::InvalidInput("operator role"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            if !matches!(role, "admin" | "operator" | "viewer") {
+                return Err(StoreError::InvalidInput("operator role"));
+            }
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query(
+                        "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
+                    )
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
-                let current =
-                    sqlx::query("SELECT role FROM operators WHERE id = ? AND disabled_at IS NULL")
-                        .bind(id)
-                        .fetch_optional(&mut *transaction)
-                        .await
-                        .map_err(StoreError::Database)?;
-                let Some(current) = current else {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                };
-                let current_role: String = current.try_get(0).map_err(StoreError::Database)?;
-                if current_role == "admin" && role != "admin" {
-                    let others = sqlx::query(
-                        "SELECT COUNT(*) FROM operators
-                        WHERE id <> ? AND role = 'admin' AND disabled_at IS NULL",
+                    let current = sqlx::query(
+                        "SELECT role FROM operators WHERE id = ? AND disabled_at IS NULL",
                     )
                     .bind(id)
-                    .fetch_one(&mut *transaction)
+                    .fetch_optional(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let Some(current) = current else {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    };
+                    let current_role: String = current.try_get(0).map_err(StoreError::Database)?;
+                    if current_role == "admin" && role != "admin" {
+                        let others = sqlx::query(
+                            "SELECT COUNT(*) FROM operators
+                        WHERE id <> ? AND role = 'admin' AND disabled_at IS NULL",
+                        )
+                        .bind(id)
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .try_get::<i64, _>(0)
+                        .map_err(StoreError::Database)?;
+                        if others == 0 {
+                            transaction.commit().await.map_err(StoreError::Database)?;
+                            return Ok(Some(false));
+                        }
+                    }
+                    let updated = sqlx::query(
+                        "UPDATE operators SET display_name = ?, role = ?
+                    WHERE id = ? AND disabled_at IS NULL",
+                    )
+                    .bind(display_name)
+                    .bind(role)
+                    .bind(id)
+                    .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?
-                    .try_get::<i64, _>(0)
-                    .map_err(StoreError::Database)?;
-                    if others == 0 {
-                        transaction.commit().await.map_err(StoreError::Database)?;
-                        return Ok(Some(false));
-                    }
+                    .rows_affected();
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok((updated == 1).then_some(true))
                 }
-                let updated = sqlx::query(
-                    "UPDATE operators SET display_name = ?, role = ?
-                    WHERE id = ? AND disabled_at IS NULL",
-                )
-                .bind(display_name)
-                .bind(role)
-                .bind(id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?
-                .rows_affected();
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok((updated == 1).then_some(true))
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
-                    .fetch_one(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let current = sqlx::query(
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let current = sqlx::query(
                     "SELECT role FROM operators WHERE id = $1 AND disabled_at IS NULL FOR UPDATE",
                 )
                 .bind(id)
                 .fetch_optional(&mut *transaction)
                 .await
                 .map_err(StoreError::Database)?;
-                let Some(current) = current else {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                };
-                let current_role: String = current.try_get(0).map_err(StoreError::Database)?;
-                if current_role == "admin" && role != "admin" {
-                    let others = sqlx::query(
-                        "SELECT COUNT(*) FROM operators
+                    let Some(current) = current else {
+                        transaction.commit().await.map_err(StoreError::Database)?;
+                        return Ok(None);
+                    };
+                    let current_role: String = current.try_get(0).map_err(StoreError::Database)?;
+                    if current_role == "admin" && role != "admin" {
+                        let others = sqlx::query(
+                            "SELECT COUNT(*) FROM operators
                         WHERE id <> $1 AND role = 'admin' AND disabled_at IS NULL",
+                        )
+                        .bind(id)
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?
+                        .try_get::<i64, _>(0)
+                        .map_err(StoreError::Database)?;
+                        if others == 0 {
+                            transaction.commit().await.map_err(StoreError::Database)?;
+                            return Ok(Some(false));
+                        }
+                    }
+                    let updated = sqlx::query(
+                        "UPDATE operators SET display_name = $1, role = $2
+                    WHERE id = $3 AND disabled_at IS NULL",
                     )
+                    .bind(display_name)
+                    .bind(role)
                     .bind(id)
-                    .fetch_one(&mut *transaction)
+                    .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?
-                    .try_get::<i64, _>(0)
-                    .map_err(StoreError::Database)?;
-                    if others == 0 {
-                        transaction.commit().await.map_err(StoreError::Database)?;
-                        return Ok(Some(false));
-                    }
+                    .rows_affected();
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok((updated == 1).then_some(true))
                 }
-                let updated = sqlx::query(
-                    "UPDATE operators SET display_name = $1, role = $2
-                    WHERE id = $3 AND disabled_at IS NULL",
-                )
-                .bind(display_name)
-                .bind(role)
-                .bind(id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?
-                .rows_affected();
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok((updated == 1).then_some(true))
             }
-        }
+        })
+        .await
     }
 
     pub async fn delete_local_operator(&self, id: &str) -> Result<Option<bool>, StoreError> {
-        self.checkpoint_clock().await?;
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1")
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query(
+                        "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
+                    )
                     .execute(&mut *transaction)
                     .await
                     .map_err(StoreError::Database)?;
-                let current =
-                    sqlx::query("SELECT role FROM operators WHERE id = ? AND disabled_at IS NULL")
-                        .bind(id)
-                        .fetch_optional(&mut *transaction)
-                        .await
-                        .map_err(StoreError::Database)?;
-                let Some(current) = current else {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                };
-                let role: String = current.try_get(0).map_err(StoreError::Database)?;
-                if role == "admin" {
-                    let others = sqlx::query(
-                        "SELECT COUNT(*) FROM operators
-                        WHERE id <> ? AND role = 'admin' AND disabled_at IS NULL",
+                    let current = sqlx::query(
+                        "SELECT role FROM operators WHERE id = ? AND disabled_at IS NULL",
                     )
                     .bind(id)
-                    .fetch_one(&mut *transaction)
+                    .fetch_optional(&mut *transaction)
                     .await
-                    .map_err(StoreError::Database)?
-                    .try_get::<i64, _>(0)
                     .map_err(StoreError::Database)?;
-                    if others == 0 {
+                    let Some(current) = current else {
                         transaction.commit().await.map_err(StoreError::Database)?;
-                        return Ok(Some(false));
-                    }
-                }
-                let deleted =
-                    sqlx::query("DELETE FROM operators WHERE id = ? AND disabled_at IS NULL")
+                        return Ok(None);
+                    };
+                    let role: String = current.try_get(0).map_err(StoreError::Database)?;
+                    if role == "admin" {
+                        let others = sqlx::query(
+                            "SELECT COUNT(*) FROM operators
+                        WHERE id <> ? AND role = 'admin' AND disabled_at IS NULL",
+                        )
                         .bind(id)
-                        .execute(&mut *transaction)
+                        .fetch_one(&mut *transaction)
                         .await
                         .map_err(StoreError::Database)?
-                        .rows_affected();
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok((deleted == 1).then_some(true))
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
-                    .fetch_one(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?;
-                let current = sqlx::query(
+                        .try_get::<i64, _>(0)
+                        .map_err(StoreError::Database)?;
+                        if others == 0 {
+                            transaction.commit().await.map_err(StoreError::Database)?;
+                            return Ok(Some(false));
+                        }
+                    }
+                    let deleted =
+                        sqlx::query("DELETE FROM operators WHERE id = ? AND disabled_at IS NULL")
+                            .bind(id)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(StoreError::Database)?
+                            .rows_affected();
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok((deleted == 1).then_some(true))
+                }
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query("SELECT id FROM controller_meta WHERE id = 1 FOR UPDATE")
+                        .fetch_one(&mut *transaction)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let current = sqlx::query(
                     "SELECT role FROM operators WHERE id = $1 AND disabled_at IS NULL FOR UPDATE",
                 )
                 .bind(id)
                 .fetch_optional(&mut *transaction)
                 .await
                 .map_err(StoreError::Database)?;
-                let Some(current) = current else {
-                    transaction.commit().await.map_err(StoreError::Database)?;
-                    return Ok(None);
-                };
-                let role: String = current.try_get(0).map_err(StoreError::Database)?;
-                if role == "admin" {
-                    let others = sqlx::query(
-                        "SELECT COUNT(*) FROM operators
-                        WHERE id <> $1 AND role = 'admin' AND disabled_at IS NULL",
-                    )
-                    .bind(id)
-                    .fetch_one(&mut *transaction)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .try_get::<i64, _>(0)
-                    .map_err(StoreError::Database)?;
-                    if others == 0 {
+                    let Some(current) = current else {
                         transaction.commit().await.map_err(StoreError::Database)?;
-                        return Ok(Some(false));
-                    }
-                }
-                let deleted =
-                    sqlx::query("DELETE FROM operators WHERE id = $1 AND disabled_at IS NULL")
+                        return Ok(None);
+                    };
+                    let role: String = current.try_get(0).map_err(StoreError::Database)?;
+                    if role == "admin" {
+                        let others = sqlx::query(
+                            "SELECT COUNT(*) FROM operators
+                        WHERE id <> $1 AND role = 'admin' AND disabled_at IS NULL",
+                        )
                         .bind(id)
-                        .execute(&mut *transaction)
+                        .fetch_one(&mut *transaction)
                         .await
                         .map_err(StoreError::Database)?
-                        .rows_affected();
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok((deleted == 1).then_some(true))
+                        .try_get::<i64, _>(0)
+                        .map_err(StoreError::Database)?;
+                        if others == 0 {
+                            transaction.commit().await.map_err(StoreError::Database)?;
+                            return Ok(Some(false));
+                        }
+                    }
+                    let deleted =
+                        sqlx::query("DELETE FROM operators WHERE id = $1 AND disabled_at IS NULL")
+                            .bind(id)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(StoreError::Database)?
+                            .rows_affected();
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok((deleted == 1).then_some(true))
+                }
             }
-        }
+        })
+        .await
     }
 
     pub async fn reset_local_operator_password(
@@ -1265,64 +1396,108 @@ impl Store {
         id: &str,
         password_hash: &str,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        if password_hash.is_empty() {
-            return Err(StoreError::InvalidInput("password hash"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                let updated = sqlx::query(
-                    "UPDATE operators SET password_hash = ?,
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            if password_hash.is_empty() {
+                return Err(StoreError::InvalidInput("password hash"));
+            }
+            match &self.database {
+                Database::Sqlite(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    let updated = sqlx::query(
+                        "UPDATE operators SET password_hash = ?,
                     must_change_password = 1 WHERE id = ? AND disabled_at IS NULL",
-                )
-                .bind(password_hash)
-                .bind(id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?
-                .rows_affected();
-                if updated == 1 {
-                    let sql = format!(
-                        "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
+                    )
+                    .bind(password_hash)
+                    .bind(id)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                    if updated == 1 {
+                        let sql = format!(
+                            "UPDATE operator_sessions SET revoked_at = {SQLITE_NOW_MS}
                         WHERE operator_id = ? AND revoked_at IS NULL"
-                    );
-                    sqlx::query(&sql)
-                        .bind(id)
-                        .execute(&mut *transaction)
-                        .await
-                        .map_err(StoreError::Database)?;
+                        );
+                        sqlx::query(&sql)
+                            .bind(id)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(StoreError::Database)?;
+                        // A reset is the documented recovery from a lockout.
+                        let username: Option<String> =
+                            sqlx::query_scalar("SELECT username FROM operators WHERE id = ?")
+                                .bind(id)
+                                .fetch_optional(&mut *transaction)
+                                .await
+                                .map_err(StoreError::Database)?;
+                        if let Some(key) = username.as_deref().and_then(login_account_key) {
+                            let [fail, lock, pair_fail, pair_lock] = account_row_keys(&key);
+                            sqlx::query(
+                                "DELETE FROM rate_windows WHERE key = ? OR key = ?
+                                 OR key LIKE ? OR key LIKE ?",
+                            )
+                            .bind(fail)
+                            .bind(lock)
+                            .bind(pair_fail)
+                            .bind(pair_lock)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(StoreError::Database)?;
+                        }
+                    }
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok(updated == 1)
                 }
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(updated == 1)
-            }
-            Database::Postgres(pool) => {
-                let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
-                let updated = sqlx::query(
-                    "UPDATE operators SET password_hash = $1,
+                Database::Postgres(pool) => {
+                    let mut transaction = pool.begin().await.map_err(StoreError::Database)?;
+                    let updated = sqlx::query(
+                        "UPDATE operators SET password_hash = $1,
                     must_change_password = TRUE WHERE id = $2 AND disabled_at IS NULL",
-                )
-                .bind(password_hash)
-                .bind(id)
-                .execute(&mut *transaction)
-                .await
-                .map_err(StoreError::Database)?
-                .rows_affected();
-                if updated == 1 {
-                    let sql = format!(
-                        "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
+                    )
+                    .bind(password_hash)
+                    .bind(id)
+                    .execute(&mut *transaction)
+                    .await
+                    .map_err(StoreError::Database)?
+                    .rows_affected();
+                    if updated == 1 {
+                        let sql = format!(
+                            "UPDATE operator_sessions SET revoked_at = {POSTGRES_NOW_MS}
                         WHERE operator_id = $1 AND revoked_at IS NULL"
-                    );
-                    sqlx::query(&sql)
-                        .bind(id)
-                        .execute(&mut *transaction)
-                        .await
-                        .map_err(StoreError::Database)?;
+                        );
+                        sqlx::query(&sql)
+                            .bind(id)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(StoreError::Database)?;
+                        let username: Option<String> =
+                            sqlx::query_scalar("SELECT username FROM operators WHERE id = $1")
+                                .bind(id)
+                                .fetch_optional(&mut *transaction)
+                                .await
+                                .map_err(StoreError::Database)?;
+                        if let Some(key) = username.as_deref().and_then(login_account_key) {
+                            let [fail, lock, pair_fail, pair_lock] = account_row_keys(&key);
+                            sqlx::query(
+                                "DELETE FROM rate_windows WHERE key = $1 OR key = $2
+                                 OR key LIKE $3 OR key LIKE $4",
+                            )
+                            .bind(fail)
+                            .bind(lock)
+                            .bind(pair_fail)
+                            .bind(pair_lock)
+                            .execute(&mut *transaction)
+                            .await
+                            .map_err(StoreError::Database)?;
+                        }
+                    }
+                    transaction.commit().await.map_err(StoreError::Database)?;
+                    Ok(updated == 1)
                 }
-                transaction.commit().await.map_err(StoreError::Database)?;
-                Ok(updated == 1)
             }
-        }
+        })
+        .await
     }
 }
 

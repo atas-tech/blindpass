@@ -1,0 +1,7 @@
+authority_postgres_gate_exit=101
+owned_authority_cleanup_errors=0
+early_release_control_exit=101
+authority_postgres_gate_exit=101
+owned_authority_cleanup_errors=0
+store_bypass_control_exit=101
+production_sources_unchanged=true private_control_tree_removed=true

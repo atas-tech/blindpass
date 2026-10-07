@@ -1,0 +1,24 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.14s
+     Running tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 2 tests
+test p06_pw01_inline_partial_unsafe_and_invalid_authority_configuration_refuses_without_echo ... 
+thread 'p06_pw01_inline_partial_unsafe_and_invalid_authority_configuration_refuses_without_echo' (169) panicked at crates/blindpass-controller/tests/production_ownership.rs:79:68:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_pw01_missing_production_authority_refuses_configuration_and_writes ... 
+thread 'p06_pw01_missing_production_authority_refuses_configuration_and_writes' (170) panicked at crates/blindpass-controller/tests/production_ownership.rs:79:68:
+called `Result::unwrap()` on an `Err` value: Os { code: 1, kind: PermissionDenied, message: "Operation not permitted" }
+FAILED
+
+failures:
+
+failures:
+    p06_pw01_inline_partial_unsafe_and_invalid_authority_configuration_refuses_without_echo
+    p06_pw01_missing_production_authority_refuses_configuration_and_writes
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p blindpass-controller --test production_ownership`

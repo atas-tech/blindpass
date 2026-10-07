@@ -9,12 +9,18 @@ services:
     ulimits:
       core: 0
     stop_grace_period: 10s
-    restart: unless-stopped
+    # A started process consumes its one-use authority revision; an automatic
+    # restart would only be refused. Restart is an administrator action
+    # (authority-activate.sql, then compose up).
+    restart: "no"
     environment:
-      BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:-https://blindpass.example}
-      BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:-https://input.example}
+      BLINDPASS_PUBLIC_URL: ${BLINDPASS_PUBLIC_URL:?set the public HTTPS origin}
+      BLINDPASS_UI_BASE_URL: ${BLINDPASS_UI_BASE_URL:?set the public HTTPS input origin}
       BLINDPASS_PROXY_REQUIRED: "1"
       BLINDPASS_TRUST_PROXY: ${BLINDPASS_TRUST_PROXY:?set the exact trusted HTTPS edge peer}
+      BLINDPASS_CONTROLLER_TENANT_ID: ${BLINDPASS_CONTROLLER_TENANT_ID:?set the tenant ID registered in the recovery authority}
+      BLINDPASS_CONTROLLER_OWNER_ID: ${BLINDPASS_CONTROLLER_OWNER_ID:?set the owner ID registered in the recovery authority}
+      BLINDPASS_AUTHORITY_URL_FILE: /authority/authority-url
       BLINDPASS_DATABASE_URL_FILE: /config/database.url
     expose: ["3200"]
     volumes:
@@ -23,6 +29,12 @@ services:
       - type: bind
         source: ${BLINDPASS_DATABASE_CONFIG_DIR:?set the private UID10001 database config directory}
         target: /config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${BLINDPASS_AUTHORITY_CONFIG_DIR:?set the private UID10001 authority config directory}
+        target: /authority
         read_only: true
         bind:
           create_host_path: false
@@ -44,8 +56,16 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres-password
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
     secrets: [postgres-password]
+    ulimits:
+      core: 0
     volumes:
       - blindpass-postgres:/var/lib/postgresql/data
+      # Runs only when the volume is first initialized; creates the dedicated
+      # `controller` schema the backup requires.
+      - type: bind
+        source: ./postgres-init
+        target: /docker-entrypoint-initdb.d
+        read_only: true
     healthcheck:
       test: [CMD-SHELL, "pg_isready -U blindpass -d blindpass"]
       interval: 2s

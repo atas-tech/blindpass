@@ -1,0 +1,9 @@
+[
+  {
+    "kind": "pattern",
+    "id": "*",
+    "path": "*!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+    "sha256": "779b25d20249988bea2c1aa6bbeb218f5ae7ea8a9d30ce4f54ea37372965cc4b",
+    "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py)."
+  }
+]

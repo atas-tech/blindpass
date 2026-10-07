@@ -1,0 +1,11 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.81s
+     Running tests/backup_postgres_snapshot.rs (target/debug/deps/backup_postgres_snapshot-40023f6f26f7ce5f)
+
+running 3 tests
+test p06_pgs01_import_matches_metadata_and_complete_pairs_during_writes ... ok
+test p06_pgs02_close_and_drop_revoke_exported_snapshot ... ok
+test p06_pgs03_missing_schema_and_damaged_metadata_are_not_repaired ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 2.13s
+

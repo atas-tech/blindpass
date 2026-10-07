@@ -1,0 +1,30 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error: implementation of `Executor` is not general enough
+   --> crates/blindpass-controller/src/recovery_authority.rs:110:44
+    |
+110 |               .after_connect(|connection, _| Box::pin(async move {
+    |  ____________________________________________^
+111 | |                 sqlx::raw_sql("SET statement_timeout='2000ms'; SET lock_timeout='1000ms'")
+112 | |                     .execute(connection).await?;
+113 | |                 Ok(())
+114 | |             }))
+    | |______________^ implementation of `Executor` is not general enough
+    |
+    = note: `Executor<'0>` would have to be implemented for the type `&mut PgConnection`, for any lifetime `'0`...
+    = note: ...but `Executor<'1>` is actually implemented for the type `&'1 mut PgConnection`, for some specific lifetime `'1`
+
+error: implementation of `Executor` is not general enough
+   --> crates/blindpass-controller/src/recovery_authority.rs:110:44
+    |
+110 |               .after_connect(|connection, _| Box::pin(async move {
+    |  ____________________________________________^
+111 | |                 sqlx::raw_sql("SET statement_timeout='2000ms'; SET lock_timeout='1000ms'")
+112 | |                     .execute(connection).await?;
+113 | |                 Ok(())
+114 | |             }))
+    | |______________^ implementation of `Executor` is not general enough
+    |
+    = note: `Executor<'_>` would have to be implemented for the type `&'0 mut PgConnection`, for any lifetime `'0`...
+    = note: ...but `Executor<'1>` is actually implemented for the type `&'1 mut PgConnection`, for some specific lifetime `'1`
+
+error: could not compile `blindpass-controller` (lib) due to 2 previous errors

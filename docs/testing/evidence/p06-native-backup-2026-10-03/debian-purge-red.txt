@@ -1,0 +1,24 @@
+P06-NATIVE profile=debian-12 artifact_sha256=ed93002b4ca412e293668a72e167fa0c737bf6f887c23b290b6bd34f57d205e9
+P06-NATIVE guest_test_sha256=bd1319b3f17d5727263eb98996f0ad86b65593ca62292b49aeac4e26c0208834
+P06-N01 PASS
+P06-N02 install={"backup_timer": "disabled unless separately configured", "initialized": true, "ok": true, "version": "0.1.0"}
+P06-N02 PASS
+P06-N03 PASS
+P06-N04 stop_seconds=0.015
+P06-N04-restart PASS
+P06-N04-reboot PASS
+P06-N05 PASS
+P06-N06 PASS
+P06-N07 PASS
+P06-B08 native_backup_seconds=0.674
+P06-B08 PASS
+P06-N08 PASS
+P06-N09 FAIL line=47 type=AssertionError (private guest diagnostics withheld)
+
+
+Result=success
+ExecMainStatus=0
+Result=success
+ExecMainStatus=0
+blindpass-controller-initialize.service: Deactivated successfully.
+P06-NATIVE teardown complete

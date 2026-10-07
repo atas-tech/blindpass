@@ -1,0 +1,39 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0599]: no method named `begin_operation` found for struct `Arc<ProcessOwnership>` in the current scope
+  --> crates/blindpass-controller/tests/recovery_authority.rs:21:23
+   |
+21 |     let first = owner.begin_operation().unwrap();
+   |                       ^^^^^^^^^^^^^^^ method not found in `Arc<ProcessOwnership>`
+
+error[E0599]: no method named `begin_operation` found for struct `Arc<ProcessOwnership>` in the current scope
+  --> crates/blindpass-controller/tests/recovery_authority.rs:22:24
+   |
+22 |     let second = owner.begin_operation().unwrap();
+   |                        ^^^^^^^^^^^^^^^ method not found in `Arc<ProcessOwnership>`
+
+error[E0599]: no method named `begin_operation` found for struct `Arc<ProcessOwnership>` in the current scope
+  --> crates/blindpass-controller/tests/recovery_authority.rs:25:19
+   |
+25 |     assert!(owner.begin_operation().is_err());
+   |                   ^^^^^^^^^^^^^^^ method not found in `Arc<ProcessOwnership>`
+
+error[E0599]: no method named `quiesce` found for struct `Arc<ProcessOwnership>` in the current scope
+  --> crates/blindpass-controller/tests/recovery_authority.rs:29:19
+   |
+29 |     assert!(owner.quiesce().await.is_err());
+   |                   ^^^^^^^ method not found in `Arc<ProcessOwnership>`
+
+error[E0599]: no method named `quiesce` found for struct `Arc<ProcessOwnership>` in the current scope
+  --> crates/blindpass-controller/tests/recovery_authority.rs:34:11
+   |
+34 |     owner.quiesce().await.unwrap();
+   |           ^^^^^^^ method not found in `Arc<ProcessOwnership>`
+
+error[E0599]: no method named `begin_operation` found for struct `Arc<ProcessOwnership>` in the current scope
+  --> crates/blindpass-controller/tests/recovery_authority.rs:36:19
+   |
+36 |     assert!(owner.begin_operation().is_err());
+   |                   ^^^^^^^^^^^^^^^ method not found in `Arc<ProcessOwnership>`
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `blindpass-controller` (test "recovery_authority") due to 6 previous errors

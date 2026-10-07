@@ -1,0 +1,7 @@
+relative_links=129 broken=0 source_pins=18 mismatches=0 runtime_logs=25 credential_markers=0
+vault_checkpoints=2 verified=true wrapped_methods=121 format_checked=true diff_checked=true
+rust_passed=689 rust_failed=0 rust_ignored=33 result_targets=71 authority_actual_passed=25
+negative_controls=2 actual_assertion_failures=true private_control_trees=0 authority_generated_databases=0 authority_generated_roles=0
+clippy_exit=0 node26_build_exit=0 node26_test_exit=0 sps_passed=80 sps_skipped=101
+user_p03_additions=66 deletions=0 unchanged=true index_empty=true manifests_unchanged=true
+mandatory_production_wiring=false full_recovery_acceptance=false goal_active=true no_commit=true

@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.38s
+     Running tests/legacy_authority.rs (target/debug/deps/legacy_authority-66d2e9a8cfb30fb0)
+
+running 1 test
+test p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority ... 
+thread 'p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority' (3887024) panicked at crates/blindpass-controller/tests/legacy_authority.rs:561:13:
+assertion `left == right` failed: SQLite must not coerce malformed schema metadata
+  left: 201
+ right: 503
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 3 filtered out; finished in 2.92s
+
+error: test failed, to rerun pass `-p blindpass-controller --test legacy_authority`

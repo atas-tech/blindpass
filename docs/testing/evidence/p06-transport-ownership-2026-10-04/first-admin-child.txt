@@ -1,0 +1,11 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.37s
+     Running tests/admin_socket.rs (target/debug/deps/admin_socket-0d83a9376cbde744)
+
+running 3 tests
+test admin_socket_is_private_and_bootstraps_only_once ... ok
+test admin_socket_rejects_relative_paths ... ok
+test p06_qf05_stopping_admin_listener_cancels_its_accepted_partial_client ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.39s
+

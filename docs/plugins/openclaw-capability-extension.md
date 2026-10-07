@@ -9,7 +9,7 @@
 | Tool | Contract |
 |---|---|
 | `request_secret` | Human-provided secret through an encrypted browser-input flow; requires a description and a configured delivery path |
-| `request_secret_exchange` | Request an SPS-mediated exchange with a named fulfiller/purpose |
+| `request_secret_exchange` | Request a controller-mediated exchange with a named fulfiller/purpose |
 | `fulfill_secret_exchange` | Fulfill a scoped exchange token |
 | `store_secret` | Optional runtime-owned value import; enabled only with `BLINDPASS_ENABLE_STORE_TOOL=true`; do not send a real secret as model-authored input |
 | `list_secrets` | Managed-store names/metadata, not values |
@@ -17,7 +17,7 @@
 
 Use `secret_name` when requesting managed persistence. `persist=false` explicitly requests runtime-only storage. In the current handler, an omitted `persist` follows `BLINDPASS_AUTO_PERSIST`, whose default is false; some existing tool-schema prose says it defaults to true, so use an explicit value instead of depending on that inconsistent description.
 
-The core tries OpenClaw chat API, runtime/CLI routing and Telegram fallback for input-link delivery. Configure `SPS_BASE_URL` explicitly; the old `sps.blindpass.dev` default has not passed the distribution gate. Links/confirmation codes must stay in an intended human channel, and plaintext exposure/raw-link flags are outside default secrecy claims.
+The core tries OpenClaw chat API, runtime/CLI routing and Telegram fallback for input-link delivery. Configure `SPS_BASE_URL` explicitly. It keeps its legacy name: the client sends its `/api/v2` machine requests to it, so for the current stack it is the Rust controller's URL (the SPS server itself was removed 2026-10-07). The published bundle has no default and refuses its secret-request and exchange tools until it is set (finding F-3), while this unbundled plugin keeps the old `sps.blindpass.dev` default, which has not passed the distribution gate. Links/confirmation codes must stay in an intended human channel, and plaintext exposure/raw-link flags are outside default secrecy claims.
 
 ## Custody and activation
 

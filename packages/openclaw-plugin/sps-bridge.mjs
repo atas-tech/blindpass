@@ -11,6 +11,31 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+// F-3 (owner decision 2026-10-07): the PUBLISHED bundle has no default SPS endpoint. scripts/build_bundle.sh
+// passes --define:__BLINDPASS_REQUIRE_EXPLICIT_SPS__=true for the bundle only, so esbuild folds the conditional
+// below to its first branch and the legacy default (inlined in the other branch, not a constant) leaves the
+// artifact. In this unbundled source the identifier is undeclared, `typeof` yields "undefined", and the
+// OpenClaw plugin keeps its legacy default unchanged.
+export class SpsBaseUrlRequiredError extends Error {
+    constructor() {
+        super("SPS_BASE_URL is not set. This BlindPass build has no default endpoint, so nothing was sent. "
+            + "Set SPS_BASE_URL to your controller's https URL and restart the client.");
+        this.name = "SpsBaseUrlRequiredError";
+    }
+}
+
+function requireExplicitSpsBaseUrl(env) {
+    const configured = typeof env.SPS_BASE_URL === "string" ? env.SPS_BASE_URL.trim() : "";
+    if (configured === "") throw new SpsBaseUrlRequiredError();
+    return configured;
+}
+
+export function resolveSpsBaseUrl(env = process.env) {
+    return typeof __BLINDPASS_REQUIRE_EXPLICIT_SPS__ !== "undefined" && __BLINDPASS_REQUIRE_EXPLICIT_SPS__ === true
+        ? requireExplicitSpsBaseUrl(env)
+        : env.SPS_BASE_URL ?? "https://sps.blindpass.dev";
+}
+
 // Dynamic imports so tests can override modules while production builds bundle
 // these compiled workspace package outputs.
 let _gatewayIdentity = null;
@@ -32,7 +57,6 @@ async function loadModules(opts = {}) {
         identity,
         keyManager,
         AgentSecretRuntime: AgentSkillRuntimeMod.AgentSecretRuntime,
-        createX402RuntimeProvidersFromEnv: AgentSkillRuntimeMod.createX402RuntimeProvidersFromEnv,
         SpsClient: SpsClientMod.SpsClient,
         GatewaySpsClient: GatewaySpsClientMod.GatewaySpsClient,
     };
@@ -130,7 +154,7 @@ async function getAgentAuthToken(modules, agentId, spsBaseUrl, identityOptions) 
 export async function requestSecretFlow(params) {
     const {
         description,
-        spsBaseUrl = process.env.SPS_BASE_URL ?? "https://sps.blindpass.dev",
+        spsBaseUrl = resolveSpsBaseUrl(),
         onSecretLink,
         agentId,
         moduleOverrides = {},
@@ -186,7 +210,7 @@ export async function fulfillExchangeFlow(params) {
     const {
         fulfillmentToken,
         resolveSecret,
-        spsBaseUrl = process.env.SPS_BASE_URL ?? "https://sps.blindpass.dev",
+        spsBaseUrl = resolveSpsBaseUrl(),
         agentId,
         moduleOverrides = {},
         identityOptions = {},
@@ -229,7 +253,7 @@ export async function requestExchangeFlow(params) {
         priorExchangeId,
         transport,
         reservedTimeoutMs,
-        spsBaseUrl = process.env.SPS_BASE_URL ?? "https://sps.blindpass.dev",
+        spsBaseUrl = resolveSpsBaseUrl(),
         agentId,
         moduleOverrides = {},
         identityOptions = {},
@@ -238,15 +262,10 @@ export async function requestExchangeFlow(params) {
     const modules = await loadModules(moduleOverrides);
     const resolvedAgentId = resolveAgentId(agentId);
     const agentToken = await getAgentAuthToken(modules, resolvedAgentId, spsBaseUrl, identityOptions);
-    const x402Runtime = typeof modules.createX402RuntimeProvidersFromEnv === "function"
-        ? modules.createX402RuntimeProvidersFromEnv()
-        : {};
     const runtime = new modules.AgentSecretRuntime({
         spsBaseUrl,
         gatewayBearerToken: agentToken,
         agentId: resolvedAgentId,
-        x402PaymentProvider: x402Runtime.x402PaymentProvider,
-        x402BudgetProvider: x402Runtime.x402BudgetProvider,
     });
 
     try {

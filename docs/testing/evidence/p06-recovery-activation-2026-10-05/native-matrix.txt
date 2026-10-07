@@ -1,0 +1,12 @@
+export rc=0
+tarball rc=0
+archive=<scratch>
+native debian-12 default rc=0 pass=13
+native ubuntu-24.04 default rc=0 pass=13
+native debian-12 --power-loss rc=0 pass=14
+native ubuntu-24.04 --power-loss rc=0 pass=14
+native debian-12 --tool-faults rc=0 pass=15
+native ubuntu-24.04 --tool-faults rc=0 pass=15
+native debian-12 --credential-faults rc=0 pass=28
+native ubuntu-24.04 --credential-faults rc=0 pass=28
+DONE

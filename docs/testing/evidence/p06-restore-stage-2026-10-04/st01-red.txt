@@ -1,0 +1,14 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0599]: no method named `path` found for struct `TestDirectory` in the current scope
+  --> crates/blindpass-controller/tests/restore_stage.rs:94:18
+   |
+94 |             root.path(),
+   |                  ^^^^ method not found in `TestDirectory`
+   |
+  ::: crates/blindpass-controller/tests/support/mod.rs:43:1
+   |
+43 | pub struct TestDirectory(pub PathBuf);
+   | ------------------------ method `path` not found for this struct
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `blindpass-controller` (test "restore_stage") due to 1 previous error

@@ -1,0 +1,5 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 44.54s
+  Executable tests/backup_command.rs (target/debug/deps/backup_command-9bc91871d7438e66)
+  Executable tests/deployment_startup.rs (target/debug/deps/deployment_startup-8fac269a2cd3308b)
+  Executable tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)

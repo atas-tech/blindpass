@@ -1,0 +1,33 @@
+{
+  "schema": "blindpass-required-scenarios-v1",
+  "note": "Proposed required matrix for the P07.6 evidence file. Profiles: native-x86_64 (Debian 12 and Ubuntu 24.04 native package), compose-sqlite, compose-postgres, npm-package, release-endpoints, landing, any (recorded once for the candidate). The reviewer edits this list at slice 8; a row removed here is a claim removed from the release, not a pass.",
+  "scenarios": [
+    { "id": "P00-ACCEPTED", "title": "P00 review row accepted", "profiles": ["any"] },
+    { "id": "P01-ACCEPTED", "title": "P01 review row accepted", "profiles": ["any"] },
+    { "id": "P02-ACCEPTED", "title": "P02 review row accepted", "profiles": ["any"] },
+    { "id": "P03-ACCEPTED", "title": "P03 review row accepted", "profiles": ["any"] },
+    { "id": "P04-ACCEPTED", "title": "P04 review row accepted", "profiles": ["any"] },
+    { "id": "P05-ACCEPTED", "title": "P05 review row accepted", "profiles": ["any"] },
+    { "id": "P06-ACCEPTED", "title": "P06 review row accepted", "profiles": ["any"] },
+    { "id": "S01", "title": "Confirmation-code role, entropy and signed-link independence", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "S02", "title": "Verification-token issuance, storage, expiry and replay", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "S03", "title": "Operator login, refresh and logout token custody", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "S04", "title": "Production CSP, baseline headers and HSTS scope", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "S05", "title": "Account controls, distributed guessing, lockout and client timeouts", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "S06", "title": "Canary scan of keys, logs, archives and backups", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "S07", "title": "Successful and failed pilot paths under debug logging and crash collection", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "R01", "title": "Clean native and Compose installs from the documented instructions", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "R02", "title": "Intended npm release installed and run on a clean host", "profiles": ["npm-package"] },
+    { "id": "R03", "title": "Endpoint defaults compared; advertised DNS, TLS, health and readiness probed", "profiles": ["release-endpoints"] },
+    { "id": "P07-I01", "title": "Finding disposition traced to current code", "profiles": ["any"] },
+    { "id": "P07-I02", "title": "Auth integration: guessing, lockout, bootstrap, CSRF, timeouts", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "P07-I03", "title": "Browser/deploy integration: production CSP, framing, referrer, HSTS", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "P07-I04", "title": "Exposure integration: debug, crash, archive, image and backup paths", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres"] },
+    { "id": "P07-I05", "title": "Release integration: manifests, dependency, license and SBOM reports", "profiles": ["any"] },
+    { "id": "P07-I06", "title": "Landing analytics network and cookie evidence", "profiles": ["landing"] },
+    { "id": "P07-E01", "title": "Clean-host install of both quickstarts and the MCP package; signature verified, tampering rejected", "profiles": ["native-x86_64", "compose-sqlite", "compose-postgres", "npm-package"] },
+    { "id": "P07-E02", "title": "Release smoke: endpoint defaults and live probes, dated", "profiles": ["release-endpoints"] },
+    { "id": "P07-E03", "title": "Rollback rehearsal on a disposable installation", "profiles": ["native-x86_64", "compose-sqlite"] },
+    { "id": "P07-E04", "title": "Landing CTA click matrix, desktop and mobile", "profiles": ["landing"] }
+  ]
+}

@@ -1,0 +1,26 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.76s
+     Running tests/recovery_authority.rs (target/debug/deps/recovery_authority-8f0890b4349a4ec3)
+
+running 5 tests
+test p06_oa01_runtime_cannot_reset_protected_ledger_or_initialize_missing_identity ... ok
+test p06_oa01b_startup_refuses_missing_layout_controller_database_and_admin_credentials ... FAILED
+test p06_oa02_committed_reservations_outlive_stale_snapshots_and_interrupted_recovery ... ok
+test p06_oa03_concurrent_revision_reservations_and_wrong_context_fail_closed ... ok
+test p06_oa09_safe_integer_exhaustion_refuses_without_mutating_ledger ... ok
+
+failures:
+
+---- p06_oa01b_startup_refuses_missing_layout_controller_database_and_admin_credentials stdout ----
+
+thread 'p06_oa01b_startup_refuses_missing_layout_controller_database_and_admin_credentials' (1521810) panicked at crates/blindpass-controller/tests/recovery_authority.rs:125:5:
+assertion failed: Authority::connect_existing(&admin_url).await.is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    p06_oa01b_startup_refuses_missing_layout_controller_database_and_admin_credentials
+
+test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 1 filtered out; finished in 1.53s
+
+error: test failed, to rerun pass `-p blindpass-controller --test recovery_authority`

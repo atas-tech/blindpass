@@ -1,0 +1,10 @@
+Scan 1 b101cb03-d0ed-4758-ada2-83531a18aedc (17:34 +07, 28 files) vs scan 4 4b646e22-a090-424b-91cd-316213de0e45 (21:06 +07, 29 files)
+Method: per-artifact (ecosystem, name, version) -> sorted (alert type, severity, policy action) from `socket scan view <id> --json`; plus byte comparison of `socket scan report --fold=version --report-level=defer --json` after replacing the scan id.
+
+artifacts                    634 vs 634  (378 npm, 256 Cargo)
+alert occurrences            1286 vs 1286
+only in scan 1               npm mcp-server@0.1.0
+only in scan 4               npm mcp-server-lib@0.1.0
+artifacts whose alerts differ  none
+report --report-level=defer   identical apart from the scan id
+files uploaded               28 -> 29 (added .github/workflows/release.yml, no artifact produced)

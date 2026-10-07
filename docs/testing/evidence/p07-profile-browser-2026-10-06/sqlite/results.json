@@ -1,0 +1,570 @@
+{
+ "project": "blindpass-p07-sq-d0c8f461",
+ "date": "2026-10-06T21:01:45+0700",
+ "results": [
+  {
+   "row": "S05-bootstrap",
+   "name": "wrong tokens from many addresses end in 429 after the per-peer budget, with bounded rows",
+   "ok": true,
+   "firstTooMany": [
+    11,
+    11,
+    11,
+    11,
+    11,
+    11,
+    11,
+    11,
+    11,
+    2,
+    1
+   ],
+   "perAddress": [
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 10,
+     "429": 1
+    },
+    {
+     "409": 1,
+     "429": 10
+    },
+    {
+     "429": 11
+    }
+   ]
+  },
+  {
+   "row": "S05-bootstrap",
+   "name": "a fresh address is also refused once the global budget is spent",
+   "ok": true,
+   "status": 429,
+   "note": "informational: global budget is 100 failures per 15 min"
+  },
+  {
+   "row": "S05-bootstrap",
+   "name": "the valid token still bootstraps the operator after the flood (not burned, not refused)",
+   "ok": true,
+   "status": 201
+  },
+  {
+   "row": "S05-bootstrap",
+   "name": "limiter state stays bounded (at most 257 rows)",
+   "ok": true,
+   "rows": 13
+  },
+  {
+   "row": "S05-bootstrap",
+   "name": "the used token is single use: the row is marked used and a second bootstrap is never 200",
+   "ok": true,
+   "secondStatus": 429,
+   "tokenRows": 1,
+   "usedRows": 1
+  },
+  {
+   "row": "chromium-s03",
+   "name": "no bp_ cookie and empty storage before sign-in",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "bp_session is HttpOnly, Secure, SameSite=Strict, Path=/",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "bp_refresh is HttpOnly, Secure, SameSite=Strict and scoped to the refresh path",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "bp_csrf is Secure, SameSite=Strict, Path=/ and readable by script (double-submit)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "every bp_ cookie is host-only on blindpass.example",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "no credential in localStorage, sessionStorage or IndexedDB",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "script-readable cookies are only the CSRF value",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "no secret in the rendered DOM",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "state-changing call without the CSRF header is denied (403 csrf_denied)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "state-changing call with a wrong CSRF value is denied",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "session read works with the cookie (200)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "cross-origin forged state change with credentials never reaches a response (CORS/SameSite)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "refresh rotates the session (200)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "refresh issued a new refresh credential",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "replaying the rotated-out refresh credential is refused (401)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "replay revoked the whole session family (current session now 401)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "sign-out clears the bp_ cookies in the browser",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "the signed-out session cookie is refused server-side (401)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "the signed-out refresh credential is refused server-side (401)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "no CSP violation during the S03 journey",
+   "ok": true
+  },
+  {
+   "row": "chromium-s03",
+   "name": "every request of the journey is same-origin",
+   "ok": true
+  },
+  {
+   "row": "S04",
+   "name": "edge HSTS on /readyz is exactly max-age=31536000",
+   "ok": true,
+   "served": "max-age=31536000"
+  },
+  {
+   "row": "S04",
+   "name": "client-supplied forwarding headers do not change HSTS at the edge",
+   "ok": true
+  },
+  {
+   "row": "S04",
+   "name": "an unknown Host is refused by the edge (421)",
+   "ok": true,
+   "status": 421
+  },
+  {
+   "row": "S04",
+   "name": "the controller emits no HSTS for a trusted peer that says the client used plain HTTP",
+   "ok": true,
+   "result": [
+    403,
+    null
+   ]
+  },
+  {
+   "row": "S04",
+   "name": "the controller emits max-age=31536000 only for a trusted peer reporting HTTPS (edge hides and re-adds it)",
+   "ok": true,
+   "result": [
+    200,
+    "max-age=31536000"
+   ]
+  },
+  {
+   "row": "S04",
+   "name": "an untrusted peer on the internal port is refused (403) and gets no HSTS",
+   "ok": true,
+   "result": {
+    "u_http": [
+     403,
+     null
+    ],
+    "u_https": [
+     403,
+     null
+    ]
+   }
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: served CSP equals the documented policy",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: no localhost, wildcard, bare scheme or unsafe source in the served CSP",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: HSTS is max-age=31536000 with no includeSubDomains or preload (edge)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: framing, sniffing, referrer, opener and caching headers",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: an allowed same-origin API call works (readyz 200)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: no Referer header on a same-origin request (Referrer-Policy: no-referrer)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: fetch, XHR, WebSocket, image and script to a non-allowed origin all fail",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: a securitypolicyviolation was recorded for connect, img and script (and form)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "console: no request to the forbidden origin completed",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: served CSP equals the documented policy",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: no localhost, wildcard, bare scheme or unsafe source in the served CSP",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: HSTS is max-age=31536000 with no includeSubDomains or preload (edge)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: framing, sniffing, referrer, opener and caching headers",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: an allowed same-origin API call works (readyz 200)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: no Referer header on a same-origin request (Referrer-Policy: no-referrer)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: fetch, XHR, WebSocket, image and script to a non-allowed origin all fail",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: a securitypolicyviolation was recorded for connect, img and script (and form)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "input: no request to the forbidden origin completed",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "framing the console and the input page from another origin is refused (nothing rendered)",
+   "ok": true
+  },
+  {
+   "row": "chromium-s04",
+   "name": "every request of the browsing journey is to the edge origins or the blocked exfil target",
+   "ok": true
+  },
+  {
+   "row": "S05-lock",
+   "name": "one address is locked for the account after 10 failures (423 with Retry-After)",
+   "ok": true,
+   "statuses": [
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    423,
+    423
+   ],
+   "firstLocked": 11,
+   "retryAfter": "900"
+  },
+  {
+   "row": "S05-lock",
+   "name": "a legitimate sign-in from another address succeeds while the attacker pair is locked",
+   "ok": true,
+   "status": 200
+  },
+  {
+   "row": "S05-lock",
+   "name": "after one attacker address failed 12 times only that address and its (account, source) pair hold limiter rows; the legitimate address holds none",
+   "ok": true,
+   "rowKinds": {
+    "operator-login-ipfail": 1,
+    "operator-login-slock": 1
+   },
+   "ipRows": 1,
+   "pairSourcePrefixes": [
+    "92cb707b"
+   ]
+  },
+  {
+   "row": "S05-lock",
+   "name": "an unknown username answers the same status sequence as a real account (no 423-versus-401 oracle)",
+   "ok": true,
+   "real": [
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    423,
+    423
+   ],
+   "unknown": [
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    401,
+    423,
+    423
+   ]
+  },
+  {
+   "row": "S05-lock",
+   "name": "the controller held a separate failure row per client address and per (account, source) behind the trusted proxy",
+   "ok": true,
+   "perAddressRows": 7,
+   "perAccountSourceRows": 6
+  },
+  {
+   "row": "S05-lock",
+   "name": "guessing spread over six addresses locks the account for every source (423 for the legitimate address too)",
+   "ok": true,
+   "legit": {
+    "i": 1,
+    "status": 423,
+    "error": "locked",
+    "retry_after": "899",
+    "hsts": "max-age=31536000"
+   },
+   "perAddress": [
+    {
+     "401": 10
+    },
+    {
+     "401": 10
+    },
+    {
+     "401": 10
+    },
+    {
+     "401": 10
+    },
+    {
+     "401": 10
+    },
+    {
+     "423": 10
+    }
+   ]
+  },
+  {
+   "row": "chromium-locked",
+   "name": "console sign-in of a locked account is refused with 423, stays on the login page and shows the lock notice with a retry time",
+   "ok": true
+  },
+  {
+   "row": "S05-lock",
+   "name": "the packaged admin-socket reset-password issues a temporary password and clears every limiter row of that account",
+   "ok": true,
+   "rowsLeft": [
+    "operator-login-fail:other",
+    "operator-login-slock:other"
+   ]
+  },
+  {
+   "row": "S05-lock",
+   "name": "the previously locked attacker address is no longer locked after the reset (401, not 423)",
+   "ok": true,
+   "status": 401
+  },
+  {
+   "row": "chromium-forced",
+   "name": "a temporary-password session is blocked from admin routes (403 password_change_required)",
+   "ok": true
+  },
+  {
+   "row": "chromium-forced",
+   "name": "the forced change completes and the console is usable",
+   "ok": true
+  },
+  {
+   "row": "S05-lock",
+   "name": "one address guessing many usernames hits the per-address ceiling (429 after 30 failures)",
+   "ok": true,
+   "statuses": {
+    "401": 30,
+    "429": 3
+   },
+   "firstTooMany": 31
+  },
+  {
+   "row": "S05-lock",
+   "name": "another address is unaffected by that ceiling (401, not 429)",
+   "ok": true,
+   "status": 401
+  },
+  {
+   "row": "chromium-locked",
+   "name": "console sign-in succeeds",
+   "ok": true
+  },
+  {
+   "row": "chromium-slow",
+   "name": "the console reports a bounded timeout within 30 s total",
+   "ok": true
+  },
+  {
+   "row": "chromium-slow",
+   "name": "no session or refresh cookie was set and the page stayed on the login form",
+   "ok": true
+  },
+  {
+   "row": "S05-slow",
+   "name": "the paused-controller sign-in changed no approval state",
+   "ok": true,
+   "before": [
+    0,
+    0
+   ],
+   "after": [
+    0,
+    0
+   ]
+  },
+  {
+   "row": "S05-slow",
+   "name": "session rows after the timeout (informational: a stalled request the controller reads after unpause may create an unreachable session)",
+   "ok": true,
+   "before": 7,
+   "after": 7,
+   "delta": 0,
+   "slow": {
+    "elapsedMs": 15097,
+    "message": "Sign-in didn't complete. Try again.",
+    "cookiesSet": [
+     "bp_csrf"
+    ],
+    "stillOnLogin": true
+   }
+  },
+  {
+   "row": "canary",
+   "name": "controller logs hold no operator, wrong-guess, next or bootstrap canary (positive control passed)",
+   "ok": true
+  },
+  {
+   "row": "canary",
+   "name": "edge logs hold no canary (empty by design)",
+   "ok": true
+  },
+  {
+   "row": "canary",
+   "name": "the offline fail-closed scanner (canary-scan.sh) over the run directory: logs, probe output, browser summaries, request lists and the controller database copy",
+   "ok": true,
+   "exit": 0,
+   "summary": "canary-scan PASS: 51 files, 0 entries, 4918876 bytes scanned; 0 exposed, 0 allowlisted, 0 incomplete"
+  }
+ ]
+}

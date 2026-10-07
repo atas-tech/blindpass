@@ -72,7 +72,7 @@ pub(crate) const MAX_OPERATION_RECORDS: usize = 10_000;
 const MAX_PENDING_NODE_EVENT_BYTES: usize = 64 * 1024;
 const MAX_PENDING_NODE_EVENTS_BYTES: u64 = 64 * 1024 * 1024;
 const PENDING_NODE_EVENT_FILE_MODE: u32 = 0o600;
-const O_NOFOLLOW: i32 = 0x20000;
+const O_NOFOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 static PENDING_EVENT_TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 pub const DEFAULT_CUSTODY_KEY_LIFETIME: Duration = Duration::from_secs(30);
 /// Human provisioning needs far longer than a custody key; the offer is still
@@ -3145,7 +3145,7 @@ fn pending_state_directory(path: &Path) -> Result<(File, PathBuf), BrokerError> 
     ))?;
     let directory = OpenOptions::new()
         .read(true)
-        .custom_flags(O_NOFOLLOW | 0x10000)
+        .custom_flags(O_NOFOLLOW | blindpass_core::open_flags::O_DIRECTORY)
         .open(parent)
         .map_err(|_| BrokerError::Configuration("pending node event directory is unsafe"))?;
     let metadata = directory.metadata()?;

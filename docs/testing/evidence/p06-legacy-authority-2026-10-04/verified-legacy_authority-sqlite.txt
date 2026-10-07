@@ -1,0 +1,12 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.60s
+     Running tests/legacy_authority.rs (target/debug/deps/legacy_authority-66d2e9a8cfb30fb0)
+
+running 4 tests
+test p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart ... ok
+test p06_la02_every_browser_scope_changes_key_while_retained_request_stays_pending ... ok
+test p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use ... ok
+test p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.84s
+

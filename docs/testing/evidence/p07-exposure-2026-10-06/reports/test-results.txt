@@ -1,0 +1,12 @@
+canary-scan PASS: 341 files, 0 entries, 2937790 bytes scanned; 0 exposed, 0 allowlisted, 0 incomplete
+  controls: ok (tar, gz, bz2, xz, zip, ar, jsonl, wrapped, tar.gz, zst; zstd backend module)
+  classes: transcripts=3, logs=304
+  excluded: p05-broker-offer-fmt.log (p05-*-fmt.log)
+  excluded: p05-controller-offer-fmt.log (p05-*-fmt.log)
+  excluded: p05-node24 (p05-node24)
+  excluded: p05-signed-offer-fmt.log (p05-*-fmt.log)
+  excluded: p05-signed-offer-targeted-fmt.log (p05-*-fmt.log)
+
+real	0m0.348s
+user	0m0.283s
+sys	0m0.038s

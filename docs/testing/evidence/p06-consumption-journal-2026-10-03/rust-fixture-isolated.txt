@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.25s
+     Running tests/fleet_browser_intents.rs (target/debug/deps/fleet_browser_intents-55d137d3a2f71283)
+
+running 1 test
+test intent_event_operation_approval_and_audit_failure_roll_back_together ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 1.19s
+

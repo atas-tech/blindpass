@@ -19,10 +19,3 @@ complete license/notice files and records their versions and SHA-256 hashes in
 `dist/licenses/bundle-packages.json`. It rejects AGPL workspace code, missing
 license text and unsupported license metadata rather than silently distributing
 an incomplete MIT bundle.
-
-The existing `@x402/core`, `@x402/fetch` and `@x402/evm` 2.8.0 npm archives omit a
-license file and declare Apache-2.0. The retained [canonical upstream text](licenses/x402-Apache-LICENSE)
-was copied from [Coinbase's public upstream license](https://raw.githubusercontent.com/coinbase/x402/main/LICENSE)
-on 2026-09-30 (SHA-256 `50e6751797c50dedd75ef1b8a0d9e42f5f8472e9fbce91f34718e9f97b0c780a`).
-This is an attribution repair for unchanged legacy modules; it does not extend
-or reactivate the frozen payment feature. No dependency versions were changed.

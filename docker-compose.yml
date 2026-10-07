@@ -1,17 +1,4 @@
 services:
-  redis:
-    image: redis:7-alpine
-    container_name: blindpass-redis
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-    ports:
-      - "6380:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 1s
-      timeout: 3s
-      retries: 30
-      start_period: 1s
-
   postgres:
     image: postgres:16-alpine
     container_name: blindpass-postgres

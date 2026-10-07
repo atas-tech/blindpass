@@ -1,0 +1,5 @@
+{
+  "src/legacy_authority.rs": "3c476076e392e93f01b5c3fee07a6cc608369d0f4cc90baf8b95575f1c96dd52",
+  "src/routes/auth.rs": "dd703b6133a68c3a5abdc4e0b4aeee4cd10ad4bf212219d948564eb62ffab274",
+  "src/routes/exchanges.rs": "4affcf6e26a525a5faf63e099c741a4d3e8a370b0d1e5f66711ef6e3a9ee9087"
+}

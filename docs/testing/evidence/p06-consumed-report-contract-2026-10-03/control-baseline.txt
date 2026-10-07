@@ -1,0 +1,13 @@
+   Compiling blindpass-core v0.1.0 (/tmp/blindpass-p06-cr-control-369bt_bd/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.72s
+     Running tests/consumed_report.rs (target/debug/deps/consumed_report-3e58ff1897d36bf6)
+
+running 5 tests
+test p06_cr05_generic_event_admission_stays_closed ... ok
+test p06_cr04_stale_observation_and_future_or_zero_epochs_refuse ... ok
+test p06_cr03_strict_fields_order_bounds_and_no_truncation ... ok
+test p06_cr01_canonical_round_trip_and_authentic_all_outcomes ... ok
+test p06_cr02_signature_binds_every_context_field_and_event_key ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

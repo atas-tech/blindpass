@@ -519,142 +519,144 @@ impl Store {
         session: &LocalSession,
         idempotency_hash: &str,
     ) -> Result<ProvisioningLinkOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        if !blindpass_core::fleet::is_valid_opaque_id(operation_id) || idempotency_hash.len() != 64
-        {
-            return Err(StoreError::InvalidInput("provisioning link request"));
-        }
-        macro_rules! create {
-            ($pool:expr,$convert:expr,$now:expr,$meta_lock:expr,$node_lock:expr,$context_lock:expr,$evidence:expr,$audit:path) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query($meta_lock)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            if !blindpass_core::fleet::is_valid_opaque_id(operation_id) || idempotency_hash.len() != 64
+            {
+                return Err(StoreError::InvalidInput("provisioning link request"));
+            }
+            macro_rules! create {
+                ($pool:expr,$convert:expr,$now:expr,$meta_lock:expr,$node_lock:expr,$context_lock:expr,$evidence:expr,$audit:path) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query($meta_lock)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if !session_live!(tx, $convert, $now, session) {
+                        return Ok(ProvisioningLinkOutcome::SessionEnded);
+                    }
+                    let grant = sqlx::query(&$convert(
+                        "SELECT g.id,g.node_id FROM grants g JOIN operations o ON o.id=g.operation_id AND o.tenant_id=g.tenant_id
+                     WHERE g.operation_id=? AND g.tenant_id=? AND o.action='browser.session' AND o.mode='browser_session'",
+                    ))
+                    .bind(operation_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let Some(grant) = grant else {
+                        return Ok(ProvisioningLinkOutcome::NotFound);
+                    };
+                    let grant_id: String = grant.try_get("id").map_err(StoreError::Database)?;
+                    let node_id: String = grant.try_get("node_id").map_err(StoreError::Database)?;
+                    let offer = offer_for!(self, tx, $convert, "grant_id=?", &grant_id);
+                    let verdict = authority!(
+                        self, tx, $convert, $now, $node_lock, $context_lock, $evidence, session,
+                        &node_id, &grant_id, offer
+                    );
+                    let authority = match verdict {
+                        Ok(authority) => authority,
+                        Err(Denial::Forbidden) => return Ok(ProvisioningLinkOutcome::Forbidden),
+                        Err(Denial::NotReady) => return Ok(ProvisioningLinkOutcome::NotReady),
+                        Err(Denial::Unavailable) => return Ok(ProvisioningLinkOutcome::Unavailable),
+                    };
+                    let existing = sqlx::query(&$convert(&format!(
+                        "SELECT {LINK_COLUMNS},idempotency_hash FROM fleet_provisioning_links WHERE tenant_id=? AND grant_id=?"
+                    )))
+                    .bind(&self.tenant_id)
+                    .bind(&grant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    if let Some(existing) = existing {
+                        let hash: String = existing
+                            .try_get("idempotency_hash")
+                            .map_err(StoreError::Database)?;
+                        let record = link_from_row(&existing)?;
+                        return Ok(if hash == idempotency_hash && record.operator_id == session.operator.id {
+                            ProvisioningLinkOutcome::Existing(record)
+                        } else {
+                            ProvisioningLinkOutcome::Conflict
+                        });
+                    }
+                    let reused: Option<String> = sqlx::query_scalar(&$convert(
+                        "SELECT id FROM fleet_provisioning_links WHERE tenant_id=? AND operator_id=? AND idempotency_hash=?",
+                    ))
+                    .bind(&self.tenant_id)
+                    .bind(&session.operator.id)
+                    .bind(idempotency_hash)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    if reused.is_some() {
+                        return Ok(ProvisioningLinkOutcome::Conflict);
+                    }
+                    let record = ProvisioningLinkRecord {
+                        id: new_hex_id(),
+                        node_id: node_id.clone(),
+                        operation_id: operation_id.to_owned(),
+                        grant_id: grant_id.clone(),
+                        offer_id: authority.binding.offer_id.clone(),
+                        operator_id: session.operator.id.clone(),
+                        expires_at_ms: i64::try_from(authority.binding.expires_at_ms)
+                            .map_err(|_| StoreError::InvalidInput("provisioning link expiry"))?,
+                        created_at_ms: authority.now,
+                    };
+                    sqlx::query(&$convert(
+                        "INSERT INTO fleet_provisioning_links
+                     (id,tenant_id,node_id,operation_id,grant_id,offer_id,operator_id,idempotency_hash,expires_at,created_at)
+                     VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    ))
+                    .bind(&record.id)
+                    .bind(&self.tenant_id)
+                    .bind(&record.node_id)
+                    .bind(&record.operation_id)
+                    .bind(&record.grant_id)
+                    .bind(&record.offer_id)
+                    .bind(&record.operator_id)
+                    .bind(idempotency_hash)
+                    .bind(record.expires_at_ms)
+                    .bind(record.created_at_ms)
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
-                if !session_live!(tx, $convert, $now, session) {
-                    return Ok(ProvisioningLinkOutcome::SessionEnded);
-                }
-                let grant = sqlx::query(&$convert(
-                    "SELECT g.id,g.node_id FROM grants g JOIN operations o ON o.id=g.operation_id AND o.tenant_id=g.tenant_id
-                     WHERE g.operation_id=? AND g.tenant_id=? AND o.action='browser.session' AND o.mode='browser_session'",
-                ))
-                .bind(operation_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let Some(grant) = grant else {
-                    return Ok(ProvisioningLinkOutcome::NotFound);
-                };
-                let grant_id: String = grant.try_get("id").map_err(StoreError::Database)?;
-                let node_id: String = grant.try_get("node_id").map_err(StoreError::Database)?;
-                let offer = offer_for!(self, tx, $convert, "grant_id=?", &grant_id);
-                let verdict = authority!(
-                    self, tx, $convert, $now, $node_lock, $context_lock, $evidence, session,
-                    &node_id, &grant_id, offer
-                );
-                let authority = match verdict {
-                    Ok(authority) => authority,
-                    Err(Denial::Forbidden) => return Ok(ProvisioningLinkOutcome::Forbidden),
-                    Err(Denial::NotReady) => return Ok(ProvisioningLinkOutcome::NotReady),
-                    Err(Denial::Unavailable) => return Ok(ProvisioningLinkOutcome::Unavailable),
-                };
-                let existing = sqlx::query(&$convert(&format!(
-                    "SELECT {LINK_COLUMNS},idempotency_hash FROM fleet_provisioning_links WHERE tenant_id=? AND grant_id=?"
-                )))
-                .bind(&self.tenant_id)
-                .bind(&grant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if let Some(existing) = existing {
-                    let hash: String = existing
-                        .try_get("idempotency_hash")
-                        .map_err(StoreError::Database)?;
-                    let record = link_from_row(&existing)?;
-                    return Ok(if hash == idempotency_hash && record.operator_id == session.operator.id {
-                        ProvisioningLinkOutcome::Existing(record)
-                    } else {
-                        ProvisioningLinkOutcome::Conflict
-                    });
-                }
-                let reused: Option<String> = sqlx::query_scalar(&$convert(
-                    "SELECT id FROM fleet_provisioning_links WHERE tenant_id=? AND operator_id=? AND idempotency_hash=?",
-                ))
-                .bind(&self.tenant_id)
-                .bind(&session.operator.id)
-                .bind(idempotency_hash)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if reused.is_some() {
-                    return Ok(ProvisioningLinkOutcome::Conflict);
-                }
-                let record = ProvisioningLinkRecord {
-                    id: new_hex_id(),
-                    node_id: node_id.clone(),
-                    operation_id: operation_id.to_owned(),
-                    grant_id: grant_id.clone(),
-                    offer_id: authority.binding.offer_id.clone(),
-                    operator_id: session.operator.id.clone(),
-                    expires_at_ms: i64::try_from(authority.binding.expires_at_ms)
-                        .map_err(|_| StoreError::InvalidInput("provisioning link expiry"))?,
-                    created_at_ms: authority.now,
-                };
-                sqlx::query(&$convert(
-                    "INSERT INTO fleet_provisioning_links
-                     (id,tenant_id,node_id,operation_id,grant_id,offer_id,operator_id,idempotency_hash,expires_at,created_at)
-                     VALUES (?,?,?,?,?,?,?,?,?,?)",
-                ))
-                .bind(&record.id)
-                .bind(&self.tenant_id)
-                .bind(&record.node_id)
-                .bind(&record.operation_id)
-                .bind(&record.grant_id)
-                .bind(&record.offer_id)
-                .bind(&record.operator_id)
-                .bind(idempotency_hash)
-                .bind(record.expires_at_ms)
-                .bind(record.created_at_ms)
-                .execute(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let audit = AuditDraft::operator(
-                    &session.operator.id,
-                    "fleet.provisioning_link_created",
-                    "operation",
-                    operation_id,
-                    "created",
-                    json!({"node_id":record.node_id,"grant_id":record.grant_id,"offer_id":record.offer_id,
-                        "expires_at_ms":record.expires_at_ms}),
-                );
-                $audit(&mut tx, &self.tenant_id, &audit).await?;
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(ProvisioningLinkOutcome::Created(record))
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => create!(
-                pool,
-                |s: &str| s.to_owned(),
-                SQLITE_NOW_MS,
-                "UPDATE controller_meta SET issuer_epoch=issuer_epoch WHERE id=1",
-                "",
-                "",
-                SQLITE_GRANT_EVIDENCE,
-                insert_audit_sqlite
-            ),
-            Database::Postgres(pool) => create!(
-                pool,
-                super::pg,
-                POSTGRES_NOW_MS,
-                "SELECT issuer_epoch FROM controller_meta WHERE id=1 FOR UPDATE",
-                " FOR UPDATE",
-                "FOR UPDATE OF g,o,w,p,s",
-                POSTGRES_GRANT_EVIDENCE,
-                insert_audit_postgres
-            ),
-        }
+                    let audit = AuditDraft::operator(
+                        &session.operator.id,
+                        "fleet.provisioning_link_created",
+                        "operation",
+                        operation_id,
+                        "created",
+                        json!({"node_id":record.node_id,"grant_id":record.grant_id,"offer_id":record.offer_id,
+                            "expires_at_ms":record.expires_at_ms}),
+                    );
+                    $audit(&mut tx, &self.tenant_id, &audit).await?;
+                    tx.commit().await.map_err(StoreError::Database)?;
+                    Ok(ProvisioningLinkOutcome::Created(record))
+                }};
+            }
+            match &self.database {
+                Database::Sqlite(pool) => create!(
+                    pool,
+                    |s: &str| s.to_owned(),
+                    SQLITE_NOW_MS,
+                    "UPDATE controller_meta SET issuer_epoch=issuer_epoch WHERE id=1",
+                    "",
+                    "",
+                    SQLITE_GRANT_EVIDENCE,
+                    insert_audit_sqlite
+                ),
+                Database::Postgres(pool) => create!(
+                    pool,
+                    super::pg,
+                    POSTGRES_NOW_MS,
+                    "SELECT issuer_epoch FROM controller_meta WHERE id=1 FOR UPDATE",
+                    " FOR UPDATE",
+                    "FOR UPDATE OF g,o,w,p,s",
+                    POSTGRES_GRANT_EVIDENCE,
+                    insert_audit_postgres
+                ),
+            }
+        }).await
     }
 
     /// Read-only link status. Repeated reads and browser prefetch never
@@ -664,81 +666,83 @@ impl Store {
         link_id: &str,
         session: &LocalSession,
     ) -> Result<ProvisioningMetadataOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        macro_rules! read {
-            ($pool:expr,$convert:expr,$now:expr,$evidence:expr) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                let link = sqlx::query(&$convert(&format!(
-                    "SELECT {LINK_COLUMNS} FROM fleet_provisioning_links WHERE id=? AND tenant_id=?"
-                )))
-                .bind(link_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let Some(link) = link else {
-                    return Ok(ProvisioningMetadataOutcome::Unavailable);
-                };
-                let link = link_from_row(&link)?;
-                if link.operator_id != session.operator.id {
-                    return Ok(ProvisioningMetadataOutcome::Forbidden);
-                }
-                if !session_live!(tx, $convert, $now, session) {
-                    return Ok(ProvisioningMetadataOutcome::SessionEnded);
-                }
-                let receipt = sqlx::query(&$convert(&format!(
-                    "SELECT {RECEIPT_COLUMNS} FROM fleet_provisioning_receipts WHERE link_id=? AND tenant_id=?"
-                )))
-                .bind(link_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if let Some(receipt) = receipt {
-                    return Ok(ProvisioningMetadataOutcome::Submitted(receipt_from_row(&receipt)?));
-                }
-                let offer = offer_for!(self, tx, $convert, "id=?", &link.offer_id);
-                let verdict = authority!(
-                    self, tx, $convert, $now, "", "", $evidence, session,
-                    &link.node_id, &link.grant_id, offer
-                );
-                let authority = match verdict {
-                    Ok(authority) => authority,
-                    Err(Denial::Forbidden) => return Ok(ProvisioningMetadataOutcome::Forbidden),
-                    Err(_) => return Ok(ProvisioningMetadataOutcome::Unavailable),
-                };
-                if link.expires_at_ms <= authority.now {
-                    return Ok(ProvisioningMetadataOutcome::Unavailable);
-                }
-                let offer_json = offer
-                    .as_ref()
-                    .map(|offer| offer.json.clone())
-                    .ok_or(StoreError::MissingState("provisioning offer"))?;
-                Ok(ProvisioningMetadataOutcome::Ready(Box::new(ProvisioningMetadata {
-                    offer_json,
-                    grant_json: authority.grant_json,
-                    node_key_version: authority.key_version,
-                    signing_public: authority.signing_public,
-                    source_unit: authority.unit,
-                    credential: authority.credential,
-                    expires_at_ms: link.expires_at_ms,
-                    server_time_ms: authority.now,
-                    purpose: authority.purpose,
-                    workload_name: authority.workload_name,
-                })))
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => read!(
-                pool,
-                |s: &str| s.to_owned(),
-                SQLITE_NOW_MS,
-                SQLITE_GRANT_EVIDENCE
-            ),
-            Database::Postgres(pool) => {
-                read!(pool, super::pg, POSTGRES_NOW_MS, POSTGRES_GRANT_EVIDENCE)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            macro_rules! read {
+                ($pool:expr,$convert:expr,$now:expr,$evidence:expr) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    let link = sqlx::query(&$convert(&format!(
+                        "SELECT {LINK_COLUMNS} FROM fleet_provisioning_links WHERE id=? AND tenant_id=?"
+                    )))
+                    .bind(link_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let Some(link) = link else {
+                        return Ok(ProvisioningMetadataOutcome::Unavailable);
+                    };
+                    let link = link_from_row(&link)?;
+                    if link.operator_id != session.operator.id {
+                        return Ok(ProvisioningMetadataOutcome::Forbidden);
+                    }
+                    if !session_live!(tx, $convert, $now, session) {
+                        return Ok(ProvisioningMetadataOutcome::SessionEnded);
+                    }
+                    let receipt = sqlx::query(&$convert(&format!(
+                        "SELECT {RECEIPT_COLUMNS} FROM fleet_provisioning_receipts WHERE link_id=? AND tenant_id=?"
+                    )))
+                    .bind(link_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    if let Some(receipt) = receipt {
+                        return Ok(ProvisioningMetadataOutcome::Submitted(receipt_from_row(&receipt)?));
+                    }
+                    let offer = offer_for!(self, tx, $convert, "id=?", &link.offer_id);
+                    let verdict = authority!(
+                        self, tx, $convert, $now, "", "", $evidence, session,
+                        &link.node_id, &link.grant_id, offer
+                    );
+                    let authority = match verdict {
+                        Ok(authority) => authority,
+                        Err(Denial::Forbidden) => return Ok(ProvisioningMetadataOutcome::Forbidden),
+                        Err(_) => return Ok(ProvisioningMetadataOutcome::Unavailable),
+                    };
+                    if link.expires_at_ms <= authority.now {
+                        return Ok(ProvisioningMetadataOutcome::Unavailable);
+                    }
+                    let offer_json = offer
+                        .as_ref()
+                        .map(|offer| offer.json.clone())
+                        .ok_or(StoreError::MissingState("provisioning offer"))?;
+                    Ok(ProvisioningMetadataOutcome::Ready(Box::new(ProvisioningMetadata {
+                        offer_json,
+                        grant_json: authority.grant_json,
+                        node_key_version: authority.key_version,
+                        signing_public: authority.signing_public,
+                        source_unit: authority.unit,
+                        credential: authority.credential,
+                        expires_at_ms: link.expires_at_ms,
+                        server_time_ms: authority.now,
+                        purpose: authority.purpose,
+                        workload_name: authority.workload_name,
+                    })))
+                }};
             }
-        }
+            match &self.database {
+                Database::Sqlite(pool) => read!(
+                    pool,
+                    |s: &str| s.to_owned(),
+                    SQLITE_NOW_MS,
+                    SQLITE_GRANT_EVIDENCE
+                ),
+                Database::Postgres(pool) => {
+                    read!(pool, super::pg, POSTGRES_NOW_MS, POSTGRES_GRANT_EVIDENCE)
+                }
+            }
+        }).await
     }
 
     /// Commit the first valid ciphertext for a link. The receipt, the signed
@@ -752,150 +756,152 @@ impl Store {
         enc: &str,
         ciphertext: &str,
     ) -> Result<ProvisioningSubmitOutcome, StoreError> {
-        self.checkpoint_clock().await?;
-        BrowserProvisioningDelivery::decode_sealed(enc, ciphertext)
-            .map_err(|_| StoreError::InvalidInput("provisioning ciphertext"))?;
-        let ciphertext_digest = hex_digest(&[enc.as_bytes(), ciphertext.as_bytes()])?;
-        macro_rules! submit {
-            ($pool:expr,$convert:expr,$now:expr,$meta_lock:expr,$node_lock:expr,$context_lock:expr,$evidence:expr,$audit:path,$enqueue:path) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                sqlx::query($meta_lock)
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            BrowserProvisioningDelivery::decode_sealed(enc, ciphertext)
+                .map_err(|_| StoreError::InvalidInput("provisioning ciphertext"))?;
+            let ciphertext_digest = hex_digest(&[enc.as_bytes(), ciphertext.as_bytes()])?;
+            macro_rules! submit {
+                ($pool:expr,$convert:expr,$now:expr,$meta_lock:expr,$node_lock:expr,$context_lock:expr,$evidence:expr,$audit:path,$enqueue:path) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    sqlx::query($meta_lock)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    let link = sqlx::query(&$convert(&format!(
+                        "SELECT {LINK_COLUMNS} FROM fleet_provisioning_links WHERE id=? AND tenant_id=?"
+                    )))
+                    .bind(link_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let Some(link) = link else {
+                        return Ok(ProvisioningSubmitOutcome::Unavailable);
+                    };
+                    let link = link_from_row(&link)?;
+                    if link.operator_id != session.operator.id {
+                        return Ok(ProvisioningSubmitOutcome::Forbidden);
+                    }
+                    if !session_live!(tx, $convert, $now, session) {
+                        return Ok(ProvisioningSubmitOutcome::SessionEnded);
+                    }
+                    let receipt = sqlx::query(&$convert(&format!(
+                        "SELECT {RECEIPT_COLUMNS} FROM fleet_provisioning_receipts WHERE link_id=? AND tenant_id=?"
+                    )))
+                    .bind(link_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    if let Some(receipt) = receipt {
+                        // Reconciliation of an already committed receipt grants no
+                        // new authority and never reopens, requeues or renews it.
+                        let receipt = receipt_from_row(&receipt)?;
+                        return Ok(if receipt.ciphertext_digest == ciphertext_digest {
+                            ProvisioningSubmitOutcome::Existing(receipt)
+                        } else {
+                            ProvisioningSubmitOutcome::Conflict
+                        });
+                    }
+                    let offer = offer_for!(self, tx, $convert, "id=?", &link.offer_id);
+                    let verdict = authority!(
+                        self, tx, $convert, $now, $node_lock, $context_lock, $evidence, session,
+                        &link.node_id, &link.grant_id, offer
+                    );
+                    let authority = match verdict {
+                        Ok(authority) => authority,
+                        Err(Denial::Forbidden) => return Ok(ProvisioningSubmitOutcome::Forbidden),
+                        Err(_) => return Ok(ProvisioningSubmitOutcome::Unavailable),
+                    };
+                    if link.expires_at_ms <= authority.now {
+                        return Ok(ProvisioningSubmitOutcome::Unavailable);
+                    }
+                    let delivery = BrowserProvisioningDelivery {
+                        binding: authority.binding.clone(),
+                        enc: enc.to_owned(),
+                        ciphertext: ciphertext.to_owned(),
+                    };
+                    let signer = self
+                        .fleet_signer
+                        .as_ref()
+                        .ok_or(StoreError::MissingState("provisioning issuer"))?;
+                    let body = delivery
+                        .to_value()
+                        .map_err(|_| StoreError::InvalidInput("provisioning delivery"))?;
+                    // The envelope epoch is the original grant's issuer epoch, which
+                    // the authority check proved is still the controller's current one.
+                    let envelope = signer.sign(
+                        DocumentKind::ProvisioningDelivery,
+                        body,
+                        authority.binding.grant.issuer_epoch,
+                    )?;
+                    let delivery_digest = hex_digest(&[envelope.as_bytes()])?;
+                    let receipt = ProvisioningReceipt {
+                        offer_id: authority.binding.offer_id.clone(),
+                        ciphertext_digest: ciphertext_digest.clone(),
+                        delivery_digest,
+                        submitted_at_ms: authority.now,
+                        expires_at_ms: link.expires_at_ms,
+                    };
+                    sqlx::query(&$convert(
+                        "INSERT INTO fleet_provisioning_receipts
+                     (link_id,tenant_id,node_id,grant_id,offer_id,operator_id,ciphertext_digest,delivery_digest,submitted_at,expires_at)
+                     VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    ))
+                    .bind(link_id)
+                    .bind(&self.tenant_id)
+                    .bind(&link.node_id)
+                    .bind(&link.grant_id)
+                    .bind(&receipt.offer_id)
+                    .bind(&session.operator.id)
+                    .bind(&receipt.ciphertext_digest)
+                    .bind(&receipt.delivery_digest)
+                    .bind(receipt.submitted_at_ms)
+                    .bind(receipt.expires_at_ms)
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
-                let link = sqlx::query(&$convert(&format!(
-                    "SELECT {LINK_COLUMNS} FROM fleet_provisioning_links WHERE id=? AND tenant_id=?"
-                )))
-                .bind(link_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let Some(link) = link else {
-                    return Ok(ProvisioningSubmitOutcome::Unavailable);
-                };
-                let link = link_from_row(&link)?;
-                if link.operator_id != session.operator.id {
-                    return Ok(ProvisioningSubmitOutcome::Forbidden);
-                }
-                if !session_live!(tx, $convert, $now, session) {
-                    return Ok(ProvisioningSubmitOutcome::SessionEnded);
-                }
-                let receipt = sqlx::query(&$convert(&format!(
-                    "SELECT {RECEIPT_COLUMNS} FROM fleet_provisioning_receipts WHERE link_id=? AND tenant_id=?"
-                )))
-                .bind(link_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if let Some(receipt) = receipt {
-                    // Reconciliation of an already committed receipt grants no
-                    // new authority and never reopens, requeues or renews it.
-                    let receipt = receipt_from_row(&receipt)?;
-                    return Ok(if receipt.ciphertext_digest == ciphertext_digest {
-                        ProvisioningSubmitOutcome::Existing(receipt)
-                    } else {
-                        ProvisioningSubmitOutcome::Conflict
-                    });
-                }
-                let offer = offer_for!(self, tx, $convert, "id=?", &link.offer_id);
-                let verdict = authority!(
-                    self, tx, $convert, $now, $node_lock, $context_lock, $evidence, session,
-                    &link.node_id, &link.grant_id, offer
-                );
-                let authority = match verdict {
-                    Ok(authority) => authority,
-                    Err(Denial::Forbidden) => return Ok(ProvisioningSubmitOutcome::Forbidden),
-                    Err(_) => return Ok(ProvisioningSubmitOutcome::Unavailable),
-                };
-                if link.expires_at_ms <= authority.now {
-                    return Ok(ProvisioningSubmitOutcome::Unavailable);
-                }
-                let delivery = BrowserProvisioningDelivery {
-                    binding: authority.binding.clone(),
-                    enc: enc.to_owned(),
-                    ciphertext: ciphertext.to_owned(),
-                };
-                let signer = self
-                    .fleet_signer
-                    .as_ref()
-                    .ok_or(StoreError::MissingState("provisioning issuer"))?;
-                let body = delivery
-                    .to_value()
-                    .map_err(|_| StoreError::InvalidInput("provisioning delivery"))?;
-                // The envelope epoch is the original grant's issuer epoch, which
-                // the authority check proved is still the controller's current one.
-                let envelope = signer.sign(
-                    DocumentKind::ProvisioningDelivery,
-                    body,
-                    authority.binding.grant.issuer_epoch,
-                )?;
-                let delivery_digest = hex_digest(&[envelope.as_bytes()])?;
-                let receipt = ProvisioningReceipt {
-                    offer_id: authority.binding.offer_id.clone(),
-                    ciphertext_digest: ciphertext_digest.clone(),
-                    delivery_digest,
-                    submitted_at_ms: authority.now,
-                    expires_at_ms: link.expires_at_ms,
-                };
-                sqlx::query(&$convert(
-                    "INSERT INTO fleet_provisioning_receipts
-                     (link_id,tenant_id,node_id,grant_id,offer_id,operator_id,ciphertext_digest,delivery_digest,submitted_at,expires_at)
-                     VALUES (?,?,?,?,?,?,?,?,?,?)",
-                ))
-                .bind(link_id)
-                .bind(&self.tenant_id)
-                .bind(&link.node_id)
-                .bind(&link.grant_id)
-                .bind(&receipt.offer_id)
-                .bind(&session.operator.id)
-                .bind(&receipt.ciphertext_digest)
-                .bind(&receipt.delivery_digest)
-                .bind(receipt.submitted_at_ms)
-                .bind(receipt.expires_at_ms)
-                .execute(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                $enqueue(&mut tx, &link.node_id, &envelope).await?;
-                let audit = AuditDraft::operator(
-                    &session.operator.id,
-                    "fleet.source_submitted",
-                    "operation",
-                    &link.operation_id,
-                    "submitted",
-                    json!({"node_id":link.node_id,"grant_id":link.grant_id,"offer_id":receipt.offer_id,
-                        "ciphertext_digest":receipt.ciphertext_digest,"delivery_digest":receipt.delivery_digest}),
-                );
-                $audit(&mut tx, &self.tenant_id, &audit).await?;
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(ProvisioningSubmitOutcome::Created(receipt))
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => submit!(
-                pool,
-                |s: &str| s.to_owned(),
-                SQLITE_NOW_MS,
-                "UPDATE controller_meta SET issuer_epoch=issuer_epoch WHERE id=1",
-                "",
-                "",
-                SQLITE_GRANT_EVIDENCE,
-                insert_audit_sqlite,
-                enqueue_node_document_sqlite
-            ),
-            Database::Postgres(pool) => submit!(
-                pool,
-                super::pg,
-                POSTGRES_NOW_MS,
-                "SELECT issuer_epoch FROM controller_meta WHERE id=1 FOR UPDATE",
-                " FOR UPDATE",
-                "FOR UPDATE OF g,o,w,p,s",
-                POSTGRES_GRANT_EVIDENCE,
-                insert_audit_postgres,
-                enqueue_node_document_postgres
-            ),
-        }
+                    $enqueue(&mut tx, &link.node_id, &envelope).await?;
+                    let audit = AuditDraft::operator(
+                        &session.operator.id,
+                        "fleet.source_submitted",
+                        "operation",
+                        &link.operation_id,
+                        "submitted",
+                        json!({"node_id":link.node_id,"grant_id":link.grant_id,"offer_id":receipt.offer_id,
+                            "ciphertext_digest":receipt.ciphertext_digest,"delivery_digest":receipt.delivery_digest}),
+                    );
+                    $audit(&mut tx, &self.tenant_id, &audit).await?;
+                    tx.commit().await.map_err(StoreError::Database)?;
+                    Ok(ProvisioningSubmitOutcome::Created(receipt))
+                }};
+            }
+            match &self.database {
+                Database::Sqlite(pool) => submit!(
+                    pool,
+                    |s: &str| s.to_owned(),
+                    SQLITE_NOW_MS,
+                    "UPDATE controller_meta SET issuer_epoch=issuer_epoch WHERE id=1",
+                    "",
+                    "",
+                    SQLITE_GRANT_EVIDENCE,
+                    insert_audit_sqlite,
+                    enqueue_node_document_sqlite
+                ),
+                Database::Postgres(pool) => submit!(
+                    pool,
+                    super::pg,
+                    POSTGRES_NOW_MS,
+                    "SELECT issuer_epoch FROM controller_meta WHERE id=1 FOR UPDATE",
+                    " FOR UPDATE",
+                    "FOR UPDATE OF g,o,w,p,s",
+                    POSTGRES_GRANT_EVIDENCE,
+                    insert_audit_postgres,
+                    enqueue_node_document_postgres
+                ),
+            }
+        }).await
     }
 
     /// The secret-free state of Source collection for one operation, for the
@@ -910,101 +916,103 @@ impl Store {
         operation_id: &str,
         session: &LocalSession,
     ) -> Result<ProvisioningStatus, StoreError> {
-        if !blindpass_core::fleet::is_valid_opaque_id(operation_id) {
-            return Ok(ProvisioningStatus::without_offer(
-                ProvisioningPhase::NotApplicable,
-            ));
-        }
-        self.checkpoint_clock().await?;
-        macro_rules! read {
-            ($pool:expr,$convert:expr,$now:expr,$evidence:expr) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                let grant = sqlx::query(&$convert(
-                    "SELECT g.id,g.node_id FROM grants g JOIN operations o ON o.id=g.operation_id AND o.tenant_id=g.tenant_id
+        self.run_owned(async {
+            if !blindpass_core::fleet::is_valid_opaque_id(operation_id) {
+                return Ok(ProvisioningStatus::without_offer(
+                    ProvisioningPhase::NotApplicable,
+                ));
+            }
+            self.checkpoint_clock().await?;
+            macro_rules! read {
+                ($pool:expr,$convert:expr,$now:expr,$evidence:expr) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    let grant = sqlx::query(&$convert(
+                        "SELECT g.id,g.node_id FROM grants g JOIN operations o ON o.id=g.operation_id AND o.tenant_id=g.tenant_id
                      WHERE g.operation_id=? AND g.tenant_id=? AND o.action='browser.session' AND o.mode='browser_session'",
-                ))
-                .bind(operation_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let Some(grant) = grant else {
-                    return Ok(ProvisioningStatus::without_offer(ProvisioningPhase::NotApplicable));
-                };
-                let grant_id: String = grant.try_get("id").map_err(StoreError::Database)?;
-                let node_id: String = grant.try_get("node_id").map_err(StoreError::Database)?;
-                let receipt: Option<i64> = sqlx::query_scalar(&$convert(
-                    "SELECT submitted_at FROM fleet_provisioning_receipts WHERE grant_id=? AND tenant_id=?",
-                ))
-                .bind(&grant_id)
-                .bind(&self.tenant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                if receipt.is_some() {
-                    return Ok(ProvisioningStatus::without_offer(ProvisioningPhase::Submitted));
-                }
-                let link_row = sqlx::query(&$convert(&format!(
-                    "SELECT {LINK_COLUMNS} FROM fleet_provisioning_links WHERE tenant_id=? AND grant_id=?"
-                )))
-                .bind(&self.tenant_id)
-                .bind(&grant_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(StoreError::Database)?;
-                let link = match link_row.as_ref() {
-                    Some(row) => Some(link_from_row(row)?),
-                    None => None,
-                };
-                let offer = match &link {
-                    Some(link) => offer_for!(self, tx, $convert, "id=?", &link.offer_id),
-                    None => offer_for!(self, tx, $convert, "grant_id=?", &grant_id),
-                };
-                let live = session_live!(tx, $convert, $now, session);
-                let verdict = authority_core!(
-                    false, self, tx, $convert, $now, "", "", $evidence, session,
-                    &node_id, &grant_id, offer
-                );
-                Ok(match verdict {
-                    Ok(authority) => match &link {
-                        Some(link) if link.expires_at_ms <= authority.now => {
+                    ))
+                    .bind(operation_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let Some(grant) = grant else {
+                        return Ok(ProvisioningStatus::without_offer(ProvisioningPhase::NotApplicable));
+                    };
+                    let grant_id: String = grant.try_get("id").map_err(StoreError::Database)?;
+                    let node_id: String = grant.try_get("node_id").map_err(StoreError::Database)?;
+                    let receipt: Option<i64> = sqlx::query_scalar(&$convert(
+                        "SELECT submitted_at FROM fleet_provisioning_receipts WHERE grant_id=? AND tenant_id=?",
+                    ))
+                    .bind(&grant_id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    if receipt.is_some() {
+                        return Ok(ProvisioningStatus::without_offer(ProvisioningPhase::Submitted));
+                    }
+                    let link_row = sqlx::query(&$convert(&format!(
+                        "SELECT {LINK_COLUMNS} FROM fleet_provisioning_links WHERE tenant_id=? AND grant_id=?"
+                    )))
+                    .bind(&self.tenant_id)
+                    .bind(&grant_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(StoreError::Database)?;
+                    let link = match link_row.as_ref() {
+                        Some(row) => Some(link_from_row(row)?),
+                        None => None,
+                    };
+                    let offer = match &link {
+                        Some(link) => offer_for!(self, tx, $convert, "id=?", &link.offer_id),
+                        None => offer_for!(self, tx, $convert, "grant_id=?", &grant_id),
+                    };
+                    let live = session_live!(tx, $convert, $now, session);
+                    let verdict = authority_core!(
+                        false, self, tx, $convert, $now, "", "", $evidence, session,
+                        &node_id, &grant_id, offer
+                    );
+                    Ok(match verdict {
+                        Ok(authority) => match &link {
+                            Some(link) if link.expires_at_ms <= authority.now => {
+                                ProvisioningStatus::without_offer(ProvisioningPhase::Expired)
+                            }
+                            Some(link) => ProvisioningStatus {
+                                phase: ProvisioningPhase::LinkIssued,
+                                offer_expires_at_ms: Some(link.expires_at_ms),
+                                can_provide: authority.owner
+                                    && live
+                                    && link.operator_id == session.operator.id,
+                            },
+                            None => ProvisioningStatus {
+                                phase: ProvisioningPhase::OfferReady,
+                                offer_expires_at_ms: i64::try_from(authority.binding.expires_at_ms).ok(),
+                                can_provide: authority.owner && live,
+                            },
+                        },
+                        Err(Denial::NotReady) => {
+                            ProvisioningStatus::without_offer(ProvisioningPhase::AwaitingOffer)
+                        }
+                        // Not enforced here, so a refusal for ownership cannot occur;
+                        // fail closed if it ever did.
+                        Err(Denial::Forbidden | Denial::Unavailable) => {
                             ProvisioningStatus::without_offer(ProvisioningPhase::Expired)
                         }
-                        Some(link) => ProvisioningStatus {
-                            phase: ProvisioningPhase::LinkIssued,
-                            offer_expires_at_ms: Some(link.expires_at_ms),
-                            can_provide: authority.owner
-                                && live
-                                && link.operator_id == session.operator.id,
-                        },
-                        None => ProvisioningStatus {
-                            phase: ProvisioningPhase::OfferReady,
-                            offer_expires_at_ms: i64::try_from(authority.binding.expires_at_ms).ok(),
-                            can_provide: authority.owner && live,
-                        },
-                    },
-                    Err(Denial::NotReady) => {
-                        ProvisioningStatus::without_offer(ProvisioningPhase::AwaitingOffer)
-                    }
-                    // Not enforced here, so a refusal for ownership cannot occur;
-                    // fail closed if it ever did.
-                    Err(Denial::Forbidden | Denial::Unavailable) => {
-                        ProvisioningStatus::without_offer(ProvisioningPhase::Expired)
-                    }
-                })
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => read!(
-                pool,
-                |s: &str| s.to_owned(),
-                SQLITE_NOW_MS,
-                SQLITE_GRANT_EVIDENCE
-            ),
-            Database::Postgres(pool) => {
-                read!(pool, super::pg, POSTGRES_NOW_MS, POSTGRES_GRANT_EVIDENCE)
+                    })
+                }};
             }
-        }
+            match &self.database {
+                Database::Sqlite(pool) => read!(
+                    pool,
+                    |s: &str| s.to_owned(),
+                    SQLITE_NOW_MS,
+                    SQLITE_GRANT_EVIDENCE
+                ),
+                Database::Postgres(pool) => {
+                    read!(pool, super::pg, POSTGRES_NOW_MS, POSTGRES_GRANT_EVIDENCE)
+                }
+            }
+        }).await
     }
 }
 

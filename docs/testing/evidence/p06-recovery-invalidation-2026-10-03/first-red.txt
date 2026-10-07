@@ -1,0 +1,144 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0433]: cannot find `NodeIdentity` in `support`
+  --> crates/blindpass-controller/tests/recovery_invalidation.rs:47:23
+   |
+47 |     let node=support::NodeIdentity::from_seed(41);
+   |                       ^^^^^^^^^^^^ could not find `NodeIdentity` in `support`
+
+error[E0599]: no method named `recovery_required` found for struct `Store` in the current scope
+  --> crates/blindpass-controller/tests/recovery_invalidation.rs:99:21
+   |
+99 |     assert!(f.store.recovery_required());
+   |                     ^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `invalidate_recovery` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:109:24
+    |
+109 |     let status=f.store.invalidate_recovery(&f.owner,"P06_DUMMY_RECOVERY").await.unwrap();
+    |                        ^^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `invalidate_recovery` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:113:23
+    |
+113 |     let again=f.store.invalidate_recovery(&f.owner,"P06_DUMMY_RECOVERY").await.unwrap();assert_eq!(again.phase,"invalidated");asser...
+    |                       ^^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `invalidate_recovery` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:128:21
+    |
+128 |     assert!(f.store.invalidate_recovery(&f.owner,"P06_DUMMY_RECOVERY").await.is_err());
+    |                     ^^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `recovery_status` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_invalidation.rs:133:26
+     |
+ 133 |     let prepared=f.store.recovery_status().await.unwrap().unwrap();assert_eq!(prepared.phase,"prepared");assert!(prepared.summary....
+     |                          ^^^^^^^^^^^^^^^
+     |
+help: there is a method `request_status` with a similar name, but with different arguments
+    --> crates/blindpass-controller/src/store/mod.rs:2385:5
+     |
+2385 | /     pub async fn request_status(
+2386 | |         &self,
+2387 | |         request_id: &str,
+2388 | |         requester_agent_id: &str,
+2389 | |     ) -> Result<Option<SecretRequestStatus>, StoreError> {
+     | |________________________________________________________^
+
+error[E0599]: no method named `restart` found for struct `Harness` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:134:42
+    |
+134 |     f.owner.quiesce().await.unwrap();f.h.restart().await;
+    |                                          ^^^^^^^
+    |
+   ::: crates/blindpass-controller/tests/support/mod.rs:229:1
+    |
+229 | pub struct Harness {
+    | ------------------ method `restart` not found for this struct
+    |
+help: there is a method `restart_server` with a similar name
+    |
+134 |     f.owner.quiesce().await.unwrap();f.h.restart_server().await;
+    |                                                 +++++++
+
+error[E0599]: no method named `invalidate_recovery` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:140:13
+    |
+140 |     f.store.invalidate_recovery(&f.owner,"P06_DUMMY_RECOVERY").await.unwrap();assert_invalidated(&f).await;f.close().await;
+    |             ^^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `prepare_recovery` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:147:24
+    |
+147 |     let status=f.store.prepare_recovery(&f.owner,"P06_DUMMY_RECOVERY").await.unwrap();assert_eq!(status.phase,"prepared");
+    |                        ^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `restart` found for struct `Harness` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:148:42
+    |
+148 |     f.owner.quiesce().await.unwrap();f.h.restart().await;
+    |                                          ^^^^^^^
+    |
+   ::: crates/blindpass-controller/tests/support/mod.rs:229:1
+    |
+229 | pub struct Harness {
+    | ------------------ method `restart` not found for this struct
+    |
+help: there is a method `restart_server` with a similar name
+    |
+148 |     f.owner.quiesce().await.unwrap();f.h.restart_server().await;
+    |                                                 +++++++
+
+error[E0599]: no method named `recovery_required` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:149:23
+    |
+149 |     assert!(f.h.store.recovery_required());
+    |                       ^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `recovery_status` found for struct `Store` in the current scope
+    --> crates/blindpass-controller/tests/recovery_invalidation.rs:158:26
+     |
+ 158 |     assert_eq!(f.h.store.recovery_status().await.unwrap().unwrap().phase,"prepared");f.close().await;
+     |                          ^^^^^^^^^^^^^^^
+     |
+help: there is a method `request_status` with a similar name, but with different arguments
+    --> crates/blindpass-controller/src/store/mod.rs:2385:5
+     |
+2385 | /     pub async fn request_status(
+2386 | |         &self,
+2387 | |         request_id: &str,
+2388 | |         requester_agent_id: &str,
+2389 | |     ) -> Result<Option<SecretRequestStatus>, StoreError> {
+     | |________________________________________________________^
+
+error[E0599]: no method named `prepare_recovery` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:165:72
+    |
+165 |     for id in ["","P06 DUMMY INVALID","../P06_DUMMY"] {assert!(f.store.prepare_recovery(&f.owner,id).await.is_err());}
+    |                                                                        ^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `invalidate_recovery` found for struct `Store` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:168:21
+    |
+168 |     assert!(f.store.invalidate_recovery(&f.owner,"P06_DUMMY_RECOVERY").await.is_err());
+    |                     ^^^^^^^^^^^^^^^^^^^ method not found in `Store`
+
+error[E0599]: no method named `execute` found for struct `sqlx::pool::PoolConnection<sqlx::Sqlite>` in the current scope
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:188:46
+    |
+188 |     assert_eq!(pool.acquire().await.unwrap().execute("SELECT 1").await.unwrap().rows_affected(),0);
+    |                                              ^^^^^^^
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `Executor` which provides `execute` is implemented but not in scope; perhaps you want to import it
+    |
+  3 + use sqlx::Executor;
+    |
+help: there is a method `execute_many` with a similar name
+    |
+188 |     assert_eq!(pool.acquire().await.unwrap().execute_many("SELECT 1").await.unwrap().rows_affected(),0);
+    |                                                     +++++
+
+Some errors have detailed explanations: E0433, E0599.
+For more information about an error, try `rustc --explain E0433`.
+error: could not compile `blindpass-controller` (test "recovery_invalidation") due to 15 previous errors

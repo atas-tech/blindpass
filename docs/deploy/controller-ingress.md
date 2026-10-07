@@ -17,7 +17,9 @@ recover the original protected state through the reviewed recovery procedure.
 The comprehensive backup/restore procedure is still unfinished.
 
 The test-mode fixture path retains explicit test initialization behavior and
-must never be enabled for a deployment. Clock startup checks still apply to
+must never be enabled for a deployment. `BLINDPASS_TEST_MODE=1` is refused when
+`BLINDPASS_PROXY_REQUIRED=1` (every packaged profile) or `NODE_ENV=production`,
+and `check-config` prints a warning when test mode is on. Clock startup checks still apply to
 existing state; a host reboot can require explicit clock reconciliation before
 authority is available. This clock fence is not P06's future external recovery
 anchor or ownership fence.
@@ -79,7 +81,13 @@ The controller rejects missing, duplicated, appended or mismatched values with
 403 and the fixed `proxy_required` error, before API/UI/preflight processing.
 Only GET/HEAD `/healthz` and `/readyz` from actual loopback peers bypass the
 edge check. A trusted request receives `Strict-Transport-Security:
-max-age=31536000`; no subdomain policy is assumed.
+max-age=31536000`; no subdomain policy is assumed. HSTS belongs to the TLS
+terminator: the examples add it on every response and strip an upstream copy,
+a plain-HTTP profile never emits it and a client's own `X-Forwarded-Proto` does
+not make the controller emit it. Do not add `includeSubDomains` or `preload`
+until every subdomain serves HTTPS under your control, and stage a short
+`max-age` first if the hostname's HTTPS is not yet proven (see
+[browser headers and HSTS scope](../security/operator-auth-and-headers.md#browser-headers-and-hsts-scope-s04)).
 
 Native proxy mode defaults to loopback. A container may bind
 `0.0.0.0:3200` only with required proxy mode and explicit trusted peers, or

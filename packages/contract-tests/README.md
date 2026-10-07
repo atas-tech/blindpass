@@ -1,43 +1,28 @@
 # Controller contract tests
 
-This package is the black-box TypeScript baseline for the machine-facing SPS
-contract. It uses `fetch` against a TCP server, not Fastify `inject`, and can
-target a locally spawned SPS process (`SUT=ts`), an already running server
-(`SUT=base`) or a spawned Rust controller (`SUT=rust`).
+This package is the black-box contract suite for the machine-facing API of the Rust controller. It uses `fetch`
+against a TCP server, not an in-process `inject`, and runs against a controller it spawns itself (`SUT=rust`) or,
+through a base URL, against one it did not start.
 
-The package intentionally declares no new npm dependencies. It reuses the
-workspace's existing Vitest, `tsx`, PostgreSQL, Redis, `jose` and `hpke-js`
-installations; it is a private test package and is not independently
-published. This keeps P00 from introducing an unreviewed dependency or lockfile
-resolution.
+The TypeScript SPS that originally defined the contract is no longer part of the suite (its adapter, comparison tests and SPS-backed CT18 readiness case were removed). What it defined is kept as frozen data: the
+HTTP snapshot `fixtures/snapshots/ts-baseline.json` and the CV fixtures. Their provenance and consumers are in
+[fixtures/PROVENANCE.md](fixtures/PROVENANCE.md) and [fixtures/snapshots/PROVENANCE.md](fixtures/snapshots/PROVENANCE.md).
+Never regenerate either after the SPS removal; a change needs a decision record.
 
-## Required TypeScript run
+The package declares no npm dependencies of its own. It reuses the workspace's Vitest, `tsx`, `pg`, `jose` and
+`hpke-js` installations; the signing, fulfillment-token and policy oracles in `src/oracle` need only `node:crypto`. It
+is a private test package and is not published.
 
-Start disposable services first, export the test database URL, then run:
+## Oracles
 
-```bash
-SUT=ts npm test --workspace=packages/contract-tests
-```
+`src/oracle` holds clean-room oracles for the signed link (CV01/CV02), the HS256 fulfillment token (CV03) and the
+exchange-policy engine and decision hash (CV05). The fixtures in `fixtures/` pin them, and the Rust controller reads
+the same files, so neither runtime is the only oracle for itself:
 
-The adapter creates a unique PostgreSQL schema, selects a dedicated Redis
-logical database, starts SPS over HTTP, provisions a test workspace and agents,
-and cleans both stores on exit. Set `CONTRACT_REDIS_DB` explicitly when
-parallel runs share a Redis instance. The selected Redis database is flushed
-at the beginning and end of a run; use only a disposable test Redis.
-
-To target an existing server, use `SUT=base CONTRACT_BASE_URL=...` and provide
-the same seed configuration (`CONTRACT_SEED_TOKEN`) or a fixture file through
-`CONTRACT_FIXTURE_FILE`. The committed base job uses a harness-spawned SPS
-with the generated JWKS issuer/audience, CORS origin, hosted test mode, seeded
-policy and secret registry, test TTL/rate overrides, and disposable PostgreSQL
-and Redis stores. An arbitrary external server will not meet that profile.
-The base server must enable the matching test-only seed route and must not be
-a production deployment.
-
-`UPDATE_CONTRACT_SNAPSHOTS=1` records sanitized HTTP snapshots under
-`fixtures/snapshots/`. Snapshot files contain normalized identifiers,
-timestamps, signed links and tokens only; canary values and credentials are
-never written.
+- `cv05-policy-matrix.json` holds 311 decisions the legacy engine produced for 32 seeded rule sets, frozen.
+- `cv05-policy-decided.json` holds the shapes the legacy engine and the controller handled differently, with the
+  controller's behaviour the owner chose on 2026-10-07 (an empty identity list matches every agent; blank reasons,
+  padded reasons, rule ids and rule secret names). See [the policy guide](../../docs/guides/policy.md).
 
 ## Rust controller run
 
@@ -47,12 +32,22 @@ SUT=rust CONTRACT_RUST_BACKEND=sqlite npm test --workspace=packages/contract-tes
 SUT=rust CONTRACT_RUST_BACKEND=postgres CONTRACT_DATABASE_URL=... npm test --workspace=packages/contract-tests
 ```
 
-The adapter starts the controller in test mode with an isolated SQLite file or
-PostgreSQL schema and seeds it through the test seed route. The run compares
-the committed TypeScript snapshot; reviewed semantic projections in
-`src/snapshots.ts` cover the v3 administration outcomes where Rust intentionally
-differs (CT01 readiness, CT02 key rotation/revocation, CT13 approval decisions,
-CT16 CORS, CT17 audit, and CT18 readiness). A Rust run can never rewrite the
-TypeScript snapshot. `fixtures/rust-pending.json` lists the required cases and
-the CT14 exclusion; `scripts/tests/assert-contract-progress.mjs` checks a JSON
-report against it.
+The adapter starts the controller in test mode with an isolated SQLite file or PostgreSQL schema and seeds it through
+the test seed route. The run compares the committed snapshot; reviewed semantic projections in `src/snapshots.ts`
+cover the v3 administration outcomes where the controller intentionally differs from the legacy server (CT01
+readiness, CT02 key rotation/revocation, CT13 approval decisions, CT16 CORS, CT17 audit, and CT18 readiness). A Rust
+run can never rewrite the snapshot. `fixtures/required-cases.json` lists the required cases and the CT14 exclusion;
+`scripts/tests/assert-contract-progress.mjs` checks a JSON report against it.
+
+## Against a controller the suite does not own
+
+```bash
+node --import tsx scripts/tests/rust-base-contract.mjs
+```
+
+The launcher starts the controller exactly as `SUT=rust` does, writes the fixture and runs the suite with
+`RUST_BASE_URL` and `CONTRACT_FIXTURE_FILE`, so the suite holds only an address. To aim it at another controller,
+provide the same fixture file (administrator session, agent credentials and the external JWT key) with
+`SUT=rust RUST_BASE_URL=... CONTRACT_FIXTURE_FILE=...`. Four cases need harness control of the server (CT15 request
+and exchange limits, CT18 readiness failure, CT19 restart) and are excluded by name in the launcher; the spawned run
+covers them. The base run compares only the snapshots it recorded (`CONTRACT_SNAPSHOT_SUBSET=1`).

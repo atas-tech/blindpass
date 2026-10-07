@@ -1,0 +1,4 @@
+snapshots_exit=0
+regressions_exit=0
+restore-normal_exit=0
+restore-fault_exit=0

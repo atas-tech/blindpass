@@ -1,42 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { SpsClient } from "../src/sps-client.js";
 
-function createPaymentRequiredHeader(): string {
-  return Buffer.from(JSON.stringify({
-    accepts: [{
-      scheme: "exact",
-      network: "eip155:84532",
-      asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-      amount: "50000",
-      payTo: "0x0000000000000000000000000000000000000001",
-      maxTimeoutSeconds: 300,
-      extra: {
-        resource: "secret_exchange:ws:agent:stripe.api_key.prod",
-        description: "Secret exchange request overage",
-        name: "USDC",
-        version: "2",
-        quoted_amount_cents: 5,
-        quoted_currency: "USD",
-        quoted_asset_symbol: "USDC",
-        quoted_asset_amount: "0.05",
-        quote_expires_at: 4_100_000_000
-      }
-    }],
-    x402Version: 2,
-    resource: {
-      url: "sps://secret_exchange:ws:agent:stripe.api_key.prod",
-      description: "Secret exchange request overage"
-    },
-    metadata: {
-      quoted_amount_cents: 5,
-      quoted_currency: "USD",
-      quoted_asset_symbol: "USDC",
-      quoted_asset_amount: "0.05",
-      quote_expires_at: 4_100_000_000
-    }
-  }), "utf8").toString("base64");
-}
-
 describe("SpsClient", () => {
   it("surfaces request and exchange rate limits without retrying", async () => {
     const requestedUrls: string[] = [];
@@ -242,179 +206,29 @@ describe("SpsClient", () => {
     );
   });
 
-  it("retries exchange requests with x402 payment headers after a 402 response", async () => {
-    const seenPaymentIdentifiers: string[] = [];
+  it("treats a 402 as an ordinary failed exchange request and never retries it", async () => {
+    const seen: Array<{ path: string; paymentHeaders: boolean }> = [];
     const fetchImpl: typeof fetch = async (input, init) => {
-      const url = String(input);
-      if (url.endsWith("/api/v2/secret/exchange/request")) {
-        const headers = new Headers(init?.headers);
-        const paymentIdentifier = headers.get("payment-identifier");
-        const paymentSignature = headers.get("payment-signature");
-
-        if (!paymentIdentifier || !paymentSignature) {
-          return new Response(
-            JSON.stringify({
-              accepts: [{
-                scheme: "exact",
-                network: "eip155:84532",
-                asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-                amount: "50000",
-                payTo: "0x0000000000000000000000000000000000000001",
-                maxTimeoutSeconds: 300,
-                extra: {
-                  resource: "secret_exchange:ws:agent:stripe.api_key.prod",
-                  description: "Secret exchange request overage",
-                  name: "USDC",
-                  version: "2",
-                  quoted_amount_cents: 5,
-                  quoted_currency: "USD",
-                  quoted_asset_symbol: "USDC",
-                  quoted_asset_amount: "0.05",
-                  quote_expires_at: 4_100_000_000
-                }
-              }],
-              x402Version: 2,
-              resource: {
-                url: "sps://secret_exchange:ws:agent:stripe.api_key.prod",
-                description: "Secret exchange request overage"
-              },
-              metadata: {
-                quoted_amount_cents: 5,
-                quoted_currency: "USD",
-                quoted_asset_symbol: "USDC",
-                quoted_asset_amount: "0.05",
-                quote_expires_at: 4_100_000_000
-              }
-            }),
-            {
-              status: 402,
-              headers: {
-                "content-type": "application/json",
-                "payment-required": createPaymentRequiredHeader()
-              }
-            }
-          );
-        }
-
-        seenPaymentIdentifiers.push(paymentIdentifier);
-        expect(paymentSignature).toBe("signed-payment");
-        return new Response(
-          JSON.stringify({
-            exchange_id: "ex-paid",
-            status: "pending",
-            expires_at: 123456,
-            fulfillment_token: "token-paid"
-          }),
-          { status: 201, headers: { "content-type": "application/json" } }
-        );
-      }
-
-      return new Response("not found", { status: 404 });
+      const headers = new Headers(init?.headers);
+      seen.push({
+        path: new URL(String(input)).pathname,
+        paymentHeaders: headers.has("payment-identifier") || headers.has("payment-signature")
+      });
+      return new Response(JSON.stringify({ error: "payment required" }), {
+        status: 402,
+        headers: { "content-type": "application/json", "payment-required": "ignored" }
+      });
     };
-
-    const client = new SpsClient({
-      baseUrl: "http://localhost:3100",
-      gatewayBearerToken: "token",
-      fetchImpl,
-      x402BudgetProvider: {
-        getRemainingBudgetCents: async () => 10
-      },
-      x402PaymentProvider: {
-        createPayment: async ({ paymentRequired }) => {
-          expect(paymentRequired.metadata.quoted_amount_cents).toBe(5);
-          return "signed-payment";
-        }
-      }
-    });
-
-    const created = await client.createExchangeRequest({
-      publicKey: "pub",
-      secretName: "stripe.api_key.prod",
-      purpose: "charge-order",
-      fulfillerHint: "agent:payment-bot"
-    });
-
-    expect(created).toMatchObject({
-      exchangeId: "ex-paid",
-      fulfillmentToken: "token-paid"
-    });
-    expect(seenPaymentIdentifiers).toHaveLength(1);
-  });
-
-  it("rejects a paid exchange locally when the configured budget is too small", async () => {
-    let paymentAttempts = 0;
-    const fetchImpl: typeof fetch = async (input) => {
-      const url = String(input);
-      if (url.endsWith("/api/v2/secret/exchange/request")) {
-        paymentAttempts += 1;
-        return new Response(
-          JSON.stringify({
-            accepts: [{
-              scheme: "exact",
-              network: "eip155:84532",
-              asset: "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
-              amount: "50000",
-              payTo: "0x0000000000000000000000000000000000000001",
-              maxTimeoutSeconds: 300,
-              extra: {
-                resource: "secret_exchange:ws:agent:stripe.api_key.prod",
-                description: "Secret exchange request overage",
-                name: "USDC",
-                version: "2",
-                quoted_amount_cents: 5,
-                quoted_currency: "USD",
-                quoted_asset_symbol: "USDC",
-                quoted_asset_amount: "0.05",
-                quote_expires_at: 4_100_000_000
-              }
-            }],
-            x402Version: 2,
-            resource: {
-              url: "sps://secret_exchange:ws:agent:stripe.api_key.prod",
-              description: "Secret exchange request overage"
-            },
-            metadata: {
-              quoted_amount_cents: 5,
-              quoted_currency: "USD",
-              quoted_asset_symbol: "USDC",
-              quoted_asset_amount: "0.05",
-              quote_expires_at: 4_100_000_000
-            }
-          }),
-          {
-            status: 402,
-            headers: {
-              "payment-required": createPaymentRequiredHeader()
-            }
-          }
-        );
-      }
-
-      return new Response("not found", { status: 404 });
-    };
-
-    const client = new SpsClient({
-      baseUrl: "http://localhost:3100",
-      gatewayBearerToken: "token",
-      fetchImpl,
-      x402BudgetProvider: {
-        getRemainingBudgetCents: async () => 4
-      },
-      x402PaymentProvider: {
-        createPayment: async () => {
-          throw new Error("should not sign");
-        }
-      }
-    });
+    const client = new SpsClient({ baseUrl: "https://sps.example", gatewayBearerToken: "token", fetchImpl });
 
     await expect(client.createExchangeRequest({
       publicKey: "pub",
       secretName: "stripe.api_key.prod",
       purpose: "charge-order",
       fulfillerHint: "agent:payment-bot"
-    })).rejects.toThrow("exceeds the configured local budget");
+    })).rejects.toThrow("SPS exchange request failed with status 402");
 
-    expect(paymentAttempts).toBe(1);
+    expect(seen).toEqual([{ path: "/api/v2/secret/exchange/request", paymentHeaders: false }]);
   });
 
   describe("Automatic Authentication & Refresh", () => {

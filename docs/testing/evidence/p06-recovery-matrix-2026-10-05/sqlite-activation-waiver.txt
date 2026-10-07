@@ -1,0 +1,11 @@
+P06-RR S1 PASS production controller (authority-backed, built-in TLS) serving; operator session established
+P06-RR S2 PASS real broker+node in a QEMU guest enrolled over verified HTTPS; node online; authority holds its broker trust
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-RR S3 PASS authenticated backup restored under a recovering authority record (epoch 2); controller serving fenced 503
+P06-RA W1 PASS completion refused while the node is neither covered nor waived; a waiver for an unknown node refused; controller not fenced
+P06-RA W2 PASS node waived by name (broker trust revoked in the authority, who/why recorded); completion revoked it locally ({'items': 5, 'nodes_revoked': 1, 'operators_enabled': 2})
+P06-RA A1 PASS with the controller stopped, only the missing attestation blocks activation
+P06-RA A2 PASS attested (who/host recorded) and activated: recovering:2:4 -> active:2:5; ordinary script and a second activation refused
+P06-RA W3 PASS controller activated and ready without the waived node; the node stays revoked and the `status --nodes --require-online` gate fails for it; its broker trust stays revoked in the authority
+P06-RR R3 PASS controller and guest broker/node logs contain no operator or approver password, bootstrap password, enrollment token, authority password or PEM private key
+P06-RA L1 PASS no credential, token, authority password or PEM private key in any controller or guest log

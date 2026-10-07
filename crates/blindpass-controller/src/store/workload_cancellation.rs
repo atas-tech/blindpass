@@ -157,46 +157,49 @@ impl Store {
         body_json: &str,
         body_hash: &str,
     ) -> Result<NodeEventInsert, StoreError> {
-        self.checkpoint_clock().await?;
-        let body =
-            parse_json(body_json).map_err(|_| StoreError::InvalidInput("cancellation body"))?;
-        let request = OperationCancellation::from_value(&body)
-            .map_err(|_| StoreError::InvalidInput("cancellation binding"))?;
-        if request.node_id != node_id
-            || request
-                .event_key()
-                .map_err(|_| StoreError::InvalidInput("cancellation key"))?
-                != key
-        {
-            return Err(StoreError::InvalidInput("cancellation node/key"));
-        }
-        match &self.database {
-            Database::Sqlite(pool) => apply_cancel!(
-                self,
-                pool,
-                |sql: &str| sql.to_owned(),
-                SQLITE_NOW_MS,
-                "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
-                operation_from_sqlite,
-                enqueue_node_document_sqlite,
-                &request,
-                key,
-                body_json,
-                body_hash
-            ),
-            Database::Postgres(pool) => apply_cancel!(
-                self,
-                pool,
-                super::pg,
-                POSTGRES_NOW_MS,
-                "SELECT issuer_epoch FROM controller_meta WHERE id = 1 FOR UPDATE",
-                operation_from_postgres,
-                enqueue_node_document_postgres,
-                &request,
-                key,
-                body_json,
-                body_hash
-            ),
-        }
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let body =
+                parse_json(body_json).map_err(|_| StoreError::InvalidInput("cancellation body"))?;
+            let request = OperationCancellation::from_value(&body)
+                .map_err(|_| StoreError::InvalidInput("cancellation binding"))?;
+            if request.node_id != node_id
+                || request
+                    .event_key()
+                    .map_err(|_| StoreError::InvalidInput("cancellation key"))?
+                    != key
+            {
+                return Err(StoreError::InvalidInput("cancellation node/key"));
+            }
+            match &self.database {
+                Database::Sqlite(pool) => apply_cancel!(
+                    self,
+                    pool,
+                    |sql: &str| sql.to_owned(),
+                    SQLITE_NOW_MS,
+                    "UPDATE controller_meta SET issuer_epoch = issuer_epoch WHERE id = 1",
+                    operation_from_sqlite,
+                    enqueue_node_document_sqlite,
+                    &request,
+                    key,
+                    body_json,
+                    body_hash
+                ),
+                Database::Postgres(pool) => apply_cancel!(
+                    self,
+                    pool,
+                    super::pg,
+                    POSTGRES_NOW_MS,
+                    "SELECT issuer_epoch FROM controller_meta WHERE id = 1 FOR UPDATE",
+                    operation_from_postgres,
+                    enqueue_node_document_postgres,
+                    &request,
+                    key,
+                    body_json,
+                    body_hash
+                ),
+            }
+        })
+        .await
     }
 }

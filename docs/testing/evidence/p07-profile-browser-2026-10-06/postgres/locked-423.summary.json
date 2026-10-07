@@ -1,0 +1,28 @@
+{
+ "step": "locked",
+ "date": "2026-10-06T14:02:31.614Z",
+ "checks": [
+  {
+   "name": "console sign-in of a locked account is refused with 423, stays on the login page and shows the lock notice with a retry time",
+   "ok": true,
+   "responses": [
+    {
+     "status": 423,
+     "retryAfter": "897"
+    }
+   ],
+   "stillOnLogin": true,
+   "lockNotice": "account is locked after too many failed sign-ins. Try again in about 15 min"
+  }
+ ],
+ "lockedView": {
+  "responses": [
+   {
+    "status": 423,
+    "retryAfter": "897"
+   }
+  ],
+  "stillOnLogin": true,
+  "lockNotice": "account is locked after too many failed sign-ins. Try again in about 15 min"
+ }
+}

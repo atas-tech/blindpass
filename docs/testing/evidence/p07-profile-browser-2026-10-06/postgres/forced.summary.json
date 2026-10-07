@@ -1,0 +1,55 @@
+{
+ "step": "forced",
+ "date": "2026-10-06T14:02:37.530Z",
+ "checks": [
+  {
+   "name": "a temporary-password session is blocked from admin routes (403 password_change_required)",
+   "ok": true,
+   "gated": {
+    "status": 403,
+    "error": "password_change_required",
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "the forced change completes and the console is usable",
+   "ok": true,
+   "afterChange": "/"
+  }
+ ],
+ "cookies": [
+  {
+   "name": "bp_refresh",
+   "httpOnly": true,
+   "secure": true,
+   "sameSite": "Strict",
+   "path": "/api/v3/admin/session/refresh",
+   "domain": "blindpass.example",
+   "expires": 1793887359.197671,
+   "valueSha256Prefix": "5322ef67",
+   "valueLength": 43
+  },
+  {
+   "name": "bp_session",
+   "httpOnly": true,
+   "secure": true,
+   "sameSite": "Strict",
+   "path": "/",
+   "domain": "blindpass.example",
+   "expires": 1791338559.197533,
+   "valueSha256Prefix": "542a0815",
+   "valueLength": 43
+  },
+  {
+   "name": "bp_csrf",
+   "httpOnly": false,
+   "secure": true,
+   "sameSite": "Strict",
+   "path": "/",
+   "domain": "blindpass.example",
+   "expires": 1793887359.197709,
+   "valueSha256Prefix": "2fc650ce",
+   "valueLength": 43
+  }
+ ]
+}

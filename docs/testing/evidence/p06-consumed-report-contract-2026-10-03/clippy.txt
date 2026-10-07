@@ -1,0 +1,7 @@
+    Blocking waiting for file lock on build directory
+    Checking blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Checking blindpass-broker v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-broker)
+    Checking blindpass-node v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-node)
+    Checking blindpass-cli v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 6m 54s

@@ -1,0 +1,19 @@
+P06-RR S1 PASS production controller (authority-backed, built-in TLS) serving; operator session established
+P06-RR S2 PASS real broker+node in a QEMU guest enrolled over verified HTTPS; node online; authority holds its broker trust
+P06-RM M1 PASS two real broker+node pairs (guest A, guest B) enrolled over verified HTTPS; both online; the authority holds active broker trust for each
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-RR S3 PASS authenticated backup restored under a recovering authority record (epoch 2); controller serving fenced 503
+P06-RM M2 PASS recovery_relay state=covered pages=1 activation_permitted=false; the authority shows A covered and B None (not waived); the precheck lists node_uncovered
+P06-RM W1 PASS completion refused while B is neither covered nor waived (A already covered)
+P06-RM W2 PASS B waived by name (trust revoked in the authority, operator and note recorded, A untouched); completion revoked only B ({'items': 5, 'nodes_revoked': 1, 'operators_enabled': 2})
+P06-RA A1 PASS with the controller stopped, only the missing attestation blocks activation
+P06-RA A2 PASS attested (who/host recorded) and activated: recovering:2:4 -> active:2:5; ordinary script and a second activation refused
+P06-RM S1 PASS activated controller ready 0.3 s after start, A online, B stays revoked (its guest services still running and retrying); node A seen 4.7 s after start through `status --nodes --require-online`
+P06-RR S2b PASS one real grant issued, approved by a second operator and consumed by a workload in the guest; controller operation completed
+P06-RA S5 PASS an ordinary grant was approved by a second operator, delivered to the node and consumed by a workload in the guest through the activated controller
+P06-RM G-A PASS an ordinary grant was approved, delivered to node A and consumed by a workload in guest A through the activated controller
+P06-RM W3 PASS the same workload registration is accepted for node A (201) and refused for the waived node B (409)
+P06-RA S6 PASS the old source refuses to serve and to migrate after activation; the activated controller stayed ready and the record unchanged
+P06-RR R3 PASS controller and guest broker/node logs contain no operator or approver password, bootstrap password, enrollment token, authority password or PEM private key
+P06-RR R3 PASS controller and guest broker/node logs contain no operator or approver password, bootstrap password, enrollment token, authority password or PEM private key
+P06-RM L1 PASS no credential, token, authority password or PEM private key in the controller logs or either guest's broker and node journals

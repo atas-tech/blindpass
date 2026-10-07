@@ -164,6 +164,7 @@ async function testMcpNpmPackagingAndRuntimeHandshake() {
         const stagePackage = JSON.parse(await readFile(path.join(stageDir, "package.json"), "utf8"));
         assert.equal(stagePackage.name, "@blindpass/mcp-server");
         assert.deepEqual(stagePackage.bin, {
+            "mcp-server": "./dist/mcp-server.mjs",
             "blindpass-mcp-server": "./dist/mcp-server.mjs",
             "blindpass-resolver": "./dist/blindpass-resolver.mjs",
         });

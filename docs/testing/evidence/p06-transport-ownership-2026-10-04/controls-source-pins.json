@@ -1,0 +1,7 @@
+{
+  "src/main.rs": "f6503b11d6c1de6f7267427022dd69542ec983dcbaadc3cf963c4d74b88af31b",
+  "src/owned_transport.rs": "12a9bf31c1370c66916b1f5857de05c061bc6d430c4dbedacfbeca8c3a3bf86a",
+  "src/admin_socket.rs": "521d5ed57f5521cd7abdda7a4d6fdd39824ec52cd450a04ddc69ba7bf5804e55",
+  "src/store/mod.rs": "37612b54eb90968ee5fd5686b3440860804fdc259fdd354687e1818628ef4a1a",
+  "src/lib.rs": "788f6493ba88f63b0b50f8561665c4ab87924b30ccc73dab8034a6c5239dda2d"
+}

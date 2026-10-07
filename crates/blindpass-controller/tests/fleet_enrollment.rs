@@ -339,6 +339,7 @@ async fn enrollment_is_one_use_operator_approved_and_key_bound() {
             .expect("protect test configuration");
     }
     let config = Config::from_variables([
+        ("BLINDPASS_TEST_MODE", "1"),
         ("BLINDPASS_LISTEN", "127.0.0.1:0"),
         ("BLINDPASS_PUBLIC_URL", "http://127.0.0.1:8080"),
         ("BLINDPASS_UI_BASE_URL", ORIGIN),

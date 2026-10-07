@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running tests/recovery_invalidation.rs (target/debug/deps/recovery_invalidation-c07524c8ea7d0b21)
+
+running 1 test
+test p06_ri05_schema16_authenticated_backup_still_verifies_without_activation ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.71s
+

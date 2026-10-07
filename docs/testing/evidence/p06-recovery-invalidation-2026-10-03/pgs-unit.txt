@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_controller-e28e5bf0bb37d821)
+
+running 1 test
+test store::backup::tests::p06_pgs04_postgres_snapshot_is_read_only_and_refuses_multiple_schemas ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 0.87s
+

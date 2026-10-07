@@ -1,0 +1,28 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-operation-control-stuu5afc/crates/blindpass-controller)
+warning: unused variable: `operations`
+   --> crates/blindpass-controller/src/recovery_authority.rs:291:13
+    |
+291 |         let operations = self
+    |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_operations`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `blindpass-controller` (lib) generated 1 warning (run `cargo fix --lib -p blindpass-controller` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 34.51s
+     Running tests/recovery_authority.rs (/home/hvo/Projects/blindpass/target/debug/deps/recovery_authority-8f0890b4349a4ec3)
+
+running 1 test
+test p06_op12_fencing_retains_guard_until_all_admitted_operations_end ... 
+thread 'p06_op12_fencing_retains_guard_until_all_admitted_operations_end' (2955675) panicked at crates/blindpass-controller/tests/recovery_authority.rs:32:5:
+assertion failed: f.authority.reserve_recovery(&f.context, fenced.revision, 101).await.is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_op12_fencing_retains_guard_until_all_admitted_operations_end
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 25 filtered out; finished in 0.16s
+
+error: test failed, to rerun pass `-p blindpass-controller --test recovery_authority`

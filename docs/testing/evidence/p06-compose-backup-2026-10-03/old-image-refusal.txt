@@ -1,0 +1,16 @@
+Traceback (most recent call last):
+  File "$REPOSITORY/tests/deployment/compose-backup.py", line 157, in <module>
+    backup_gate(args.image,args.helper_image)
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$REPOSITORY/tests/deployment/compose-backup.py", line 93, in backup_gate
+    docker('run','--rm','--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
+    ~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           '--ulimit','core=0','--user','10001:10001','--mount','type=bind,src='+str(source)+',dst=/recovery',
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+           image,'backup','key-init','--output','/recovery/recovery.pem',timeout=90)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "$REPOSITORY/tests/deployment/compose-up.py", line 37, in docker
+    return run(['docker', *args], **kwargs)
+  File "$REPOSITORY/tests/deployment/compose-up.py", line 32, in run
+    raise AssertionError('scoped deployment command failed: '+args[0])
+AssertionError: scoped deployment command failed: docker

@@ -1,0 +1,4 @@
+{"scenario": "P06-B06", "phase": "encryption", "sigkill": "passed", "actual_tool_progress": true, "child_killed_and_reaped": true, "partial_publication": false}
+{"scenario": "P06-B10", "fixture_bytes": 201326592, "complete_backup_verified": true, "backup_seconds": 2.524}
+{"scenario": "P06-B06", "phase": "verification", "sigkill": "passed", "actual_tool_progress": true, "child_killed_and_reaped": true, "partial_publication": false}
+PASS P06-B06 source/keys/complete archive intact; private fixtures removed on exit

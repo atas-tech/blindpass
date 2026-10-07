@@ -1,0 +1,10 @@
+authority_postgres_gate_exit=101
+recovery_invalidation_backend=sqlite
+controller_test_target=production_ownership
+owned_authority_cleanup_errors=0
+late-fence_control_exit=101
+authority_postgres_gate_exit=101
+owned_authority_cleanup_errors=0
+unowned-response_control_exit=101
+detached-admin_control_exit=101
+production_sources_unchanged=true private_control_trees_removed=true

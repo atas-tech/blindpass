@@ -55,6 +55,20 @@ TestCase {
     compare(JSON.parse(unquoted).password, "pa\"ss\\word\nline")
   }
 
+  function test_curl_config_bounds_connect_and_total_time() {
+    // P07 client bound: 10 s connect, 30 s total, and both must be present.
+    var config = Transport.curlConfig({ origin: "https://controller.example", method: "GET", path: "/api/v3/approvals" })
+    var read = function (name) {
+      var match = new RegExp("^" + name + " = ([0-9]+)$", "m").exec(config)
+      return match ? Number(match[1]) : -1
+    }
+    var connect = read("connect-timeout")
+    var total = read("max-time")
+    verify(connect > 0 && connect <= 10, "connect-timeout " + connect)
+    verify(total > 0 && total <= 30, "max-time " + total)
+    verify(total >= connect)
+  }
+
   function test_curl_config_bearer_and_loopback() {
     var config = Transport.curlConfig({ origin: "http://127.0.0.1:3100", method: "GET", path: "/api/v3/approvals?status=pending&limit=50", bearer: "tok-123" })
     verify(config.indexOf("proto = \"=http\"") !== -1)

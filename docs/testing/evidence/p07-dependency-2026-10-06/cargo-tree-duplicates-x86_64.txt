@@ -1,0 +1,420 @@
+base64 v0.22.1
+├── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+├── jsonwebtoken v9.3.1
+│   └── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+├── pem v3.0.6
+│   └── jsonwebtoken v9.3.1 (*)
+├── sqlx-core v0.8.6
+│   ├── sqlx v0.8.6
+│   │   └── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+│   ├── sqlx-postgres v0.8.6
+│   │   └── sqlx v0.8.6 (*)
+│   └── sqlx-sqlite v0.8.6
+│       └── sqlx v0.8.6 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+base64 v0.22.1
+├── sqlx-core v0.8.6
+│   ├── sqlx-macros v0.8.6 (proc-macro)
+│   │   └── sqlx v0.8.6 (*)
+│   ├── sqlx-macros-core v0.8.6
+│   │   └── sqlx-macros v0.8.6 (proc-macro) (*)
+│   ├── sqlx-postgres v0.8.6
+│   │   └── sqlx-macros-core v0.8.6 (*)
+│   └── sqlx-sqlite v0.8.6
+│       └── sqlx-macros-core v0.8.6 (*)
+└── sqlx-postgres v0.8.6 (*)
+
+crypto-common v0.1.7
+└── digest v0.10.7
+    ├── blake2 v0.10.6
+    │   └── argon2 v0.5.3
+    │       └── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    ├── hmac v0.12.1
+    │   ├── hkdf v0.12.4
+    │   │   └── sqlx-postgres v0.8.6 (*)
+    │   └── sqlx-postgres v0.8.6 (*)
+    ├── md-5 v0.10.6
+    │   └── sqlx-postgres v0.8.6 (*)
+    └── sha2 v0.10.9
+        ├── sqlx-core v0.8.6 (*)
+        └── sqlx-postgres v0.8.6 (*)
+
+crypto-common v0.1.7
+└── digest v0.10.7
+    ├── hmac v0.12.1
+    │   ├── hkdf v0.12.4
+    │   │   └── sqlx-postgres v0.8.6 (*)
+    │   └── sqlx-postgres v0.8.6 (*)
+    ├── md-5 v0.10.6
+    │   └── sqlx-postgres v0.8.6 (*)
+    └── sha2 v0.10.9
+        ├── sqlx-core v0.8.6 (*)
+        ├── sqlx-macros-core v0.8.6 (*)
+        └── sqlx-postgres v0.8.6 (*)
+
+digest v0.10.7 (*)
+
+digest v0.10.7 (*)
+
+futures-channel v0.3.34
+├── hyper v1.11.1
+│   ├── axum v0.8.9
+│   │   └── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+│   └── hyper-util v0.1.20
+│       └── axum v0.8.9 (*)
+├── sqlx-postgres v0.8.6 (*)
+└── sqlx-sqlite v0.8.6 (*)
+
+futures-channel v0.3.34
+├── sqlx-postgres v0.8.6 (*)
+└── sqlx-sqlite v0.8.6 (*)
+
+getrandom v0.2.17
+├── rand_core v0.6.4
+│   ├── rand v0.8.8
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   └── rand_chacha v0.3.1
+│       └── rand v0.8.8 (*)
+└── ring v0.17.14
+    ├── rustls v0.23.45
+    │   └── sqlx-core v0.8.6 (*)
+    └── rustls-webpki v0.103.15
+        └── rustls v0.23.45 (*)
+
+getrandom v0.2.17
+├── rand_core v0.6.4
+│   ├── password-hash v0.5.0
+│   │   └── argon2 v0.5.3 (*)
+│   ├── rand v0.8.8
+│   │   ├── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   └── rand_chacha v0.3.1
+│       └── rand v0.8.8 (*)
+└── ring v0.17.14
+    ├── jsonwebtoken v9.3.1 (*)
+    ├── rustls v0.23.45
+    │   ├── sqlx-core v0.8.6 (*)
+    │   └── tokio-rustls v0.26.6
+    │       └── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    └── rustls-webpki v0.103.15
+        └── rustls v0.23.45 (*)
+
+getrandom v0.4.3
+└── uuid v1.26.1
+    └── tower-http v0.6.11
+        └── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+
+hashbrown v0.15.5
+├── hashlink v0.10.0
+│   └── sqlx-core v0.8.6 (*)
+└── sqlx-core v0.8.6 (*)
+
+hashbrown v0.15.5
+├── hashlink v0.10.0
+│   └── sqlx-core v0.8.6 (*)
+└── sqlx-core v0.8.6 (*)
+
+hashbrown v0.17.1
+└── indexmap v2.14.2
+    └── sqlx-core v0.8.6 (*)
+
+hashbrown v0.17.1
+└── indexmap v2.14.2
+    └── sqlx-core v0.8.6 (*)
+
+log v0.4.34
+├── sqlx-core v0.8.6 (*)
+├── sqlx-postgres v0.8.6 (*)
+├── sqlx-sqlite v0.8.6 (*)
+└── tracing v0.1.44
+    ├── sqlx-core v0.8.6 (*)
+    ├── sqlx-postgres v0.8.6 (*)
+    └── sqlx-sqlite v0.8.6 (*)
+
+log v0.4.34
+├── sqlx-core v0.8.6 (*)
+├── sqlx-postgres v0.8.6 (*)
+├── sqlx-sqlite v0.8.6 (*)
+├── tracing v0.1.44
+│   ├── axum v0.8.9 (*)
+│   ├── axum-core v0.5.6
+│   │   └── axum v0.8.9 (*)
+│   ├── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── sqlx-sqlite v0.8.6 (*)
+│   ├── tower v0.5.3
+│   │   └── axum v0.8.9 (*)
+│   ├── tower-http v0.6.11 (*)
+│   └── tracing-subscriber v0.3.23
+│       └── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+└── tracing-log v0.2.0
+    └── tracing-subscriber v0.3.23 (*)
+
+num-traits v0.2.19
+├── atoi v2.0.0
+│   ├── sqlx-postgres v0.8.6 (*)
+│   └── sqlx-sqlite v0.8.6 (*)
+├── num-bigint v0.4.8
+│   └── simple_asn1 v0.6.4
+│       └── jsonwebtoken v9.3.1 (*)
+├── num-integer v0.1.47
+│   └── num-bigint v0.4.8 (*)
+└── simple_asn1 v0.6.4 (*)
+
+num-traits v0.2.19
+└── atoi v2.0.0
+    ├── sqlx-postgres v0.8.6 (*)
+    └── sqlx-sqlite v0.8.6 (*)
+
+rand v0.8.8 (*)
+
+rand v0.8.8 (*)
+
+ring v0.17.14 (*)
+
+ring v0.17.14 (*)
+
+serde_core v1.0.229
+├── axum v0.8.9 (*)
+├── serde v1.0.229
+│   ├── blindpass-cli v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-cli)
+│   ├── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+│   ├── either v1.18.0
+│   │   └── sqlx-core v0.8.6 (*)
+│   ├── jsonwebtoken v9.3.1 (*)
+│   ├── serde_urlencoded v0.7.1
+│   │   ├── axum v0.8.9 (*)
+│   │   └── sqlx-sqlite v0.8.6 (*)
+│   ├── smallvec v1.16.1
+│   │   ├── hyper v1.11.1 (*)
+│   │   ├── icu_normalizer v2.3.0
+│   │   │   └── idna_adapter v1.2.2
+│   │   │       └── idna v1.1.0
+│   │   │           └── url v2.5.8
+│   │   │               ├── sqlx-core v0.8.6 (*)
+│   │   │               └── sqlx-sqlite v0.8.6 (*)
+│   │   ├── idna v1.1.0 (*)
+│   │   ├── parking_lot_core v0.9.12
+│   │   │   └── parking_lot v0.12.5
+│   │   │       └── futures-intrusive v0.5.0
+│   │   │           ├── sqlx-core v0.8.6 (*)
+│   │   │           └── sqlx-sqlite v0.8.6 (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   └── tracing-subscriber v0.3.23 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   ├── tracing-serde v0.2.0
+│   │   └── tracing-subscriber v0.3.23 (*)
+│   └── tracing-subscriber v0.3.23 (*)
+├── serde_json v1.0.151
+│   ├── axum v0.8.9 (*)
+│   ├── blindpass-cli v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-cli)
+│   ├── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+│   ├── jsonwebtoken v9.3.1 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   └── tracing-subscriber v0.3.23 (*)
+└── serde_path_to_error v0.1.20
+    └── axum v0.8.9 (*)
+
+serde_core v1.0.229
+├── serde v1.0.229
+│   ├── either v1.18.0
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   └── sqlx-macros-core v0.8.6 (*)
+│   ├── serde_urlencoded v0.7.1
+│   │   └── sqlx-sqlite v0.8.6 (*)
+│   ├── smallvec v1.16.1
+│   │   ├── icu_normalizer v2.3.0
+│   │   │   └── idna_adapter v1.2.2
+│   │   │       └── idna v1.1.0
+│   │   │           └── url v2.5.8
+│   │   │               ├── sqlx-core v0.8.6 (*)
+│   │   │               ├── sqlx-macros-core v0.8.6 (*)
+│   │   │               └── sqlx-sqlite v0.8.6 (*)
+│   │   ├── idna v1.1.0 (*)
+│   │   ├── parking_lot_core v0.9.12
+│   │   │   └── parking_lot v0.12.5
+│   │   │       └── futures-intrusive v0.5.0
+│   │   │           ├── sqlx-core v0.8.6 (*)
+│   │   │           └── sqlx-sqlite v0.8.6 (*)
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   └── sqlx-postgres v0.8.6 (*)
+│   ├── sqlx-core v0.8.6 (*)
+│   ├── sqlx-macros-core v0.8.6 (*)
+│   ├── sqlx-postgres v0.8.6 (*)
+│   └── sqlx-sqlite v0.8.6 (*)
+└── serde_json v1.0.151
+    ├── sqlx-core v0.8.6 (*)
+    ├── sqlx-macros-core v0.8.6 (*)
+    └── sqlx-postgres v0.8.6 (*)
+
+sha2 v0.10.9 (*)
+
+sha2 v0.10.9 (*)
+
+smallvec v1.16.1 (*)
+
+smallvec v1.16.1 (*)
+
+sqlx-core v0.8.6 (*)
+
+sqlx-core v0.8.6 (*)
+
+sqlx-postgres v0.8.6 (*)
+
+sqlx-postgres v0.8.6 (*)
+
+sqlx-sqlite v0.8.6 (*)
+
+sqlx-sqlite v0.8.6 (*)
+
+syn v2.0.119
+├── axum-macros v0.5.1 (proc-macro)
+│   └── axum v0.8.9 (*)
+├── sqlx-macros v0.8.6 (proc-macro) (*)
+├── sqlx-macros-core v0.8.6 (*)
+└── tracing-attributes v0.1.31 (proc-macro)
+    ├── tracing v0.1.44 (*)
+    └── tracing v0.1.44 (*)
+
+syn v3.0.6
+├── clap_derive v4.6.7 (proc-macro)
+│   └── clap v4.6.7
+│       └── blindpass-cli v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-cli)
+├── displaydoc v0.2.7 (proc-macro)
+│   ├── icu_collections v2.3.0
+│   │   ├── icu_normalizer v2.3.0 (*)
+│   │   └── icu_properties v2.3.0
+│   │       └── idna_adapter v1.2.2 (*)
+│   ├── icu_collections v2.3.0
+│   │   ├── icu_normalizer v2.3.0 (*)
+│   │   └── icu_properties v2.3.0
+│   │       └── idna_adapter v1.2.2 (*)
+│   ├── icu_locale_core v2.3.0
+│   │   ├── icu_properties v2.3.0 (*)
+│   │   └── icu_provider v2.3.1
+│   │       ├── icu_normalizer v2.3.0 (*)
+│   │       └── icu_properties v2.3.0 (*)
+│   ├── icu_locale_core v2.3.0
+│   │   ├── icu_properties v2.3.0 (*)
+│   │   └── icu_provider v2.3.1
+│   │       ├── icu_normalizer v2.3.0 (*)
+│   │       └── icu_properties v2.3.0 (*)
+│   ├── icu_properties v2.3.0 (*)
+│   ├── icu_properties v2.3.0 (*)
+│   ├── icu_provider v2.3.1 (*)
+│   ├── icu_provider v2.3.1 (*)
+│   ├── tinystr v0.8.4
+│   │   └── icu_locale_core v2.3.0 (*)
+│   ├── tinystr v0.8.4
+│   │   └── icu_locale_core v2.3.0 (*)
+│   ├── zerotrie v0.2.5
+│   │   ├── icu_properties v2.3.0 (*)
+│   │   └── icu_provider v2.3.1 (*)
+│   └── zerotrie v0.2.5
+│       ├── icu_properties v2.3.0 (*)
+│       └── icu_provider v2.3.1 (*)
+├── serde_derive v1.0.229 (proc-macro)
+│   ├── serde v1.0.229 (*)
+│   └── serde v1.0.229 (*)
+├── synstructure v0.14.0
+│   ├── yoke-derive v0.8.3 (proc-macro)
+│   │   ├── yoke v0.8.3
+│   │   │   ├── icu_collections v2.3.0 (*)
+│   │   │   ├── icu_provider v2.3.1 (*)
+│   │   │   ├── zerotrie v0.2.5 (*)
+│   │   │   └── zerovec v0.11.8
+│   │   │       ├── icu_collections v2.3.0 (*)
+│   │   │       ├── icu_locale_core v2.3.0 (*)
+│   │   │       ├── icu_normalizer v2.3.0 (*)
+│   │   │       ├── icu_properties v2.3.0 (*)
+│   │   │       ├── icu_provider v2.3.1 (*)
+│   │   │       ├── potential_utf v0.1.6
+│   │   │       │   └── icu_collections v2.3.0 (*)
+│   │   │       └── tinystr v0.8.4 (*)
+│   │   └── yoke v0.8.3
+│   │       ├── icu_collections v2.3.0 (*)
+│   │       ├── icu_provider v2.3.1 (*)
+│   │       ├── zerotrie v0.2.5 (*)
+│   │       └── zerovec v0.11.8
+│   │           ├── icu_collections v2.3.0 (*)
+│   │           ├── icu_locale_core v2.3.0 (*)
+│   │           ├── icu_normalizer v2.3.0 (*)
+│   │           ├── icu_properties v2.3.0 (*)
+│   │           ├── icu_provider v2.3.1 (*)
+│   │           ├── potential_utf v0.1.6
+│   │           │   └── icu_collections v2.3.0 (*)
+│   │           └── tinystr v0.8.4 (*)
+│   └── zerofrom-derive v0.1.8 (proc-macro)
+│       ├── zerofrom v0.1.8
+│       │   ├── icu_collections v2.3.0 (*)
+│       │   ├── icu_provider v2.3.1 (*)
+│       │   ├── yoke v0.8.3 (*)
+│       │   ├── zerotrie v0.2.5 (*)
+│       │   └── zerovec v0.11.8 (*)
+│       └── zerofrom v0.1.8
+│           ├── icu_collections v2.3.0 (*)
+│           ├── icu_provider v2.3.1 (*)
+│           ├── yoke v0.8.3 (*)
+│           ├── zerotrie v0.2.5 (*)
+│           └── zerovec v0.11.8 (*)
+├── thiserror-impl v2.0.21 (proc-macro)
+│   ├── thiserror v2.0.21
+│   │   ├── sqlx-core v0.8.6 (*)
+│   │   ├── sqlx-postgres v0.8.6 (*)
+│   │   └── sqlx-sqlite v0.8.6 (*)
+│   └── thiserror v2.0.21
+│       ├── simple_asn1 v0.6.4 (*)
+│       ├── sqlx-core v0.8.6 (*)
+│       ├── sqlx-postgres v0.8.6 (*)
+│       └── sqlx-sqlite v0.8.6 (*)
+├── tokio-macros v2.7.2 (proc-macro)
+│   └── tokio v1.53.1
+│       ├── axum v0.8.9 (*)
+│       ├── blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+│       ├── hyper v1.11.1 (*)
+│       ├── hyper-util v0.1.20 (*)
+│       ├── sqlx-core v0.8.6 (*)
+│       ├── tokio-rustls v0.26.6 (*)
+│       ├── tokio-stream v0.1.19
+│       │   └── sqlx-core v0.8.6 (*)
+│       ├── tower v0.5.3 (*)
+│       └── tower-http v0.6.11 (*)
+├── yoke-derive v0.8.3 (proc-macro) (*)
+├── zerofrom-derive v0.1.8 (proc-macro) (*)
+└── zerovec-derive v0.11.6 (proc-macro)
+    ├── zerovec v0.11.8 (*)
+    └── zerovec v0.11.8 (*)
+
+tokio v1.53.1 (*)
+
+tokio v1.53.1
+├── sqlx-core v0.8.6 (*)
+├── sqlx-macros-core v0.8.6 (*)
+└── tokio-stream v0.1.19
+    └── sqlx-core v0.8.6 (*)
+
+tracing-core v0.1.36
+├── tracing v0.1.44 (*)
+├── tracing-log v0.2.0 (*)
+├── tracing-serde v0.2.0 (*)
+└── tracing-subscriber v0.3.23 (*)
+
+tracing-core v0.1.36
+└── tracing v0.1.44 (*)
+
+webpki-roots v0.26.11
+└── sqlx-core v0.8.6 (*)
+
+webpki-roots v0.26.11
+└── sqlx-core v0.8.6 (*)
+
+webpki-roots v1.0.9
+└── webpki-roots v0.26.11 (*)
+
+webpki-roots v1.0.9
+└── webpki-roots v0.26.11 (*)

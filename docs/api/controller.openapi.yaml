@@ -19,6 +19,65 @@
     { "name": "Node channel" }
   ],
   "paths": {
+    "/api/recovery/request": {
+      "post": {
+        "operationId": "recoveryReportRequest",
+        "tags": ["Recovery"],
+        "summary": "Obtain a controller-signed consumed-report request",
+        "description": "Metadata-only recovery lane. Served only while this process holds the live recovering ownership and an authenticated local archive scope; every ordinary route stays 503. Returns the signed request while the collection is open, otherwise the current collection status. No Source plaintext, grant capability or activation is exposed.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "additionalProperties": false,
+            "required": ["version", "node_id", "node_key_version", "broker_challenge"],
+            "properties": {
+              "version": { "const": 1 },
+              "node_id": { "type": "string" },
+              "node_key_version": { "type": "integer", "minimum": 0 },
+              "broker_challenge": { "type": "string", "description": "Canonical unpadded base64url of a fresh 32-byte broker nonce" }
+            }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "Signed report request, or the collection status when it is no longer collecting", "content": { "application/json": { "schema": { "type": "object" } } } },
+          "400": { "description": "Invalid recovery metadata (code invalid_recovery_metadata)" },
+          "429": { "description": "Recovery lane busy (code recovery_busy); Retry-After: 1" },
+          "503": { "description": "Ownership absent, fenced or lost" }
+        }
+      }
+    },
+    "/api/recovery/page": {
+      "post": {
+        "operationId": "recoveryReportPage",
+        "tags": ["Recovery"],
+        "summary": "Submit one broker-signed consumed-report page",
+        "description": "Same lane and admission as the request route. Accepts exactly {body, broker_signature}; the controller verifies and records the page and returns collection status, including the quarantine-application summary once covered. activation_permitted is always false.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "additionalProperties": false,
+            "required": ["body", "broker_signature"],
+            "properties": { "body": { "type": "object" }, "broker_signature": { "type": "string" } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "Collection status", "content": { "application/json": { "schema": {
+            "type": "object",
+            "required": ["version", "state", "next_page", "activation_permitted"],
+            "properties": {
+              "version": { "const": 1 },
+              "state": { "enum": ["collecting", "covered", "incomplete", "rebase_required"] },
+              "next_page": { "type": "integer", "minimum": 0 },
+              "application": { "type": ["object", "null"] },
+              "activation_permitted": { "const": false }
+            }
+          } } } },
+          "400": { "description": "Invalid recovery metadata (code invalid_recovery_metadata)" },
+          "429": { "description": "Recovery lane busy (code recovery_busy); Retry-After: 1" },
+          "503": { "description": "Ownership absent, fenced or lost" }
+        }
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "healthz",
@@ -293,13 +352,14 @@
         "operationId": "bootstrapAdministrator",
         "tags": ["Local administration"],
         "summary": "Create the first local administrator",
-        "description": "Requires the explicit local bootstrap capability. Returns 409 once an administrator exists; never enables unauthenticated first-visitor setup.",
+        "description": "Requires the explicit local bootstrap capability. Returns 409 once an administrator exists; never enables unauthenticated first-visitor setup. The token is the whole capability and is only compared whole, so a wrong guess changes nothing and cannot burn a valid token. It is single use and expires after 15 minutes; issuing another through the local admin socket invalidates every earlier unused token. The token is checked before any password work. Attempts with an unusable token spend a bounded failure budget per peer shard and for the whole controller (BLINDPASS_BOOTSTRAP_FAILURES_PER_PEER, default 10, and BLINDPASS_BOOTSTRAP_FAILURES_GLOBAL, default 100, per 15 minutes) and then answer 429 bootstrap_rate_limited with Retry-After; a request that holds a valid token is never refused for what others did. Password hashing runs on a bounded pool and answers 429 bootstrap_busy when it is full.",
         "security": [{ "bootstrapCapability": [] }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/BootstrapInput" } } } },
         "responses": {
           "201": { "description": "First administrator created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminSessionResponse" } } } },
           "400": { "$ref": "#/components/responses/AdminError" },
-          "409": { "$ref": "#/components/responses/AdminError" }
+          "409": { "$ref": "#/components/responses/AdminError" },
+          "429": { "$ref": "#/components/responses/AdminRateLimited" }
         }
       }
     },
@@ -308,14 +368,16 @@
         "operationId": "loginAdministrator",
         "tags": ["Local administration"],
         "summary": "Authenticate a local operator",
-        "description": "Browser (kind absent or browser): validates Origin and pre-session CSRF; successful sessions use an HttpOnly Secure SameSite=Strict cookie scoped to /. Desktop (kind desktop, P04-D3): the request must carry no Origin (403 desktop_origin_denied) and no CSRF; the response is DesktopSessionResponse with Cache-Control no-store and sets no cookie; a temporary password answers 403 password_change_required without creating a session.",
+        "description": "Browser (kind absent or browser): validates Origin and pre-session CSRF; successful sessions use an HttpOnly Secure SameSite=Strict cookie scoped to /. Desktop (kind desktop, P04-D3): the request must carry no Origin (403 desktop_origin_denied) and no CSRF; the response is DesktopSessionResponse with Cache-Control no-store and sets no cookie; a temporary password answers 403 password_change_required without creating a session. P07-D4 limits count failures only; a successful sign-in never spends budget. The limits are read from `limits.login` in GET /api/v3/capabilities. An account/source pair locks after account_failures failures from one address inside window_seconds, so a guesser at one address locks only itself; the whole account locks after account_total_failures failures from any addresses, which stops guessing spread over many addresses. A lock answers 423 locked with retry_after and Retry-After for lockout_seconds, even for the right password; unknown usernames lock exactly like real ones and cost the same password-hashing time. A client address with ip_failures failures answers 429 login_rate_limited. A password reset on the local admin socket (blindpass admin reset-password) or by an administrator clears every lock for the account. The session's lifetime is capped from sign-in by limits.session.absolute_seconds however often it refreshes.",
         "parameters": [{ "$ref": "#/components/parameters/OriginUnlessDesktop" }, { "$ref": "#/components/parameters/CsrfHeaderUnlessDesktop" }],
         "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginInput" } } } },
         "responses": {
           "200": { "description": "Local session established", "content": { "application/json": { "schema": { "oneOf": [{ "$ref": "#/components/schemas/AdminSessionResponse" }, { "$ref": "#/components/schemas/DesktopSessionResponse" }] } } } },
           "400": { "$ref": "#/components/responses/AdminError" },
           "401": { "$ref": "#/components/responses/AdminError" },
-          "403": { "$ref": "#/components/responses/AdminError" }
+          "403": { "$ref": "#/components/responses/AdminError" },
+          "423": { "$ref": "#/components/responses/AdminLocked" },
+          "429": { "$ref": "#/components/responses/AdminRateLimited" }
         }
       }
     },
@@ -1388,8 +1450,10 @@
       "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^\\\"[1-9][0-9]*\\\"$" }, "description": "Expected resource version; stale updates return 409 without side effects." }
     },
     "responses": {
-      "LegacyError": { "description": "Legacy route-specific response body preserved from the SPS snapshot", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LegacyError" } } } },
+      "LegacyError": { "description": "Legacy route-specific response body preserved from the SPS snapshot (the SPS was removed 2026-10-07; the snapshot is archived as docs/legacy/openapi.yaml)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LegacyError" } } } },
       "AdminError": { "description": "Local administration error", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminError" } } } },
+      "AdminLocked": { "description": "The account is locked after repeated failed sign-ins. retry_after is the remaining lock in seconds, repeated in Retry-After.", "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminError" } } } },
+      "AdminRateLimited": { "description": "A failure budget is spent or the bounded hashing pool is full. Retry-After and retry_after are present for the failure budgets.", "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AdminError" } } } },
       "RateLimited": { "description": "The authenticated workload exceeded its tenant and agent request window. Retry-After is set; this response includes no secret name or request identifier.", "headers": { "Retry-After": { "schema": { "type": "integer", "minimum": 1 } } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RateLimited" } } } }
     },
     "schemas": {
@@ -1397,7 +1461,7 @@
       "ReadinessResponse": { "type": "object", "properties": { "ok": { "type": "boolean" }, "reason": { "type": "string", "description": "Sanitized failure class; omitted when ready. No driver errors, paths, URLs or credentials.", "enum": ["store_unavailable", "state_missing", "schema_mismatch", "permissions_invalid", "recovery_required", "disk_full"] }, "checks": { "type": "object", "properties": { "database": { "type": "string", "enum": ["up", "down"] } }, "required": ["database"], "additionalProperties": false } }, "required": ["ok", "checks"], "additionalProperties": false },
       "LegacyError": { "type": "object", "properties": { "code": { "type": "string" }, "error": { "type": "string" }, "message": { "type": "string" }, "statusCode": { "type": "integer" } }, "additionalProperties": true },
       "RateLimited": { "type": "object", "properties": { "error": { "type": "string" }, "code": { "type": "string", "const": "rate_limited" }, "retry_after_seconds": { "type": "integer", "minimum": 1 }, "limit": { "type": "integer", "minimum": 1 }, "used": { "type": "integer", "minimum": 1 } }, "required": ["error", "code", "retry_after_seconds", "limit", "used"], "additionalProperties": false },
-      "AdminError": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" } }, "required": ["error"], "additionalProperties": false },
+      "AdminError": { "type": "object", "properties": { "error": { "type": "string" }, "message": { "type": "string" }, "retry_after": { "type": "integer", "minimum": 1, "description": "Seconds until the lock or failure budget lapses; present on 423 locked and 429 login_rate_limited or bootstrap_rate_limited." } }, "required": ["error"], "additionalProperties": false },
       "Agent": { "type": "object", "properties": { "id": { "type": "string" }, "agent_id": { "type": "string" }, "workspace_id": { "type": "string" }, "display_name": { "type": "string" }, "status": { "type": "string", "enum": ["active", "revoked"] }, "created_at": { "type": "string", "format": "date-time" }, "revoked_at": { "type": ["string", "null"], "format": "date-time" } }, "required": ["id", "agent_id", "workspace_id", "display_name", "status", "created_at", "revoked_at"], "additionalProperties": false },
       "AgentTokenResponse": { "type": "object", "properties": { "access_token": { "type": "string" }, "access_token_expires_at": { "type": "integer" }, "agent": { "$ref": "#/components/schemas/Agent" } }, "required": ["access_token", "access_token_expires_at", "agent"], "additionalProperties": false },
       "SecretRequestInput": { "type": "object", "properties": { "public_key": { "type": "string", "minLength": 4, "maxLength": 2048, "pattern": "^[A-Za-z0-9+/]+={0,2}$" }, "description": { "type": "string", "minLength": 1, "maxLength": 512 } }, "required": ["public_key", "description"], "additionalProperties": false },
@@ -1418,7 +1482,8 @@
       "ExchangeRetrieved": { "type": "object", "properties": { "enc": { "type": "string" }, "ciphertext": { "type": "string" }, "secret_name": { "type": "string" }, "fulfilled_by": { "type": ["string", "null"] } }, "required": ["enc", "ciphertext", "secret_name", "fulfilled_by"], "additionalProperties": false },
       "RevokedResponse": { "type": "object", "properties": { "status": { "type": "string", "const": "revoked" } }, "required": ["status"], "additionalProperties": false },
       "BrowserStatusCapabilityResponse": { "type": "object", "properties": { "status_sig": { "type": "string", "minLength": 16 } }, "required": ["status_sig"], "additionalProperties": false },
-      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3", "fleet.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 16 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false } }, "required": ["api", "version", "schema_version", "setup_required", "features"], "additionalProperties": false },
+      "CapabilitiesResponse": { "type": "object", "properties": { "api": { "type": "array", "items": { "type": "string", "enum": ["compat.v2", "admin.v3", "fleet.v3"] } }, "version": { "type": "string" }, "schema_version": { "type": "integer", "const": 19 }, "setup_required": { "type": "boolean" }, "issuer_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "issuer_kid": { "type": "string", "pattern": "^ed25519-[A-Za-z0-9_-]{43}$" }, "issuer_epoch": { "type": "integer", "minimum": 1 }, "features": { "type": "object", "properties": { "browser_status": { "type": "boolean", "const": true }, "fleet_authorization": { "type": "boolean" } }, "required": ["browser_status", "fleet_authorization"], "additionalProperties": false }, "limits": { "$ref": "#/components/schemas/CapabilitiesLimits" } }, "required": ["api", "version", "schema_version", "setup_required", "features", "limits"], "additionalProperties": false },
+      "CapabilitiesLimits": { "type": "object", "description": "Operator sign-in and session limits in force (P07-D4). Values come from BLINDPASS_LOGIN_* and BLINDPASS_SESSION_ABSOLUTE_SECONDS.", "properties": { "login": { "type": "object", "properties": { "account_failures": { "type": "integer", "minimum": 1, "description": "Failures per account from one source address per window before that pair locks (default 10)." }, "account_total_failures": { "type": "integer", "minimum": 1, "description": "Failures per account from all addresses per window before the account locks for everyone (default 50)." }, "ip_failures": { "type": "integer", "minimum": 1, "description": "Failures per client address per window before sign-in answers 429 (default 30)." }, "window_seconds": { "type": "integer", "minimum": 1, "description": "Failure counting window (default 900)." }, "lockout_seconds": { "type": "integer", "minimum": 1, "description": "How long a lock lasts (default 900)." } }, "required": ["account_failures", "account_total_failures", "ip_failures", "window_seconds", "lockout_seconds"], "additionalProperties": false }, "session": { "type": "object", "properties": { "absolute_seconds": { "type": "integer", "minimum": 3600, "description": "Longest a session lives from sign-in however often it refreshes (default 604800)." }, "idle_seconds": { "type": "integer", "const": 43200 } }, "required": ["absolute_seconds", "idle_seconds"], "additionalProperties": false } }, "required": ["login", "session"], "additionalProperties": false },
       "NodeStatus": { "type": "string", "enum": ["online", "stale", "offline", "revoked"] },
       "Node": { "type": "object", "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "status": { "$ref": "#/components/schemas/NodeStatus" }, "revocation_pending": { "type": "boolean", "description": "True until the node applies its signed revocation and the controller closes its session." }, "rotation_pending": { "type": "boolean", "description": "True while the broker has not yet applied the staged key rotation." }, "pending_key_version": { "type": ["integer", "null"] }, "pending_rotation_id": { "type": ["string", "null"] }, "protocol_version": { "type": "string" }, "capabilities": { "type": "object", "additionalProperties": true }, "key_version": { "type": "integer", "minimum": 1 }, "signing_fingerprint": { "type": "string" }, "recipient_fingerprint": { "type": "string" }, "last_seen_at": { "type": ["integer", "null"] }, "last_poll_at": { "type": ["integer", "null"] }, "created_at": { "type": "integer" }, "version": { "type": "integer" } }, "required": ["id", "name", "status", "revocation_pending", "rotation_pending", "pending_key_version", "pending_rotation_id", "protocol_version", "capabilities", "key_version", "signing_fingerprint", "recipient_fingerprint", "last_seen_at", "last_poll_at", "created_at", "version"], "additionalProperties": false },
       "NodeKeyRotationInput": { "type": "object", "properties": { "expected_key_version": { "type": "integer", "minimum": 1 }, "expected_fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$", "description": "Operator-confirmed SHA-256 fingerprint of the staged replacement signing and recipient keys." }, "signing_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" }, "recipient_pub": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" } }, "required": ["expected_key_version", "expected_fingerprint", "signing_pub", "recipient_pub"], "additionalProperties": false },

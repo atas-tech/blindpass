@@ -1,0 +1,15 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0603]: function `hmac_sha256` is private
+   --> crates/blindpass-controller/src/legacy_authority.rs:5:14
+    |
+  5 |     custody::hmac_sha256,
+    |              ^^^^^^^^^^^ private function
+    |
+note: the function `hmac_sha256` is defined here
+   --> crates/blindpass-core/src/custody.rs:549:1
+    |
+549 | pub(crate) fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<[u8; N_SECRET], CryptoError> {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+For more information about this error, try `rustc --explain E0603`.
+error: could not compile `blindpass-controller` (lib) due to 1 previous error

@@ -10,7 +10,7 @@ import { createPublicKey, createHash, randomBytes } from 'node:crypto';
 import { createTestTls } from './fixture-app/test-tls.mjs';
 import { startFixture } from './fixture-app/server.mjs';
 import { findOperationRecord } from './coordinator-journal.mjs';
-import { startFleetController, runPrivate, waitFor, approveBrowserOperation, isProvisionalBrowserOperation, isConfirmedBrowserClosure } from './fleet-controller-fixture.mjs';
+import { startFleetController, startRemoteFleetController, runPrivate, waitFor, approveBrowserOperation, isProvisionalBrowserOperation, isConfirmedBrowserClosure } from './fleet-controller-fixture.mjs';
 import { guestBrowserProfile, copiedSession } from './guest-browser-profile.mjs';
 import { startManagedFleetApp } from './managed-fleet-app.mjs';
 import { runAiTask } from './ai-task-guest.mjs';
@@ -67,7 +67,7 @@ try {
   assert.equal(process.getuid(), 0);
   try { invoke('useradd', ['--system', '--no-create-home', '--shell', '/usr/sbin/nologin', 'p05-browser-agent']); } catch { invoke('id', ['p05-browser-agent']); }
   const uid = Number(invoke('id', ['-u', 'p05-browser-agent'])); const gid = Number(invoke('id', ['-g', 'p05-browser-agent']));
-  stage = 'controller-start'; controller = await startFleetController();
+  stage = 'controller-start'; controller = process.env.BLINDPASS_P06_REMOTE_CONTROLLER === '1' ? await startRemoteFleetController() : await startFleetController();
   try { invoke('useradd', ['--system', '--no-create-home', '--shell', '/usr/sbin/nologin', 'blindpass-node']); } catch { invoke('id', ['blindpass-node']); }
   stage = 'enrollment-broker';
   invoke('systemd-run', ['--quiet', '--unit=p05-enrollment-broker', '-p', 'Type=notify', '-p', 'NotifyAccess=main', '-p', 'RuntimeMaxSec=480s', '-p', 'LimitCORE=0', '/usr/lib/blindpass/login/blindpass-broker', '--node-group', 'blindpass-node']);
@@ -122,7 +122,7 @@ try {
   const reply = await work(`request:${Buffer.from(canonical({ action: 'browser.session', mode: 'browser_session', purpose: 'read report', resource_id: 'report-primary', ttl_seconds: 120, request_key: 'coordinator_1111111111111111' })).toString('base64url')}`);
   const key = reply.trim().split(' ').at(-1); assert.match(key, /^event_[A-Za-z0-9_-]{16,100}$/);
   stage = 'actual-approval-and-grant'; const firstOperation = await approveBrowserOperation(controller, key);
-  stage = 'login-outside-lock'; await wait(() => loginCount === 1);
+  stage = 'login-outside-lock'; await wait(() => loginCount === 1 && (verifiedLoginCount === 1 || observerFailed));
   assert.equal(observerFailed, false); assert.equal(verifiedLoginCount, 1);
   // The application HTTP endpoint stays responsive while private login is held.
   stage = 'provisional-controller-result';
@@ -202,6 +202,9 @@ try {
   process.stderr.write(`P05-FLEET-BROWSER-VM failed stage=${stage}\n`);
   process.stderr.write(`P05-FLEET-BROWSER-VM login_posts=${loginCount} verified_login_posts=${verifiedLoginCount} observer_failed=${observerFailed} reserved_records=${reservedRecords}\n`);
   if (error.code === 'ERR_ASSERTION') process.stderr.write('P05-FLEET-BROWSER-VM cause=driver_assertion\n');
+  if (error.code === 'ERR_ASSERTION' && process.env.BLINDPASS_P06_REMOTE_CONTROLLER === '1') process.stderr.write(`P05-FLEET-BROWSER-VM assertion=${String(error.message).replace(/\s+/g, ' ').replace(/[A-Za-z0-9_-]{24,}/g, '[long]').replace(/[^A-Za-z0-9 _.:,()!=<>'\[\]-]/g, '?').slice(0, 220)}\n`);
+  if (process.env.BLINDPASS_P06_REMOTE_CONTROLLER === '1' && /^[a-z0-9_]{1,64}$/.test(String(error?.message))) process.stderr.write(`P05-FLEET-BROWSER-VM error_code=${error.message}\n`);
+  if (process.env.BLINDPASS_P06_REMOTE_CONTROLLER === '1' && ['TypeError', 'RangeError', 'SyntaxError'].includes(error?.name)) process.stderr.write(`P05-FLEET-BROWSER-VM error_type=${error.name} message=${String(error.message).replace(/[^A-Za-z0-9_ .()'-]/g, '?').slice(0, 100)}\n`);
   if (/^(fleet_controller_http_[0-9]{3}|fleet_controller_setup_[a-z-]+_failed|private_command_failed|fleet_guest_state_deadline|agent_deadline)$/.test(error.message)) process.stderr.write(`P05-FLEET-BROWSER-VM cause=${error.message}\n`);
   try { const log = invoke('journalctl', ['--no-pager', '-o', 'cat', '-u', brokerUnit]);
     for (const line of log.split('\n')) if (/^blindpass-browser: (actor_failed|recovery_waiting|startup_recovery_waiting|record_released) stage=[a-z-]+$/.test(line) || /^blindpass-browser: (startup_recovery_complete|journal_unfenced)$/.test(line) || /^blindpass-browser: helper_reply_failed code=(unavailable|uncertain|authentication_failed|login_failed|timed_out|unsupported_authentication|invalid_configuration|binding_mismatch|unsafe_configuration|invalid_request)$/.test(line)) process.stderr.write(line+'\n');

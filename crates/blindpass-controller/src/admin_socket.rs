@@ -2,8 +2,10 @@
 
 //! Local-only administrative socket used by the CLI for first-run actions.
 
+use crate::owned_transport::{OwnedIo, TransportShutdown};
+use crate::recovery_authority::ReviewKey;
 use crate::routes::auth::hash_api_key;
-use crate::store::Store;
+use crate::store::{LocalOperator, Store, StoreError};
 use base64::Engine;
 use rand::{RngCore, rngs::OsRng};
 use serde_json::Value;
@@ -12,10 +14,15 @@ use std::io;
 use std::os::unix::fs::{FileTypeExt, PermissionsExt};
 use std::os::unix::net::UnixStream as StdUnixStream;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::task::JoinSet;
 
 const MAX_ADMIN_REQUEST_BYTES: usize = 8 * 1024;
+/// Items per `recovery-review-list` response; the CLI reads further pages by offset.
+const RECOVERY_LIST_PAGE: usize = 100;
 
 pub struct BoundAdminSocket {
     listener: UnixListener,
@@ -80,17 +87,62 @@ fn remove_stale_socket(path: &Path) -> io::Result<()> {
     }
 }
 
-pub async fn serve_admin_socket(bound: BoundAdminSocket, store: Store) -> io::Result<()> {
-    loop {
-        let (stream, _) = bound.listener.accept().await?;
-        let store = store.clone();
-        tokio::spawn(async move {
-            let _ = handle_connection(stream, store).await;
-        });
+const MAX_ADMIN_CONNECTIONS: usize = 64;
+const ADMIN_CONNECTION_LIFETIME: Duration = Duration::from_secs(10);
+
+struct StopAdminTransports(Arc<TransportShutdown>);
+impl Drop for StopAdminTransports {
+    fn drop(&mut self) {
+        self.0.stop();
     }
 }
 
-async fn handle_connection(mut stream: UnixStream, store: Store) -> io::Result<()> {
+pub async fn serve_admin_socket(bound: BoundAdminSocket, store: Store) -> io::Result<()> {
+    let shutdown = Arc::new(TransportShutdown::default());
+    let _stop = StopAdminTransports(shutdown.clone());
+    let mut children = JoinSet::new();
+    loop {
+        tokio::select! {
+            biased;
+            _ = children.join_next(), if !children.is_empty() => {},
+            incoming = bound.listener.accept(), if children.len() < MAX_ADMIN_CONNECTIONS => {
+                let (stream, _) = match incoming {
+                    Ok(accepted) => accepted,
+                    // Descriptor/memory pressure (for example from an HTTP flood
+                    // in the same process) is transient and must not stop the
+                    // controller; any other accept failure still does.
+                    Err(error) if transient_accept_error(&error) => {
+                        tokio::time::sleep(Duration::from_millis(100)).await;
+                        continue;
+                    }
+                    Err(error) => return Err(error),
+                };
+                let store = store.clone();
+                let owner = store.ownership_holder().map_err(|_| io::Error::other("controller ownership unavailable"))?;
+                let stream = match OwnedIo::new(stream, owner, ADMIN_CONNECTION_LIFETIME, shutdown.clone()) {
+                    Ok(stream) => stream,
+                    Err(_) => continue,
+                };
+                children.spawn(async move {
+                    let _ = handle_connection(stream, store).await;
+                });
+            }
+        }
+    }
+}
+
+fn transient_accept_error(error: &io::Error) -> bool {
+    // EINTR, ENFILE, EMFILE, ENOMEM, ENOBUFS, ECONNABORTED, EPROTO
+    matches!(
+        error.raw_os_error(),
+        Some(4 | 23 | 24 | 12 | 105 | 103 | 71)
+    ) || matches!(
+        error.kind(),
+        io::ErrorKind::Interrupted | io::ErrorKind::ConnectionAborted
+    )
+}
+
+async fn handle_connection(mut stream: OwnedIo<UnixStream>, store: Store) -> io::Result<()> {
     let mut request = Vec::with_capacity(256);
     let mut byte = [0_u8; 1];
     let mut complete = false;
@@ -168,24 +220,189 @@ async fn handle_admin_request(store: &Store, body: &Value) -> Value {
             }
         }
         Some("reset-password") => {
-            let Some(id) = body.get("id").and_then(Value::as_str) else {
+            // The reference is an operator id or the username the console shows
+            // (P07 slice 7): an operator locked out of the only account knows
+            // nothing else. `id` is the original field name and stays accepted.
+            let Some(reference) = body
+                .get("id")
+                .or_else(|| body.get("operator"))
+                .and_then(Value::as_str)
+                .map(str::trim)
+            else {
                 return json!({"error":"invalid_operator_id"});
             };
-            if !valid_account_name(id) {
+            if !valid_account_name(reference) {
                 return json!({"error":"invalid_operator_id"});
+            }
+            let operators = match store.list_local_operators().await {
+                Ok(operators) => operators,
+                Err(_) => return json!({"error":"reset_password_failed"}),
+            };
+            let target = match resolve_operator(&operators, reference) {
+                Resolved::One(operator) => operator,
+                Resolved::None => return json!({"error":"operator_not_found"}),
+                Resolved::Ambiguous => return json!({"error":"operator_ambiguous"}),
+            };
+            if target.disabled_at_ms.is_some() {
+                return json!({"error":"operator_disabled"});
             }
             let password = random_token();
             let hash = match hash_api_key(&password) {
                 Ok(hash) => hash,
                 Err(_) => return json!({"error":"reset_password_failed"}),
             };
-            match store.reset_local_operator_password(id, &hash).await {
+            match store.reset_local_operator_password(&target.id, &hash).await {
                 Ok(true) => json!({"temporary_password":password,"must_change_password":true}),
                 Ok(false) => json!({"error":"operator_not_found"}),
                 Err(_) => json!({"error":"reset_password_failed"}),
             }
         }
+        Some("operators-list") => {
+            let operators = match store.list_local_operators().await {
+                Ok(operators) => operators,
+                Err(_) => return json!({"error":"operators_list_failed"}),
+            };
+            let mut rows = Vec::with_capacity(operators.len());
+            for operator in &operators {
+                let lock = match store.operator_lock_state(&operator.username).await {
+                    Ok(lock) => lock,
+                    Err(_) => return json!({"error":"operators_list_failed"}),
+                };
+                // Identity and state only: never a hash, session or token.
+                rows.push(json!({
+                    "id": operator.id,
+                    "username": operator.username,
+                    "display_name": operator.display_name,
+                    "role": operator.role,
+                    "disabled": operator.disabled_at_ms.is_some(),
+                    "must_change_password": operator.must_change_password,
+                    "account_locked_seconds": lock.account_locked_seconds,
+                    "source_locks": lock.source_locks,
+                }));
+            }
+            json!({"operators":rows})
+        }
+        Some(command) if command.starts_with("recovery-") => {
+            recovery_command(store, command, body).await
+        }
         _ => json!({"error":"unsupported_command"}),
+    }
+}
+
+/// Operator review for a restored controller (P06-D30..D32). Metadata only: nothing
+/// here reads or returns secret values, and nothing activates the record.
+async fn recovery_command(store: &Store, command: &str, body: &Value) -> Value {
+    let text = |name: &str| body.get(name).and_then(Value::as_str);
+    let Ok(Some(owner)) = store.ownership_holder() else {
+        return json!({"error":"recovery_not_active"});
+    };
+    if !store.recovery_required() || !owner.is_recovering() {
+        return json!({"error":"recovery_not_active"});
+    }
+    let failed = |error: StoreError| match error {
+        StoreError::AuthorityFenced => json!({"error":"authority_fenced"}),
+        StoreError::InvalidInput(_) => json!({"error":"refused"}),
+        error => {
+            tracing::warn!(command, error = %error, "recovery review command failed");
+            json!({"error":"recovery_failed"})
+        }
+    };
+    match command {
+        "recovery-status" => match store.recovery_activation_status(&owner).await {
+            Ok(status) => json!(status),
+            Err(error) => failed(error),
+        },
+        "recovery-review-list" => match store.recovery_review_items(&owner).await {
+            Ok(items) => {
+                let offset = body
+                    .get("offset")
+                    .and_then(Value::as_u64)
+                    .and_then(|offset| usize::try_from(offset).ok())
+                    .unwrap_or(0);
+                let page: Vec<_> = items.iter().skip(offset).take(RECOVERY_LIST_PAGE).collect();
+                json!({"total":items.len(),"offset":offset,"items":page})
+            }
+            Err(error) => failed(error),
+        },
+        "recovery-review-decide" => {
+            let (Some(category), Some(subject), Some(decision), Some(operator)) = (
+                text("category"),
+                text("subject_id"),
+                text("decision"),
+                text("operator"),
+            ) else {
+                return json!({"error":"invalid_request"});
+            };
+            let key = ReviewKey {
+                category: category.into(),
+                subject_id: subject.into(),
+                related_id: text("related_id").unwrap_or_default().into(),
+            };
+            match store
+                .decide_recovery_review(
+                    &owner,
+                    &key,
+                    decision,
+                    operator,
+                    text("note").unwrap_or_default(),
+                )
+                .await
+            {
+                Ok(()) => json!({"decided":true}),
+                Err(error) => failed(error),
+            }
+        }
+        "recovery-waive-node" => {
+            let (Some(node), Some(operator)) = (text("node_id"), text("operator")) else {
+                return json!({"error":"invalid_request"});
+            };
+            match store
+                .waive_recovery_node(&owner, node, operator, text("note").unwrap_or_default())
+                .await
+            {
+                Ok(()) => json!({"waived":true}),
+                Err(error) => failed(error),
+            }
+        }
+        "recovery-review-complete" => {
+            let Some(operator) = text("operator") else {
+                return json!({"error":"invalid_request"});
+            };
+            match store.complete_recovery_review(&owner, operator).await {
+                Ok(done) => json!({"completed":true,"summary":done}),
+                Err(error) => failed(error),
+            }
+        }
+        _ => json!({"error":"unsupported_command"}),
+    }
+}
+
+enum Resolved<'a> {
+    One(&'a LocalOperator),
+    None,
+    Ambiguous,
+}
+
+/// Operator id first, then the exact username, then a case-insensitive username
+/// that matches exactly one operator. Usernames are unique case-sensitively, so
+/// two operators may differ only by case; refuse to guess between them.
+fn resolve_operator<'a>(operators: &'a [LocalOperator], reference: &str) -> Resolved<'a> {
+    if let Some(operator) = operators.iter().find(|operator| operator.id == reference) {
+        return Resolved::One(operator);
+    }
+    if let Some(operator) = operators
+        .iter()
+        .find(|operator| operator.username == reference)
+    {
+        return Resolved::One(operator);
+    }
+    let mut matches = operators
+        .iter()
+        .filter(|operator| operator.username.eq_ignore_ascii_case(reference));
+    match (matches.next(), matches.next()) {
+        (Some(operator), None) => Resolved::One(operator),
+        (Some(_), Some(_)) => Resolved::Ambiguous,
+        (None, _) => Resolved::None,
     }
 }
 
@@ -333,5 +550,24 @@ mod tests {
         task.abort();
         drop(store);
         let _ = std::fs::remove_dir_all(root);
+    }
+}
+
+#[cfg(test)]
+mod accept_tests {
+    use super::transient_accept_error;
+    use std::io;
+
+    #[test]
+    fn descriptor_pressure_is_transient_but_a_closed_listener_is_not() {
+        assert!(transient_accept_error(&io::Error::from_raw_os_error(24)));
+        assert!(transient_accept_error(&io::Error::from_raw_os_error(23)));
+        assert!(transient_accept_error(&io::Error::from(
+            io::ErrorKind::ConnectionAborted
+        )));
+        assert!(!transient_accept_error(&io::Error::from_raw_os_error(9)));
+        assert!(!transient_accept_error(&io::Error::from(
+            io::ErrorKind::PermissionDenied
+        )));
     }
 }

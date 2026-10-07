@@ -1,0 +1,649 @@
+
+> blindpass@0.1.0 test
+> node scripts/tests/run-workspace-tests.mjs
+
+
+> @blindpass/agent-skill@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /home/hvo/Projects/blindpass/packages/agent-skill
+
+
+ Test Files  6 passed (6)
+      Tests  23 passed (23)
+   Start at  13:54:18
+   Duration  2.55s (transform 1.92s, setup 0ms, import 4.45s, tests 1.64s, environment 1ms)
+
+
+> @blindpass/browser-ui@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ with the controller's Date, remaining time follows the server clock, not the device clock (2.201698ms)
+✔ elapsed time is the larger of monotonic and wall time, so a suspended tab can't stretch the deadline (1.676789ms)
+✔ without usable clock evidence there is no countdown, only the controller's deadline (1.44064ms)
+✔ a missing or nonsensical expiry gives no deadline (0.299533ms)
+✔ formatRemaining rounds down and never shows negative time (0.337433ms)
+✔ P05-PV06-S GUI: the server's own milliseconds drive the fleet deadline, not the device clock (0.50897ms)
+✔ P05-PV06-S GUI: a suspended tab or a moved wall clock cannot stretch the fleet deadline or the sealing time (0.250007ms)
+✔ P05-PV06-S GUI: unusable fleet clock evidence gives no deadline at all (0.487036ms)
+✔ O05 / SI-E01: bidi overrides, terminal escapes and zero-width characters in a description are shown, not applied (1.819617ms)
+✔ P05-PV06-S GUI: the metadata read is a same-origin credentialed GET on the fleet route with only the metadata signature (22.216183ms)
+✔ P05-PV06-S GUI: a verified offer shows purpose, workload and destination from independent data with a server-time countdown (9.558032ms)
+✔ P05-PV06-S GUI: an offer that fails verification against the independent expectations never opens entry (37.378235ms)
+✔ P05-PV06-S GUI: malformed metadata bodies are a load failure, never a ready state (3.611664ms)
+✔ P05-PV06-S GUI: sign-in, unavailable and expired answers map to fixed states without a ready view (3.009432ms)
+✔ P05-PV06-S GUI: submit seals the exact typed bytes to the verified offer and posts only enc and ciphertext with the CSRF header (28.260315ms)
+✔ P05-PV06-S GUI: the server's clock, not Date.now, is the time the offer is sealed against (4.432401ms)
+✔ P05-PV06-S GUI: no CSRF cookie, an elapsed deadline, an empty value or one over 64 KiB send nothing (7.563363ms)
+✔ P05-PV06-S GUI: exactly 64 KiB seals and posts; the limit is the sealer's own (40.218687ms)
+✔ P04-E03 / P05-PV06-S GUI: refusals, conflicts and lost replies map to the documented states and never echo the value (67.087799ms)
+✔ P04-I03 / P05-PV06-S GUI: after a lost reply one metadata re-read decides: a receipt confirms, none stays not confirmed (66.41227ms)
+✔ P05-PV06-S GUI: a sealing failure keeps the value and exposes only a fixed state, never the upstream message (5.299699ms)
+✔ P05-PV06-S GUI: the page can only seal through the verified path, with the server's time (5.739854ms)
+✔ P05-PV06-S GUI: legacy calls omit credentials and only the fleet flow sends the operator cookie, same origin (2.794726ms)
+✔ P05-PV06-S GUI: no Source, cookie or capability reaches storage, history, the console or the URL (0.80951ms)
+✔ P05-PV06-S GUI: the typed value is cleared on every terminal state, a hidden page and unload (0.414757ms)
+✔ P04-E03: the page keeps the CSP rules: no inline script, handler or style (0.720929ms)
+✔ P05-PV06-S GUI: fleet-only copy never repeats a legacy string, so the page has no ambiguous text in either mode (10.189379ms)
+✔ PV05-S03 correct pinned key/context returns immutable binding and snapshots original data (12.501209ms)
+✔ PV05-S02 signature/body/kind/kid/epoch/field mutation is rejected before sealing (10.065821ms)
+✔ PV05-S03 independently trusted identity/context cannot be replaced with offer supplied trust (6.791881ms)
+✔ P05-PV01 browser exact domain/canonical full grant binding (3.559963ms)
+✔ P05-PV02 schema/key/mode/destination and malformed metadata are rejected with fixed diagnostics (2.011008ms)
+✔ P05-PV03 stale/future offer and extended original deadline deny before encryption (7.243703ms)
+✔ P05-PV04 real browser HPKE preserves exact UTF-8 with bound AAD and rejects changed context (60.589894ms)
+✔ P05-PV02 nested/accessor metadata cannot reflect upstream private errors (0.589737ms)
+✔ allows top-level browsing contexts (1.214315ms)
+✔ tries to bust out of a frame (0.246264ms)
+✔ renders a blocking message if top navigation is not allowed (0.314273ms)
+✔ metadata answers map to the P04 state machine (2.061833ms)
+✔ submit answers never report success without a 201 (1.601936ms)
+✔ only ready accepts entry and every terminal state clears it (0.256065ms)
+✔ CT19 capability answers: a status-only signature, gone, or unavailable (0.280809ms)
+✔ CT19 status answers: only pending or submitted are trusted; 410 never means failure (0.2468ms)
+✔ P04-E03 / P05-PV06-S GUI: a fleet metadata read opens entry only for a ready body; a receipt is already submitted (0.494754ms)
+✔ P04-E03 / P05-PV06-S GUI: a fleet submit reports success only for 201 or the exact-retry 200 (0.33992ms)
+✔ P04-I03 / P05-PV06-S GUI: after a lost reply only a receipt confirms; no receipt is never reported as failure or as sent (0.26628ms)
+✔ parseContext reads the signed request parameters and nothing else (2.695895ms)
+✔ a context needs the id and both scoped signatures (0.438781ms)
+✔ preview flags no longer unlock entry (1.282622ms)
+✔ P05-PV06-S GUI: a link without kind is the legacy page, unchanged (0.841769ms)
+✔ P05-PV06-S GUI: kind=fleet with the exact id and both fleet capability shapes is a valid fleet link (0.856525ms)
+✔ P05-PV06-S GUI: any missing, unknown, duplicated or malformed fleet parameter is the invalid-link state (0.726319ms)
+✔ SI-E03: values are encoded exactly as typed, whitespace and all (2.117197ms)
+✔ line breaks are detected for the multiline guard (0.319828ms)
+✔ SI-I01 (unit): HPKE seal opens to the exact bytes for the intended key only (56.16346ms)
+✔ the size limit matches the controller's 524,288-character ciphertext cap exactly (156.310983ms)
+✔ formatBytes is readable in both locales (25.923035ms)
+ℹ tests 57
+ℹ suites 0
+ℹ pass 57
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 494.635173
+
+> @blindpass/console@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /home/hvo/Projects/blindpass/packages/console
+
+(node:1448097) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448142) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448121) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448090) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448098) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448123) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448144) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448089) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448110) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448096) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1448139) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  11 passed (11)
+      Tests  108 passed (108)
+   Start at  13:54:22
+   Duration  10.82s (transform 4.55s, setup 3.05s, import 6.99s, tests 40.17s, environment 8.71s)
+
+
+> @blindpass/dashboard@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /home/hvo/Projects/blindpass/packages/dashboard
+
+(node:1449490) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:1449559) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449586) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449526) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449580) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449515) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449508) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449536) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449528) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449509) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449527) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449534) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449577) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449557) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449561) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1449558) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  15 passed (15)
+      Tests  42 passed (42)
+   Start at  13:54:33
+   Duration  5.77s (transform 5.52s, setup 6.40s, import 15.72s, tests 15.19s, environment 15.95s)
+
+
+> @blindpass/gateway@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /home/hvo/Projects/blindpass/packages/gateway
+
+
+ Test Files  2 passed (2)
+      Tests  9 passed (9)
+   Start at  13:54:39
+   Duration  683ms (transform 288ms, setup 0ms, import 545ms, tests 140ms, environment 0ms)
+
+
+> @blindpass/i18n@0.1.0 test
+> node --import tsx --test tests/validate-keys.test.ts
+
+(node:1450234) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+✔ flags copied English namespaces as suspiciously untranslated (16.572245ms)
+✔ ignores identical technical tokens while comparing locale drift (1.483725ms)
+✔ reports small identical drift without failing the namespace (0.488462ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 331.670249
+
+> @blindpass/mcp-server@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ P05-I04 actual SDK notification withdraws submitted request before exit (1406.312721ms)
+✔ P05-I04 actual SDK EOF withdraws submitted request before exit (812.829274ms)
+✔ P05-I04 broker runtime identity is fixed and opt-in; arguments cannot replace it (14.087217ms)
+✔ P05-I04 request frame uses original bounded payload and no source/browser options (1.618276ms)
+✔ P05-I04 status and cancel return only exact metadata replies (9.141282ms)
+✔ P05-I04 request reply loss triggers bounded independent withdrawal (5.76981ms)
+✔ P05-I04 aborted submitted request withdraws despite the aborted caller signal (5.644507ms)
+✔ P05-I04 primary timeout and stalled withdrawal stay within the configured call budget (134.230472ms)
+✔ P05-I04 pre-aborted calls and definite broker rejection create no withdrawal (3.355927ms)
+✔ P05-I06 malformed and secret-bearing broker replies never reach status results (8.877904ms)
+✔ P05-I04 fixed socket guards reject owners, modes, symlinks and hard links (4.283171ms)
+✔ P05-I04 actual Unix transport requires complete frame/EOF and fixed pathname (24.012103ms)
+✔ P05-I06 actual Unix transport rejects oversized, invalid UTF8 and partial replies (12.646355ms)
+✔ P05-I04 socket replacement and stall cannot publish a successful result (521.880545ms)
+✔ P05-I04 concurrent ordinary calls are bounded and cancellation has reserved capacity (7.281569ms)
+✔ P05-I04 independent clock expiry rejects a late reply and withdraws the request (15.540305ms)
+✔ P05-I04 a delayed path proof after EOF does not discard a valid complete response (38.304609ms)
+✔ P05-I04 a stalled initial path proof cannot submit after the call timed out (113.99828ms)
+✔ P05-AT01: confirmed browser closure returns bounded completion metadata (0.926169ms)
+✔ P05-PC04: ready metadata is an opaque context reference without a browser endpoint (0.393552ms)
+✔ P05-I04 official SDK broker request/status/cancel metadata on 2025-11-25 (1148.339209ms)
+✔ P05-I04 official SDK broker request/status/cancel metadata on 2026-07-28 (776.97788ms)
+✔ P05-I04 SDK rejects runtime/source/raw-link extensions and malformed private results (619.103259ms)
+✔ P05-I04 every registered callback has a bounded safe deadline, including legacy adapters (1079.069551ms)
+✔ P05-I04 callback deadline cannot exceed the production 30s bound (4.545435ms)
+✔ P05-DR01 provider precedence is fixed regardless of configuration order (14.86887ms)
+✔ P05-DR03 thrown, invalid, uncertain, declined and cancelled provider replies stop fallback (11.257506ms)
+✔ P05-DR03 bounded timeout and cancellation after dispatch remain uncertain without fallback (56.300175ms)
+✔ P05-DR04 durable reservation, concurrent exact retry and cached result prevent another send (14.72305ms)
+✔ P05-DR04 pending, failed or malformed reservation and failed completion never authorize another send (11.2328ms)
+✔ P05-DR05 local-open needs explicit permission and exact intended host; operator needs matching authentication (12.26718ms)
+✔ P05-DR06 unreviewed routes, unsafe URLs, origins, bindings and exposure flags fail closed (7.620972ms)
+✔ P05-DR03 pre-aborted request sends nothing; late provider resolution cannot start fallback (61.88317ms)
+✔ P05-DR02 URL gate reads exact negotiated SDK identity/capabilities, never tool arguments (1.236515ms)
+✔ P05-DR02 URL-mode parameters contain link only in url and acceptance does not prove provisioning (9.290076ms)
+✔ P05-DR03 invalid clock and BOOTTIME expiry at response withhold success and fallback (1.128709ms)
+✔ P05-DR02 URL provider rechecks capabilities immediately before sending (0.321903ms)
+✔ P05-DR06 mutable inputs and malformed support diagnostics cannot replace a bound URL or leak it (7.675873ms)
+✔ P05-DR04 trusted request deadline is immutable, cannot renew on retry and expires before dispatch (8.546927ms)
+✔ P05-DR04 timeout or abort after reservation records uncertain in the ledger and blocks any resend (114.247488ms)
+✔ P05-DR04 a hung or failing ledger completion cannot hold the call past a bounded recording budget (169.085381ms)
+✔ P05-DR04 intendedHostId is bound into the request: required, immutable between reservation and retry (1.530818ms)
+✔ P05-DR04 a definite unavailable result may be re-evaluated with the same operationKey; uncertain never is (9.181409ms)
+✔ P05-DR04 without a reopen-capable ledger a cached unavailable result stays cached; concurrent re-evaluation sends once (10.07795ms)
+✔ P05-DR04 a reopen that is refused, fails or returns an unexpected shape keeps the cached unavailable result and sends nothing (13.418215ms)
+✔ P05-DR02 URL gate can also require the client-requested protocol version (SDK does not expose it) (4.275949ms)
+✔ P05-DR07 actual SDK initialize URL gate {} (977.569711ms)
+✔ P05-DR07 actual SDK initialize URL gate {"elicitation":{}} (825.805537ms)
+✔ P05-DR07 actual SDK initialize URL gate {"elicitation":{"form":{}}} (813.500128ms)
+✔ P05-DR07 actual SDK initialize URL gate {"elicitation":{"url":{}}} (549.090117ms)
+✔ P05-DR07 actual URL elicitation decline stops fallback and retry (568.384311ms)
+✔ P05-DR07 actual URL elicitation cancel stops fallback and retry (522.286542ms)
+✔ P05-DR07 actual URL elicitation timeout stops fallback and retry (613.062599ms)
+✔ P05-DR07 URL declaration on older protocol or unreviewed client never sends a URL (1014.884931ms)
+✔ P05-DR07 tool-supplied context cannot replace initialize URL capabilities (441.144895ms)
+✔ P05-DR07 modern per-request URL declaration uses fallback until continuation review (442.175571ms)
+✔ P05-DR07 a client that requested an unreviewed revision never receives a URL even though the SDK negotiates 2025-11-25 (684.347808ms)
+✔ P05-DIAG no-op without a configured directory: nothing created, nothing thrown (23.535271ms)
+✔ P05-DIAG writes only fixed-vocabulary lines to a 0600 file under STATE_DIRECTORY (first entry of a list) (31.002526ms)
+✔ P05-DIAG a nested canary in an upstream error or audit record never reaches the file (13.226909ms)
+✔ P05-DIAG delivery router default audit records provider decisions without the URL (12.142612ms)
+✔ P05-DIAG size is bounded by rotation and the file stays 0600 (14.264261ms)
+✔ P05-DIAG refuses symlinked or foreign-linked log files and widens nothing (4.844407ms)
+✔ P05-DIAG actual stdio server: upstream canary stays out of stdout, stderr and the diagnostics file (909.963514ms)
+✔ P05-DIAG actual stdio server without STATE_DIRECTORY writes no file and nothing to stdout/stderr (687.083857ms)
+✔ P05-D8 fleet mode drops the exposure parameters from every legacy schema; non-fleet keeps them (20.967163ms)
+✔ P05-D8 fleet handlers reject any exposure argument with the fixed error before the legacy handler runs (21.318028ms)
+✔ P05-D8 fleet startup fails closed when either legacy exposure environment switch is set (9.065416ms)
+✔ P05-D8 actual stdio startup refuses fleet mode with OPENCLAW_SECRETS_RAW_LINK set: exit 64, no output, no echo (919.260946ms)
+✔ P05-D8 actual stdio startup refuses fleet mode with BLINDPASS_ALLOW_EXPOSE_PLAINTEXT set: exit 64, no output, no echo (582.788181ms)
+✔ P05-D8 actual stdio fleet mode lists broker tools plus legacy tools without exposure parameters and rejects them (664.493716ms)
+✔ P05-D8 actual stdio non-fleet mode keeps the legacy schemas and ignores the unused switches (571.506841ms)
+✔ M01 legacy callbacks adapt into official SDK schemas without importing plugin from SDK package (4.307767ms)
+✔ M01 actual OpenClaw wrapper starts official newline transport on 2025-11-25 (921.692851ms)
+✔ M01 protocol-only embedding starts official newline transport on 2025-11-25 (745.301256ms)
+✔ M01 actual OpenClaw wrapper starts official newline transport on 2026-07-28 (683.485356ms)
+✔ M01 protocol-only embedding starts official newline transport on 2026-07-28 (551.865088ms)
+✔ P05-E purpose rejects C0 controls (Cc) at the start, middle and end (50.656497ms)
+✔ P05-E purpose rejects DEL and C1 controls (Cc) at the start, middle and end (19.219936ms)
+✔ P05-E purpose rejects soft hyphen at the start, middle and end (0.333424ms)
+✔ P05-E purpose rejects Arabic letter mark at the start, middle and end (0.54749ms)
+✔ P05-E purpose rejects zero-width and directional marks U+200B-U+200F at the start, middle and end (3.490516ms)
+✔ P05-E purpose rejects line and paragraph separators at the start, middle and end (0.671159ms)
+✔ P05-E purpose rejects bidi embeddings and overrides U+202A-U+202E at the start, middle and end (7.81077ms)
+✔ P05-E purpose rejects word joiner and invisible operators U+2060-U+2064 at the start, middle and end (1.096431ms)
+✔ P05-E purpose rejects bidi isolates U+2066-U+2069 at the start, middle and end (15.746171ms)
+✔ P05-E purpose rejects byte order mark at the start, middle and end (0.678234ms)
+✔ P05-E ordinary multilingual purpose text and neighbouring characters are still accepted (15.201416ms)
+✔ P05-E purpose rejects lone surrogates before they can be mis-encoded (2.452147ms)
+✔ M01 batched JSON-RPC arrays are never executed or echoed and do not break the connection (665.404239ms)
+✔ M01 malformed lines are dropped without echo, stderr output or a closed connection (966.140164ms)
+✔ M01 legal messages at and just under the cap are accepted, including back-to-back and split writes (718.620677ms)
+✔ M01 oversized input (one byte over the cap, newline terminated) gets a bounded fixed error and a clean close that withdraws in-flight work (709.487158ms)
+✔ M01 oversized input (an unterminated 300 KiB line) gets a bounded fixed error and a clean close that withdraws in-flight work (513.165116ms)
+✔ M01 unsupported initialize revisions negotiate to the reviewed latest; unknown modern claims are refused (914.35016ms)
+✔ M01 a second initialize is refused and cannot replace the negotiated version, client identity or capabilities (492.744229ms)
+✔ M01 SIGTERM mid-request follows the EOF withdrawal path and exits cleanly (468.995079ms)
+✔ M01 the broker client bound is clearly shorter than the outer 30s tool bound and is enforced at startup (16.778988ms)
+✔ M01 a stalled submission and withdrawal resolve as safe uncertainty before the outer tool bound (1232.498262ms)
+✔ M01 official SDK newline stdio initialize/list/call on 2024-11-05 (853.160259ms)
+✔ M01 official SDK newline stdio initialize/list/call on 2025-03-26 (728.053667ms)
+✔ M01 official SDK newline stdio initialize/list/call on 2025-06-18 (613.659391ms)
+✔ M01 official SDK newline stdio initialize/list/call on 2025-11-25 (513.853768ms)
+✔ M01 registry refuses duplicate names, arbitrary schema and invalid handlers at startup (44.840997ms)
+✔ M01 official SDK modern per-request envelope serves tools without initialize (577.482159ms)
+✔ M01 returned legacy failure payloads cannot reflect private content or structured fields (478.821915ms)
+✔ M01 actual legacy handler caught upstream errors cannot reflect private text over stdio (434.450504ms)
+✔ P05 K zod resolves to the identical pinned 4.6.5 from this package, the SDK server and the SDK core (10.444136ms)
+ℹ tests 108
+ℹ suites 0
+ℹ pass 108
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 14288.091486
+
+> @blindpass/openclaw-plugin@0.1.0 test
+> node tests/index.test.mjs
+
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_provisioned secret_name=aws_token storage=plugin
+ok - request_secret does not return plaintext and stores secret in memory
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+ok - request_secret fails closed when managed backend is unsupported
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_provisioned secret_name=managed_ok storage=managed
+ok - request_secret uses managed encrypted persistence when configured
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_rotated secret_name=db_pass storage=plugin
+ok - request_secret formats message correctly for re_request: true
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via OpenClaw CLI fallback.
+[blindpass][audit] event=secret_provisioned secret_name=cli_key storage=plugin
+ok - request_secret uses OpenClaw CLI fallback
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendMessage.
+[blindpass][audit] event=secret_provisioned secret_name=t1 storage=plugin
+ok - request_secret uses sendMessage when sendText is unavailable
+[blindpass] Delivering secure link to configured channel.
+ok - request_secret fails when no outbound transport is available
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via runtime.channel.sendText(message).
+[blindpass][audit] event=secret_provisioned secret_name=default storage=plugin
+ok - request_secret uses api.runtime.channel when other transports are unavailable
+[blindpass][audit] event=secret_provisioned secret_name=safe_log_check storage=plugin
+ok - request_secret does not log live secret URLs
+[blindpass][audit] event=secret_provisioned secret_name=default storage=plugin
+ok - shutdown hook disposes in-memory secrets
+ok - requestSecretFlow publishes a JWKS when using JWT auth fallback
+ok - requestSecretFlow surfaces 429 without retry and destroys its key pair
+[blindpass][audit] event=secret_provisioned secret_name=stripe.api_key.prod storage=plugin
+ok - fulfill_secret_exchange uses the stored runtime secret
+[blindpass][audit] event=secret_exchange_provisioned secret_name=stripe.api_key.prod storage=plugin exchange_id=ex-request-1 fulfilled_by=session:payments
+ok - request_secret_exchange uses OpenClaw transport and stores the exchanged secret
+ok - request_secret_exchange fails closed when no target can be resolved
+ok - createOpenClawAgentTransport uses runtime agent messaging when available
+ok - resolveOpenClawAgentTarget uses explicit target maps
+ok - resolveOpenClawAgentTarget uses runtime session resolvers
+ok - resolveOpenClawAgentTarget uses OPENCLAW_AGENT_TARGETS_JSON
+ok - createOpenClawAgentTransport uses mapped agent targets before fallback
+ok - buildExchangeDeliveryMessage includes fulfill tool instructions
+ok - store_secret tool is disabled by default while list/delete tools remain available
+[blindpass][audit] event=secret_stored secret_name=runtime.generated.token storage=managed
+ok - store_secret can be enabled and stores metadata only
+ok - store_secret fails closed when managed store is unavailable
+ok - list_secrets returns managed secret names only
+[blindpass][audit] event=secret_deleted secret_name=stripe.api_key.prod
+ok - delete_secret requires confirmation token and tokens are single-use
+ok - confirm_delete_secret rejects mismatched and expired tokens
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_provisioned secret_name=interactive.secret storage=plugin
+ok - request_secret supports interactive-only persist=false mode
+ok - request_secret rejects persist=true when secret_name is missing
+ok - request_secret_exchange rejects persist=true when secret_name is missing
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_provisioned secret_name=managed.default.secret storage=managed
+ok - request_secret managed mode returns metadata only by default
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_provisioned secret_name=plaintext.off.secret storage=managed
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_provisioned secret_name=plaintext.on.secret storage=managed
+ok - request_secret plaintext exposure is controlled only by deployment env
+ok - managed store config selects runtime-specific default paths and respects overrides
+ok - deriveSopsCommandEnv resolves sibling bootstrap files
+ok - managed persistence fails closed when configured store path is invalid
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+[blindpass][audit] event=secret_provisioned secret_name=runtime.only.secret storage=plugin
+ok - runtime-only secrets are isolated from managed listing and resolver reads
+ok - managed secret rotation replaces value atomically
+ok - atomic rename preserves store when a write fails
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+ok - audit logging remains metadata-only without secret leakage
+ok - mcp-server initialize and tools/list expose the expected default toolset
+ok - mcp-server tools/list includes store_secret only when explicitly enabled
+ok - mcp-server tools/call delegates to blindpass-core handlers
+ok - mcp-server returns expected responses for unknown methods and tools
+[blindpass] Delivering secure link to configured channel.
+[blindpass] Secret link delivered via context.sendText.
+ok - mcp managed-mode tool responses and logs remain metadata-only
+ok - mcp tools enforce handler-side persist validation
+ok - Claude profile MCP config launches the server
+ok - Codex/OpenAI profile MCP config launches the server
+ok - Antigravity/Gemini profile MCP config launches the server
+ok - blindpass-resolver parses protocol request payloads
+ok - blindpass-resolver rejects malformed protocol request payloads
+ok - blindpass-resolver resolves batch values and returns missing/expired errors
+ok - blindpass-resolver returns protocol-safe errors for malformed stdin
+ok - blindpass-resolver honors --store override and batch lookup
+ok - blindpass-resolver enforces timeout with protocol-safe error output
+ok - blindpass-resolver fails closed on corrupt managed store without leaking content
+ok - blindpass-resolver sanitizes managed-store read failures
+ok - managed store auto-bootstrap creates artifacts and pending-backup metadata
+ok - managed store emits backup reminders and supports env acknowledgment
+ok - managed store concurrent writes do not lose secret data
+ok - managed store reuses bootstrap artifacts after first initialization
+ok - managed store write fails closed when a live lock is held
+ok - managed store breaks stale lock but treats unknown pid status as live
+
+> @blindpass/sps-server@0.1.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /home/hvo/Projects/blindpass/packages/sps-server
+
+{"level":30,"time":1791010505504,"pid":1452906,"hostname":"hvo-omarchy","reqId":"req-1","req":{"method":"POST","route":"unresolved"},"msg":"incoming request"}
+{"level":30,"time":1791010505510,"pid":1452906,"hostname":"hvo-omarchy","reqId":"req-1","msg":"Route POST:/api/v2/auth/test/seed-workspace not found"}
+{"level":30,"time":1791010505514,"pid":1452906,"hostname":"hvo-omarchy","reqId":"req-1","res":{"statusCode":404},"responseTime":9.22297900000001,"msg":"request completed"}
+{"level":30,"time":1791010506274,"pid":1452962,"hostname":"hvo-omarchy","reqId":"req-1","req":{"method":"GET","route":"/healthz"},"msg":"incoming request"}
+{"level":30,"time":1791010506276,"pid":1452962,"hostname":"hvo-omarchy","reqId":"req-1","res":{"statusCode":200},"responseTime":0.9842830000000049,"msg":"request completed"}
+{"level":30,"time":1791010506276,"pid":1452962,"hostname":"hvo-omarchy","reqId":"req-2","req":{"method":"GET","route":"/healthz"},"msg":"incoming request"}
+{"level":30,"time":1791010506277,"pid":1452962,"hostname":"hvo-omarchy","reqId":"req-2","res":{"statusCode":200},"responseTime":0.2777640000000474,"msg":"request completed"}
+
+ Test Files  15 passed | 17 skipped (32)
+      Tests  80 passed | 101 skipped (181)
+   Start at  13:54:59
+   Duration  18.86s (transform 1.45s, setup 0ms, import 10.23s, tests 3.44s, environment 4ms)
+
+✔ P05-I01 / B-I13: HTTPS, private cookie, report task and no durable action UI (601.667906ms)
+✔ P05-I01: viewer direct requests cannot change account or mint authority (319.872182ms)
+✔ P05-I01 / B-E16 / B-I13: ongoing activity and altered cookie attributes cannot extend lifetime (440.740672ms)
+✔ P05-I01 / B-I13: wall-clock rollback and activity do not reset monotonic deadline (143.680368ms)
+✔ P05-I01 / B-I13: wall deadline expires authority while monotonic clock is paused (199.444272ms)
+✔ P05-I01 / B-E16: copied session works before revoke and fails after idempotent admin revoke (222.820662ms)
+✔ P05-I01 / B-E02: isolation account sees its own report and cannot substitute session/account (260.609545ms)
+✔ P05-I03 lost reply: root admin revokes all account sessions without the private login handle (348.45427ms)
+✔ P05-I06 fixture portion: invalid authentication and malformed/oversized bodies have fixed safe results (380.778921ms)
+✔ P05-I01: origin/host, content type and admin browser requests fail closed (179.899796ms)
+✔ P05-I01: bounded sessions and login attempts reject further issuance (255.992318ms)
+✔ P05-I01: restart invalidates every old session (227.248126ms)
+✔ P05-D1: invalid configuration is rejected instead of relaxing session limits (45.386237ms)
+ℹ tests 13
+ℹ suites 0
+ℹ pass 13
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3680.764117
+✔ P05-I01 OAuth issuer rejects unsafe client and callback configuration before binding (244.83847ms)
+✔ P05-I01 OAuth issuer: fixed redirect, PKCE, client binding, single-use code and immutable Viewer identity (416.283436ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 2
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1616.225571
+✔ M01 bundle notice inventory preserves emitted upstream texts without machine paths (7.936426ms)
+✔ M01 bundle rejects missing notices, unapproved license and AGPL workspace implementation (5.548377ms)
+✔ M01 allowlist accepts only explicitly listed MIT workspace packages (5.089714ms)
+✔ M01 allowlist rejects an unlisted MIT workspace, relicensed listed packages and non-package workspace paths (23.07037ms)
+✔ M01 the real MCP bundle inputs satisfy the allowlist and every emitted package has a license text (333.209624ms)
+✔ P05-D7: workspace manifests and lock metadata share the tested Node lines (3.594075ms)
+✔ P05-D7: CI retains both pinned runtime profiles (0.292035ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 410.083919
+✔ P05-PC14B: workload worker uses actual registry, protocol factory, fixed private copy and reconnect (9.695132ms)
+✔ P05-PC14A: invalid private controls fail closed; EOF aborts broker and stock without private output (2.168636ms)
+✔ P05-PC14A: ordinary legacy/modern MCP crosses; model cannot use private methods or reserved IDs (1.727726ms)
+✔ P05-PC14A: startup and private replies remain live while a normal response observer awaits control (1.262313ms)
+✔ P05-PC14A: private session replies never cross the model channel; unknown and late IDs deny (0.772719ms)
+✔ P05-PC14A: private timeout and closure reject pending work without reflecting private errors (7.862972ms)
+✔ P05-PC14C: normal source/session/endpoint canaries and overlarge frames fail before model delivery (5.088959ms)
+✔ P05-PC14B: exact unique stock descriptors and real calls are preserved; missing/duplicate schema denies (1.208441ms)
+✔ P05-PC14C: failed stock calls emit only fixed private diagnostics and generic protocol errors (1.660708ms)
+✔ P05-PC14A: Root pipe demultiplexes private replies while a normal observer awaits a probe (2.104751ms)
+✔ P05-PC14C: pipe errors and canary replies close input and retain only fixed failure metadata (1.54528ms)
+✔ P05-PC14D: actual broker request, ready, report reads, reconnect and cancel must all be observed (0.840207ms)
+✔ P05-PC14D: a second report snapshot requires a fresh completed navigation and wait (0.56081ms)
+✔ P05-PC14D: partial/error/duplicate requests and untrusted artifact answers cannot establish task success (0.277921ms)
+✔ P05-I02 supervisor socket activation selects only its inherited private transport, never a caller path (0.525858ms)
+✔ P05-I03 outside supervisor uses bounded suspend-aware Linux uptime, never wall clock or caller clock (0.373605ms)
+✔ P05-I02 backend derives one fixed private Unix path from opaque operation identity and accepts no endpoint (0.768674ms)
+✔ P05-I06 supervisor requires the protected Root activation socket and fresh private backend directory (0.840253ms)
+✔ P05-I02 supervisor imports privately and publishes only after explicit Root publication (2.690732ms)
+✔ P05-I02 supervisor rejects reordered, duplicate, arbitrary or source-bearing parent input (2.924685ms)
+✔ P05-I02 supervisor rejects worker claims and cannot treat prepared/active as kernel proof or publication (1.42607ms)
+✔ P05-I03 supervisor boot-time expiry cannot be extended by a late startup, import or active reply (0.631182ms)
+✔ P05-I06 supervisor bounds session/cookies and clears rejected cookie references without publishing them (1.5848ms)
+✔ P05-I03 publication delayed beyond startup deadline or parent loss closes the late backend (1.367883ms)
+✔ P05-I03 published session retains its original BOOTTIME bound and stop requires a worker acknowledgement (0.942171ms)
+✔ P05-I03 supervisor failure closes its private backend and never reports verified cgroup/website cleanup (0.408463ms)
+✔ P05-I03 frames in flight while stopping are dropped quietly and stopped is not turned into uncertain (1.39574ms)
+✔ B-I02 isolated browser framing handles split and batched frames with bounded input (2.16965ms)
+✔ P05-I06 isolated framing rejects duplicate keys, malformed UTF8, depth, trailing and partial data (1.029901ms)
+✔ B-I02 tunnel directions and activation gate forbid early CDP and target substitution (0.798109ms)
+✔ B-I02 egress reaches only root-selected connector and CDP only worker-selected connector (2.096436ms)
+✔ P05-I02 bounded channels and canonical data reject replay, wrong direction and oversized payloads (0.949967ms)
+✔ P05-I02 private framed IO serializes batched work and carries only framed replies (1.52939ms)
+✔ P05-I06 malformed private IO closes once and never passes duplicate metadata to the worker (0.328658ms)
+✔ P05-I02 a read carrying more than 128 frames is processed in bounded batches, not treated as a protocol failure (6.352391ms)
+✔ P05-I02 framed IO applies backpressure to a burst of 300 small frames instead of failing the session (34.721244ms)
+✔ P05-I02 concurrent egress channels each holding a full 32 KiB frame neither fail the session nor lose bytes (165.068954ms)
+✔ P05-I02 a full outbound queue makes senders wait in order; only a stalled peer fails the session (96.30906ms)
+✔ P05-H pinned leaf: matching pin, hostname/IP and validity pass; the chain is not consulted (222.758313ms)
+✔ P05-H a pin that is not the served leaf SPKI fails, including the CA pin and other keys (347.532368ms)
+✔ P05-H a matching pin never excuses a wrong host, an expired or a not-yet-valid certificate (529.469955ms)
+✔ P05-H empty, malformed or oversized certificate input fails closed without detail (242.550286ms)
+✔ M01 readiness: URL declaration under an older initialize revision cannot permit URL elicitation (0.487938ms)
+✔ M01 readiness: only explicit URL objects on reviewed revisions pass; empty/form-only/null/array declarations deny (0.885859ms)
+✔ M01 readiness: modern per-request metadata is observed without requiring initialize (0.204824ms)
+✔ M01 readiness: unsupported versions and private client fields are never reflected (0.188756ms)
+✔ P05-PC08 automatic intent uses an exact SHA-256 operation ID (0.300262ms)
+✔ P05-PC08 operation selection rejects framing/path/size substitutions (0.280333ms)
+✔ P05-PC08 actual controller UUID IDs match only their exact nested record (0.120789ms)
+✔ a previous closure cannot satisfy another operation recovery (0.136604ms)
+✔ missing or top-level-only operation IDs never authorize closure (0.15044ms)
+✔ a new helper record is selected independently of journal sort order (0.280275ms)
+✔ P05-I03 lost reply account revoke removes every session and preserves other account (0.37008ms)
+✔ P05-I03 revoke invalidates pending authentication that could create a late website session (0.131542ms)
+✔ P05-PC08 provisional broker uncertainty is controller executing metadata (0.1384ms)
+✔ P05-PC08 confirmed cleanup preserves controller revocation authority (0.160309ms)
+✔ P05-PC08 private controller client accepts an actual empty successful password response (0.191006ms)
+✔ P05-PC08 private controller client never reflects failed or malformed bodies (0.356341ms)
+✔ P05-PC08 private fixture command drains stdout and withholds diagnostics (45.134285ms)
+✔ P05-PC08 private fixture failure never embeds upstream output (43.779351ms)
+✔ P05-PC08 private fixture command bounds output and execution (143.455374ms)
+✔ P05-PC12: guest application profiles select only fixed report/replay paths and cookies (0.323375ms)
+✔ P05-PC12: private session scanner requires all exact bounded cookie pairs without duplicates (0.501468ms)
+✔ P05-PC12: application bootstrap reply is bounded, framed and never reflects upstream content (0.279053ms)
+✔ P05-PC12: managed stock reads wait for the real report before snapshotting (0.305748ms)
+✔ P05-PC08 guest driver retains the signed-fixture default profile (0.119061ms)
+✔ P05-PC08 guest driver accepts controller-issued node/workload metadata (0.106825ms)
+✔ P05-PC08 guest driver refuses partial or substituted metadata (0.113331ms)
+✔ P05-I02 persistent workload test agent stops on private stop plus EOF (48.620969ms)
+✔ P05-I06 workload test control rejects unknown private commands without reflecting input (50.55276ms)
+✔ P05-I02 fresh browser is prepared before cookie import and CDP opens only after import acknowledgment (1.647615ms)
+✔ P05-I02 denies source credential, caller flags, unsafe cookie scope and repeated starts (3.056752ms)
+✔ P05-I03 expiry, contaminated context, import failure and parent loss close browser with safe results (0.932072ms)
+✔ P05-I02 cookie import requires successful exact one-use worker identity proof (1.230586ms)
+✔ B-I02 app CONNECT authority excludes issuer, other ports and substituted targets (0.370523ms)
+✔ P05-I03 late-start disposal still removes the proxy/profile when closing the browser context throws (0.770971ms)
+✔ scanner: empty or whitespace-only journal output fails closed (1.438132ms)
+✔ scanner: a missing expected unit fails closed (a lifecycle line is required for every unit) (1.865405ms)
+✔ scanner: an injected canary is detected, including split-free binary and string forms (0.555297ms)
+✔ scanner: clean data with all expected units passes and reports counts only (0.294129ms)
+✔ scanner: vacuous canaries are rejected instead of silently matching nothing or everything (0.765863ms)
+✔ scanner: a scanner that cannot detect its injected control fails the run (0.435617ms)
+✔ unitPattern: templates match only instances of that template and exact names stay exact (2.764569ms)
+✔ scanJournal: runs a real-journal control unit, requires it to be seen, then passes clean data (2.259159ms)
+✔ scanJournal: a journal that never shows the control unit output fails closed (1.482761ms)
+✔ scanJournal: waits for late lifecycle lines but fails when an expected unit never appears (2.905097ms)
+✔ scanJournal: a leaked canary is reported without being reproduced, and is never retried away (1.174169ms)
+✔ scanDirectory: empty and missing directories fail closed where content is expected (8.217341ms)
+✔ scanDirectory: required marker files must exist and be non-empty (3.783006ms)
+✔ scanDirectory: nested canaries are detected, the control file never lingers and canary values are not reported (14.485811ms)
+✔ scanDirectory: a scanner that cannot see its control file fails closed (1.164432ms)
+✔ P05-PC14A: bounded frame reader handles split UTF-8 and multiple JSON-RPC frames (0.300896ms)
+✔ P05-PC14A: oversized, invalid and incomplete private input fails once without reflecting text (0.85628ms)
+✔ P05-PC12: failed app process retains exit status and withholds its output before cleanup (653.586367ms)
+✔ P05-PC14C: unique administrator is written only to private app configuration (569.600974ms)
+✔ P05-PC14C: invalid administrator names are rejected before private state/process setup (0.467252ms)
+✔ P05-F2 leak check: no instances, or only inactive/dead instances, pass (24.639806ms)
+✔ P05-F2 leak check: active, activating, deactivating and reloading units are failures that name the unit (95.180936ms)
+✔ P05-F2 leak check: a failed unit left by a deliberate kill passes only with no process in its control group, and is reported with its result (114.847298ms)
+✔ P05-F2 leak check: one bad instance among clean ones fails, and a failing systemctl is never read as "no leak" (27.491734ms)
+✔ P05-F2 leak check: the end-of-run list covers every unit family the guests start (0.324922ms)
+✔ P05-I02 socket helper refuses a source job before reverse kernel proof (63.989273ms)
+✔ P05-I02 helper socket control is bounded, exact and cannot supply identity or source fields (350.247389ms)
+✔ B-I01 / P05-I06 worker rejects malformed private frames without logging input or nested exceptions (393.463794ms)
+✔ P05-I06 worker refuses debug and arbitrary argv; no descriptor failure leaks diagnostics (241.926178ms)
+✔ P05-I03 worker interruption returns only uncertain, never a definite authentication outcome (218.513804ms)
+✔ P05-I02 job frame uses the duplicate-key-rejecting parser: duplicate and aliased keys are invalid requests (246.235453ms)
+✔ P05-I03 worker login budget is one monotonic budget: read stages and login together never exceed 55 s (1.288616ms)
+✔ P05-I03 the worker gives login only what the shared budget has left, never a fixed 55 s after its read stages (0.530761ms)
+✔ B-I01 / P05-I06 helper only compiles fixed approved HTTPS recipes (0.49727ms)
+✔ B-I02 helper imports only exact-origin approved session cookies with strict attributes and bounded expiry (0.743609ms)
+✔ P05-I06 helper denies private capture/debug settings before launch and never returns nested upstream errors (0.999584ms)
+✔ B-I03 helper rejects account substitution and unsupported authentication before launch (0.298466ms)
+✔ P05-I06 helper launches a sandboxed private context with capture disabled and disposes it on errors (0.392047ms)
+✔ P05-I03 an abort signal closes the browser and ends an in-progress login promptly; a pre-aborted signal never launches (0.554865ms)
+✔ P05-PC13: cgroup empty precedes profile removal; require both within the original bound (0.638091ms)
+✔ P05-PC13: absent cgroup and profile pass; an existing profile cannot extend the cleanup bound (12.032619ms)
+✔ P05-PC13: permission and filesystem errors cannot establish removal or reflect private paths (0.315152ms)
+✔ P05-I02 reverse worker proof requires the fixed root-owned group socket boundary (0.415847ms)
+✔ P05-I02 worker identity proof is a bounded versioned private frame (0.346606ms)
+✔ P05-PC07: systemctl metadata waits for closed pipes after process exit (0.563816ms)
+✔ P05-PC07: bounded systemctl pipe failures return only a fixed error (0.69297ms)
+✔ P05-PC02: installed runtime inspection binds manager/procfs/profile observations (1.94696ms)
+✔ P05-PC02: changed identity and weakened runtime profiles deny inspection (1.369609ms)
+✔ P05-PC02: actual host network, wrong procfs UID/cgroup and nonprivate profile deny (1.300933ms)
+✔ P05-PC02: manager revalidation after inspection rejects replacement invocation (0.36517ms)
+✔ P05-PC05: exact managed termination verifies cgroup and profile cleanup (0.765925ms)
+✔ P05-PC05: replaced invocation cannot select a termination target (0.989728ms)
+✔ P05-PC07: unit/path/PID/shell substitution and extra fields denied before effects (0.291112ms)
+✔ P05-PC07: private worker rejects extensions and exposes bounded fixed status (1.343426ms)
+✔ P05-PC06: startup recovery stops fixed helper class before browser classes and rejects foreign manager output (0.835198ms)
+✔ P05-PC06: stale backend recovery rejects nonprivate metadata and never deletes caller paths (0.291569ms)
+✔ P05-RV01: fixed revocation profiles and managed user identity are strict (1.052035ms)
+✔ P05-RV03: actual pinned TLS preflight does not log out; session/account revoke denies copied cookies (558.617699ms)
+✔ P05-RV02/RV05: private worker clears administrator input, permits cleanup after source-preflight window and rejects bad ordering (2.029839ms)
+✔ P05-RV05: worker reports lost application cleanup as uncertain and refuses late preflight (0.523786ms)
+✔ P05-RV03/RV05: credentials wait for verified TLS, redirects are not followed and lost cleanup replies stay uncertain (223.159223ms)
+✔ P05-F6 the guest broker ExecStart is the shipped browser-runtime ExecStart with only the workload group and one --workload changed (1.03105ms)
+✔ P05-F6 the generator rejects a drop-in that is not the browser-runtime configuration and unsafe inputs (0.667211ms)
+✔ P05-F6 startShippedBroker installs only the generated drop-in, starts the shipped unit and checks the running fragments (0.933754ms)
+✔ P05-PC14B: split actual newline replies preserve result and notification frames (1.716758ms)
+✔ P05-PC14B: stock tool-list notifications do not abort calls or expand the advertised registry (0.484084ms)
+✔ P05-PC14C: stock transport diagnoses fixed failure categories without private frame text (0.908469ms)
+✔ P05-PC14B: abort cancels the exact request; one late reply is withheld (0.519085ms)
+✔ P05-PC14B: deadlines cancel, and closed or already aborted requests never write (5.989256ms)
+✔ P05-PC14B: invalid JSON, UTF-8, unknown replies and oversized frames reject with fixed errors (1.172572ms)
+✔ P05-PC14B: child error/EOF reject pending calls and limit concurrency and outbound frame size (1.10655ms)
+ℹ tests 147
+ℹ suites 0
+ℹ pass 147
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 7246.591455

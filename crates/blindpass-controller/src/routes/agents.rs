@@ -99,17 +99,17 @@ async fn mint_token(
         }
     };
     let tenant_id = store.tenant_id().to_owned();
-    let (access_token, access_token_expires_at) = match mint_agent_token(&state, &agent, &tenant_id)
-    {
-        Ok(token) => token,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"error":"token_mint_failed"})),
-            )
-                .into_response();
-        }
-    };
+    let (access_token, access_token_expires_at) =
+        match mint_agent_token(&state, &agent, &tenant_id).await {
+            Ok(token) => token,
+            Err(_) => {
+                return (
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    Json(json!({"error":"service_unavailable"})),
+                )
+                    .into_response();
+            }
+        };
     let _ = store
         .append_audit(
             "agent_token_minted",

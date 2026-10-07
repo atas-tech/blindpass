@@ -54,8 +54,10 @@ Type=exec
 # Existing-state validation only. Locked upgrades land with P06 slice 7.
 ExecStartPre=/opt/blindpass/controller/current/bin/blindpass-controller check-config
 ExecStart=/opt/blindpass/controller/current/bin/blindpass-controller serve
-Restart=on-failure
-RestartSec=5
+# A started process consumes its one-use active authority revision, and a used
+# revision is never replayed. An automatic restart would only be refused, so
+# restarting is an explicit administrator action (authority-activate.sql).
+Restart=no
 
 [Install]
 WantedBy=multi-user.target

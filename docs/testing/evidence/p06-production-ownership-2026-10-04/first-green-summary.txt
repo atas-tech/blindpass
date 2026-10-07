@@ -1,0 +1,2 @@
+normal_exit=0
+snapshot-unit_exit=101

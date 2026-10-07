@@ -1,0 +1,2 @@
+   Compiling blindpass-controller v0.1.0 ($REPOSITORY/crates/blindpass-controller)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 3.39s

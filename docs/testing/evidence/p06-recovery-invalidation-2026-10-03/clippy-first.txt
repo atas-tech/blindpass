@@ -1,0 +1,24 @@
+    Checking blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error: this expression creates a reference which is immediately dereferenced by the compiler
+  --> crates/blindpass-controller/tests/recovery_invalidation.rs:83:291
+   |
+83 | ...nto(),base64_url_encode(&node.recipient.public_key()).into()]).await;
+   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `node.recipient.public_key()`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#needless_borrow
+   = note: `-D clippy::needless-borrow` implied by `-D clippy::all`
+   = help: to override `-D clippy::all` add `#[allow(clippy::needless_borrow)]`
+
+error: this assertion has a constant value
+   --> crates/blindpass-controller/tests/recovery_invalidation.rs:610:5
+    |
+610 |     assert!(SCHEMA_VERSION >= 17);
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: consider moving this into a const block: `const { assert!(..) }`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#assertions_on_constants
+    = note: `-D clippy::assertions-on-constants` implied by `-D clippy::all`
+    = help: to override `-D clippy::all` add `#[allow(clippy::assertions_on_constants)]`
+
+error: could not compile `blindpass-controller` (test "recovery_invalidation") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

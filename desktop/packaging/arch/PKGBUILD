@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Maintainer: BlindPass maintainers <https://github.com/atas-tech/blindpass>
+#
+# TEMPLATE. Do not build this file from the repository: the release workflow renders it
+# with scripts/release/render-pkgbuild.sh, which sets pkgver and the sha256 of the
+# signed release archive, and publishes the rendered file as the PKGBUILD release asset.
+# The placeholder below is not a checksum: makepkg compares it with the downloaded
+# archive, so an unrendered template fails closed instead of building unverified bytes.
+#
+# makepkg cannot verify the maintainer's SSH signature. Before building, verify the release's
+# SHA256SUMS with scripts/release/verify.sh (docs/release/README.md) and compare the
+# archive line there with the sha256sums entry below.
+#
+# The app is Quickshell QML, JavaScript and POSIX shell with no compiled code. It is
+# packaged for x86_64 because that is the profile the release tests (Omarchy session);
+# no other architecture or desktop is claimed.
+pkgname=blindpass-approval-app
+pkgver=0.0.0
+pkgrel=1
+pkgdesc='BlindPass desktop approval app: operator approval of fleet operations and secret exchanges (Quickshell QML)'
+arch=('x86_64')
+url='https://github.com/atas-tech/blindpass'
+license=('AGPL-3.0-only')
+depends=('quickshell>=0.3' 'curl>=7.84')
+_archive="blindpass-approval-app-${pkgver}-linux-x86_64"
+source=("${_archive}.tar.zst::https://github.com/atas-tech/blindpass/releases/download/v${pkgver}/${_archive}.tar.zst")
+sha256sums=('REPLACED-BY-THE-RELEASE-WORKFLOW')
+
+package() {
+  cd "${srcdir}/${_archive}"
+  install -d "${pkgdir}/usr/share/blindpass/approval-app" "${pkgdir}/usr/bin"
+  # Everything except the licence texts is the app; the manifest stays next to it so the
+  # installed files can be compared with the signed release archive.
+  cp -r --no-preserve=ownership bin lib ui ./*.qml manifest.json README.md \
+    "${pkgdir}/usr/share/blindpass/approval-app/"
+  # blindpass-approvals resolves its own path with readlink -f, so a symlink is enough.
+  ln -s /usr/share/blindpass/approval-app/bin/blindpass-approvals "${pkgdir}/usr/bin/blindpass-approvals"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+  install -Dm644 LICENSES.md "${pkgdir}/usr/share/licenses/${pkgname}/LICENSES.md"
+}

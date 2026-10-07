@@ -10,7 +10,7 @@
         "install:skill": "bash ../../scripts/install_skill.sh",
         "publish:dist": "bash ../../scripts/publish_dist.sh",
         "publish:clawhub": "bash ../../scripts/publish_clawhub.sh",
-        "test": "node tests/index.test.mjs"
+        "test": "node tests/index.test.mjs && node --test tests/sps-base-url.test.mjs"
     },
     "openclaw": {
         "extensions": [

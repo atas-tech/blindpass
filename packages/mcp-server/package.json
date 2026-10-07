@@ -1,5 +1,5 @@
 {
-  "name": "@blindpass/mcp-server",
+  "name": "@blindpass/mcp-server-lib",
   "version": "0.1.0",
   "private": true,
   "type": "module",

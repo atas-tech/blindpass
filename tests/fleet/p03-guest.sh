@@ -763,8 +763,12 @@ PY
     assert-crash-after-intent)
         grant_id=${1:-}
         restarts_before=${2:-}
+        expected_operation=${3:-}
+        expected_epoch=${4:-}
         [[ "$grant_id" =~ ^gr_[A-Za-z0-9_-]{16,128}$ ]] || fail 'grant identifier is invalid'
         [[ "$restarts_before" =~ ^[0-9]+$ ]] || fail 'broker restart count is invalid'
+        [[ "$expected_operation" =~ ^op_[A-Za-z0-9_-]{1,125}$ ]] || fail 'operation identifier is invalid'
+        [[ "$expected_epoch" =~ ^[1-9][0-9]*$ ]] || fail 'issuer epoch is invalid'
         for _attempt in {1..150}; do
             restarts=$(systemctl show --property=NRestarts --value blindpass-broker.service)
             if ((restarts > restarts_before)) && systemctl is-active --quiet blindpass-broker.service; then
@@ -782,6 +786,39 @@ PY
         journal=/var/lib/blindpass/broker/consumed.jsonl
         [[ $(grep -F -c '"'"$grant_id"'"' "$journal" 2>/dev/null || true) == 1 ]] \
             || fail 'consume intent was not durable exactly once'
+        python3 - "$journal" "$grant_id" "$expected_operation" "$expected_epoch" <<'PY'
+import hashlib
+import json
+import os
+import stat
+import sys
+
+def unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError('duplicate journal field')
+        value[key] = item
+    return value
+
+fd = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+metadata = os.fstat(fd)
+assert stat.S_ISREG(metadata.st_mode) and metadata.st_uid == 0
+assert stat.S_IMODE(metadata.st_mode) == 0o600 and metadata.st_nlink == 1
+assert metadata.st_size <= 64 * 1024 * 1024
+with os.fdopen(fd, encoding='utf-8') as source:
+    rows = [json.loads(line, object_pairs_hook=unique_object) for line in source if line.strip()]
+matches = [row for row in rows if row.get('grant_id') == sys.argv[2]]
+assert len(matches) == 1
+row = matches[0]
+assert set(row) == {'grant_id', 'operation_id', 'issuer_epoch', 'expires_at_ms'}
+assert row['operation_id'] == sys.argv[3]
+assert type(row['issuer_epoch']) is int and row['issuer_epoch'] == int(sys.argv[4])
+assert type(row['expires_at_ms']) is int and row['expires_at_ms'] > 0
+with open('/usr/libexec/blindpass-broker', 'rb') as program:
+    binary_hash = hashlib.file_digest(program, 'sha256').hexdigest()
+print('P06-CJ06 bound_operation=true bound_epoch=true private_single_link=true broker_sha256=' + binary_hash)
+PY
         marker=/run/blindpass/ops/"$grant_id".marker
         [[ ! -e "$marker" && ! -L "$marker" ]] || fail 'crash between intent and effect created a marker'
         printf 'P03-GUEST-CRASH-AFTER-INTENT broker_restarts=%s intent_records=1 marker_created=false\n' "$restarts"
@@ -843,8 +880,47 @@ PY
         [[ "$event_key" =~ ^[A-Za-z0-9_-]{16,128}$ ]] || fail 'broker event key is invalid'
         queue=/var/lib/blindpass/broker/pending-node-events.jsonl
         [[ -f "$queue" && ! -L "$queue" ]] || fail 'broker event queue is missing after restart'
-        matches=$(grep -F -c "$event_key" "$queue" || true)
-        [[ "$matches" == 1 ]] || fail 'broker event was not persisted exactly once'
+        python3 - "$queue" "$event_key" <<'PY' || fail 'broker event was not persisted exactly once'
+import json
+import os
+import stat
+import sys
+
+def unique_fields(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate field")
+        result[key] = value
+    return result
+
+try:
+    descriptor = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(descriptor, "rb") as journal:
+        metadata = os.fstat(journal.fileno())
+        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o600 or metadata.st_nlink != 1
+                or metadata.st_size > 72 * 1024 * 1024):
+            raise ValueError("unsafe queue")
+        rows = [json.loads(line, object_pairs_hook=unique_fields) for line in journal]
+    if not rows or any(not isinstance(row, dict) for row in rows):
+        raise ValueError("invalid queue")
+    # Ownership/closure headers refer to the same key. Only an event's exact
+    # top-level idempotency key proves a queued event, never a text match.
+    events = rows[1:]
+    if (type(rows[0].get("v")) is not int or rows[0]["v"] not in range(1, 6)
+            or any(set(row) != {"idempotency_key", "kind", "body"}
+                   or not isinstance(row["body"], dict)
+                   or not isinstance(row["idempotency_key"], str)
+                   or row["kind"] not in ("operation_request", "operation_result", "operation_cancel", "audit")
+                   for row in events)):
+        raise ValueError("invalid queue shape")
+    matches = [row for row in events if row["idempotency_key"] == sys.argv[2]]
+    if len(matches) != 1 or matches[0]["kind"] != "operation_request":
+        raise ValueError("event count differs")
+except (OSError, ValueError, KeyError, TypeError):
+    sys.exit(1)
+PY
         printf 'P03-GUEST-BROKER-EVENT-PERSISTED\n'
         ;;
     assert-node-outbox-nonempty)

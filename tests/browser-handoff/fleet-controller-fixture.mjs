@@ -168,3 +168,64 @@ export async function approveBrowserOperation(controller, requestEventKey) {
   }, true, { 'idempotency-key': `p05-${randomUUID().replaceAll('-', '')}`, 'if-match': `"${approval.version}"` });
   return operation;
 }
+
+// P06: the packaged native controller runs in another guest and is reached over verified HTTPS. The harness writes
+// the connection details (and the operator's generated password) to a root-only file before this process starts;
+// nothing here starts, seeds or proxies a controller.
+export async function startRemoteFleetController(configPath = '/root/p06-remote-controller.json') {
+  const { readFile } = await import('node:fs/promises');
+  const { request: httpsRequest } = await import('node:https');
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  const origin = new URL(config.origin);
+  const ca = await readFile(config.ca_path);
+  let session; let csrf;
+  const { Agent } = await import('node:https');
+  const agent = new Agent({ keepAlive: true, maxSockets: 1 }); // the host forward accepts one connection at a time
+  const sendOnce = (path, method, body, headers) => new Promise((resolve, reject) => {
+    const req = httpsRequest({ host: origin.hostname, port: Number(origin.port) || 443, path, method, ca, agent, servername: origin.hostname, headers: { host: origin.host, accept: 'application/json', ...headers }, timeout: 8000 }, reply => {
+      const chunks = []; let size = 0;
+      reply.on('data', bytes => { size += bytes.length; if (size > 1048576) { bytes.fill(0); reply.destroy(); } else chunks.push(bytes); });
+      reply.on('error', () => reject(new Error('fleet_controller_response_failed')));
+      reply.on('end', () => {
+        const bytes = Buffer.concat(chunks); for (const chunk of chunks) chunk.fill(0);
+        try { resolve({ status: reply.statusCode, bytes, headers: reply.headers }); } catch (error) { reject(error); }
+      });
+    });
+    req.on('error', () => reject(new Error('fleet_controller_transport_failed')));
+    req.on('timeout', () => req.destroy()); req.end(body === undefined ? undefined : JSON.stringify(body));
+  });
+  // Reads are retried on a transport failure (the forwarded listener is one connection deep); writes never are.
+  async function send(path, method, body, headers) {
+    for (let attempt = 0; ; attempt++) {
+      try { return await sendOnce(path, method, body, headers); }
+      catch (error) { if (method !== 'GET' || attempt >= 4) throw error; await new Promise(resolve => setTimeout(resolve, 250)); }
+    }
+  }
+  async function api(path, method = 'GET', body, authenticated = true, extraHeaders = {}) {
+    const headers = { ...extraHeaders };
+    if (body !== undefined) headers['content-type'] = 'application/json';
+    if (authenticated) {
+      headers.cookie = `bp_session=${session}; bp_csrf=${csrf}`;
+      if (method !== 'GET') { headers.origin = config.origin; headers['x-csrf-token'] = csrf; }
+    }
+    const reply = await send(path, method, body, headers);
+    try {
+      if (reply.status < 200 || reply.status >= 300) {
+        // Status, route and the controller's fixed error code only: no request or response body.
+        let code = 'unparsed'; try { const parsed = JSON.parse(reply.bytes.toString()); if (typeof parsed.error === 'string' && /^[a-z0-9_.-]{1,64}$/.test(parsed.error)) code = parsed.error; } catch {}
+        process.stderr.write(`P06-REMOTE-CONTROLLER status=${reply.status} error=${code} route=${method} ${path.replace(/[A-Za-z0-9_-]{16,}/g, ':id')}\n`);
+      }
+      return decodeControllerResponse(reply.status, reply.bytes);
+    } finally { reply.bytes.fill(0); }
+  }
+  const token = randomBytes(32).toString('base64url').slice(0, 43);
+  const login = await send('/api/v3/admin/session/login', 'POST', { username: config.username, password: config.password },
+    { 'content-type': 'application/json', origin: config.origin, cookie: `bp_csrf=${token}`, 'x-csrf-token': token });
+  assert.equal(login.status, 200, `remote_login_${login.status}`);
+  const loginBody = JSON.parse(login.bytes.toString()); login.bytes.fill(0);
+  session = (login.headers['set-cookie'] ?? []).map(value => value.match(/^bp_session=([^;]+)/)?.[1]).find(Boolean);
+  csrf = loginBody.csrf_token; assert.ok(session && csrf);
+  const capabilities = await api('/api/v3/capabilities', 'GET', undefined, false);
+  const issuerFingerprint = createHash('sha256').update(Buffer.from(capabilities.issuer_pub, 'base64url')).digest('hex');
+  return { api, close: async () => { try { await api('/api/v3/admin/session/logout', 'POST'); } catch {} agent.destroy(); }, issuerFingerprint, adminId: loginBody.operator.id, controllerOrigin: config.origin };
+}

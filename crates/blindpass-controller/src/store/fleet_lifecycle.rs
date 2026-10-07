@@ -92,21 +92,24 @@ pub(super) async fn requeue_revocations_postgres(
 impl Store {
     /// Metadata of an already-recorded node audit row, if any.
     pub(super) async fn node_audit_metadata(&self, id: &str) -> Result<Option<String>, StoreError> {
-        let sql = "SELECT metadata_json FROM audit_events WHERE id = ? AND tenant_id = ?";
-        match &self.database {
-            Database::Sqlite(pool) => sqlx::query_scalar(sql)
-                .bind(id)
-                .bind(&self.tenant_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database),
-            Database::Postgres(pool) => sqlx::query_scalar(&super::pg(sql))
-                .bind(id)
-                .bind(&self.tenant_id)
-                .fetch_optional(pool)
-                .await
-                .map_err(StoreError::Database),
-        }
+        self.run_owned(async {
+            let sql = "SELECT metadata_json FROM audit_events WHERE id = ? AND tenant_id = ?";
+            match &self.database {
+                Database::Sqlite(pool) => sqlx::query_scalar(sql)
+                    .bind(id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database),
+                Database::Postgres(pool) => sqlx::query_scalar(&super::pg(sql))
+                    .bind(id)
+                    .bind(&self.tenant_id)
+                    .fetch_optional(pool)
+                    .await
+                    .map_err(StoreError::Database),
+            }
+        })
+        .await
     }
 
     /// Record the broker-reported outcome of a grant revocation. Only a
@@ -119,86 +122,89 @@ impl Store {
         grant_id: &str,
         outcome: &str,
     ) -> Result<bool, StoreError> {
-        self.checkpoint_clock().await?;
-        let (now, lock) = match &self.database {
-            Database::Sqlite(_) => (SQLITE_NOW_MS, ""),
-            Database::Postgres(_) => (POSTGRES_NOW_MS, " FOR UPDATE OF g, o"),
-        };
-        let select_sql = format!(
-            "SELECT g.status, g.broker_revocation_outcome, g.operation_id,
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            let (now, lock) = match &self.database {
+                Database::Sqlite(_) => (SQLITE_NOW_MS, ""),
+                Database::Postgres(_) => (POSTGRES_NOW_MS, " FOR UPDATE OF g, o"),
+            };
+            let select_sql = format!(
+                "SELECT g.status, g.broker_revocation_outcome, g.operation_id,
                     o.status AS operation_status, o.result_json
              FROM grants g JOIN operations o ON o.id = g.operation_id AND o.tenant_id = g.tenant_id
              WHERE g.id = ? AND g.node_id = ? AND g.tenant_id = ?{lock}"
-        );
-        let grant_sql = format!(
-            "UPDATE grants SET broker_revocation_outcome = ?,
+            );
+            let grant_sql = format!(
+                "UPDATE grants SET broker_revocation_outcome = ?,
                consumed_at = CASE WHEN ? = 'already_consumed'
                  THEN COALESCE(consumed_at, {now}) ELSE consumed_at END
              WHERE id = ? AND tenant_id = ? AND broker_revocation_outcome IS NULL"
-        );
-        let operation_sql = "UPDATE operations SET result_json = ?, version = version + 1
+            );
+            let operation_sql = "UPDATE operations SET result_json = ?, version = version + 1
              WHERE id = ? AND tenant_id = ? AND status = 'revoked'";
-        macro_rules! apply {
-            ($pool:expr, $convert:expr) => {{
-                let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
-                let Some(row) = sqlx::query(&$convert(&select_sql))
-                    .bind(grant_id)
-                    .bind(node_id)
-                    .bind(&self.tenant_id)
-                    .fetch_optional(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?
-                else {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                };
-                let status: String = row.try_get("status").map_err(StoreError::Database)?;
-                let recorded: Option<String> = row
-                    .try_get("broker_revocation_outcome")
-                    .map_err(StoreError::Database)?;
-                let operation_id: String =
-                    row.try_get("operation_id").map_err(StoreError::Database)?;
-                let operation_status: String = row
-                    .try_get("operation_status")
-                    .map_err(StoreError::Database)?;
-                let result_json: Option<String> =
-                    row.try_get("result_json").map_err(StoreError::Database)?;
-                if status != "revoked" {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(false);
-                }
-                if let Some(recorded) = recorded {
-                    tx.rollback().await.map_err(StoreError::Database)?;
-                    return Ok(recorded == outcome);
-                }
-                sqlx::query(&$convert(&grant_sql))
-                    .bind(outcome)
-                    .bind(outcome)
-                    .bind(grant_id)
-                    .bind(&self.tenant_id)
-                    .execute(&mut *tx)
-                    .await
-                    .map_err(StoreError::Database)?;
-                if outcome == "already_consumed" && operation_status == "revoked" {
-                    let merged = with_revocation_result(result_json.as_deref(), None);
-                    if result_json.as_deref() != Some(merged.as_str()) {
-                        sqlx::query(&$convert(operation_sql))
-                            .bind(merged)
-                            .bind(&operation_id)
-                            .bind(&self.tenant_id)
-                            .execute(&mut *tx)
-                            .await
-                            .map_err(StoreError::Database)?;
+            macro_rules! apply {
+                ($pool:expr, $convert:expr) => {{
+                    let mut tx = $pool.begin().await.map_err(StoreError::Database)?;
+                    let Some(row) = sqlx::query(&$convert(&select_sql))
+                        .bind(grant_id)
+                        .bind(node_id)
+                        .bind(&self.tenant_id)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?
+                    else {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Ok(false);
+                    };
+                    let status: String = row.try_get("status").map_err(StoreError::Database)?;
+                    let recorded: Option<String> = row
+                        .try_get("broker_revocation_outcome")
+                        .map_err(StoreError::Database)?;
+                    let operation_id: String =
+                        row.try_get("operation_id").map_err(StoreError::Database)?;
+                    let operation_status: String = row
+                        .try_get("operation_status")
+                        .map_err(StoreError::Database)?;
+                    let result_json: Option<String> =
+                        row.try_get("result_json").map_err(StoreError::Database)?;
+                    if status != "revoked" {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Ok(false);
                     }
-                }
-                tx.commit().await.map_err(StoreError::Database)?;
-                Ok(true)
-            }};
-        }
-        match &self.database {
-            Database::Sqlite(pool) => apply!(pool, |sql: &str| sql.to_owned()),
-            Database::Postgres(pool) => apply!(pool, super::pg),
-        }
+                    if let Some(recorded) = recorded {
+                        tx.rollback().await.map_err(StoreError::Database)?;
+                        return Ok(recorded == outcome);
+                    }
+                    sqlx::query(&$convert(&grant_sql))
+                        .bind(outcome)
+                        .bind(outcome)
+                        .bind(grant_id)
+                        .bind(&self.tenant_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(StoreError::Database)?;
+                    if outcome == "already_consumed" && operation_status == "revoked" {
+                        let merged = with_revocation_result(result_json.as_deref(), None);
+                        if result_json.as_deref() != Some(merged.as_str()) {
+                            sqlx::query(&$convert(operation_sql))
+                                .bind(merged)
+                                .bind(&operation_id)
+                                .bind(&self.tenant_id)
+                                .execute(&mut *tx)
+                                .await
+                                .map_err(StoreError::Database)?;
+                        }
+                    }
+                    tx.commit().await.map_err(StoreError::Database)?;
+                    Ok(true)
+                }};
+            }
+            match &self.database {
+                Database::Sqlite(pool) => apply!(pool, |sql: &str| sql.to_owned()),
+                Database::Postgres(pool) => apply!(pool, super::pg),
+            }
+        })
+        .await
     }
 }
 
@@ -250,51 +256,56 @@ impl Store {
     /// tombstones past their retention. Runs from the periodic maintenance
     /// task and is directly callable.
     pub async fn prune_fleet_state(&self) -> Result<FleetPruneSummary, StoreError> {
-        self.checkpoint_clock().await?;
-        // Legacy challenge rows are no longer written; remove all of them.
-        let retention = [
-            ACKED_INBOX_RETENTION_MS,
-            NODE_EVENT_RETENTION_MS,
-            NODE_SESSION_RETENTION_MS,
-            i64::MAX / 4,
-            0,
-            NODE_EVENT_RETENTION_MS,
-            NODE_EVENT_RETENTION_MS,
-            NODE_EVENT_RETENTION_MS,
-        ];
-        let mut counts = [0_u64; 8];
-        for (index, statement) in PRUNE_STATEMENTS.iter().enumerate() {
-            counts[index] = match &self.database {
-                Database::Sqlite(pool) => sqlx::query(&statement.replace("{now}", SQLITE_NOW_MS))
-                    .bind(&self.tenant_id)
-                    .bind(retention[index])
-                    .bind(PRUNE_BATCH)
-                    .execute(pool)
-                    .await
-                    .map_err(StoreError::Database)?
-                    .rows_affected(),
-                Database::Postgres(pool) => {
-                    sqlx::query(&super::pg(&statement.replace("{now}", POSTGRES_NOW_MS)))
-                        .bind(&self.tenant_id)
-                        .bind(retention[index])
-                        .bind(PRUNE_BATCH)
-                        .execute(pool)
-                        .await
-                        .map_err(StoreError::Database)?
-                        .rows_affected()
-                }
-            };
-        }
-        Ok(FleetPruneSummary {
-            acknowledged_inbox_rows: counts[0],
-            node_events: counts[1],
-            node_sessions: counts[2],
-            node_challenges: counts[3],
-            grant_tombstones: counts[4],
-            provisioning_offers: counts[5],
-            provisioning_links: counts[6],
-            provisioning_receipts: counts[7],
+        self.run_owned(async {
+            self.checkpoint_clock().await?;
+            // Legacy challenge rows are no longer written; remove all of them.
+            let retention = [
+                ACKED_INBOX_RETENTION_MS,
+                NODE_EVENT_RETENTION_MS,
+                NODE_SESSION_RETENTION_MS,
+                i64::MAX / 4,
+                0,
+                NODE_EVENT_RETENTION_MS,
+                NODE_EVENT_RETENTION_MS,
+                NODE_EVENT_RETENTION_MS,
+            ];
+            let mut counts = [0_u64; 8];
+            for (index, statement) in PRUNE_STATEMENTS.iter().enumerate() {
+                counts[index] = match &self.database {
+                    Database::Sqlite(pool) => {
+                        sqlx::query(&statement.replace("{now}", SQLITE_NOW_MS))
+                            .bind(&self.tenant_id)
+                            .bind(retention[index])
+                            .bind(PRUNE_BATCH)
+                            .execute(pool)
+                            .await
+                            .map_err(StoreError::Database)?
+                            .rows_affected()
+                    }
+                    Database::Postgres(pool) => {
+                        sqlx::query(&super::pg(&statement.replace("{now}", POSTGRES_NOW_MS)))
+                            .bind(&self.tenant_id)
+                            .bind(retention[index])
+                            .bind(PRUNE_BATCH)
+                            .execute(pool)
+                            .await
+                            .map_err(StoreError::Database)?
+                            .rows_affected()
+                    }
+                };
+            }
+            Ok(FleetPruneSummary {
+                acknowledged_inbox_rows: counts[0],
+                node_events: counts[1],
+                node_sessions: counts[2],
+                node_challenges: counts[3],
+                grant_tombstones: counts[4],
+                provisioning_offers: counts[5],
+                provisioning_links: counts[6],
+                provisioning_receipts: counts[7],
+            })
         })
+        .await
     }
 }
 

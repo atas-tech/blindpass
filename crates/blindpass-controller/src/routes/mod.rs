@@ -15,6 +15,7 @@ pub(crate) mod exchanges;
 pub(crate) mod fleet;
 pub(crate) mod node;
 mod provisioning;
+pub(crate) mod recovery;
 pub(crate) mod secrets;
 
 pub(crate) use admin_session::forced_password_change_gate;

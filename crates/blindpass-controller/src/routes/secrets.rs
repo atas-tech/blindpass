@@ -131,11 +131,15 @@ async fn create_request(
         }
     };
     let expires_at = u64::try_from(created.expires_at_ms.div_euclid(1_000)).unwrap_or_default();
+    let keys = match state.legacy_authority_keys().await {
+        Ok(keys) => keys,
+        Err(_) => return service_unavailable(),
+    };
     let metadata_sig = match sign_browser_payload(
         &created.id,
         expires_at,
         BrowserScope::Metadata,
-        state.root_secret.as_bytes(),
+        keys.root.as_bytes(),
     ) {
         Ok(signature) => signature,
         Err(_) => {
@@ -150,7 +154,7 @@ async fn create_request(
         &created.id,
         expires_at,
         BrowserScope::Submit,
-        state.root_secret.as_bytes(),
+        keys.root.as_bytes(),
     ) {
         Ok(signature) => signature,
         Err(_) => {
@@ -195,11 +199,15 @@ async fn metadata(
         )
             .into_response();
     };
+    let keys = match state.legacy_authority_keys().await {
+        Ok(keys) => keys,
+        Err(_) => return service_unavailable(),
+    };
     let expiry = match verify_browser_payload(
         &id,
         BrowserScope::Metadata,
         signature,
-        state.root_secret.as_bytes(),
+        keys.root.as_bytes(),
         current_seconds(),
     ) {
         Ok(expiry) => expiry,
@@ -246,11 +254,15 @@ async fn submit(
         )
             .into_response();
     };
+    let keys = match state.legacy_authority_keys().await {
+        Ok(keys) => keys,
+        Err(_) => return service_unavailable(),
+    };
     match verify_browser_payload(
         &id,
         BrowserScope::Submit,
         signature,
-        state.root_secret.as_bytes(),
+        keys.root.as_bytes(),
         current_seconds(),
     ) {
         Ok(_) => {}
@@ -387,11 +399,15 @@ async fn issue_browser_status_capability(
     let Some(signature) = query.sig.as_deref() else {
         return gone_status();
     };
+    let keys = match state.legacy_authority_keys().await {
+        Ok(keys) => keys,
+        Err(_) => return service_unavailable(),
+    };
     let expiry = match verify_browser_payload(
         &id,
         BrowserScope::Metadata,
         signature,
-        state.root_secret.as_bytes(),
+        keys.root.as_bytes(),
         current_seconds(),
     ) {
         Ok(expiry) => expiry,
@@ -409,12 +425,7 @@ async fn issue_browser_status_capability(
         }
         _ => return gone_status(),
     };
-    match sign_browser_payload(
-        &id,
-        expiry,
-        BrowserScope::Status,
-        state.root_secret.as_bytes(),
-    ) {
+    match sign_browser_payload(&id, expiry, BrowserScope::Status, keys.root.as_bytes()) {
         Ok(status_sig) => Json(json!({"status_sig":status_sig})).into_response(),
         Err(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -435,11 +446,15 @@ async fn browser_status(
     let Some(signature) = query.sig.as_deref() else {
         return gone_status();
     };
+    let keys = match state.legacy_authority_keys().await {
+        Ok(keys) => keys,
+        Err(_) => return service_unavailable(),
+    };
     if verify_browser_payload(
         &id,
         BrowserScope::Status,
         signature,
-        state.root_secret.as_bytes(),
+        keys.root.as_bytes(),
         current_seconds(),
     )
     .is_err()
@@ -460,6 +475,7 @@ async fn browser_status(
 
 pub(crate) fn workload_auth_error(error: AuthError) -> Response {
     match error {
+        AuthError::AuthorityUnavailable => service_unavailable(),
         AuthError::MissingBearer => (
             StatusCode::UNAUTHORIZED,
             Json(json!({"error":"Missing bearer token"})),

@@ -1,0 +1,20 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 1 test
+test p06_pw05_existing_foreign_objects_are_not_pristine_initialization ... 
+thread 'p06_pw05_existing_foreign_objects_are_not_pristine_initialization' (67698) panicked at crates/blindpass-controller/tests/production_ownership.rs:46:9:
+assertion `left == right` failed: unexpected production command result
+  left: false
+ right: true
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_pw05_existing_foreign_objects_are_not_pristine_initialization
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 1.02s
+
+error: test failed, to rerun pass `-p blindpass-controller --test production_ownership`

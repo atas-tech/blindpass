@@ -1,0 +1,37 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.20s
+     Running tests/postgres_config_diagnostics.rs (target/debug/deps/postgres_config_diagnostics-ff40c42059c99d6b)
+
+running 3 tests
+test p06_pgq01_actual_startup_refuses_unknown_options_without_logging_credentials ... FAILED
+test p06_pgq02_supported_and_encoded_names_work_unknown_or_malformed_names_refuse ... FAILED
+test p06_pgq03_production_file_and_test_mode_url_have_the_same_safe_refusal ... FAILED
+
+failures:
+
+---- p06_pgq01_actual_startup_refuses_unknown_options_without_logging_credentials stdout ----
+P06-PGQ01 format=json dummy_canary_logged=true startup_timed_out=true
+
+thread 'p06_pgq01_actual_startup_refuses_unknown_options_without_logging_credentials' (784482) panicked at crates/blindpass-controller/tests/postgres_config_diagnostics.rs:122:9:
+unknown database option leaked a dummy canary
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- p06_pgq02_supported_and_encoded_names_work_unknown_or_malformed_names_refuse stdout ----
+
+thread 'p06_pgq02_supported_and_encoded_names_work_unknown_or_malformed_names_refuse' (784650) panicked at crates/blindpass-controller/tests/postgres_config_diagnostics.rs:160:22:
+unsupported database option accepted
+
+---- p06_pgq03_production_file_and_test_mode_url_have_the_same_safe_refusal stdout ----
+
+thread 'p06_pgq03_production_file_and_test_mode_url_have_the_same_safe_refusal' (784651) panicked at crates/blindpass-controller/tests/postgres_config_diagnostics.rs:175:5:
+assertion failed: Config::from_variables(f.values.clone()).is_err()
+
+
+failures:
+    p06_pgq01_actual_startup_refuses_unknown_options_without_logging_credentials
+    p06_pgq02_supported_and_encoded_names_work_unknown_or_malformed_names_refuse
+    p06_pgq03_production_file_and_test_mode_url_have_the_same_safe_refusal
+
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.02s
+
+error: test failed, to rerun pass `-p blindpass-controller --test postgres_config_diagnostics`

@@ -27,10 +27,406 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     Admin(AdminCommand),
-    /// Apply controller database migrations and exit.
-    Migrate,
+    /// Apply controller database migrations and exit. An older supported schema
+    /// is migrated only after an encrypted pre-upgrade backup is published and
+    /// verified; the backup directory and one credential model are then required.
+    Migrate {
+        #[arg(long)]
+        pre_upgrade_backup_dir: Option<PathBuf>,
+        #[command(flatten)]
+        seal: SealCredentials,
+    },
     /// Explicit controller key creation and private-file validation.
     Keys(keys::KeysCommand),
+    /// Create or verify an authenticated complete controller backup.
+    Backup(BackupCommand),
+    /// Restore authenticated SQLite state into a new private, fenced destination.
+    Restore(RestoreCommand),
+    /// Report controller-observed state through the authenticated operator API.
+    Status(StatusCommand),
+    /// Planned same-owner SQLite handoff: export a fenced source, import into a
+    /// new private root, or abort before anything activated. Not a restore.
+    Handoff(HandoffCommand),
+}
+
+/// How an archive is sealed (ADR 0013): the single recovery credential of the
+/// earlier model, or a signing credential plus the offline recipient's certificate.
+#[derive(Debug, Args)]
+struct SealCredentials {
+    #[arg(long, conflicts_with_all = ["signing_credential_file", "recipient_certificate_file"])]
+    recovery_key_file: Option<PathBuf>,
+    /// Signing credential (private key and certificate) kept on the backup host.
+    #[arg(long, requires = "recipient_certificate_file")]
+    signing_credential_file: Option<PathBuf>,
+    /// Certificate-only file of the offline recipient; never its private key.
+    #[arg(long, requires = "signing_credential_file")]
+    recipient_certificate_file: Option<PathBuf>,
+}
+impl SealCredentials {
+    fn is_empty(&self) -> bool {
+        self.recovery_key_file.is_none() && self.signing_credential_file.is_none()
+    }
+    fn require(&self) -> Result<(), String> {
+        if self.recovery_key_file.is_some() != self.signing_credential_file.is_some() {
+            Ok(())
+        } else {
+            Err("choose --recovery-key-file or both --signing-credential-file and --recipient-certificate-file".to_owned())
+        }
+    }
+    fn push<'a>(&'a self, out: &mut Vec<&'a std::ffi::OsStr>) {
+        use std::ffi::OsStr;
+        if let Some(key) = &self.recovery_key_file {
+            out.extend([OsStr::new("--recovery-key-file"), key.as_os_str()]);
+        }
+        if let (Some(signing), Some(recipient)) = (
+            &self.signing_credential_file,
+            &self.recipient_certificate_file,
+        ) {
+            out.extend([
+                OsStr::new("--signing-credential-file"),
+                signing.as_os_str(),
+                OsStr::new("--recipient-certificate-file"),
+                recipient.as_os_str(),
+            ]);
+        }
+    }
+}
+
+/// How an archive is opened: the single recovery credential, or the offline
+/// recipient key with the signer's certificate (certificate-only is enough).
+#[derive(Debug, Args)]
+struct OpenCredentials {
+    #[arg(long, conflicts_with_all = ["recipient_key_file", "signing_certificate_file"])]
+    recovery_key_file: Option<PathBuf>,
+    #[arg(long, requires = "signing_certificate_file")]
+    recipient_key_file: Option<PathBuf>,
+    #[arg(long, requires = "recipient_key_file")]
+    signing_certificate_file: Option<PathBuf>,
+}
+impl OpenCredentials {
+    fn require(&self) -> Result<(), String> {
+        if self.recovery_key_file.is_some() != self.recipient_key_file.is_some() {
+            Ok(())
+        } else {
+            Err("choose --recovery-key-file or both --recipient-key-file and --signing-certificate-file".to_owned())
+        }
+    }
+    fn push<'a>(&'a self, out: &mut Vec<&'a std::ffi::OsStr>) {
+        use std::ffi::OsStr;
+        if let Some(key) = &self.recovery_key_file {
+            out.extend([OsStr::new("--recovery-key-file"), key.as_os_str()]);
+        }
+        if let (Some(key), Some(certificate)) =
+            (&self.recipient_key_file, &self.signing_certificate_file)
+        {
+            out.extend([
+                OsStr::new("--recipient-key-file"),
+                key.as_os_str(),
+                OsStr::new("--signing-certificate-file"),
+                certificate.as_os_str(),
+            ]);
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+struct HandoffCommand {
+    #[command(subcommand)]
+    command: HandoffAction,
+}
+
+#[derive(Debug, Subcommand)]
+enum HandoffAction {
+    /// Seal the verified archive and retire the fenced source.
+    Export {
+        #[arg(long)]
+        output: PathBuf,
+        #[command(flatten)]
+        seal: SealCredentials,
+        #[arg(long)]
+        handoff_id: String,
+    },
+    /// Publish the archive into a new private root under the same owner.
+    Import {
+        #[arg(long)]
+        archive: PathBuf,
+        #[arg(long)]
+        receipt: PathBuf,
+        #[command(flatten)]
+        open: OpenCredentials,
+        /// Private tmpfs directory for decrypted material (default: the runtime
+        /// directory, then /dev/shm); persistent disk is refused.
+        #[arg(long)]
+        staging_directory: Option<PathBuf>,
+        #[arg(long)]
+        destination: PathBuf,
+        #[arg(long)]
+        authority_url_file: PathBuf,
+        #[arg(long)]
+        tenant_id: String,
+        #[arg(long)]
+        owner_id: String,
+    },
+    /// Un-retire the source while the authority record is still the exported one.
+    Abort {
+        #[arg(long)]
+        handoff_id: String,
+        /// Also delete this handoff's transfer files from the export directory.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+}
+
+fn run_handoff(command: HandoffCommand) -> Result<(), String> {
+    use std::ffi::OsStr;
+    match command.command {
+        HandoffAction::Export {
+            output,
+            seal,
+            handoff_id,
+        } => {
+            seal.require()?;
+            let mut arguments = vec![
+                OsStr::new("handoff"),
+                OsStr::new("export"),
+                OsStr::new("--output"),
+                output.as_os_str(),
+            ];
+            seal.push(&mut arguments);
+            arguments.extend([OsStr::new("--handoff-id"), OsStr::new(&handoff_id)]);
+            run_controller(&arguments)
+        }
+        HandoffAction::Import {
+            archive,
+            receipt,
+            open,
+            staging_directory,
+            destination,
+            authority_url_file,
+            tenant_id,
+            owner_id,
+        } => {
+            open.require()?;
+            let mut arguments = vec![
+                OsStr::new("handoff"),
+                OsStr::new("import"),
+                OsStr::new("--archive"),
+                archive.as_os_str(),
+                OsStr::new("--receipt"),
+                receipt.as_os_str(),
+            ];
+            open.push(&mut arguments);
+            if let Some(staging) = &staging_directory {
+                arguments.extend([OsStr::new("--staging-directory"), staging.as_os_str()]);
+            }
+            arguments.extend([
+                OsStr::new("--destination"),
+                destination.as_os_str(),
+                OsStr::new("--authority-url-file"),
+                authority_url_file.as_os_str(),
+                OsStr::new("--tenant-id"),
+                OsStr::new(&tenant_id),
+                OsStr::new("--owner-id"),
+                OsStr::new(&owner_id),
+            ]);
+            run_controller(&arguments)
+        }
+        HandoffAction::Abort { handoff_id, output } => {
+            let mut arguments = vec![
+                OsStr::new("handoff"),
+                OsStr::new("abort"),
+                OsStr::new("--handoff-id"),
+                OsStr::new(&handoff_id),
+            ];
+            if let Some(output) = &output {
+                arguments.extend([OsStr::new("--output"), output.as_os_str()]);
+            }
+            run_controller(&arguments)
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+struct StatusCommand {
+    #[command(flatten)]
+    http: HttpOptions,
+    /// Summarize every registered node: online (seen within 45 s), stale (120 s),
+    /// offline or revoked, with no key material or capabilities.
+    #[arg(long, required = true)]
+    nodes: bool,
+    /// Exit non-zero unless at least one node is active and every active node is
+    /// online. For migration and rollback gates.
+    #[arg(long)]
+    require_online: bool,
+}
+
+#[derive(Debug, Args)]
+struct RestoreCommand {
+    #[arg(long)]
+    archive: PathBuf,
+    #[command(flatten)]
+    open: OpenCredentials,
+    /// Refuse any archive whose SHA-256 is not the one recorded off-host.
+    #[arg(long)]
+    expected_archive_sha256: Option<String>,
+    /// Private tmpfs directory for decrypted material (default: the runtime
+    /// directory, then /dev/shm); persistent disk is refused.
+    #[arg(long)]
+    staging_directory: Option<PathBuf>,
+    #[arg(long)]
+    destination: PathBuf,
+    #[arg(long)]
+    authority_url_file: PathBuf,
+    /// Required for a PostgreSQL archive: private file holding the empty target
+    /// database URL. A SQLite archive must not set it.
+    #[arg(long)]
+    database_url_file: Option<PathBuf>,
+    #[arg(long)]
+    tenant_id: String,
+    #[arg(long)]
+    owner_id: String,
+    #[arg(long)]
+    recovery_id: String,
+}
+fn run_restore(command: RestoreCommand) -> Result<(), String> {
+    use std::ffi::OsStr;
+    command.open.require()?;
+    let mut arguments = vec![
+        OsStr::new("restore"),
+        OsStr::new("--archive"),
+        command.archive.as_os_str(),
+    ];
+    command.open.push(&mut arguments);
+    if let Some(digest) = &command.expected_archive_sha256 {
+        arguments.extend([OsStr::new("--expected-archive-sha256"), OsStr::new(digest)]);
+    }
+    if let Some(staging) = &command.staging_directory {
+        arguments.extend([OsStr::new("--staging-directory"), staging.as_os_str()]);
+    }
+    arguments.extend([
+        OsStr::new("--destination"),
+        command.destination.as_os_str(),
+        OsStr::new("--authority-url-file"),
+        command.authority_url_file.as_os_str(),
+        OsStr::new("--tenant-id"),
+        OsStr::new(&command.tenant_id),
+        OsStr::new("--owner-id"),
+        OsStr::new(&command.owner_id),
+        OsStr::new("--recovery-id"),
+        OsStr::new(&command.recovery_id),
+    ]);
+    if let Some(url) = &command.database_url_file {
+        arguments.extend([OsStr::new("--database-url-file"), url.as_os_str()]);
+    }
+    run_controller(&arguments)
+}
+
+#[derive(Debug, Args)]
+struct BackupCommand {
+    #[command(subcommand)]
+    command: BackupAction,
+}
+#[derive(Debug, Subcommand)]
+enum BackupAction {
+    /// Create a private credential; never overwrite. Without `--role` this is the
+    /// single recovery key of the earlier model; `--role signing|recipient` with
+    /// `--certificate-output` also writes the certificate-only file (ADR 0013).
+    KeyInit {
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, value_parser = ["signing", "recipient"], requires = "certificate_output")]
+        role: Option<String>,
+        #[arg(long, requires = "role")]
+        certificate_output: Option<PathBuf>,
+    },
+    /// Snapshot initialized state, authenticate/encrypt and verify before publication.
+    Create {
+        #[arg(long)]
+        output: PathBuf,
+        #[command(flatten)]
+        seal: SealCredentials,
+    },
+    /// Verify using private staging; never activate restored state.
+    Verify {
+        #[arg(long)]
+        archive: PathBuf,
+        #[command(flatten)]
+        open: OpenCredentials,
+        #[arg(long)]
+        work_directory: PathBuf,
+        /// Refuse any archive whose SHA-256 is not the one recorded off-host.
+        #[arg(long)]
+        expected_archive_sha256: Option<String>,
+    },
+    /// Remove interrupted private staging under an exclusive custody lock.
+    Cleanup {
+        #[arg(long)]
+        work_directory: PathBuf,
+    },
+}
+
+fn run_backup(command: BackupCommand) -> Result<(), String> {
+    use std::ffi::OsStr;
+    match command.command {
+        BackupAction::KeyInit {
+            output,
+            role,
+            certificate_output,
+        } => {
+            let mut arguments = vec![
+                OsStr::new("backup"),
+                OsStr::new("key-init"),
+                OsStr::new("--output"),
+                output.as_os_str(),
+            ];
+            if let (Some(role), Some(certificate)) = (&role, &certificate_output) {
+                arguments.extend([
+                    OsStr::new("--role"),
+                    OsStr::new(role),
+                    OsStr::new("--certificate-output"),
+                    certificate.as_os_str(),
+                ]);
+            }
+            run_controller(&arguments)
+        }
+        BackupAction::Create { output, seal } => {
+            seal.require()?;
+            let mut arguments = vec![
+                OsStr::new("backup"),
+                OsStr::new("create"),
+                OsStr::new("--output"),
+                output.as_os_str(),
+            ];
+            seal.push(&mut arguments);
+            run_controller(&arguments)
+        }
+        BackupAction::Verify {
+            archive,
+            open,
+            work_directory,
+            expected_archive_sha256,
+        } => {
+            open.require()?;
+            let mut arguments = vec![
+                OsStr::new("backup"),
+                OsStr::new("verify"),
+                OsStr::new("--archive"),
+                archive.as_os_str(),
+            ];
+            open.push(&mut arguments);
+            arguments.extend([OsStr::new("--work-directory"), work_directory.as_os_str()]);
+            if let Some(digest) = &expected_archive_sha256 {
+                arguments.extend([OsStr::new("--expected-archive-sha256"), OsStr::new(digest)]);
+            }
+            run_controller(&arguments)
+        }
+        BackupAction::Cleanup { work_directory } => run_controller(&[
+            OsStr::new("backup"),
+            OsStr::new("cleanup"),
+            OsStr::new("--work-directory"),
+            work_directory.as_os_str(),
+        ]),
+    }
 }
 
 #[derive(Debug, Args)]
@@ -81,11 +477,28 @@ enum AdminAction {
     /// Recover from a detected database clock regression. Removes expiring
     /// state created under the regressed clock and revokes operator sessions.
     ReconcileClock,
-    /// Reset an operator password through the local administration socket.
+    /// Reset an operator password through the local administration socket. This
+    /// is also the recovery for a locked-out account: it clears every sign-in
+    /// lock, revokes the operator's sessions and prints a temporary password.
     ResetPassword {
+        /// The operator's username (as the console shows it, any letter case) or
+        /// its id. `blindpass admin operators list` shows both.
+        #[arg(value_name = "OPERATOR")]
         id: String,
         #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
         socket: PathBuf,
+    },
+    /// Show operators (id, username, role, state) through the local
+    /// administration socket, without opening the database.
+    Operators {
+        #[command(subcommand)]
+        command: OperatorsAction,
+    },
+    /// Review and complete a restored controller's quarantined state through the
+    /// recovering controller's local administration socket (never an API call).
+    Recovery {
+        #[command(subcommand)]
+        command: RecoveryAction,
     },
     /// Manage one-use node enrollment requests through the controller API.
     Enrollment {
@@ -96,6 +509,81 @@ enum AdminAction {
     Node {
         #[command(subcommand)]
         command: NodeAction,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum OperatorsAction {
+    /// List operators: id, username, role and sign-in lock state. Identity and
+    /// state only; never a password, hash or session.
+    List {
+        /// Print the raw JSON answer instead of a table.
+        #[arg(long)]
+        json: bool,
+        #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
+        socket: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RecoveryAction {
+    /// Open gates, node coverage and undecided items. Changes nothing.
+    Status {
+        #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
+        socket: PathBuf,
+    },
+    /// List and decide quarantined operations, grants and accounts.
+    Review {
+        #[command(subcommand)]
+        command: RecoveryReviewAction,
+    },
+    /// Waive a node that cannot report. Its broker trust is revoked; it must be
+    /// re-enrolled after activation.
+    WaiveNode {
+        node_id: String,
+        #[arg(long)]
+        operator: String,
+        #[arg(long, default_value = "")]
+        note: String,
+        #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
+        socket: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum RecoveryReviewAction {
+    /// One page (100 items) of items with their decisions.
+    List {
+        #[arg(long, default_value_t = 0)]
+        offset: u64,
+        #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
+        socket: PathBuf,
+    },
+    /// Record accept|reject|revoke for one item, or for every undecided item of a
+    /// category when --subject is omitted. Decisions can change until `complete`.
+    Decide {
+        #[arg(long)]
+        category: String,
+        #[arg(long)]
+        subject: Option<String>,
+        #[arg(long, default_value = "")]
+        related: String,
+        #[arg(long)]
+        decision: String,
+        #[arg(long)]
+        operator: String,
+        #[arg(long, default_value = "")]
+        note: String,
+        #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
+        socket: PathBuf,
+    },
+    /// Declare the review complete. Refused while an item is undecided or a node is
+    /// neither covered nor waived. Final: decisions and waivers close.
+    Complete {
+        #[arg(long)]
+        operator: String,
+        #[arg(long, default_value = DEFAULT_ADMIN_SOCKET)]
+        socket: PathBuf,
     },
 }
 
@@ -153,8 +641,15 @@ fn main() -> ExitCode {
 
 fn run(cli: Cli) -> Result<(), String> {
     let admin = match cli.command {
-        Command::Migrate => return run_migrate(),
+        Command::Migrate {
+            pre_upgrade_backup_dir,
+            seal,
+        } => return run_migrate(pre_upgrade_backup_dir, &seal),
         Command::Keys(command) => return keys::run(command),
+        Command::Backup(command) => return run_backup(command),
+        Command::Restore(command) => return run_restore(command),
+        Command::Status(command) => return run_status(command),
+        Command::Handoff(command) => return run_handoff(command),
         Command::Admin(admin) => admin,
     };
     let AdminCommand { http, command } = admin;
@@ -181,6 +676,8 @@ fn run(cli: Cli) -> Result<(), String> {
         AdminAction::ResetPassword { id, socket } => {
             (socket, json!({"command":"reset-password","id":id}))
         }
+        AdminAction::Recovery { command } => return run_recovery(command),
+        AdminAction::Operators { command } => return run_operators(command),
         AdminAction::Enrollment { .. } | AdminAction::Node { .. } => unreachable!(),
     };
     let response = call_admin_socket(&socket, &request)?;
@@ -189,7 +686,7 @@ fn run(cli: Cli) -> Result<(), String> {
             .get("error")
             .and_then(Value::as_str)
             .unwrap_or("admin_request_failed");
-        return Err(error.to_owned());
+        return Err(explain_admin_error(error));
     }
     let output = serde_json::to_string_pretty(&response)
         .map_err(|_| "could not format administration response".to_owned())?;
@@ -197,8 +694,195 @@ fn run(cli: Cli) -> Result<(), String> {
     Ok(())
 }
 
-fn run_migrate() -> Result<(), String> {
-    run_controller(&[std::ffi::OsStr::new("migrate")])
+fn admin_call(socket: &PathBuf, request: &Value) -> Result<Value, String> {
+    let response = call_admin_socket(socket, request)?;
+    match response.get("error").and_then(Value::as_str) {
+        Some(error) => Err(explain_admin_error(error)),
+        None => Ok(response),
+    }
+}
+
+/// Fixed guidance for the operator-reference errors; every other code is shown
+/// unchanged. Never echoes what the operator typed.
+fn explain_admin_error(code: &str) -> String {
+    let guidance = match code {
+        "operator_not_found" => {
+            "no enabled operator has that id or username; run `blindpass admin operators list` to see them"
+        }
+        "operator_ambiguous" => {
+            "two operators differ only by letter case; use the id shown by `blindpass admin operators list`"
+        }
+        "operator_disabled" => {
+            "that operator is disabled; a password reset applies to enabled operators only"
+        }
+        "invalid_operator_id" => {
+            "give an operator id or username (letters, digits, '.', '_', '@', '-', up to 64 characters)"
+        }
+        _ => return code.to_owned(),
+    };
+    format!("{code}: {guidance}")
+}
+
+fn run_operators(command: OperatorsAction) -> Result<(), String> {
+    let OperatorsAction::List { json, socket } = command;
+    let response = admin_call(&socket, &json!({"command":"operators-list"}))?;
+    if json {
+        return print_json(&response);
+    }
+    let rows = response
+        .get("operators")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "unexpected operators response".to_owned())?;
+    let text = |row: &Value, name: &str| {
+        row.get(name)
+            .and_then(Value::as_str)
+            .unwrap_or("-")
+            .to_owned()
+    };
+    let number = |row: &Value, name: &str| row.get(name).and_then(Value::as_u64).unwrap_or(0);
+    let mut table = vec![[
+        "ID".to_owned(),
+        "USERNAME".to_owned(),
+        "ROLE".to_owned(),
+        "STATE".to_owned(),
+    ]];
+    for row in rows {
+        let mut state = Vec::new();
+        if row.get("disabled").and_then(Value::as_bool) == Some(true) {
+            state.push("disabled".to_owned());
+        }
+        if row.get("must_change_password").and_then(Value::as_bool) == Some(true) {
+            state.push("must change password".to_owned());
+        }
+        let locked = number(row, "account_locked_seconds");
+        if locked > 0 {
+            state.push(format!("locked {locked}s"));
+        }
+        let sources = number(row, "source_locks");
+        if sources > 0 {
+            state.push(format!("{sources} source(s) locked"));
+        }
+        if state.is_empty() {
+            state.push("ok".to_owned());
+        }
+        table.push([
+            text(row, "id"),
+            text(row, "username"),
+            text(row, "role"),
+            state.join(", "),
+        ]);
+    }
+    let widths: Vec<usize> = (0..3)
+        .map(|column| table.iter().map(|row| row[column].len()).max().unwrap_or(0))
+        .collect();
+    for row in &table {
+        println!(
+            "{:<w0$}  {:<w1$}  {:<w2$}  {}",
+            row[0],
+            row[1],
+            row[2],
+            row[3],
+            w0 = widths[0],
+            w1 = widths[1],
+            w2 = widths[2]
+        );
+    }
+    Ok(())
+}
+
+fn run_recovery(command: RecoveryAction) -> Result<(), String> {
+    match command {
+        RecoveryAction::Status { socket } => {
+            print_json(&admin_call(&socket, &json!({"command":"recovery-status"}))?)
+        }
+        RecoveryAction::WaiveNode {
+            node_id,
+            operator,
+            note,
+            socket,
+        } => print_json(&admin_call(
+            &socket,
+            &json!({"command":"recovery-waive-node","node_id":node_id,"operator":operator,"note":note}),
+        )?),
+        RecoveryAction::Review { command } => match command {
+            RecoveryReviewAction::List { offset, socket } => print_json(&admin_call(
+                &socket,
+                &json!({"command":"recovery-review-list","offset":offset}),
+            )?),
+            RecoveryReviewAction::Complete { operator, socket } => print_json(&admin_call(
+                &socket,
+                &json!({"command":"recovery-review-complete","operator":operator}),
+            )?),
+            RecoveryReviewAction::Decide {
+                category,
+                subject,
+                related,
+                decision,
+                operator,
+                note,
+                socket,
+            } => {
+                let decide = |subject: &str, related: &str| {
+                    admin_call(
+                        &socket,
+                        &json!({"command":"recovery-review-decide","category":category,"subject_id":subject,
+                            "related_id":related,"decision":decision,"operator":operator,"note":note}),
+                    )
+                };
+                if let Some(subject) = subject {
+                    decide(&subject, &related)?;
+                    return print_json(&json!({"decided":1}));
+                }
+                // Whole category: undecided items only, read page by page.
+                let mut decided = 0_u64;
+                let mut offset = 0_u64;
+                loop {
+                    let page = admin_call(
+                        &socket,
+                        &json!({"command":"recovery-review-list","offset":offset}),
+                    )?;
+                    let items = page["items"].as_array().cloned().unwrap_or_default();
+                    for item in &items {
+                        if item["category"] == category.as_str() && item["decision"].is_null() {
+                            decide(
+                                item["subject_id"].as_str().unwrap_or_default(),
+                                item["related_id"].as_str().unwrap_or_default(),
+                            )?;
+                            decided += 1;
+                        }
+                    }
+                    offset += items.len() as u64;
+                    if items.is_empty() || offset >= page["total"].as_u64().unwrap_or(0) {
+                        break;
+                    }
+                }
+                print_json(&json!({"decided":decided}))
+            }
+        },
+    }
+}
+
+fn run_migrate(
+    pre_upgrade_backup_dir: Option<PathBuf>,
+    seal: &SealCredentials,
+) -> Result<(), String> {
+    let mut args = vec![std::ffi::OsStr::new("migrate")];
+    match &pre_upgrade_backup_dir {
+        Some(directory) => {
+            seal.require()?;
+            args.extend([
+                std::ffi::OsStr::new("--pre-upgrade-backup-dir"),
+                directory.as_os_str(),
+            ]);
+            seal.push(&mut args);
+        }
+        // A credential without a backup directory must never be ignored silently.
+        None if !seal.is_empty() => {
+            return Err("--pre-upgrade-backup-dir is required with a backup credential".to_owned());
+        }
+        None => {}
+    }
+    run_controller(&args)
 }
 
 fn run_seed(fixture: &std::path::Path) -> Result<(), String> {
@@ -210,6 +894,17 @@ fn run_seed(fixture: &std::path::Path) -> Result<(), String> {
 }
 
 fn run_fleet_admin(options: &HttpOptions, command: AdminAction) -> Result<(), String> {
+    with_operator_session(options, |session| match command {
+        AdminAction::Enrollment { command } => run_enrollment_action(session, command),
+        AdminAction::Node { command } => run_node_action(session, command),
+        _ => unreachable!(),
+    })
+}
+
+fn with_operator_session(
+    options: &HttpOptions,
+    action: impl FnOnce(&mut AdminHttpSession) -> Result<(), String>,
+) -> Result<(), String> {
     let controller_url = required_option(options.controller_url.as_deref(), "--controller-url")?;
     let controller_url = validate_origin(controller_url)?;
     let origin = options
@@ -235,11 +930,7 @@ fn run_fleet_admin(options: &HttpOptions, command: AdminAction) -> Result<(), St
         );
     }
 
-    let result = match command {
-        AdminAction::Enrollment { command } => run_enrollment_action(&mut session, command),
-        AdminAction::Node { command } => run_node_action(&mut session, command),
-        _ => unreachable!(),
-    };
+    let result = action(&mut session);
     let logout = session.logout();
     match (result, logout) {
         (Ok(()), Ok(())) => Ok(()),
@@ -248,6 +939,99 @@ fn run_fleet_admin(options: &HttpOptions, command: AdminAction) -> Result<(), St
             Err("command completed, but the controller session could not be logged out".to_owned())
         }
     }
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct NodeCounts {
+    online: u64,
+    stale: u64,
+    offline: u64,
+    revoked: u64,
+}
+
+/// Projects only identity, state and timing. Key fingerprints, capabilities and
+/// names stay out of the report so it can be pasted into a change record.
+fn summarize_nodes(items: &[Value]) -> Result<(NodeCounts, Vec<Value>), String> {
+    let mut counts = NodeCounts::default();
+    let mut rows = Vec::with_capacity(items.len());
+    for item in items {
+        let id = item
+            .get("id")
+            .and_then(Value::as_str)
+            .ok_or("controller returned an invalid node")?;
+        let status = item
+            .get("status")
+            .and_then(Value::as_str)
+            .ok_or("controller returned an invalid node")?;
+        match status {
+            "online" => counts.online += 1,
+            "stale" => counts.stale += 1,
+            "offline" => counts.offline += 1,
+            "revoked" => counts.revoked += 1,
+            _ => return Err("controller returned an unknown node status".to_owned()),
+        }
+        rows.push(json!({
+            "id":id,
+            "status":status,
+            "key_version":item.get("key_version"),
+            "last_seen_at":item.get("last_seen_at"),
+            "rotation_pending":item.get("rotation_pending"),
+            "revocation_pending":item.get("revocation_pending"),
+        }));
+    }
+    Ok((counts, rows))
+}
+
+fn run_status(command: StatusCommand) -> Result<(), String> {
+    let require_online = command.require_online;
+    with_operator_session(&command.http, |session| {
+        let mut items = Vec::new();
+        let mut cursor: Option<String> = None;
+        for _ in 0..1_000 {
+            let path = match cursor.as_deref() {
+                Some(cursor) if valid_cursor(cursor) => {
+                    format!("/api/v3/nodes?limit=100&cursor={cursor}")
+                }
+                Some(_) => return Err("controller returned an invalid node cursor".to_owned()),
+                None => "/api/v3/nodes?limit=100".to_owned(),
+            };
+            let page = session.get(&path)?;
+            let page_items = page
+                .get("items")
+                .and_then(Value::as_array)
+                .ok_or("controller returned an invalid node page")?;
+            items.extend(page_items.iter().cloned());
+            cursor = page
+                .get("next_cursor")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if cursor.is_none() {
+                break;
+            }
+        }
+        if cursor.is_some() {
+            return Err("node listing exceeded the page limit".to_owned());
+        }
+        let (counts, rows) = summarize_nodes(&items)?;
+        let active = counts.online + counts.stale + counts.offline;
+        let all_active_online = active > 0 && counts.online == active;
+        print_json(&json!({
+            "total":rows.len(),
+            "online":counts.online,
+            "stale":counts.stale,
+            "offline":counts.offline,
+            "revoked":counts.revoked,
+            "all_active_online":all_active_online,
+            "nodes":rows,
+        }))?;
+        if require_online && active == 0 {
+            return Err("no active node is registered".to_owned());
+        }
+        if require_online && !all_active_online {
+            return Err("not every active node is online".to_owned());
+        }
+        Ok(())
+    })
 }
 
 fn run_enrollment_action(
@@ -868,7 +1652,7 @@ fn call_admin_socket(socket_path: &PathBuf, request: &Value) -> Result<Value, St
         .map_err(|_| "could not finish local administration request".to_owned())?;
     let mut response = Vec::new();
     stream
-        .take(8 * 1024)
+        .take(256 * 1024)
         .read_to_end(&mut response)
         .map_err(|_| "could not read local administration response".to_owned())?;
     serde_json::from_slice(&response)

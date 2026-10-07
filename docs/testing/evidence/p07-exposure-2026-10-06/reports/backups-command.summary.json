@@ -1,0 +1,154 @@
+{
+ "allowlist": {
+  "entries": 0,
+  "unused": [],
+  "used": []
+ },
+ "artifacts": [],
+ "artifacts_clean_summary": {
+  "bytes": 1085447,
+  "count": 2,
+  "files": 2
+ },
+ "artifacts_total": 2,
+ "artifacts_with_results": 0,
+ "canaries": {
+  "count": 21,
+  "ids": [
+   {
+    "id": "23c6050a",
+    "source": "canary"
+   },
+   {
+    "id": "0d0f1d0b",
+    "source": "canary"
+   },
+   {
+    "id": "97155f18",
+    "source": "canary"
+   },
+   {
+    "id": "50d35be3",
+    "source": "canary"
+   },
+   {
+    "id": "5fa63dfb",
+    "source": "canary"
+   },
+   {
+    "id": "e4e47898",
+    "source": "canary"
+   },
+   {
+    "id": "1f35cbf9",
+    "source": "canary"
+   },
+   {
+    "id": "a4328765",
+    "source": "canary"
+   },
+   {
+    "id": "1c3f8812",
+    "source": "canary"
+   },
+   {
+    "id": "57a95d84",
+    "source": "canary"
+   },
+   {
+    "id": "584b6548",
+    "source": "canary"
+   },
+   {
+    "id": "ce0cceb4",
+    "source": "canary"
+   },
+   {
+    "id": "0c980342",
+    "source": "canary"
+   },
+   {
+    "id": "c614b60b",
+    "source": "canary"
+   },
+   {
+    "id": "02a5fd81",
+    "source": "canary"
+   },
+   {
+    "id": "7f598f8a",
+    "source": "key"
+   },
+   {
+    "id": "d78c20d4",
+    "source": "key"
+   },
+   {
+    "id": "e19aed43",
+    "source": "key"
+   },
+   {
+    "id": "83cbec54",
+    "source": "key"
+   },
+   {
+    "id": "7e93aaf4",
+    "source": "key"
+   },
+   {
+    "id": "0eb339a4",
+    "source": "key"
+   }
+  ]
+ },
+ "controls": {
+  "detected": [
+   "tar",
+   "gz",
+   "bz2",
+   "xz",
+   "zip",
+   "ar",
+   "jsonl",
+   "wrapped",
+   "tar.gz",
+   "zst"
+  ],
+  "failed": [],
+  "ok": true,
+  "unavailable": [],
+  "zstd_backend": "module"
+ },
+ "excluded": [],
+ "finished": "2026-10-06T11:46:26Z",
+ "incomplete": [],
+ "python": "3.14.7",
+ "requested": [
+  "backups"
+ ],
+ "result": "PASS",
+ "started": "2026-10-06T11:46:25Z",
+ "tool": "canary-scan",
+ "totals": {
+  "allowlisted_findings": 0,
+  "allowlisted_hits": 0,
+  "allowlisted_patterns": 0,
+  "archives": 0,
+  "backups": 1,
+  "bytes_scanned": 1085447,
+  "dumps": 0,
+  "entries": 0,
+  "exposed": 0,
+  "files": 2,
+  "findings": 0,
+  "hits": 0,
+  "image_layers": 0,
+  "images": 0,
+  "incomplete": 0,
+  "logs": 0,
+  "patterns": 0,
+  "transcripts": 0,
+  "zero_bytes_skipped": 0
+ },
+ "version": 1
+}

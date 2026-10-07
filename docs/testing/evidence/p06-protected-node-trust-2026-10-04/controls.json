@@ -1,0 +1,17 @@
+{
+  "controls": [
+    {
+      "control": "tenant-proof-control",
+      "exit_code": 101,
+      "actual_assertion_failure": true
+    },
+    {
+      "control": "revocation-publication-control",
+      "exit_code": 101,
+      "actual_assertion_failure": true
+    }
+  ],
+  "production_sources_unchanged": true,
+  "private_tree_removed": true,
+  "initial_checker_marker_mismatch_corrected": true
+}

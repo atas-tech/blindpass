@@ -9,7 +9,7 @@
   <Privileged>false</Privileged>
   <Support>https://github.com/atas-tech/blindpass</Support>
   <Project>https://github.com/atas-tech/blindpass</Project>
-  <Overview>P06 controller candidate with embedded console and input page. Explicit keys init and migration required before first start. Requires a separately configured HTTPS edge on this custom network. Complete backup/recovery and migration acceptance remain unfinished.</Overview>
+  <Overview>P06 controller candidate with embedded console and input page. Explicit keys init, administrator authority registration and migration are required before first start; each start needs an administrator activation (disable auto-restart). Requires a separately configured HTTPS edge on this custom network. Complete backup/recovery and migration acceptance remain unfinished.</Overview>
   <Category>Network:Web</Category>
   <WebUI>https://blindpass.example</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/atas-tech/blindpass/main/deploy/unraid/blindpass-controller-postgres.xml</TemplateURL>
@@ -23,6 +23,10 @@
   <Config Name="Public controller URL" Target="BLINDPASS_PUBLIC_URL" Default="https://blindpass.example" Mode="" Description="Exact HTTPS authority served by the edge." Type="Variable" Display="always" Required="true" Mask="false">https://blindpass.example</Config>
   <Config Name="Input page URL" Target="BLINDPASS_UI_BASE_URL" Default="https://input.example" Mode="" Description="Exact HTTPS input page authority served by the edge." Type="Variable" Display="always" Required="true" Mask="false">https://input.example</Config>
   <Config Name="Require HTTPS edge" Target="BLINDPASS_PROXY_REQUIRED" Default="1" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">1</Config>
+  <Config Name="Protected authority configuration" Target="/authority" Default="/mnt/cache/appdata/blindpass-controller/authority" Mode="ro" Description="Directory mode 0700 owned by 10001; authority-url mode 0600 holding the runtime role URL of the separately administered recovery authority (remote hosts need sslmode=verify-full and sslrootcert). Never inline." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/blindpass-controller/authority</Config>
+  <Config Name="Authority URL file" Target="BLINDPASS_AUTHORITY_URL_FILE" Default="/authority/authority-url" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">/authority/authority-url</Config>
+  <Config Name="Authority tenant ID" Target="BLINDPASS_CONTROLLER_TENANT_ID" Default="" Mode="" Description="Name registered with authority-register.sql ([A-Za-z0-9_-]{1,128})." Type="Variable" Display="always" Required="true" Mask="false" />
+  <Config Name="Authority owner ID" Target="BLINDPASS_CONTROLLER_OWNER_ID" Default="" Mode="" Description="Installation owner name registered with the tenant." Type="Variable" Display="always" Required="true" Mask="false" />
   <Config Name="Trusted edge peer" Target="BLINDPASS_TRUST_PROXY" Default="" Mode="" Description="Required exact edge container IP or canonical restricted CIDR; not a boolean or wildcard." Type="Variable" Display="always" Required="true" Mask="false" />
   <Config Name="Protected database configuration" Target="/config" Default="/mnt/cache/appdata/blindpass-controller/config" Mode="ro" Description="Directory mode 0700 owned by 10001; database.url mode 0600. Contains database credentials; never inline in template." Type="Path" Display="always" Required="true" Mask="false">/mnt/cache/appdata/blindpass-controller/config</Config>
   <Config Name="Database URL file" Target="BLINDPASS_DATABASE_URL_FILE" Default="/config/database.url" Mode="" Description="" Type="Variable" Display="always" Required="true" Mask="false">/config/database.url</Config>

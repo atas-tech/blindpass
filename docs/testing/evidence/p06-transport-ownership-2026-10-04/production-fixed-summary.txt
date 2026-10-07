@@ -1,0 +1,2 @@
+production-sqlite_exit=0
+production-postgres_exit=0

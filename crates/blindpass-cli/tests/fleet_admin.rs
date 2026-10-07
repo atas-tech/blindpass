@@ -548,3 +548,168 @@ fn node_revoke_posts_only_after_exact_confirmation() {
     assert!(String::from_utf8_lossy(&output.stdout).contains("revocation_pending"));
     server.join().expect("mock confirmed revoke server");
 }
+
+fn node_page(path: &str, items: Value, next: Value) -> RequestExpectation {
+    RequestExpectation {
+        method: "GET",
+        path: path.to_owned(),
+        body: None,
+        pre_session_csrf: false,
+        session: true,
+        response: json!({"items":items,"next_cursor":next}),
+        status: 200,
+    }
+}
+
+fn status_node(id: &str, status: &str, seen: Option<i64>) -> Value {
+    json!({
+        "id":id,"name":format!("name-{id}"),"status":status,"key_version":1,
+        "last_seen_at":seen,"last_poll_at":seen,
+        "revocation_pending":false,"rotation_pending":false,
+        "signing_fingerprint":"P06_DUMMY_FINGERPRINT","recipient_fingerprint":"P06_DUMMY_FINGERPRINT",
+        "capabilities":{"dummy":"P06_DUMMY_CAPABILITY"}
+    })
+}
+
+fn run_status(directory: &TestDirectory, origin: &str, args: &[&str]) -> Output {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_blindpass"));
+    command
+        .arg("status")
+        .args([
+            "--controller-url",
+            origin,
+            "--origin",
+            origin,
+            "--username",
+            "fleet-admin",
+            "--password-stdin",
+        ])
+        .args(args)
+        .env("XDG_RUNTIME_DIR", &directory.0)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().expect("start status CLI");
+    child
+        .stdin
+        .take()
+        .expect("CLI stdin")
+        .write_all(b"dummy-password\n")
+        .expect("write dummy operator password");
+    child.wait_with_output().expect("wait for status CLI")
+}
+
+#[test]
+fn p06_status_nodes_summarizes_every_page_without_key_material() {
+    let directory = TestDirectory::new("status");
+    let (origin, server) = serve_script(vec![
+        login_step(),
+        node_page(
+            "/api/v3/nodes?limit=100",
+            json!([
+                status_node("nd_one", "online", Some(5)),
+                status_node("nd_two", "stale", Some(4))
+            ]),
+            json!("cursor_1"),
+        ),
+        node_page(
+            "/api/v3/nodes?limit=100&cursor=cursor_1",
+            json!([
+                status_node("nd_three", "offline", None),
+                status_node("nd_four", "revoked", Some(3))
+            ]),
+            Value::Null,
+        ),
+        logout_step(),
+    ]);
+    let output = run_status(&directory, &origin, &["--nodes"]);
+    assert!(
+        output.status.success(),
+        "status failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let report: Value = serde_json::from_str(&stdout).expect("JSON report");
+    assert_eq!(report["total"], 4);
+    assert_eq!(report["online"], 1);
+    assert_eq!(report["stale"], 1);
+    assert_eq!(report["offline"], 1);
+    assert_eq!(report["revoked"], 1);
+    assert_eq!(report["all_active_online"], false);
+    assert_eq!(report["nodes"].as_array().unwrap().len(), 4);
+    assert!(
+        !stdout.contains("P06_DUMMY"),
+        "key material or capabilities leaked"
+    );
+    assert!(!stdout.contains("dummy-password"));
+    server.join().expect("mock status server");
+}
+
+#[test]
+fn p06_status_nodes_require_online_gates_on_every_active_node() {
+    let directory = TestDirectory::new("status-gate");
+    let fleet = |nodes: Value| {
+        vec![
+            login_step(),
+            node_page("/api/v3/nodes?limit=100", nodes, Value::Null),
+            logout_step(),
+        ]
+    };
+    // Every active node online, one revoked node ignored: passes.
+    let (origin, server) = serve_script(fleet(json!([
+        status_node("nd_one", "online", Some(5)),
+        status_node("nd_gone", "revoked", Some(1))
+    ])));
+    let ok = run_status(&directory, &origin, &["--nodes", "--require-online"]);
+    assert!(
+        ok.status.success(),
+        "{}",
+        String::from_utf8_lossy(&ok.stderr)
+    );
+    let report: Value = serde_json::from_slice(&ok.stdout).unwrap();
+    assert_eq!(report["all_active_online"], true);
+    server.join().unwrap();
+    // A stale node fails, but the report is still printed.
+    let (origin, server) = serve_script(fleet(json!([
+        status_node("nd_one", "online", Some(5)),
+        status_node("nd_two", "stale", Some(4))
+    ])));
+    let stale = run_status(&directory, &origin, &["--nodes", "--require-online"]);
+    assert!(!stale.status.success());
+    assert!(String::from_utf8_lossy(&stale.stdout).contains("nd_two"));
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("not every active node is online"));
+    server.join().unwrap();
+    // No active node at all is not proof of anything.
+    let (origin, server) = serve_script(fleet(json!([status_node("nd_gone", "revoked", Some(1))])));
+    let none = run_status(&directory, &origin, &["--nodes", "--require-online"]);
+    assert!(!none.status.success());
+    assert!(String::from_utf8_lossy(&none.stderr).contains("no active node"));
+    server.join().unwrap();
+}
+
+#[test]
+fn p06_status_requires_nodes_flag_and_stdin_password_before_any_request() {
+    let directory = TestDirectory::new("status-args");
+    let none = Command::new(env!("CARGO_BIN_EXE_blindpass"))
+        .args(["status", "--controller-url", "https://127.0.0.1:1"])
+        .env("XDG_RUNTIME_DIR", &directory.0)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run status");
+    assert!(!none.status.success());
+    let no_password = Command::new(env!("CARGO_BIN_EXE_blindpass"))
+        .args([
+            "status",
+            "--nodes",
+            "--controller-url",
+            "https://127.0.0.1:1",
+            "--username",
+            "fleet-admin",
+        ])
+        .env("XDG_RUNTIME_DIR", &directory.0)
+        .stdin(Stdio::null())
+        .output()
+        .expect("run status");
+    assert!(!no_password.status.success());
+    assert!(String::from_utf8_lossy(&no_password.stderr).contains("--password-stdin"));
+}

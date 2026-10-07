@@ -1,0 +1,1 @@
+{"scenario": "P06-B06", "disk_full": "passed", "source_intact": true, "partial_publication": false}

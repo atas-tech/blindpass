@@ -4,14 +4,14 @@ import { fileURLToPath } from "node:url";
 import { SignJWT } from "jose";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  CONFIRMATION_CODE_ADJECTIVES,
-  CONFIRMATION_CODE_NOUNS,
+  ExchangePolicyEngine,
+  deriveAgentFulfillmentTokenSecret,
+  deriveBrowserSigSecret,
+  hashPolicyDecision,
   signFulfillmentToken,
   verifyFulfillmentToken,
   verifyPayload
-} from "../../sps-server/src/services/crypto.js";
-import { hashPolicyDecision } from "../../sps-server/src/services/policy.js";
-import { deriveAgentFulfillmentTokenSecret, deriveBrowserSigSecret } from "../../sps-server/src/utils/signing-secrets.js";
+} from "../src/oracle/index.js";
 import { buildVectorResults, evaluatePolicyVectors, openHpkeInteropFixture, openRfc9180Vector, runHpkeRoundTrip } from "../src/vectors.js";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -143,8 +143,13 @@ describe("P00 golden vectors", () => {
       number_max: number;
       format: string;
     };
-    expect(fixture.adjectives).toEqual(CONFIRMATION_CODE_ADJECTIVES);
-    expect(fixture.nouns).toEqual(CONFIRMATION_CODE_NOUNS);
+    // The dictionary is frozen data. Live servers are checked against it in CT04 (http-contract), the Rust
+    // controller reads this file in its own test.
+    for (const words of [fixture.adjectives, fixture.nouns]) {
+      expect(words).toHaveLength(8);
+      expect(new Set(words).size).toBe(words.length);
+      for (const word of words) expect(word).toMatch(/^[A-Z]+$/);
+    }
     expect(fixture.number_min).toBe(0);
     expect(fixture.number_max).toBe(99);
     expect(fixture.format).toBe("ADJECTIVE-NOUN-00");
@@ -172,6 +177,62 @@ describe("P00 golden vectors", () => {
     expect(escaping.cases.length).toBeGreaterThan(0);
     expect(escaping.cases.map((testCase) => hashPolicyDecision(testCase.decision as never, testCase.allowedFulfillerId, testCase.workspaceId)))
       .toEqual(escaping.cases.map((testCase) => testCase.hash));
+  });
+
+  async function replayPolicyMatrix(file: string): Promise<{ compared: number; decided: number }> {
+    const matrix = JSON.parse(await readFile(path.join(HERE, "../fixtures", file), "utf8")) as {
+      provenance: { workspaceId: string };
+      registry: ConstructorParameters<typeof ExchangePolicyEngine>[0];
+      groups: Array<{
+        rules: ConstructorParameters<typeof ExchangePolicyEngine>[1];
+        cases: Array<{ input: Parameters<ExchangePolicyEngine["evaluate"]>[0]; expected: Record<string, unknown> | null }>;
+      }>;
+    };
+    let compared = 0;
+    let decided = 0;
+    for (const [index, group] of matrix.groups.entries()) {
+      const engine = new ExchangePolicyEngine(matrix.registry, group.rules);
+      for (const { input, expected } of group.cases) {
+        const evaluation = engine.evaluate(input);
+        compared += 1;
+        if (expected === null) {
+          expect(evaluation, `${file} group ${index} ${JSON.stringify(input)}`).toBeNull();
+          continue;
+        }
+        decided += 1;
+        expect(evaluation, `${file} group ${index} ${JSON.stringify(input)}`).not.toBeNull();
+        const decision = evaluation!.decision;
+        // JSON drops undefined, exactly as it did when the matrix was written.
+        expect(JSON.parse(JSON.stringify({
+          mode: decision.mode,
+          ruleId: decision.ruleId,
+          allowedFulfillerId: evaluation!.allowedFulfillerId,
+          approverIds: evaluation!.approverIds,
+          approverRings: evaluation!.approverRings,
+          requesterRing: decision.requesterRing ?? null,
+          fulfillerRing: decision.fulfillerRing ?? null,
+          reason: decision.reason,
+          approvalReference: decision.approvalReference ?? null,
+          policy_hash: hashPolicyDecision(decision, evaluation!.allowedFulfillerId, matrix.provenance.workspaceId)
+        })), `${file} group ${index} ${JSON.stringify(input)}`).toEqual(expected);
+      }
+    }
+    return { compared, decided };
+  }
+
+  it("CV05 matrix: the oracle reproduces every frozen legacy decision and hash", async () => {
+    const { compared, decided } = await replayPolicyMatrix("cv05-policy-matrix.json");
+    expect(compared).toBeGreaterThanOrEqual(300);
+    expect(decided).toBeGreaterThanOrEqual(150);
+  });
+
+  // Owner decision 2026-10-07: the Rust behaviour is the contract. An empty identity list matches every agent, a
+  // blank reason falls back to the generated text, a padded one is trimmed, and rule ids and rule secret names are
+  // trimmed. The Rust controller replays the same file.
+  it("CV05 decided semantics: the oracle follows the Rust behaviour the owner chose", async () => {
+    const { compared, decided } = await replayPolicyMatrix("cv05-policy-decided.json");
+    expect(compared).toBe(11);
+    expect(decided).toBe(9);
   });
 
   it("CV06 runs the TypeScript HPKE round trip with the accepted suite", async () => {

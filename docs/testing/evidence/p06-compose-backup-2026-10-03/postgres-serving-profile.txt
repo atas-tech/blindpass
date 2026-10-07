@@ -1,0 +1,8 @@
+PASS P06-O01 image UID/layout/embedded UI/licenses/libraries; all exported layers scanned
+PASS P06-O02/O03 postgres: explicit private initialization, no startup regeneration; ready 6.023s
+PASS P06-O04 postgres: actual process UID/caps/NNP, private socket and mount write denials
+PASS P06-O05/O06/O08 postgres nginx: real TLS/header overwrite/peer denial, backend failure/privacy and retained identity/admin
+PASS P06-O05/O06/O08 postgres caddy: real TLS/header overwrite/peer denial, backend failure/privacy and retained identity/admin
+PASS P06-O07 PostgreSQL outage: liveness retained/readiness denied/recovery with unchanged identity
+PASS P06-O02 postgres: missing/exposed/linked keys refused, original keys/state preserved; logs contain no test credentials
+PASS disposable profile resources removed

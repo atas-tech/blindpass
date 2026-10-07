@@ -1,11 +1,11 @@
 import { generateKeyPairSync, sign as signBytes } from "node:crypto";
-import { generateScopedSigs } from "../../sps-server/src/services/crypto.js";
 import {
   deriveAgentFulfillmentTokenSecret,
   deriveBrowserSigSecret,
   deriveGuestAccessTokenSecret,
-  deriveGuestFulfillmentTokenSecret
-} from "../../sps-server/src/utils/signing-secrets.js";
+  deriveGuestFulfillmentTokenSecret,
+  generateScopedSigs
+} from "./oracle/index.js";
 
 export function base64Url(value: Uint8Array | string): string {
   return Buffer.from(value).toString("base64url");

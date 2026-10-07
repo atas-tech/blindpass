@@ -1,0 +1,31 @@
+# File hashes taken 2026-10-06 21:06 +07 before scan 4 (mtime +07, sha256 prefix, path)
+2026-09-25 14:42:28  f3589e6ca54dfc0a  Cargo.toml
+2026-10-02 18:38:06  e6f028b69fa3038b  Cargo.lock
+2026-09-23 06:33:21  e582dfa497006e2f  crates/blindpass-broker/Cargo.toml
+2026-09-25 14:16:01  52ea65717d52c4e8  crates/blindpass-cli/Cargo.toml
+2026-10-02 18:37:56  061328137ad6228b  crates/blindpass-controller/Cargo.toml
+2026-09-23 06:33:22  f794866c7fc601d5  crates/blindpass-core/Cargo.toml
+2026-09-25 14:42:47  20fe192e11ac1504  crates/blindpass-node/Cargo.toml
+2026-10-06 19:45:14  98ea62c62152aad8  package.json
+2026-10-06 20:42:09  350e67141a8d9b39  package-lock.json
+2026-09-27 21:15:47  172db74b8a0ed8b5  assets/ui/package.json
+2026-10-01 16:46:10  325d595d6c6ed826  helpers/browser-tool/package.json
+2026-10-01 16:46:10  e22d8c61d7472bf5  helpers/login/package.json
+2026-10-01 16:46:10  2d9144aa9f58c745  packages/agent-skill/package.json
+2026-10-01 16:46:10  346706ffd70b2a8c  packages/browser-ui/package.json
+2026-10-01 16:46:10  3372a411e817f3f0  packages/console/package.json
+2026-10-01 16:46:10  0e3ae17de97ca765  packages/contract-tests/package.json
+2026-10-01 16:46:10  4d4d2bda058ba3e1  packages/dashboard/package.json
+2026-10-01 16:46:10  ab093f7a8a445965  packages/gateway/package.json
+2026-10-01 16:46:10  3a6fc4de6b5147eb  packages/i18n/package.json
+2026-10-06 20:50:39  8ed9c27f85b70dda  packages/mcp-server/package.json
+2026-10-01 16:47:57  eb5d3f066e361708  packages/openclaw-plugin/package.json
+2026-10-01 16:46:10  7409d7ec15596d87  packages/sps-server/package.json
+2026-10-06 20:50:35  610e5fa02f8a1615  .github/workflows/build-and-push-images.yml
+2026-10-02 07:34:23  570a92d4efeb4e9f  .github/workflows/ci-full.yml
+2026-10-06 19:37:42  ca39d5f4c633dcf8  .github/workflows/ci.yml
+2026-09-22 17:11:53  3e7e339cc6efb333  .github/workflows/deploy-landing-pages.yml
+2026-10-02 07:34:40  48d9eeaaf687a567  .github/workflows/fleet-vm.yml
+2026-10-06 20:50:36  05d27ced12a8f6c0  .github/workflows/release.yml
+
+# Re-hashed 2026-10-06 21:17 +07: all 28 prefixes identical (inputs unchanged since scan 4)

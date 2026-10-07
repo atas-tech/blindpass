@@ -4,14 +4,22 @@
 
 pub mod admin_socket;
 pub mod app;
+pub mod backup;
 pub mod config;
 pub mod embedded_ui;
+pub mod handoff;
+mod legacy_authority;
 pub mod observability;
+pub mod owned_transport;
+pub mod ownership_session;
 pub mod proxy;
+pub mod recovery_authority;
+pub mod restore;
 pub(crate) mod routes;
 pub mod seed;
 pub mod store;
 pub mod tls;
+pub mod upgrade;
 
 /// Abruptly terminate at a persistence boundary in the dedicated P02 crash
 /// test build. The feature is absent from normal controller builds.

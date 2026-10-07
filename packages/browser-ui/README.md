@@ -32,7 +32,7 @@ Checks: `npm test --workspace=@blindpass/browser-ui` covers strict parsing, the 
 
 ## Security headers
 
-Builds inject a CSP meta tag: `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' <API origin>; base-uri 'none'; form-action 'self'`. `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`, `Referrer-Policy: no-referrer` and `Permissions-Policy` must come from the server: `vite preview`, the packaged [nginx.conf](nginx.conf) and, from P04 slice 13, the controller. There is no inline script or style.
+Builds inject a CSP meta tag: `default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self' <API origin>; base-uri 'none'; form-action 'self'`. `frame-ancestors 'none'`, `X-Frame-Options: DENY`, `Cross-Origin-Opener-Policy`, `Referrer-Policy: no-referrer` and `Permissions-Policy` must come from the server: `vite preview`, the packaged [nginx.conf.template](nginx.conf.template) (its `connect-src` is rendered at image build from `VITE_SPS_API_URL` by `scripts/render-nginx-conf.mjs`, which refuses loopback, plain-http, wildcard or path-bearing origins unless `BLINDPASS_UI_DEV_IMAGE=1`) and, from P04 slice 13, the controller. There is no inline script or style.
 
 ## Development and tests
 

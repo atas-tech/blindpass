@@ -1,0 +1,21 @@
+   Compiling blindpass-controller v0.1.0 (/tmp/blindpass-p06-production-control-u1_pzcvu/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.32s
+     Running tests/production_ownership.rs (/home/hvo/Projects/blindpass/target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 1 test
+test p06_pw01_missing_production_authority_refuses_configuration_and_writes ... 
+thread 'p06_pw01_missing_production_authority_refuses_configuration_and_writes' (256751) panicked at crates/blindpass-controller/tests/production_ownership.rs:46:9:
+assertion `left == right` failed: unexpected production command result
+  left: false
+ right: true
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    p06_pw01_missing_production_authority_refuses_configuration_and_writes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `-p blindpass-controller --test production_ownership`

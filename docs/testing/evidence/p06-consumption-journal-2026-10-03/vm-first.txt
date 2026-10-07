@@ -1,0 +1,61 @@
+P03-HOST-ENV runner_owner=hvo qemu=QEMU emulator version 11.1.1 kvm=crw-rw-rw-:666 image_sha256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+   Compiling blindpass-core v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-core)
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+   Compiling tokio-rustls v0.26.6
+   Compiling blindpass-broker v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-broker)
+   Compiling blindpass-node v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-node)
+    Finished `release` profile [optimized] target(s) in 3m 22s
+-----
+Controller database migrations complete.
+P01-PROVISIONED overlay=/tmp/blindpass-p03.IdyGjyXd/sqlite/a/image/guest-overlay.qcow2 seed=/tmp/blindpass-p03.IdyGjyXd/sqlite/a/image/seed.iso image_sha256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+Creating group 'blindpass-node' with GID 988.
+Creating group 'blindpass-workload' with GID 987.
+Creating user 'blindpass-node' (BlindPass controller channel relay) with UID 988 and GID 988.
+Creating group 'blindpass-agent' with GID 986.
+Creating user 'blindpass-agent' (BlindPass registered workload) with UID 986 and GID 986.
+Creating group 'blindpass-consumer' with GID 985.
+Creating user 'blindpass-consumer' (BlindPass credential consumer) with UID 985 and GID 985.
+Creating group 'blindpass-backup' with GID 984.
+Creating user 'blindpass-backup' (BlindPass backup probe) with UID 984 and GID 984.
+Created symlink /etc/systemd/system/multi-user.target.wants/blindpass-broker.service → /etc/systemd/system/blindpass-broker.service.
+P03-GUEST-PREPARED
+P03-GUEST-READY backend=sqlite guest=a ssh_port=22272
+P01-PROVISIONED overlay=/tmp/blindpass-p03.IdyGjyXd/sqlite/b/image/guest-overlay.qcow2 seed=/tmp/blindpass-p03.IdyGjyXd/sqlite/b/image/seed.iso image_sha256=612b2c0cc1bc413a6cb8c38fd611794caf0f2b436c50013d8b3794db12ad7354
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22273' (ED25519) to the list of known hosts.
+rehash: warning: skipping ca-certificates.crt,it does not contain exactly one certificate or CRL
+Creating group 'blindpass-node' with GID 988.
+Creating group 'blindpass-workload' with GID 987.
+Creating user 'blindpass-node' (BlindPass controller channel relay) with UID 988 and GID 988.
+Creating group 'blindpass-agent' with GID 986.
+Creating user 'blindpass-agent' (BlindPass registered workload) with UID 986 and GID 986.
+Creating group 'blindpass-consumer' with GID 985.
+Creating user 'blindpass-consumer' (BlindPass credential consumer) with UID 985 and GID 985.
+Creating group 'blindpass-backup' with GID 984.
+Creating user 'blindpass-backup' (BlindPass backup probe) with UID 984 and GID 984.
+Created symlink /etc/systemd/system/multi-user.target.wants/blindpass-broker.service → /etc/systemd/system/blindpass-broker.service.
+P03-GUEST-PREPARED
+P03-GUEST-READY backend=sqlite guest=b ssh_port=22273
+P03-TLS-PROXY-READY
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+enrollment_id=en_41766211-86a4-4d6b-98a3-4483c0d24ae8 node_id=nd_8ac0a255-309a-470d-8740-6374fa6e9f27 fingerprint=1d4b4c41f61eaf4680da13503c5509fd68be405b4a05582ba11eae7973e8cbcd status=submitted
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Created symlink /etc/systemd/system/multi-user.target.wants/blindpass-node.service → /etc/systemd/system/blindpass-node.service.
+P03-GUEST-NODE-STARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-CONFIGURED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-WORKLOAD-STARTED invocation=c06e64d5e0724bf89226765c48af5958
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-CHANNEL-RESTARTED
+Warning: Permanently added '[127.0.0.1]:22272' (ED25519) to the list of known hosts.
+P03-GUEST-FAIL broker event was not persisted exactly once

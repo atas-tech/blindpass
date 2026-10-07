@@ -70,7 +70,13 @@ impl Server {
         fixture: &Fixture,
         store: Option<blindpass_controller::store::Store>,
     ) -> Self {
-        let config = Config::from_variables(fixture.values.clone()).expect("proxy config");
+        // HTTP ingress component fixture. The configuration is validated as a
+        // production profile (TEST_MODE=0, as the cases above assert), then
+        // served in-process with test mode on; the environment path refuses
+        // that combination.
+        let config = Config::from_variables(fixture.values.clone())
+            .expect("proxy config")
+            .with_test_fixture_mode();
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = listener.local_addr().unwrap();
         let app = build_app(config, store);
@@ -190,6 +196,42 @@ fn p06_x02_required_proxy_rejects_missing_trust_http_and_unguarded_wildcard_bind
         let mut values = fixture.values.clone();
         values.insert(field.into(), value.into());
         assert!(Config::from_variables(values).is_err(), "accepted {field}");
+    }
+}
+
+#[test]
+fn p06_x02b_offline_tools_do_not_inherit_the_serve_time_bind_rule() {
+    // A remote direct-TLS controller binds a wildcard address and gets its certificate only through the
+    // serving units. The backup job and the handoff commands never listen and are not given the TLS
+    // credentials, so the wildcard-bind rule must not make them refuse the shared configuration file.
+    let mut fixture = Fixture::new();
+    for field in ["BLINDPASS_TRUST_PROXY", "BLINDPASS_PROXY_REQUIRED"] {
+        fixture.values.remove(field);
+    }
+    fixture
+        .values
+        .insert("BLINDPASS_PROXY_REQUIRED".into(), "0".into());
+    fixture
+        .values
+        .insert("BLINDPASS_LISTEN".into(), "0.0.0.0:3200".into());
+    assert!(
+        Config::from_variables(fixture.values.clone()).is_err(),
+        "serving without TLS or a proxy on a wildcard bind must stay refused"
+    );
+    let offline = Config::from_variables_offline(fixture.values.clone())
+        .expect("an offline tool refused a wildcard-bind configuration it never serves");
+    assert!(offline.listen().ip().is_loopback());
+    // Every other rule still applies to offline tools.
+    for (field, value) in [
+        ("BLINDPASS_PUBLIC_URL", "not-a-url"),
+        ("BLINDPASS_UI_BASE_URL", "not-a-url"),
+    ] {
+        let mut values = fixture.values.clone();
+        values.insert(field.into(), value.into());
+        assert!(
+            Config::from_variables_offline(values).is_err(),
+            "offline accepted {field}"
+        );
     }
 }
 

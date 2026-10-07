@@ -1,0 +1,234 @@
+
+> blindpass@0.1.0 build
+> npm run build:i18n && npm run build --workspaces --if-present
+
+
+> blindpass@0.1.0 build:i18n
+> npm run build --workspace=@blindpass/i18n
+
+
+> @blindpass/i18n@0.1.0 build
+> tsc
+
+
+> @blindpass/agent-skill@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @blindpass/browser-ui@0.1.0 build
+> vite build && vite build --mode embedded
+
+vite v7.3.6 building client environment for production...
+transforming...
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/home/hvo/Projects/blindpass/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/home/hvo/Projects/blindpass/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/home/hvo/Projects/blindpass/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+
+"// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+
+"//   /* @__PURE__ */ oidNist(0x07),"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+
+"//   /* @__PURE__ */"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+
+"//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+
+"//   /* @__PURE__ */"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+
+"//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+
+"/* @__PURE__ */"
+
+in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+✓ 86 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                                    9.98 kB │ gzip:  2.32 kB
+dist/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+dist/assets/index-Blx-gcvB.css                    16.97 kB │ gzip:  4.29 kB
+dist/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+dist/assets/index-DbiCBHEa.js                    130.80 kB │ gzip: 38.22 kB
+✓ built in 462ms
+vite v7.3.6 building client environment for embedded...
+transforming...
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/home/hvo/Projects/blindpass/node_modules/@hpke/common/esm/src/algorithm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/home/hvo/Projects/blindpass/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/home/hvo/Projects/blindpass/node_modules/@hpke/common/esm/src/utils/misc.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (280:0): A comment
+
+"// export const sha3_224: CHash = /* @__PURE__ */ genKeccak("
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (284:0): A comment
+
+"//   /* @__PURE__ */ oidNist(0x07),"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (314:0): A comment
+
+"//   /* @__PURE__ */"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (315:0): A comment
+
+"//   genShake(0x1f, 168, 32, /* @__PURE__ */ oidNist(0x0b));"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (318:0): A comment
+
+"//   /* @__PURE__ */"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/hash/sha3.js (319:0): A comment
+
+"//   genShake(0x1f, 136, 64, /* @__PURE__ */ oidNist(0x0c));"
+
+in "../../node_modules/@hpke/common/esm/src/hash/sha3.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+../../node_modules/@hpke/common/esm/src/utils/noble.js (82:20): A comment
+
+"/* @__PURE__ */"
+
+in "../../node_modules/@hpke/common/esm/src/utils/noble.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+✓ 86 modules transformed.
+rendering chunks...
+computing gzip size...
+dist-embedded/index.html                                   10.00 kB │ gzip:  2.33 kB
+dist-embedded/assets/InterVariable-DxOIOTVw.woff2          90.90 kB
+dist-embedded/assets/index-CsPbKv2W.css                    16.97 kB │ gzip:  4.29 kB
+dist-embedded/assets/__vite-browser-external-BIHI7g3E.js    0.03 kB │ gzip:  0.05 kB
+dist-embedded/assets/index-Bol_NMIH.js                    130.81 kB │ gzip: 38.22 kB
+✓ built in 478ms
+
+> @blindpass/console@0.1.0 build
+> tsc --noEmit && vite build && node scripts/check-bundle.mjs
+
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 136 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                              0.74 kB │ gzip:   0.38 kB
+dist/assets/InterVariable-DxOIOTVw.woff2    90.90 kB
+dist/assets/index-BIedOzTD.css              59.33 kB │ gzip:  10.55 kB
+dist/assets/status-BrYlLUa7.js               0.15 kB │ gzip:   0.12 kB
+dist/assets/events-DAm_YHLZ.js               0.30 kB │ gzip:   0.24 kB
+dist/assets/validation-DQ6FMKO6.js           0.34 kB │ gzip:   0.22 kB
+dist/assets/metadata-suhM9rdo.js             0.58 kB │ gzip:   0.34 kB
+dist/assets/source-CCbCv4Kf.js               0.82 kB │ gzip:   0.39 kB
+dist/assets/model-CptRzFhc.js                0.98 kB │ gzip:   0.46 kB
+dist/assets/reveal-BKRVdsBV.js               1.00 kB │ gzip:   0.55 kB
+dist/assets/dialog-Cfr1jBwQ.js               1.92 kB │ gzip:   0.85 kB
+dist/assets/field-DLkuKEPR.js                1.97 kB │ gzip:   0.67 kB
+dist/assets/exchange-timeline-CnltRhkd.js    2.51 kB │ gzip:   1.10 kB
+dist/assets/change-password-CauJfWqx.js      2.60 kB │ gzip:   1.11 kB
+dist/assets/common-7phvXdvY.js               3.12 kB │ gzip:   1.37 kB
+dist/assets/login-Wg9N_2j2.js                3.22 kB │ gzip:   1.32 kB
+dist/assets/settings-D3nH5Bq5.js             3.38 kB │ gzip:   1.31 kB
+dist/assets/approvals-C-qEjgFR.js            3.85 kB │ gzip:   1.58 kB
+dist/assets/setup-BTdXbNSq.js                4.40 kB │ gzip:   1.52 kB
+dist/assets/grants-GpiU9MSO.js               5.42 kB │ gzip:   2.05 kB
+dist/assets/audit-0KAmMx_X.js                5.60 kB │ gzip:   2.11 kB
+dist/assets/fleet-policy-CZeeS5kK.js         6.34 kB │ gzip:   2.48 kB
+dist/assets/agents-BD5F8Kcw.js               7.17 kB │ gzip:   2.50 kB
+dist/assets/overview-Dh_KRXsR.js             7.64 kB │ gzip:   2.45 kB
+dist/assets/enrollments-B2SoHFbq.js          8.43 kB │ gzip:   2.85 kB
+dist/assets/operators-VwhJ9Zb_.js           10.23 kB │ gzip:   3.46 kB
+dist/assets/nodes-4JpWiTbE.js               10.52 kB │ gzip:   3.06 kB
+dist/assets/operations-SbUmKqri.js          11.24 kB │ gzip:   3.70 kB
+dist/assets/workloads-CJwhNX0S.js           12.88 kB │ gzip:   3.97 kB
+dist/assets/detail-CXYAJlKI.js              13.20 kB │ gzip:   3.84 kB
+dist/assets/exchange-policy-B-6d60z0.js     17.38 kB │ gzip:   5.35 kB
+dist/assets/index-BBTvxewk.js              481.13 kB │ gzip: 151.43 kB
+
+(!) Some chunks are larger than 400 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 1.55s
+assets/index-BBTvxewk.js  147.9 kB gzip
+assets/index-BIedOzTD.css  10.3 kB gzip
+initial route: 158.2 kB gzip (budget 250 kB)
+
+> @blindpass/contract-tests@0.1.0 build
+> tsc -p tsconfig.json --noEmit
+
+
+> @blindpass/dashboard@0.1.0 build
+> tsc --noEmit && vite build
+
+vite v7.3.6 building client environment for production...
+(node:116899) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+transforming...
+Browserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+✓ 1851 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   1.18 kB │ gzip:   0.58 kB
+dist/assets/index-PqlxLBpe.css   64.92 kB │ gzip:   9.52 kB
+dist/assets/index-B7ovDstA.js   538.05 kB │ gzip: 152.51 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.21s
+
+> @blindpass/gateway@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @blindpass/i18n@0.1.0 build
+> tsc
+
+
+> @blindpass/mcp-server@0.1.0 build
+> node --check src/index.mjs
+
+
+> @blindpass/openclaw-plugin@0.1.0 build
+> bash ../../scripts/build_bundle.sh
+
+[blindpass] building workspace dependencies for bundle inputs...
+
+> @blindpass/gateway@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @blindpass/agent-skill@0.1.0 build
+> tsc -p tsconfig.json
+
+[blindpass] bundling plugin entrypoints with esbuild...
+
+  packages/openclaw-plugin/dist/blindpass.mjs  505.6kb
+
+⚡ Done in 87ms
+
+  packages/openclaw-plugin/dist/mcp-server.mjs  1.4mb ⚠️
+
+⚡ Done in 151ms
+[blindpass] bundle staged in /home/hvo/Projects/blindpass/packages/openclaw-plugin/dist
+
+> @blindpass/sps-server@0.1.0 build
+> tsc -p tsconfig.json && mkdir -p dist/db && cp -r src/db/migrations dist/db/
+

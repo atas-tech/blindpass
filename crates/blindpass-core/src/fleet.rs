@@ -170,6 +170,17 @@ pub fn node_event_message(
     {
         return Err(DocumentError::Invalid("node event binding"));
     }
+    node_event_message_bytes(node_id, idempotency_key, kind, body)
+}
+
+/// Shared encoding for validated node events and the reserved recovery report
+/// contract. Callers must validate identifiers, kind and body before use.
+pub(crate) fn node_event_message_bytes(
+    node_id: &str,
+    idempotency_key: &str,
+    kind: &str,
+    body: &Value,
+) -> Result<Vec<u8>, DocumentError> {
     canonical_domain_message(
         NODE_EVENT_DOMAIN,
         &Value::Object(vec![

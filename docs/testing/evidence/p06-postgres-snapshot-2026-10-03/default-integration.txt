@@ -1,0 +1,12 @@
+    Blocking waiting for file lock on build directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 7.96s
+     Running tests/backup_postgres_snapshot.rs (target/debug/deps/backup_postgres_snapshot-40023f6f26f7ce5f)
+
+running 4 tests
+test p06_pgs01_import_matches_metadata_and_complete_pairs_during_writes ... ignored, requires isolated PostgreSQL via P02_TEST_POSTGRES_URL
+test p06_pgs02_close_and_drop_revoke_exported_snapshot ... ignored, requires isolated PostgreSQL via P02_TEST_POSTGRES_URL
+test p06_pgs03_missing_schema_and_damaged_metadata_are_not_repaired ... ignored, requires isolated PostgreSQL via P02_TEST_POSTGRES_URL
+test p06_pgs04_sqlite_cannot_export_a_postgres_snapshot ... ok
+
+test result: ok. 1 passed; 0 failed; 3 ignored; 0 measured; 0 filtered out; finished in 0.13s
+

@@ -1,0 +1,155 @@
+{
+ "allowlist": {
+  "entries": 1,
+  "unused": [],
+  "used": [
+   0
+  ]
+ },
+ "artifacts": [
+  {
+   "bytes": 439981847,
+   "classes": {
+    "dump": 1,
+    "log": 6
+   },
+   "entries": 11283,
+   "files": 8277,
+   "findings": [],
+   "formats": [
+    "empty",
+    "gz",
+    "other",
+    "tar",
+    "xz"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 3,
+   "path": "docker:blindpass-p07-controller:s06",
+   "patterns": [
+    {
+     "allowlisted": true,
+     "count": 3,
+     "location": "docker:blindpass-p07-controller:s06!blobs/sha256/34467cc93912af891dfee8a3902adf9b4f355a9bca4eaa46f658d1181a21de0d!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1586912,
+     "pattern": "pem-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "15f8b684"
+    },
+    {
+     "allowlisted": true,
+     "count": 1,
+     "location": "docker:blindpass-p07-controller:s06!blobs/sha256/34467cc93912af891dfee8a3902adf9b4f355a9bca4eaa46f658d1181a21de0d!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1589056,
+     "pattern": "pem-ec-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "8938474b"
+    },
+    {
+     "allowlisted": true,
+     "count": 1,
+     "location": "docker:blindpass-p07-controller:s06!blobs/sha256/34467cc93912af891dfee8a3902adf9b4f355a9bca4eaa46f658d1181a21de0d!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1589376,
+     "pattern": "pem-dsa-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "ffe872bd"
+    },
+    {
+     "allowlisted": true,
+     "count": 1,
+     "location": "docker:blindpass-p07-controller:s06!blobs/sha256/34467cc93912af891dfee8a3902adf9b4f355a9bca4eaa46f658d1181a21de0d!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3",
+     "offset": 1590880,
+     "pattern": "pem-rsa-private-key",
+     "reason": "Unmodified Debian 12 libgnutls30 3.7.9-2+deb12u7 (md5 d37dc553e7856d74d930d695099d5d14 equals the dpkg md5sums entry in the image). The library embeds PEM test keys for its self-tests; they are public vendor test vectors, not BlindPass keys. The same exception is already enforced by the P06-O01 image gate (tests/deployment/compose-up.py).",
+     "sha256_prefix": "9e3719bd"
+    }
+   ]
+  }
+ ],
+ "canaries": {
+  "count": 7,
+  "ids": [
+   {
+    "id": "1c3f8812",
+    "source": "canary"
+   },
+   {
+    "id": "fc18303b",
+    "source": "canary"
+   },
+   {
+    "id": "eb3a4881",
+    "source": "canary"
+   },
+   {
+    "id": "c7c19440",
+    "source": "canary"
+   },
+   {
+    "id": "7bb7e68c",
+    "source": "canary"
+   },
+   {
+    "id": "629d5fce",
+    "source": "canary"
+   },
+   {
+    "id": "43e266a1",
+    "source": "canary"
+   }
+  ]
+ },
+ "controls": {
+  "detected": [
+   "tar",
+   "gz",
+   "bz2",
+   "xz",
+   "zip",
+   "ar",
+   "jsonl",
+   "wrapped",
+   "tar.gz",
+   "zst"
+  ],
+  "failed": [],
+  "ok": true,
+  "unavailable": [],
+  "zstd_backend": "module"
+ },
+ "excluded": [],
+ "finished": "2026-10-06T12:59:28Z",
+ "incomplete": [],
+ "python": "3.14.7",
+ "requested": [
+  "images"
+ ],
+ "result": "PASS",
+ "started": "2026-10-06T12:58:17Z",
+ "tool": "canary-scan",
+ "totals": {
+  "allowlisted_findings": 0,
+  "allowlisted_hits": 0,
+  "allowlisted_patterns": 4,
+  "archives": 468,
+  "backups": 0,
+  "bytes_scanned": 439981847,
+  "dumps": 1,
+  "entries": 11283,
+  "exposed": 0,
+  "files": 8277,
+  "findings": 0,
+  "hits": 0,
+  "image_layers": 12,
+  "images": 1,
+  "incomplete": 0,
+  "logs": 6,
+  "patterns": 4,
+  "transcripts": 0,
+  "zero_bytes_skipped": 0
+ },
+ "version": 1
+}

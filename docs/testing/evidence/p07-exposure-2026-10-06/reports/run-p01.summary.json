@@ -1,0 +1,185 @@
+{
+ "allowlist": {
+  "entries": 1,
+  "unused": [
+   {
+    "id": "*",
+    "index": 0,
+    "kind": "pattern",
+    "path": "*!usr/lib/x86_64-linux-gnu/libgnutls.so.30.34.3"
+   }
+  ],
+  "used": []
+ },
+ "artifacts": [
+  {
+   "bytes": 6171,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "harness.log",
+   "patterns": []
+  },
+  {
+   "bytes": 105,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "p01/coredump-inventory.log",
+   "patterns": []
+  },
+  {
+   "bytes": 5202,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "p01/guest-result.log",
+   "patterns": []
+  },
+  {
+   "bytes": 87744,
+   "classes": {
+    "log": 1
+   },
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "p01/journal.log",
+   "patterns": []
+  },
+  {
+   "bytes": 3081,
+   "classes": {},
+   "entries": 0,
+   "files": 1,
+   "findings": [],
+   "formats": [
+    "other"
+   ],
+   "hits": [],
+   "hits_truncated": 0,
+   "incomplete": [],
+   "kind": "file",
+   "max_depth": 0,
+   "path": "scan.json",
+   "patterns": []
+  }
+ ],
+ "canaries": {
+  "count": 3,
+  "ids": [
+   {
+    "id": "7bb7e68c",
+    "source": "canary"
+   },
+   {
+    "id": "629d5fce",
+    "source": "canary"
+   },
+   {
+    "id": "43e266a1",
+    "source": "canary"
+   }
+  ]
+ },
+ "controls": {
+  "detected": [
+   "tar",
+   "gz",
+   "bz2",
+   "xz",
+   "zip",
+   "ar",
+   "jsonl",
+   "wrapped",
+   "tar.gz",
+   "zst"
+  ],
+  "failed": [],
+  "ok": true,
+  "unavailable": [],
+  "zstd_backend": "module"
+ },
+ "excluded": [
+  {
+   "glob": "*/canaries.txt",
+   "path": "p01/canaries.txt"
+  },
+  {
+   "glob": "*/p01-canaries.txt",
+   "path": "p01-canaries.txt"
+  }
+ ],
+ "finished": "2026-10-06T12:48:49Z",
+ "incomplete": [],
+ "python": "3.14.7",
+ "requested": [
+  "logs"
+ ],
+ "result": "PASS",
+ "started": "2026-10-06T12:48:49Z",
+ "tool": "canary-scan",
+ "totals": {
+  "allowlisted_findings": 0,
+  "allowlisted_hits": 0,
+  "allowlisted_patterns": 0,
+  "archives": 0,
+  "backups": 0,
+  "bytes_scanned": 102303,
+  "dumps": 0,
+  "entries": 0,
+  "exposed": 0,
+  "files": 5,
+  "findings": 0,
+  "hits": 0,
+  "image_layers": 0,
+  "images": 0,
+  "incomplete": 0,
+  "logs": 4,
+  "patterns": 0,
+  "transcripts": 0,
+  "zero_bytes_skipped": 0
+ },
+ "version": 1
+}

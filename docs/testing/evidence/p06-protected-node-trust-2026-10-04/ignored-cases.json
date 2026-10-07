@@ -1,0 +1,318 @@
+{
+  "rust": [
+    [
+      "store::backup::tests::p06_pgs04_postgres_snapshot_is_read_only_and_refuses_multiple_schemas",
+      "requires isolated PostgreSQL via P02_TEST_POSTGRES_URL"
+    ],
+    [
+      "p06_pgs01_import_matches_metadata_and_complete_pairs_during_writes",
+      "requires isolated PostgreSQL via P02_TEST_POSTGRES_URL"
+    ],
+    [
+      "p06_pgs02_close_and_drop_revoke_exported_snapshot",
+      "requires isolated PostgreSQL via P02_TEST_POSTGRES_URL"
+    ],
+    [
+      "p06_pgs03_missing_schema_and_damaged_metadata_are_not_repaired",
+      "requires isolated PostgreSQL via P02_TEST_POSTGRES_URL"
+    ],
+    [
+      "p06_s01_serve_does_not_create_absent_sqlite_state_even_with_rwc_url",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_s02_serve_does_not_initialize_an_empty_existing_database",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_s03_serve_does_not_migrate_or_repair_schema_versions",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_s04_explicit_migrate_then_production_serve_preserves_identity_on_restart",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_s05_serve_does_not_recreate_missing_trust_or_clock_metadata",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "approval_app_follows_no_redirect_and_refuses_an_unverified_certificate",
+      "runs the Quickshell approval app offscreen; needs quickshell, curl and openssl"
+    ],
+    [
+      "approval_app_ipc_exposes_window_control_only",
+      "runs the Quickshell approval app offscreen; needs quickshell"
+    ],
+    [
+      "approval_app_signs_in_decides_restarts_and_signs_out",
+      "runs the Quickshell approval app offscreen; needs quickshell, curl and openssl"
+    ],
+    [
+      "p06_la01_agent_jwt_changes_generation_with_retained_keys_rows_and_restart",
+      "run with owned controller backend through deployment driver"
+    ],
+    [
+      "p06_la02_every_browser_scope_changes_key_while_retained_request_stays_pending",
+      "run with owned controller backend through deployment driver"
+    ],
+    [
+      "p06_la03_fulfillment_jwt_refuses_old_generation_before_retained_exchange_use",
+      "run with owned controller backend through deployment driver"
+    ],
+    [
+      "p06_la04_unsafe_epoch_and_symmetric_provider_cannot_supply_legacy_authority",
+      "run with owned controller backend through deployment driver"
+    ],
+    [
+      "readiness_fails_during_postgres_outage_and_recovers_with_state_intact",
+      "PostgreSQL only: set P02_TEST_POSTGRES_URL and run with --ignored"
+    ],
+    [
+      "p06_pw02_actual_production_excludes_second_store_and_same_revision_restart",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_pw03_actual_production_http_and_local_admin_share_authority_loss",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_pw04_actual_startup_refuses_changed_context_before_clock_write",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_pw04_fenced_and_recovering_production_start_without_clock_writes",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_pw05_clock_maintenance_cancels_on_loss_of_its_fenced_guard",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_pw05_existing_foreign_objects_are_not_pristine_initialization",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_pw05_production_initialization_and_clock_maintenance_require_fenced_owner",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_qf01_sigterm_closes_admitted_incomplete_http_body_within_five_seconds",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_qf04_trusted_tls_pending_body_stops_and_wrong_hostname_refuses",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_qf05_sigterm_closes_an_accepted_partial_admin_client_without_issuing",
+      "requires the owned separate PostgreSQL authority driver"
+    ],
+    [
+      "p06_oa01_runtime_cannot_reset_protected_ledger_or_initialize_missing_identity",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_oa01b_startup_refuses_missing_layout_controller_database_and_admin_credentials",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_oa01c_noninherited_administrator_membership_is_not_a_runtime_credential",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_oa02_committed_reservations_outlive_stale_snapshots_and_interrupted_recovery",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_oa03_concurrent_revision_reservations_and_wrong_context_fail_closed",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_oa09_safe_integer_exhaustion_refuses_without_mutating_ledger",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op01_exactly_one_connection_holds_each_tenant_guard",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op02_mismatching_context_record_and_missing_identity_do_not_leak_a_guard",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op03_guard_cannot_be_reset_and_unsupported_layout_is_not_repaired",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op04_reservation_and_transfer_refuse_until_holder_is_externally_fenced",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op05_exact_backend_loss_latches_holder_without_reconnect_or_hwm_rollback",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op06_owned_network_blackhole_has_bounded_permanent_fence",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op06b_connect_read_and_reserve_are_bounded_under_owned_network_fault",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op06c_cancelled_check_closes_guard_and_never_reclaims",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op07_drop_releases_socket_guard_without_changing_durable_metadata",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op08_idle_monitor_detects_loss_and_stops_without_reclaiming",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op09a_real_router_protects_all_methods_api_ui_and_fallback_during_fence",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op09b_authority_loss_cancels_a_pending_handler_before_delivery",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op10_active_revision_is_one_use_even_after_connection_loss",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op11a_router_refuses_wrong_tenant_issuer_or_missing_local_store",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op11b_stale_or_future_local_epoch_cannot_serve_under_active_external_record",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op12_fencing_retains_guard_until_all_admitted_operations_end",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op13a_existing_store_clones_and_signer_share_irreversible_binding",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op13b_fencing_cancels_actual_blocked_one_use_sqlite_retrieval",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_op13c_direct_signing_checks_live_authority_identity_and_local_epoch",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_pt01_process_registration_requires_proof_from_the_held_connection",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_pt02_pt03_current_keys_pending_rotation_and_revocation_are_external_and_monotonic",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_pt04_external_revocation_survives_a_failed_controller_commit_and_fences",
+      "requires separate disposable PostgreSQL authority and owned controller backend"
+    ],
+    [
+      "p06_pt04_socket_loss_during_blocked_registry_work_preserves_uncertainty",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_pt06_actual_owned_enrollment_rotation_ack_and_revocation_publish_current_trust",
+      "requires separate disposable PostgreSQL authority and owned controller backend"
+    ],
+    [
+      "p06_qf02_quiescence_closes_the_actual_backpressured_response_socket",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_qf03_idle_connection_is_closed_before_quiescence_can_release_the_guard",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_qf03_idle_http_connection_has_the_actual_sixty_second_lifetime_bound",
+      "requires separate disposable PostgreSQL authority with restricted runtime role"
+    ],
+    [
+      "p06_pt05_admin_migration_preserves_history_and_refuses_active_or_held_guards",
+      "requires its own disposable PostgreSQL authority database"
+    ],
+    [
+      "p06_ri01_atomic_invalidation_and_quarantine_cover_all_restored_authority",
+      "requires disposable separate controller/authority databases"
+    ],
+    [
+      "p06_ri02_failure_rolls_back_bulk_state_but_intent_survives_restart_and_retry",
+      "requires disposable separate controller/authority databases"
+    ],
+    [
+      "p06_ri03_prepared_intent_fences_all_http_and_clones_after_restart",
+      "requires disposable separate controller/authority databases"
+    ],
+    [
+      "p06_ri04_invalid_input_and_lost_holder_cannot_invalidate_or_guess_epoch",
+      "requires disposable separate controller/authority databases"
+    ],
+    [
+      "p06_ri05_damaged_or_future_schema_is_refused_without_repair",
+      "requires disposable separate controller/authority databases"
+    ],
+    [
+      "p06_ri06_authority_loss_cancels_write_locked_recovery_and_keeps_intent",
+      "requires disposable separate controller/authority databases"
+    ],
+    [
+      "p06_st01_actual_authenticated_restore_publishes_only_fenced_invalidated_state",
+      "requires separate disposable restricted PostgreSQL authority"
+    ],
+    [
+      "p06_st02_authenticated_input_context_and_authority_refusals_publish_nothing",
+      "requires separate disposable restricted PostgreSQL authority"
+    ],
+    [
+      "p06_st03_private_destination_and_credential_custody_preserve_existing_state",
+      "requires separate disposable restricted PostgreSQL authority"
+    ],
+    [
+      "p06_st04_live_competing_recovery_holder_prevents_publication",
+      "requires separate disposable restricted PostgreSQL authority"
+    ],
+    [
+      "p06_st06_authenticated_schema16_forward_migration_retains_original_archive",
+      "requires separate disposable restricted PostgreSQL authority"
+    ],
+    [
+      "p06_st07_actual_restore_with_10000_audit_rows_and_512mib_process_limit",
+      "requires separate disposable restricted PostgreSQL authority and util-linux prlimit"
+    ],
+    [
+      "p06_st08_colocated_cli_forwards_real_fenced_restore_and_refuses_overwrite",
+      "requires separate disposable restricted PostgreSQL authority and built colocated CLI"
+    ],
+    [
+      "p06_qf07a_cancelled_autocommit_cannot_report_quiescence",
+      "requires disposable separate PostgreSQL controller and restricted authority"
+    ],
+    [
+      "p06_qf07b_cancelled_commit_may_still_commit_on_server",
+      "requires disposable separate PostgreSQL controller and restricted authority"
+    ],
+    [
+      "p06_qf07c_aborted_store_task_cannot_release_uncertain_guard",
+      "requires disposable separate PostgreSQL controller and restricted authority"
+    ],
+    [
+      "p06_qf07d_completed_store_work_can_drain_normally",
+      "requires disposable separate PostgreSQL controller and restricted authority"
+    ]
+  ],
+  "node_sps_test_files_skipped": 17,
+  "node_sps_tests_skipped": 101
+}

@@ -1,0 +1,11 @@
+format=pass
+python_ast=pass
+diff_check=pass
+relative_links=141 broken=0
+current_source_pins=5 mismatches=0
+runtime_logs_scanned=33 protected_markers=0
+protected_p03_66_plus_0=true index_empty=true manifests_unchanged=true
+private_control_trees=0 authority_databases=0 authority_roles=0
+full_rust_passed=689 failed=0 ignored=29 targets=71
+scoped_postgres_passed=21 failed=0 cleanup_errors=0
+final_clippy=pass node26_build=pass node26_workspace_retry=pass

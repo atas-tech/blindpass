@@ -1,0 +1,2 @@
+   Compiling blindpass-cli v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.04s

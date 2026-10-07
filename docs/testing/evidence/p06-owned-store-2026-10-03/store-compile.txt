@@ -1,0 +1,40 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+error[E0061]: this method takes 5 arguments but 4 arguments were supplied
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1450:14
+     |
+1450 |             .create_agent_with_id("P06_DUMMY_AGENT", "dummy", "hash", None)
+     |              ^^^^^^^^^^^^^^^^^^^^------------------------------------------ argument #5 of type `&str` is missing
+     |
+note: method defined here
+    --> crates/blindpass-controller/src/store/mod.rs:1763:18
+     |
+1763 |     pub async fn create_agent_with_id(
+     |                  ^^^^^^^^^^^^^^^^^^^^
+help: provide the argument
+     |
+1450 |             .create_agent_with_id("P06_DUMMY_AGENT", "dummy", "hash", None, /* &str */)
+     |                                                                           ++++++++++++
+
+error[E0308]: arguments to this function are incorrect
+    --> crates/blindpass-controller/tests/recovery_authority.rs:1501:9
+     |
+1501 |         Store::connect_with_clock_source(&url, 1000, Arc::new(ObservedClock(entered.clone())))
+     |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^       ----  ---------------------------------------- expected `u64`, found `Arc<ObservedClock>`
+     |                                                |
+     |                                                expected `Arc<(dyn ClockSource + 'static)>`, found `{integer}`
+     |
+note: associated function defined here
+    --> crates/blindpass-controller/src/store/mod.rs:499:18
+     |
+ 499 |     pub async fn connect_with_clock_source(
+     |                  ^^^^^^^^^^^^^^^^^^^^^^^^^
+help: swap these arguments
+     |
+1501 -         Store::connect_with_clock_source(&url, 1000, Arc::new(ObservedClock(entered.clone())))
+1501 +         Store::connect_with_clock_source(&url, Arc::new(ObservedClock(entered.clone())), 1000)
+     |
+
+Some errors have detailed explanations: E0061, E0308.
+For more information about an error, try `rustc --explain E0061`.
+error: could not compile `blindpass-controller` (test "recovery_authority") due to 2 previous errors
+warning: build failed, waiting for other jobs to finish...

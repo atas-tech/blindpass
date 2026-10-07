@@ -1,0 +1,353 @@
+{
+ "step": "s04",
+ "date": "2026-10-06T14:00:41.514Z",
+ "checks": [
+  {
+   "name": "console: served CSP equals the documented policy",
+   "ok": true,
+   "served": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  },
+  {
+   "name": "console: no localhost, wildcard, bare scheme or unsafe source in the served CSP",
+   "ok": true
+  },
+  {
+   "name": "console: HSTS is max-age=31536000 with no includeSubDomains or preload (edge)",
+   "ok": true,
+   "served": "max-age=31536000"
+  },
+  {
+   "name": "console: framing, sniffing, referrer, opener and caching headers",
+   "ok": true,
+   "h": {
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "strict-transport-security": "max-age=31536000",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "cache-control": "no-store"
+   }
+  },
+  {
+   "name": "console: an allowed same-origin API call works (readyz 200)",
+   "ok": true,
+   "ready": {
+    "status": 200,
+    "error": null,
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "console: no Referer header on a same-origin request (Referrer-Policy: no-referrer)",
+   "ok": true,
+   "wireHeaderNames": [
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "connection",
+    "content-type",
+    "host",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "user-agent"
+   ],
+   "referrerPolicyOnDocument": "no-referrer"
+  },
+  {
+   "name": "console: fetch, XHR, WebSocket, image and script to a non-allowed origin all fail",
+   "ok": true,
+   "attempts": {
+    "fetch": {
+     "ok": false,
+     "error": "TypeError: Failed to fetch"
+    },
+    "xhr": {
+     "ok": false,
+     "error": "Error: xhr blocked"
+    },
+    "websocket": {
+     "ok": false,
+     "error": "Error: ws blocked"
+    },
+    "image": {
+     "ok": false,
+     "error": "Error: img blocked"
+    },
+    "script": {
+     "ok": false,
+     "error": "Error: script blocked"
+    },
+    "form": {
+     "ok": true,
+     "value": "attempted"
+    }
+   }
+  },
+  {
+   "name": "console: a securitypolicyviolation was recorded for connect, img and script (and form)",
+   "ok": true,
+   "directives": [
+    "connect-src",
+    "img-src",
+    "script-src-elem",
+    "form-action"
+   ],
+   "count": 6,
+   "beforeCount": 0
+  },
+  {
+   "name": "console: no request to the forbidden origin completed",
+   "ok": true,
+   "forbiddenRequests": 3,
+   "failedAll": [
+    "csp",
+    "csp",
+    "csp"
+   ]
+  },
+  {
+   "name": "input: served CSP equals the documented policy",
+   "ok": true,
+   "served": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  },
+  {
+   "name": "input: no localhost, wildcard, bare scheme or unsafe source in the served CSP",
+   "ok": true
+  },
+  {
+   "name": "input: HSTS is max-age=31536000 with no includeSubDomains or preload (edge)",
+   "ok": true,
+   "served": "max-age=31536000"
+  },
+  {
+   "name": "input: framing, sniffing, referrer, opener and caching headers",
+   "ok": true,
+   "h": {
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "strict-transport-security": "max-age=31536000",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "cache-control": "no-store"
+   }
+  },
+  {
+   "name": "input: an allowed same-origin API call works (readyz 200)",
+   "ok": true,
+   "ready": {
+    "status": 200,
+    "error": null,
+    "hsts": "max-age=31536000"
+   }
+  },
+  {
+   "name": "input: no Referer header on a same-origin request (Referrer-Policy: no-referrer)",
+   "ok": true,
+   "wireHeaderNames": [
+    "accept",
+    "accept-encoding",
+    "accept-language",
+    "connection",
+    "content-type",
+    "host",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "user-agent"
+   ],
+   "referrerPolicyOnDocument": "no-referrer"
+  },
+  {
+   "name": "input: fetch, XHR, WebSocket, image and script to a non-allowed origin all fail",
+   "ok": true,
+   "attempts": {
+    "fetch": {
+     "ok": false,
+     "error": "TypeError: Failed to fetch"
+    },
+    "xhr": {
+     "ok": false,
+     "error": "Error: xhr blocked"
+    },
+    "websocket": {
+     "ok": false,
+     "error": "Error: ws blocked"
+    },
+    "image": {
+     "ok": false,
+     "error": "Error: img blocked"
+    },
+    "script": {
+     "ok": false,
+     "error": "Error: script blocked"
+    },
+    "form": {
+     "ok": true,
+     "value": "attempted"
+    }
+   }
+  },
+  {
+   "name": "input: a securitypolicyviolation was recorded for connect, img and script (and form)",
+   "ok": true,
+   "directives": [
+    "connect-src",
+    "img-src",
+    "script-src-elem",
+    "form-action"
+   ],
+   "count": 12,
+   "beforeCount": 0
+  },
+  {
+   "name": "input: no request to the forbidden origin completed",
+   "ok": true,
+   "forbiddenRequests": 6,
+   "failedAll": [
+    "csp",
+    "csp",
+    "csp",
+    "csp",
+    "csp",
+    "csp"
+   ]
+  },
+  {
+   "name": "framing the console and the input page from another origin is refused (nothing rendered)",
+   "ok": true,
+   "states": [
+    {
+     "url": "chrome-error://chromewebdata/",
+     "rendered": false
+    },
+    {
+     "url": "chrome-error://chromewebdata/",
+     "rendered": false
+    }
+   ],
+   "consoleMessages": []
+  },
+  {
+   "name": "every request of the browsing journey is to the edge origins or the blocked exfil target",
+   "ok": true,
+   "origins": [
+    "https://blindpass.example",
+    "https://exfil.invalid",
+    "https://input.example"
+   ]
+  }
+ ],
+ "reports": {
+  "console": {
+   "status": 200,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "strict-transport-security": "max-age=31536000",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "cache-control": "no-store"
+   },
+   "exfiltration": {
+    "fetch": {
+     "ok": false,
+     "error": "TypeError: Failed to fetch"
+    },
+    "xhr": {
+     "ok": false,
+     "error": "Error: xhr blocked"
+    },
+    "websocket": {
+     "ok": false,
+     "error": "Error: ws blocked"
+    },
+    "image": {
+     "ok": false,
+     "error": "Error: img blocked"
+    },
+    "script": {
+     "ok": false,
+     "error": "Error: script blocked"
+    },
+    "form": {
+     "ok": true,
+     "value": "attempted"
+    }
+   },
+   "violations": [
+    "connect-src https://exfil.invalid/beacon?x=1",
+    "connect-src https://exfil.invalid/x",
+    "connect-src wss://exfil.invalid/ws",
+    "img-src https://exfil.invalid/p.gif",
+    "script-src-elem https://exfil.invalid/s.js",
+    "form-action https://exfil.invalid/post"
+   ]
+  },
+  "input": {
+   "status": 200,
+   "headers": {
+    "content-security-policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
+    "strict-transport-security": "max-age=31536000",
+    "x-frame-options": "DENY",
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "no-referrer",
+    "cross-origin-opener-policy": "same-origin",
+    "permissions-policy": "camera=(), microphone=(), geolocation=()",
+    "cache-control": "no-store"
+   },
+   "exfiltration": {
+    "fetch": {
+     "ok": false,
+     "error": "TypeError: Failed to fetch"
+    },
+    "xhr": {
+     "ok": false,
+     "error": "Error: xhr blocked"
+    },
+    "websocket": {
+     "ok": false,
+     "error": "Error: ws blocked"
+    },
+    "image": {
+     "ok": false,
+     "error": "Error: img blocked"
+    },
+    "script": {
+     "ok": false,
+     "error": "Error: script blocked"
+    },
+    "form": {
+     "ok": true,
+     "value": "attempted"
+    }
+   },
+   "violations": [
+    "connect-src https://exfil.invalid/beacon?x=1",
+    "connect-src https://exfil.invalid/beacon?x=1",
+    "connect-src https://exfil.invalid/x",
+    "connect-src https://exfil.invalid/x",
+    "connect-src wss://exfil.invalid/ws",
+    "connect-src wss://exfil.invalid/ws",
+    "img-src https://exfil.invalid/p.gif",
+    "img-src https://exfil.invalid/p.gif",
+    "script-src-elem https://exfil.invalid/s.js",
+    "script-src-elem https://exfil.invalid/s.js",
+    "form-action https://exfil.invalid/post",
+    "form-action https://exfil.invalid/post"
+   ]
+  }
+ }
+}

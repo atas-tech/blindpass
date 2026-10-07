@@ -1,0 +1,60 @@
+{
+ "schema": "blindpass-release-evidence-v1",
+ "commit": "8a595ad18783634da59e046595942e729b56147b",
+ "date": "2026-10-06",
+ "profile": "compose-sqlite",
+ "client": "Chromium 152 (Playwright) + docker compose",
+ "environment": "uncommitted working tree on 8a595ad; local harness runs; not a release candidate",
+ "scenarios": [
+  {
+   "id": "S03",
+   "result": "pass",
+   "evidence": "docs/testing/evidence/p07-profile-browser-2026-10-06.md"
+  },
+  {
+   "id": "S04",
+   "result": "pass",
+   "evidence": "docs/testing/evidence/p07-profile-browser-2026-10-06.md"
+  },
+  {
+   "id": "S05",
+   "result": "pass",
+   "evidence": "docs/testing/evidence/p07-profile-browser-2026-10-06.md"
+  },
+  {
+   "id": "P07-I02",
+   "result": "pass",
+   "evidence": "docs/testing/evidence/p07-profile-browser-2026-10-06.md"
+  },
+  {
+   "id": "P07-I03",
+   "result": "pass",
+   "evidence": "docs/testing/evidence/p07-profile-browser-2026-10-06.md"
+  },
+  {
+   "id": "S02",
+   "result": "skip",
+   "reason": "store-level tests on this store pass; not exercised as a deployed-profile scenario"
+  },
+  {
+   "id": "S01",
+   "result": "skip",
+   "reason": "code role is explicit and asserted; entropy about 12.6 bits and contract change not built"
+  },
+  {
+   "id": "S06",
+   "result": "skip",
+   "reason": "clean for P01, P03 (SQLite, PostgreSQL), Compose both profiles, the P06 relay, handoff, activation and matrix runs and native real-node runs; not run: P05 backup (ADR 0007), stock AI client, root-only host cores"
+  },
+  {
+   "id": "S07",
+   "result": "skip",
+   "reason": "dump control only on P01; RUST_LOG=debug relay success path clean; full S07 pair not run on this profile"
+  },
+  {
+   "id": "P07-I04",
+   "result": "skip",
+   "reason": "clean for every run made (see S06); not passed: P05 backup and stock AI client not run, crash pair only on P01"
+  }
+ ]
+}

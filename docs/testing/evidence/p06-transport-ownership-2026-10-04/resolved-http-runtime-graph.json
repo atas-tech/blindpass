@@ -1,0 +1,37 @@
+{
+  "root": "http-body@1.1.0",
+  "direct_edge_added": false,
+  "package_versions_changed": false,
+  "regular_resolved_packages": [
+    {
+      "name": "http-body",
+      "version": "1.1.0",
+      "checksum": "ca2a8f2913ee65f60facd6a5905613afaa448497a0230cc41ce022d93290bc2c",
+      "dependencies": [
+        "bytes",
+        "http"
+      ]
+    },
+    {
+      "name": "bytes",
+      "version": "1.12.1",
+      "checksum": "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04",
+      "dependencies": []
+    },
+    {
+      "name": "http",
+      "version": "1.5.0",
+      "checksum": "918d3568bebf352712bc2ef3d46a8bcf1a75b373be6539de198e9105cbbf9ce0",
+      "dependencies": [
+        "bytes",
+        "itoa"
+      ]
+    },
+    {
+      "name": "itoa",
+      "version": "1.0.18",
+      "checksum": "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682",
+      "dependencies": []
+    }
+  ]
+}

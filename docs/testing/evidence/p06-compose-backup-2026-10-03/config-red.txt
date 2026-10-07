@@ -1,0 +1,14 @@
+F..
+======================================================================
+FAIL: test_p06_cb01_sqlite_backup_is_explicit_offline_and_has_separate_custody (__main__.Configuration.test_p06_cb01_sqlite_backup_is_explicit_offline_and_has_separate_custody)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "$REPOSITORY/tests/deployment/container-config-test.py", line 20, in test_p06_cb01_sqlite_backup_is_explicit_offline_and_has_separate_custody
+    self.assertEqual(result.returncode,0,'SQLite backup overlay failed to render')
+    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 1 != 0 : SQLite backup overlay failed to render
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.147s
+
+FAILED (failures=1)

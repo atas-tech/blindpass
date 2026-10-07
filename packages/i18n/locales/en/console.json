@@ -688,6 +688,7 @@
       "credentials": "The username or password is incorrect.",
       "missing": "Enter your username and password.",
       "rate": "Too many attempts. Wait a moment before trying again.",
+      "locked": "This account is locked after too many failed sign-ins. Try again in about {{minutes}} min, or ask an administrator to reset the password.",
       "failed": "Sign-in didn't complete. Try again."
     },
     "submitting": "Signing in…",

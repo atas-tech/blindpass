@@ -1,0 +1,24 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.86s
+     Running tests/backup_command.rs (target/debug/deps/backup_command-9bc91871d7438e66)
+
+running 1 test
+test p06_b03_b06_b07_sqlite_create_verifies_complete_bundle_and_never_initializes_lost_state ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.73s
+
+     Running tests/production_ownership.rs (target/debug/deps/production_ownership-1a79703c8c5fb40b)
+
+running 9 tests
+test p06_pw01_inline_partial_unsafe_and_invalid_authority_configuration_refuses_without_echo ... ok
+test p06_pw01_missing_production_authority_refuses_configuration_and_writes ... ok
+test p06_pw02_actual_production_excludes_second_store_and_same_revision_restart ... ignored, requires the owned separate PostgreSQL authority driver
+test p06_pw03_actual_production_http_and_local_admin_share_authority_loss ... ignored, requires the owned separate PostgreSQL authority driver
+test p06_pw04_actual_startup_refuses_changed_context_before_clock_write ... ignored, requires the owned separate PostgreSQL authority driver
+test p06_pw04_fenced_and_recovering_production_start_without_clock_writes ... ignored, requires the owned separate PostgreSQL authority driver
+test p06_pw05_clock_maintenance_cancels_on_loss_of_its_fenced_guard ... ignored, requires the owned separate PostgreSQL authority driver
+test p06_pw05_production_initialization_and_clock_maintenance_require_fenced_owner ... ignored, requires the owned separate PostgreSQL authority driver
+test p06_pw06_unbound_production_builder_refuses_ordinary_routes_and_readiness ... ok
+
+test result: ok. 3 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.34s
+

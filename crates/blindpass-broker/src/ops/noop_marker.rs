@@ -12,7 +12,7 @@ const MARKER_MODE: u32 = 0o444;
 const DIRECTORY_MODE: u32 = 0o711;
 /// The listable mode earlier brokers created; it is tightened in place.
 const LEGACY_DIRECTORY_MODE: u32 = 0o755;
-const O_NOFOLLOW: i32 = 0x20000;
+const O_NOFOLLOW: i32 = blindpass_core::open_flags::O_NOFOLLOW;
 
 pub(crate) fn create_in(directory: &Path, grant_id: &str) -> Result<(), &'static str> {
     if !valid_opaque_id(grant_id) {

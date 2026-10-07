@@ -1,0 +1,26 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.39s
+     Running tests/recovery_authority.rs (target/debug/deps/recovery_authority-8f0890b4349a4ec3)
+
+running 2 tests
+test p06_op11a_router_refuses_wrong_tenant_issuer_or_missing_local_store ... 
+thread 'p06_op11a_router_refuses_wrong_tenant_issuer_or_missing_local_store' (2476977) panicked at crates/blindpass-controller/tests/recovery_authority.rs:1180:9:
+controller tenant mismatch must latch fenced
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test p06_op11b_stale_or_future_local_epoch_cannot_serve_under_active_external_record ... 
+thread 'p06_op11b_stale_or_future_local_epoch_cannot_serve_under_active_external_record' (2477030) panicked at crates/blindpass-controller/tests/recovery_authority.rs:1209:9:
+assertion `left == right` failed
+  left: 200
+ right: 503
+FAILED
+
+failures:
+
+failures:
+    p06_op11a_router_refuses_wrong_tenant_issuer_or_missing_local_store
+    p06_op11b_stale_or_future_local_epoch_cannot_serve_under_active_external_record
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.63s
+
+error: test failed, to rerun pass `-p blindpass-controller --test recovery_authority`

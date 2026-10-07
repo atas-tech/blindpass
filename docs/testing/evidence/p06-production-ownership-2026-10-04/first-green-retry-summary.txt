@@ -1,0 +1,3 @@
+snapshot-unit-retry_exit=0
+sqlite_exit=0
+postgres_exit=101

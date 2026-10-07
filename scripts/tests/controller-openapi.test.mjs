@@ -44,8 +44,8 @@ function routeKey(method, route) {
 async function mountedRoutes() {
   const routes = new Set();
   for (const text of await rustSources()) {
-    for (const match of text.matchAll(/\.route\(\s*"([^"]+)",\s*((?:[a-z]+\([A-Za-z_:]+\)\s*\.?\s*)+),?\s*\)/g)) {
-      for (const method of match[2].matchAll(/([a-z]+)\(/g)) {
+    for (const match of text.matchAll(/\.route\(\s*"([^"]+)",\s*((?:[a-z]+\([A-Za-z_:]+\)(?:\s*\.layer\((?:[^()]|\([^()]*\))*\))*\s*\.?\s*)+),?\s*\)/g)) {
+      for (const method of match[2].matchAll(/\b(get|post|put|patch|delete|head|options)\(/g)) {
         routes.add(routeKey(method[1].toUpperCase(), match[1]));
       }
     }

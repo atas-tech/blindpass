@@ -1,0 +1,81 @@
+{
+  "workspace_passed": 726,
+  "workspace_failed": 0,
+  "workspace_ignored": 78,
+  "workspace_result_targets": 79,
+  "integration_executions": {
+    "authority-full-postgres": [
+      32,
+      0,
+      0
+    ],
+    "invalidation-sqlite": [
+      6,
+      0,
+      0
+    ],
+    "invalidation-postgres": [
+      6,
+      0,
+      0
+    ],
+    "legacy-sqlite": [
+      4,
+      0,
+      0
+    ],
+    "legacy-postgres": [
+      4,
+      0,
+      0
+    ],
+    "production-sqlite": [
+      10,
+      0,
+      0
+    ],
+    "production-postgres": [
+      10,
+      0,
+      0
+    ],
+    "startup-sqlite": [
+      5,
+      0,
+      0
+    ],
+    "quiescence-postgres": [
+      4,
+      0,
+      0
+    ],
+    "restore-sqlite": [
+      7,
+      0,
+      0
+    ],
+    "authority-full-sqlite": [
+      32,
+      0,
+      0
+    ],
+    "migration-final": [
+      1,
+      0,
+      0
+    ],
+    "restore-crash-final": [
+      9,
+      0,
+      0
+    ],
+    "trust-socket-loss-first": [
+      1,
+      0,
+      0
+    ]
+  },
+  "integration_passed": 131,
+  "negative_controls": 2,
+  "overlapping_counts": true
+}

@@ -4,7 +4,7 @@
       "command": "node",
       "args": ["~/.codex/skills/blindpass/dist/mcp-server.mjs"],
       "env": {
-        "SPS_BASE_URL": "https://sps.blindpass.dev",
+        "SPS_BASE_URL": "https://controller.example.com",
         "BLINDPASS_API_KEY": "your-api-key"
       }
     }

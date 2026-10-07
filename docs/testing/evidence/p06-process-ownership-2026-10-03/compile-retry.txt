@@ -1,0 +1,3 @@
+   Compiling blindpass-controller v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-controller)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 56.28s
+  Executable tests/recovery_authority.rs (target/debug/deps/recovery_authority-8f0890b4349a4ec3)

@@ -26,6 +26,7 @@ pub(crate) enum AuthError {
     InvalidApiKey,
     ProviderUnavailable,
     InvalidClaims,
+    AuthorityUnavailable,
 }
 
 impl fmt::Display for AuthError {
@@ -36,6 +37,7 @@ impl fmt::Display for AuthError {
             Self::InvalidApiKey => "Invalid agent API key",
             Self::ProviderUnavailable => "Gateway JWK unavailable",
             Self::InvalidClaims => "Invalid gateway claims",
+            Self::AuthorityUnavailable => "Controller authority unavailable",
         })
     }
 }
@@ -64,14 +66,23 @@ struct TokenClaims {
     aud: String,
     iat: u64,
     exp: u64,
+    /// Never minted. `jsonwebtoken` 9.3.1 ignores a malformed `nbf` even with
+    /// `validate_nbf` on, so a wrong-typed value is refused here by typing it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    nbf: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    issuer_epoch: Option<u64>,
 }
 
 /// JWT validation without clock leeway. SPS verifies with jose's default zero
 /// tolerance, so a token stops authenticating once `exp` has passed rather
-/// than 60 seconds later (the `jsonwebtoken` default).
+/// than 60 seconds later (the `jsonwebtoken` default). jose also rejects a
+/// token whose `nbf` is still in the future, which `jsonwebtoken` skips unless
+/// asked; a malformed `nbf` is refused too (`p07_jwt01`).
 pub(crate) fn jwt_validation(algorithm: Algorithm) -> Validation {
     let mut validation = Validation::new(algorithm);
     validation.leeway = 0;
+    validation.validate_nbf = true;
     validation
 }
 
@@ -127,6 +138,21 @@ pub(crate) fn hash_api_key(api_key: &str) -> Result<String, &'static str> {
         .map_err(|_| "could not hash agent key")
 }
 
+/// A well-formed hash of a random password nobody holds. Unknown and disabled
+/// accounts verify against it so their sign-in costs the same Argon2 work as
+/// a real one and the response time does not reveal which usernames exist.
+pub(crate) fn dummy_password_hash() -> &'static str {
+    static DUMMY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    DUMMY
+        .get_or_init(|| {
+            hash_api_key(&random_uuid()).unwrap_or_else(|_| {
+                // Argon2 only fails on parameter errors; keep a verifiable shape.
+                String::from("$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+            })
+        })
+        .as_str()
+}
+
 pub(crate) fn verify_api_key(api_key: &str, encoded_hash: &str) -> bool {
     PasswordHash::new(encoded_hash).ok().is_some_and(|hash| {
         Argon2::default()
@@ -147,11 +173,15 @@ pub(crate) fn hash_refresh_token(token: &str) -> Option<String> {
         .map(|digest| digest.iter().map(|byte| format!("{byte:02x}")).collect())
 }
 
-pub(crate) fn mint_agent_token(
+pub(crate) async fn mint_agent_token(
     state: &AppState,
     agent: &AgentCredential,
     tenant_id: &str,
 ) -> Result<(String, u64), &'static str> {
+    let keys = state
+        .legacy_authority_keys()
+        .await
+        .map_err(|_| "agent authority unavailable")?;
     let now = current_seconds();
     let expiry = now + AGENT_ACCESS_TTL_SECONDS;
     let claims = TokenClaims {
@@ -166,11 +196,13 @@ pub(crate) fn mint_agent_token(
         aud: "sps-agent".to_owned(),
         iat: now,
         exp: expiry,
+        nbf: None,
+        issuer_epoch: crate::legacy_authority::epoch_claim(keys.epoch),
     };
     encode(
         &Header::new(Algorithm::HS256),
         &claims,
-        &EncodingKey::from_secret(state.agent_jwt_secret.as_bytes()),
+        &EncodingKey::from_secret(keys.agent_jwt.as_bytes()),
     )
     .map(|token| (token, expiry))
     .map_err(|_| "agent token could not be minted")
@@ -181,24 +213,34 @@ pub(crate) async fn authenticate_workload(
     headers: &HeaderMap,
 ) -> Result<WorkloadIdentity, AuthError> {
     let token = bearer_token(headers).ok_or(AuthError::MissingBearer)?;
-    if let Some(identity) = verify_agent_token(state, token) {
+    let keys = state
+        .legacy_authority_keys()
+        .await
+        .map_err(|_| AuthError::AuthorityUnavailable)?;
+    if let Some(identity) = verify_agent_token(&keys, token) {
         return Ok(identity);
     }
     verify_external_token(state, token)
 }
 
-fn verify_agent_token(state: &AppState, token: &str) -> Option<WorkloadIdentity> {
+fn verify_agent_token(
+    keys: &crate::legacy_authority::LegacyAuthorityKeys,
+    token: &str,
+) -> Option<WorkloadIdentity> {
     let mut validation = jwt_validation(Algorithm::HS256);
     validation.set_issuer(&["sps"]);
     validation.set_audience(&["sps-agent"]);
     let claims = decode::<TokenClaims>(
         token,
-        &DecodingKey::from_secret(state.agent_jwt_secret.as_bytes()),
+        &DecodingKey::from_secret(keys.agent_jwt.as_bytes()),
         &validation,
     )
     .ok()?
     .claims;
-    if claims.role != "gateway" {
+    if claims.role != "gateway"
+        || claims.nbf.is_some_and(|nbf| !nbf.is_finite())
+        || !crate::legacy_authority::matches_epoch(keys.epoch, claims.issuer_epoch)
+    {
         return None;
     }
     Some(WorkloadIdentity {
@@ -255,6 +297,9 @@ fn verify_external_token(state: &AppState, token: &str) -> Result<WorkloadIdenti
             continue;
         };
         let value = decoded.claims;
+        if !nbf_is_well_formed(&value) {
+            continue;
+        }
         let sub = value
             .get("sub")
             .and_then(Value::as_str)
@@ -292,6 +337,13 @@ fn verify_external_token(state: &AppState, token: &str) -> Result<WorkloadIdenti
         });
     }
     Err(AuthError::InvalidToken)
+}
+
+/// `jsonwebtoken` 9.3.1 treats a non-numeric `nbf` as absent, so a provider token
+/// that is not yet valid but carries `"nbf":"<future>"` would authenticate. jose
+/// refuses it; so does this check, after the library's own validation.
+fn nbf_is_well_formed(claims: &Value) -> bool {
+    claims.get("nbf").is_none_or(Value::is_number)
 }
 
 fn jwk_algorithm_matches(parameters: &AlgorithmParameters, algorithm: Algorithm) -> bool {
@@ -467,4 +519,27 @@ pub(crate) fn constant_equal(left: &[u8], right: &[u8]) -> bool {
         .zip(right)
         .fold(0_u8, |diff, (a, b)| diff | (a ^ b))
         == 0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nbf_is_well_formed;
+    use serde_json::json;
+
+    #[test]
+    fn p07_jwt03_provider_nbf_must_be_absent_or_numeric() {
+        assert!(nbf_is_well_formed(&json!({"sub": "a"})));
+        assert!(nbf_is_well_formed(&json!({"nbf": 0})));
+        assert!(nbf_is_well_formed(&json!({"nbf": 1.5})));
+        for bad in [
+            json!("0"),
+            json!("9999999999"),
+            json!(false),
+            json!(null),
+            json!([1]),
+            json!({}),
+        ] {
+            assert!(!nbf_is_well_formed(&json!({"nbf": bad.clone()})), "{bad}");
+        }
+    }
 }

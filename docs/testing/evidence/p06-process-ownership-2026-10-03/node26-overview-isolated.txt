@@ -1,0 +1,15 @@
+
+> @blindpass/console@0.1.0 test
+> vitest run src/pages/overview.test.tsx
+
+
+ RUN  v4.1.11 /home/hvo/Projects/blindpass/packages/console
+
+(node:2567681) ExperimentalWarning: localStorage is not available because --localstorage-file was not provided.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ Test Files  1 passed (1)
+      Tests  5 passed (5)
+   Start at  18:25:16
+   Duration  1.62s (transform 248ms, setup 150ms, import 253ms, tests 881ms, environment 237ms)
+

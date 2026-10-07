@@ -190,7 +190,7 @@ async fn named_operator(
 }
 
 #[allow(clippy::result_large_err)] // Axum route helpers return its response type directly.
-fn check_capability(
+async fn check_capability(
     state: &AppState,
     id: &str,
     scope: BrowserScope,
@@ -203,11 +203,15 @@ fn check_capability(
             "a signed provisioning capability is required",
         ));
     };
+    let keys = state
+        .legacy_authority_keys()
+        .await
+        .map_err(|_| unavailable())?;
     match verify_fleet_provisioning_capability(
         id,
         scope,
         signature,
-        state.root_secret.as_bytes(),
+        keys.root.as_bytes(),
         current_seconds(),
     ) {
         Ok(_) => Ok(()),
@@ -244,14 +248,15 @@ fn session_ended() -> Response {
     )
 }
 
-fn link_body(state: &AppState, record: &ProvisioningLinkRecord) -> Option<Value> {
+async fn link_body(state: &AppState, record: &ProvisioningLinkRecord) -> Option<Value> {
+    let keys = state.legacy_authority_keys().await.ok()?;
     // Round up so the coarse capability check never denies before the
     // authoritative millisecond deadline stored with the link.
     let expires = u64::try_from(record.expires_at_ms)
         .ok()?
         .checked_add(999)?
         .checked_div(1_000)?;
-    let root = state.root_secret.as_bytes();
+    let root = keys.root.as_bytes();
     let metadata =
         sign_fleet_provisioning_capability(&record.id, expires, BrowserScope::Metadata, root)
             .ok()?;
@@ -351,7 +356,7 @@ async fn create_link(
         }
         Err(_) => return unavailable(),
     };
-    match link_body(&state, &record) {
+    match link_body(&state, &record).await {
         Some(body) => (status, Json(body)).into_response(),
         None => unavailable(),
     }
@@ -371,7 +376,7 @@ async fn read_metadata(
         return unavailable_link();
     }
     if let Err(response) =
-        check_capability(&state, &id, BrowserScope::Metadata, query.sig.as_deref())
+        check_capability(&state, &id, BrowserScope::Metadata, query.sig.as_deref()).await
     {
         return response;
     }
@@ -441,7 +446,8 @@ async fn submit(
     if !valid_link_id(&id) {
         return unavailable_link();
     }
-    if let Err(response) = check_capability(&state, &id, BrowserScope::Submit, query.sig.as_deref())
+    if let Err(response) =
+        check_capability(&state, &id, BrowserScope::Submit, query.sig.as_deref()).await
     {
         return response;
     }

@@ -1,0 +1,65 @@
+   Compiling blindpass-broker v0.1.0 (/home/hvo/Projects/blindpass/crates/blindpass-broker)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2.04s
+     Running unittests src/lib.rs (target/debug/deps/blindpass_broker-6db550adea3814d9)
+
+running 6 tests
+test grants::tests::p06_cj01_durable_consumption_contains_exact_signed_correlation ... FAILED
+test grants::tests::p06_cj02_legacy_intent_keeps_denial_beside_new_bound_consumption ... FAILED
+test grants::tests::p06_cj03_compaction_preserves_retained_bound_metadata_without_guessing_legacy ... FAILED
+test grants::tests::p06_cj04_complete_malformed_or_conflicting_correlations_refuse ... FAILED
+test grants::tests::p06_cj05a_unsafe_correlation_denies_before_effect ... FAILED
+test grants::tests::p06_cj05b_hardlinked_intent_denies_append_and_recovery ... FAILED
+
+failures:
+
+---- grants::tests::p06_cj01_durable_consumption_contains_exact_signed_correlation stdout ----
+
+thread 'grants::tests::p06_cj01_durable_consumption_contains_exact_signed_correlation' (291) panicked at crates/blindpass-broker/src/grants.rs:2099:9:
+assertion `left == right` failed
+  left: None
+ right: Some("op_0123456789abcdef0123456789abcdef")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- grants::tests::p06_cj02_legacy_intent_keeps_denial_beside_new_bound_consumption stdout ----
+
+thread 'grants::tests::p06_cj02_legacy_intent_keeps_denial_beside_new_bound_consumption' (292) panicked at crates/blindpass-broker/src/grants.rs:2132:9:
+assertion `left == right` failed
+  left: None
+ right: Some("op_0223456789abcdef0123456789abcdef")
+
+---- grants::tests::p06_cj03_compaction_preserves_retained_bound_metadata_without_guessing_legacy stdout ----
+
+thread 'grants::tests::p06_cj03_compaction_preserves_retained_bound_metadata_without_guessing_legacy' (293) panicked at crates/blindpass-broker/src/grants.rs:2148:53:
+called `Result::unwrap()` on an `Err` value: "grant journal expiry is malformed"
+
+---- grants::tests::p06_cj04_complete_malformed_or_conflicting_correlations_refuse stdout ----
+
+thread 'grants::tests::p06_cj04_complete_malformed_or_conflicting_correlations_refuse' (294) panicked at crates/blindpass-broker/src/grants.rs:2181:46:
+called `Result::unwrap()` on an `Err` value: "grant journal expiry is malformed"
+
+---- grants::tests::p06_cj05a_unsafe_correlation_denies_before_effect stdout ----
+
+thread 'grants::tests::p06_cj05a_unsafe_correlation_denies_before_effect' (295) panicked at crates/blindpass-broker/src/grants.rs:2193:9:
+assertion `left == right` failed
+  left: Ok(Grant { id: "gr_0123456789abcdef0123456789abcdef", operation_id: "../dummy", node_id: "nd_node-a", workload_id: "wl_worker-a", invocation_id: "invocation-a", unit: "worker.service", account: "worker", resource_id: "marker-a", recipient_key_id: "nd_node-a-1", registration_version: 1, policy_version: 4, approval_reference: None, request_event_key: None, action: "noop.marker", mode: File, audience: "blindpass-node", issuer_epoch: 1, issued_at_ms: 1800000000000, expires_at_ms: 1800000060000, local_ceiling_seconds: 60 })
+ right: Err(Unavailable)
+
+---- grants::tests::p06_cj05b_hardlinked_intent_denies_append_and_recovery stdout ----
+
+thread 'grants::tests::p06_cj05b_hardlinked_intent_denies_append_and_recovery' (296) panicked at crates/blindpass-broker/src/grants.rs:2210:9:
+assertion `left == right` failed
+  left: Ok(Grant { id: "gr_0223456789abcdef0123456789abcdef", operation_id: "op_0223456789abcdef0123456789abcdef", node_id: "nd_node-a", workload_id: "wl_worker-a", invocation_id: "invocation-a", unit: "worker.service", account: "worker", resource_id: "marker-a", recipient_key_id: "nd_node-a-1", registration_version: 1, policy_version: 4, approval_reference: None, request_event_key: None, action: "noop.marker", mode: File, audience: "blindpass-node", issuer_epoch: 1, issued_at_ms: 1800000000000, expires_at_ms: 1800000060000, local_ceiling_seconds: 60 })
+ right: Err(Unavailable)
+
+
+failures:
+    grants::tests::p06_cj01_durable_consumption_contains_exact_signed_correlation
+    grants::tests::p06_cj02_legacy_intent_keeps_denial_beside_new_bound_consumption
+    grants::tests::p06_cj03_compaction_preserves_retained_bound_metadata_without_guessing_legacy
+    grants::tests::p06_cj04_complete_malformed_or_conflicting_correlations_refuse
+    grants::tests::p06_cj05a_unsafe_correlation_denies_before_effect
+    grants::tests::p06_cj05b_hardlinked_intent_denies_append_and_recovery
+
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 298 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p blindpass-broker --lib`

@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
-# Installed disabled. P06 slice 5 and a protected recovery key are prerequisites.
+# Installed disabled. Explicit protected custody is required: a signing credential
+# and the offline recipient's certificate. The recipient private key never lives here.
 [Unit]
 Description=BlindPass encrypted controller backup
+Requires=blindpass-controller-backup-credential-check.service
+After=blindpass-controller-backup-credential-check.service
 ConditionPathExists=/etc/blindpass/controller-backup-enabled
-ConditionPathExists=/etc/blindpass/controller-backup-recovery-key
+ConditionPathExists=/etc/blindpass/controller-backup-signing-credential
+ConditionPathExists=/etc/blindpass/controller-backup-recipient-certificate
 
 [Service]
 User=blindpass
@@ -41,16 +45,20 @@ LockPersonality=yes
 MemoryDenyWriteExecute=yes
 CapabilityBoundingSet=
 AmbientCapabilities=
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictAddressFamilies=AF_UNIX
+PrivateNetwork=yes
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 LimitCORE=0
 LimitNOFILE=8192
 KillMode=control-group
-TimeoutStartSec=60
+# Capture, hashing, encryption and full verification each have bounded work.
+# Give the complete job its own budget; retain control-group termination.
+TimeoutStartSec=15min
 TimeoutStopSec=10
 StandardOutput=journal
 StandardError=journal
 Type=oneshot
-LoadCredential=recovery-key:/etc/blindpass/controller-backup-recovery-key
-ExecStart=/opt/blindpass/controller/current/bin/blindpass backup create --output /var/lib/blindpass/controller/backups --recovery-key-file %d/recovery-key
+LoadCredential=signing-credential:/etc/blindpass/controller-backup-signing-credential
+LoadCredential=recipient-certificate:/etc/blindpass/controller-backup-recipient-certificate
+ExecStart=/opt/blindpass/controller/current/bin/blindpass backup create --output /var/lib/blindpass/controller/backups --signing-credential-file %d/signing-credential --recipient-certificate-file %d/recipient-certificate
