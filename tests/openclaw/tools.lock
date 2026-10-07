@@ -1,0 +1,12 @@
+# Pinned inputs for the P09 disposable OpenClaw guest. Sourced by vm.sh.
+# Nothing here is installed on the host: sops/age are downloaded and hash-checked
+# on the host, then executed only inside the throwaway guest. OpenClaw is
+# installed only inside the guest (Socket review: block, owner-approved for a
+# disposable VM only on 2026-10-07; see docs/product/openclaw-migration.md).
+OPENCLAW_RELEASE=2026.8.35
+SOPS_VERSION=v3.13.3
+SOPS_ASSET=sops-v3.13.3.linux.amd64
+SOPS_SHA256=e5bec3346a873ae91d871550f3e698c1aad962aff462a080e40f25fde17fef6b
+AGE_VERSION=v1.3.2
+AGE_ASSET=age-v1.3.2-linux-amd64.tar.gz
+AGE_SHA256=cbe24006683f8eb669266162894b9a522a1af52f2665fbc63a4bb032ed26ac10
