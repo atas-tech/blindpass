@@ -219,6 +219,7 @@ pub struct BrokerState {
     /// between refreshes); owner retention never evicts these.
     browser_unresolved_requests: std::collections::BTreeSet<String>,
     browser_offers: provisioning::BrowserOfferBook,
+    fulfillments: ops::fulfill::FulfillmentBook,
     /// Controller-signed closures and locally verified completion keyed by request event key. Ownership and
     /// closures share the durable outbox snapshot, including after event ACK.
     operation_closures: BoundedRecords<String>,
@@ -357,7 +358,11 @@ impl PendingNodeEvent {
             .filter(|kind| {
                 matches!(
                     *kind,
-                    "operation_request" | "operation_result" | "operation_cancel" | "audit"
+                    "operation_request"
+                        | "operation_result"
+                        | "operation_cancel"
+                        | "audit"
+                        | "fulfillment_result"
                 )
             })
             .ok_or(BrokerError::Configuration(
@@ -436,6 +441,7 @@ impl BrokerState {
             browser_ready: BTreeMap::new(),
             browser_unresolved_requests: std::collections::BTreeSet::new(),
             browser_offers: provisioning::BrowserOfferBook::default(),
+            fulfillments: ops::fulfill::FulfillmentBook::default(),
             operation_closures: BoundedRecords::new(MAX_OPERATION_RECORDS),
             pending_state_fenced: AtomicBool::new(false),
             node_revoked: false,
@@ -530,9 +536,12 @@ impl BrokerState {
         }
         self.purge_expired_credentials();
         self.revalidate_delivery_profile(&authorization.unit, &authorization.credential_name)?;
-        Ok(SecretBytes::from_slice(self.credentials.get(
-            &destination_key(&authorization.unit, &authorization.credential_name),
-        )?))
+        let secret = SecretBytes::from_slice(self.credentials.get(&destination_key(
+            &authorization.unit,
+            &authorization.credential_name,
+        ))?);
+        self.note_fulfillment_read(&authorization.unit, &authorization.credential_name);
+        Ok(secret)
     }
 
     fn process_systemd_credential(
@@ -548,9 +557,10 @@ impl BrokerState {
         }
         self.purge_expired_credentials();
         self.revalidate_delivery_profile(unit, credential)?;
-        Ok(SecretBytes::from_slice(
-            self.credentials.get(&destination_key(unit, credential))?,
-        ))
+        let secret =
+            SecretBytes::from_slice(self.credentials.get(&destination_key(unit, credential))?);
+        self.note_fulfillment_read(unit, credential);
+        Ok(secret)
     }
 
     fn purge_expired_credentials(&mut self) {
@@ -562,6 +572,7 @@ impl BrokerState {
             .collect();
         self.browser_offers
             .maintain(grants::boottime_ms().ok(), &authorized);
+        self.maintain_fulfillments();
         self.credential_expiries.retain(|name, expiry| {
             if !expiry.current() {
                 self.credentials.remove(name);

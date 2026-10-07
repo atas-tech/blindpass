@@ -401,6 +401,49 @@ impl NodeIdentity {
             .map_err(|_| BrokerError::Configuration("browser_provisioning_denied"))
     }
 
+    /// Sign a recipient one-use offer under this node's current signing key. The
+    /// offer must name this node and its current key version.
+    pub(crate) fn sign_fulfillment_offer(
+        &self,
+        offer: &blindpass_core::fulfillment::FulfillmentOffer,
+    ) -> Result<SignedEnvelope, BrokerError> {
+        let pin = self
+            .pinned_issuer()?
+            .ok_or(BrokerError::Configuration("fulfillment_denied"))?;
+        let keys = self
+            .keys
+            .lock()
+            .map_err(|_| BrokerError::Configuration("fulfillment_denied"))?;
+        if pin.node_id != offer.node_id || keys.version != offer.node_key_version {
+            return Err(BrokerError::Configuration("fulfillment_denied"));
+        }
+        blindpass_core::fulfillment::sign_offer(offer, &keys.signing)
+            .map_err(|_| BrokerError::Configuration("fulfillment_denied"))
+    }
+
+    /// Seal `plaintext` to a verified one-use offer and sign the submission with
+    /// this node's signing key. The key never leaves this module.
+    pub(crate) fn seal_fulfillment(
+        &self,
+        terms: &blindpass_core::fulfillment::FulfillmentTerms,
+        offer: &blindpass_core::fulfillment::FulfillmentOffer,
+        plaintext: &[u8],
+        now_ms: u64,
+    ) -> Result<SignedEnvelope, BrokerError> {
+        let pin = self
+            .pinned_issuer()?
+            .ok_or(BrokerError::Configuration("fulfillment_denied"))?;
+        let keys = self
+            .keys
+            .lock()
+            .map_err(|_| BrokerError::Configuration("fulfillment_denied"))?;
+        if pin.node_id != terms.issuer.node_id || keys.version != terms.issuer.key_version {
+            return Err(BrokerError::Configuration("fulfillment_denied"));
+        }
+        blindpass_core::fulfillment::seal_submit(terms, offer, plaintext, &keys.signing, now_ms)
+            .map_err(|_| BrokerError::Configuration("fulfillment_denied"))
+    }
+
     pub fn pin_issuer(&self, candidate: PinnedIssuer) -> Result<(), BrokerError> {
         validate_pin(&candidate)?;
         let mut current = self

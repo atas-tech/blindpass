@@ -109,6 +109,10 @@ fn handle_command(
             state.queue_node_revocation_ack_if_possible(&pin.node_id)?;
             state.queue_deferred_revocation_outcomes()?;
             state.queue_pending_cancellations(&pin.node_id)?;
+            // Expire stale fulfillment state and retry results the queue could not
+            // take; a failure here is retried on the next pull and never blocks it.
+            state.maintain_fulfillments();
+            let _ = state.flush_fulfillment_reports();
             if let Some((rotation_id, key_version, fingerprint)) =
                 identity.applied_rotation_ack()?
             {
@@ -233,6 +237,23 @@ fn handle_command(
                 None => stream.write_all(b"ERR browser_provisioning_denied\n")?,
             }
         }
+        _ if command.starts_with(b"FULFILL_EVENT ") => {
+            // As BROWSER_OFFER_EVENT: the broker signs the outer node event only
+            // for an offer or submission it minted itself, never for relay bytes.
+            let fulfillment_id = std::str::from_utf8(&command[14..command.len() - 1])
+                .ok()
+                .filter(|id| crate::valid_event_identifier(id));
+            let event = fulfillment_id
+                .and_then(|id| state.lock().ok()?.fulfillment_event(identity, id).ok());
+            match event {
+                Some(bytes) => {
+                    writeln!(stream, "FULFILL_EVENT {}", bytes.len())?;
+                    stream.write_all(&bytes)?;
+                    stream.write_all(b"\n")?;
+                }
+                None => stream.write_all(b"ERR fulfillment_denied\n")?,
+            }
+        }
         _ if command.starts_with(b"PROVISION_SOURCE ") => {
             let length = parse_provision_length(command);
             let Some(length) = length else {
@@ -283,6 +304,7 @@ fn handle_command(
                 .map_err(|_| BrokerError::Configuration("broker fleet state is unavailable"))?;
             identity.pin_issuer(pin)?;
             state.grant_verifier.observe_issuer_epoch(epoch);
+            state.observe_fulfillment_epoch(epoch);
             stream.write_all(b"OK issuer_pinned\n")?;
         }
         _ if command.starts_with(b"RELAY ") => {
@@ -308,6 +330,9 @@ fn handle_command(
                 }
                 Ok("grant_discarded_rejected") => {
                     stream.write_all(b"OK document_discarded grant_rejected\n")?
+                }
+                Ok("fulfillment_discarded_rejected") => {
+                    stream.write_all(b"OK document_discarded fulfillment_rejected\n")?
                 }
                 Ok(kind) => writeln!(stream, "OK document_applied {kind}")?,
                 Err(BrokerError::Configuration(
@@ -350,7 +375,7 @@ fn apply_controller_document(
     apply_controller_document_to_state(&mut state, identity, document, persist)
 }
 
-fn apply_controller_document_to_state(
+pub(crate) fn apply_controller_document_to_state(
     state: &mut BrokerState,
     identity: &NodeIdentity,
     document: &[u8],
@@ -361,6 +386,7 @@ fn apply_controller_document_to_state(
     // epoch lose their authority before anything else is applied.
     if let Some(pin) = identity.pinned_issuer()? {
         state.grant_verifier.observe_issuer_epoch(pin.epoch);
+        state.observe_fulfillment_epoch(pin.epoch);
     }
     if persist {
         state.retry_pending_persistence(identity);
@@ -407,6 +433,13 @@ fn apply_controller_document_to_state(
             }
             state.apply_grant_revocation(&pin.node_id, &revocation)?;
             return Ok("revocation");
+        }
+        if envelope.kind() == DocumentKind::FulfillmentRevocation {
+            // Honoured from any epoch for the same reason: it only removes authority.
+            let pin = identity.pinned_issuer()?.ok_or(BrokerError::Configuration(
+                "controller issuer is not pinned",
+            ))?;
+            return state.apply_fulfillment_document(identity, &pin, &envelope);
         }
         return Ok("stale_epoch");
     }
@@ -640,6 +673,11 @@ fn apply_controller_document_to_state(
                 pin.node_id,
                 identity.key_version()?
             ));
+        }
+        DocumentKind::FulfillmentAuthorization
+        | DocumentKind::FulfillmentDelivery
+        | DocumentKind::FulfillmentRevocation => {
+            return state.apply_fulfillment_document(identity, &pin, &envelope);
         }
         _ => {
             return Err(BrokerError::Configuration(
