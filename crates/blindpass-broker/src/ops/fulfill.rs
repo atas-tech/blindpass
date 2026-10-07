@@ -2286,4 +2286,55 @@ mod tests {
             "fulfillment_discarded_rejected"
         );
     }
+
+    #[test]
+    fn p10_b14_results_the_queue_cannot_take_are_held_and_retried() {
+        let world = World::new(59);
+        let (mut issuer, mut recipient) = pair(&world);
+        let f = flow(&world, &mut issuer, &mut recipient, ID);
+        // Leave no room for a result. The credential must still be stored and
+        // readable: a full report queue never loses or blocks a fulfillment.
+        for index in 0..crate::MAX_BROKER_AUDIT_EVENTS - 1 {
+            recipient
+                .state
+                .pending_node_events
+                .push_back(PendingNodeEvent {
+                    idempotency_key: format!("event_fill_{index:08}"),
+                    kind: "audit".to_owned(),
+                    body: Value::Object(vec![(
+                        "action".to_owned(),
+                        Value::String("fill".to_owned()),
+                    )]),
+                });
+        }
+        let results_queued = |node: &Node| {
+            node.state
+                .pending_node_events
+                .iter()
+                .filter(|event| event.kind == "fulfillment_result")
+                .count()
+        };
+        assert_eq!(
+            recipient.apply(&f.delivery).unwrap(),
+            "fulfillment_delivery"
+        );
+        assert_eq!(recipient.read().as_deref(), Some(SECRET));
+        assert_eq!(results_queued(&recipient), 0);
+        assert_eq!(
+            recipient.state.fulfillments.entries[ID].unreported.len(),
+            2,
+            "stored and consumed are both held"
+        );
+        // Room returns; the held results are queued once, in order.
+        recipient.state.pending_node_events.truncate(10);
+        recipient.state.flush_fulfillment_reports().unwrap();
+        recipient.state.flush_fulfillment_reports().unwrap();
+        let states: Vec<_> = recipient.result_events().iter().map(|r| r.state).collect();
+        assert_eq!(states, vec![ResultState::Stored, ResultState::Consumed]);
+        assert!(
+            recipient.state.fulfillments.entries[ID]
+                .unreported
+                .is_empty()
+        );
+    }
 }

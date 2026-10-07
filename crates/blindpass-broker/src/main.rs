@@ -53,6 +53,9 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
     }
     let mut mapped_credentials = BTreeSet::new();
     let mut profile_options = Vec::new();
+    let mut fulfillment_sources = Vec::new();
+    let mut fulfillment_destinations = Vec::new();
+    let mut fulfillment_lifetime = None;
     let mut index = 0;
     while index < args.len() {
         match args[index].as_str() {
@@ -101,6 +104,21 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
             "--credential-lifetime-seconds" => {
                 next(&args, &mut index)?;
             }
+            "--fulfillment-source" => {
+                fulfillment_sources.push(next(&args, &mut index)?);
+            }
+            "--fulfillment-destination" => {
+                fulfillment_destinations.push(next(&args, &mut index)?);
+            }
+            "--fulfillment-offer-lifetime-seconds" => {
+                let value = next(&args, &mut index)?;
+                if fulfillment_lifetime.is_some() {
+                    return Err(
+                        "--fulfillment-offer-lifetime-seconds was given more than once".to_owned(),
+                    );
+                }
+                fulfillment_lifetime = Some(parse_fulfillment_offer_lifetime(&value)?);
+            }
             "--workload" => {
                 let registration = next(&args, &mut index)?;
                 state
@@ -116,7 +134,58 @@ fn run_from_args(args: Vec<String>) -> Result<(), String> {
         index += 1;
     }
     install_credential_profiles(&mut state, &profile_options, &mapped_credentials)?;
+    install_fulfillment(
+        &mut state,
+        &fulfillment_sources,
+        &fulfillment_destinations,
+        fulfillment_lifetime.unwrap_or(DEFAULT_FULFILLMENT_OFFER_LIFETIME),
+    )?;
     run(config, state).map_err(|error| error.to_string())
+}
+
+/// The one-use recipient key never outlives three minutes, so this is also the
+/// ceiling for the operator's choice.
+const MAX_FULFILLMENT_OFFER_LIFETIME_SECONDS: u64 = 180;
+const DEFAULT_FULFILLMENT_OFFER_LIFETIME: Duration =
+    Duration::from_secs(MAX_FULFILLMENT_OFFER_LIFETIME_SECONDS);
+
+fn parse_fulfillment_offer_lifetime(value: &str) -> Result<Duration, String> {
+    let invalid = || {
+        format!(
+            "--fulfillment-offer-lifetime-seconds must be an integer from 1 to \
+             {MAX_FULFILLMENT_OFFER_LIFETIME_SECONDS}"
+        )
+    };
+    if value.is_empty() || !value.bytes().all(|byte| byte.is_ascii_digit()) {
+        return Err(invalid());
+    }
+    let seconds = value.parse::<u64>().map_err(|_| invalid())?;
+    if !(1..=MAX_FULFILLMENT_OFFER_LIFETIME_SECONDS).contains(&seconds) {
+        return Err(invalid());
+    }
+    Ok(Duration::from_secs(seconds))
+}
+
+/// Install the local fulfillment ceilings after every `--map` is known. A unit
+/// that is not mapped is a startup error, so a typo can never leave a
+/// fulfillment ceiling silently inert. With neither flag the broker refuses
+/// every fulfillment, which is the default.
+fn install_fulfillment(
+    state: &mut BrokerState,
+    sources: &[String],
+    destinations: &[String],
+    offer_lifetime: Duration,
+) -> Result<(), String> {
+    state
+        .configure_fulfillment(sources, destinations, offer_lifetime)
+        .map_err(|error| format!("--fulfillment-source/--fulfillment-destination: {error}"))?;
+    for unit in sources {
+        eprintln!("blindpass-broker: fulfillment source {unit}");
+    }
+    for unit in destinations {
+        eprintln!("blindpass-broker: fulfillment destination {unit}");
+    }
+    Ok(())
 }
 
 /// Resolve every `--credential-profile` after all `--map` entries are known (the
@@ -273,6 +342,8 @@ fn print_help() {
          [--workload-group GROUP] [--node-group GROUP] [--browser-resources] [--browser-runtime] \\
          [--credential-profile CREDENTIAL=password-file]... \\
          [--credential-lifetime-seconds 60..604800] \\
+         [--fulfillment-source UNIT]... [--fulfillment-destination UNIT]... \\
+         [--fulfillment-offer-lifetime-seconds 1..180] \\
          [--workload NODE:WORKLOAD:UNIT:UID:INVOCATION]"
     );
 }
@@ -405,6 +476,79 @@ mod tests {
             "3600",
             "--credential-lifetime-seconds",
             "7200",
+        ]))
+        .unwrap_err();
+        assert!(repeated.contains("more than once"), "{repeated}");
+    }
+
+    #[test]
+    fn p10_m01_fulfillment_lifetime_is_bounded_to_the_one_use_key_ceiling() {
+        use super::parse_fulfillment_offer_lifetime;
+        assert_eq!(
+            parse_fulfillment_offer_lifetime("180").unwrap(),
+            Duration::from_secs(180)
+        );
+        assert_eq!(
+            parse_fulfillment_offer_lifetime("1").unwrap(),
+            Duration::from_secs(1)
+        );
+        for bad in ["0", "181", "-1", "1.5", "", "abc", " 30", "30 ", "+30"] {
+            assert!(
+                parse_fulfillment_offer_lifetime(bad).is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn p10_m02_fulfillment_units_must_be_mapped_before_the_broker_runs() {
+        use super::install_fulfillment;
+        let mut state = BrokerState::new(DeliveryPolicy::default());
+        state
+            .loader_policy
+            .map_unit("recipient.service", "api-token")
+            .unwrap();
+        install_fulfillment(
+            &mut state,
+            &arguments(&["recipient.service"]),
+            &arguments(&["recipient.service"]),
+            Duration::from_secs(60),
+        )
+        .unwrap();
+        let unmapped = install_fulfillment(
+            &mut state,
+            &arguments(&["other.service"]),
+            &[],
+            Duration::from_secs(60),
+        )
+        .unwrap_err();
+        assert!(unmapped.contains("--fulfillment-"), "{unmapped}");
+
+        // The same failures surface from the command line, before any socket is bound.
+        let from_arguments = run_from_args(arguments(&[
+            "--map",
+            "recipient.service=api-token",
+            "--fulfillment-destination",
+            "other.service",
+        ]))
+        .unwrap_err();
+        assert!(
+            from_arguments.contains("--fulfillment-"),
+            "{from_arguments}"
+        );
+        let too_long =
+            run_from_args(arguments(&["--fulfillment-offer-lifetime-seconds", "181"])).unwrap_err();
+        assert!(
+            too_long.contains("--fulfillment-offer-lifetime-seconds"),
+            "{too_long}"
+        );
+        let missing = run_from_args(arguments(&["--fulfillment-source"])).unwrap_err();
+        assert!(missing.contains("missing option value"), "{missing}");
+        let repeated = run_from_args(arguments(&[
+            "--fulfillment-offer-lifetime-seconds",
+            "30",
+            "--fulfillment-offer-lifetime-seconds",
+            "60",
         ]))
         .unwrap_err();
         assert!(repeated.contains("more than once"), "{repeated}");

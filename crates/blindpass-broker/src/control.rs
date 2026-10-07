@@ -915,6 +915,7 @@ fn read_exact_until(
 
 #[cfg(test)]
 mod tests {
+    mod fulfillment;
     mod recovery_reports;
     use super::{
         MAX_CONTROL_DOCUMENT_BYTES, handle_connection, parse_pin, parse_provision_length,
