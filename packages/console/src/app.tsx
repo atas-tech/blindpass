@@ -29,12 +29,13 @@ const WorkloadsPage = lazy(() => import("./pages/fleet/workloads.js").then((modu
 const WorkloadDetailPage = lazy(() => import("./pages/fleet/workloads.js").then((module) => ({ default: module.WorkloadDetailPage })));
 const FleetPolicyPage = lazy(() => import("./pages/fleet/fleet-policy.js"));
 const GrantsPage = lazy(() => import("./pages/fleet/grants.js"));
+const FulfillmentsPage = lazy(() => import("./pages/fleet/fulfillments.js"));
 const OperationsPage = lazy(() => import("./pages/fleet/operations.js").then((module) => ({ default: module.OperationsPage })));
 const OperationDetailPage = lazy(() => import("./pages/fleet/operations.js").then((module) => ({ default: module.OperationDetailPage })));
 
 /** A fleet route exists only when the controller reports fleet.v3 (DR-E25). */
-function fleetRoute(path: string, permission: Permission, page: ReactNode) {
-  return { path, element: <RequirePermission permission={permission} fleet><Lazy>{page}</Lazy></RequirePermission> };
+function fleetRoute(path: string, permission: Permission, page: ReactNode, feature?: "fulfillments") {
+  return { path, element: <RequirePermission permission={permission} fleet feature={feature}><Lazy>{page}</Lazy></RequirePermission> };
 }
 
 /** Hosted-product paths that the local controller does not provide. */
@@ -91,9 +92,11 @@ function RequireSession() {
   return <Outlet />;
 }
 
-export function RequirePermission({ permission, fleet = false, children }: { permission?: Permission; fleet?: boolean; children: ReactNode }) {
-  const { can, hasFleet } = useSession();
+export function RequirePermission({ permission, fleet = false, feature, children }: { permission?: Permission; fleet?: boolean; feature?: "fulfillments"; children: ReactNode }) {
+  const { can, hasFleet, hasFulfillments } = useSession();
   if (fleet && !hasFleet) return <NotFoundPage />;
+  // An optional feature the controller does not report has no route at all.
+  if (feature === "fulfillments" && !hasFulfillments) return <NotFoundPage />;
   if (permission && !can(permission)) return <ForbiddenPage />;
   return <>{children}</>;
 }
@@ -159,6 +162,7 @@ export const routes = [
               fleetRoute("/workloads/:id", "workloads.read", <WorkloadDetailPage />),
               fleetRoute("/policy/fleet", "fleetPolicy.read", <FleetPolicyPage />),
               fleetRoute("/grants", "grants.read", <GrantsPage />),
+              fleetRoute("/fulfillments", "fulfillments.read", <FulfillmentsPage />, "fulfillments"),
               fleetRoute("/operations", "operations.read", <OperationsPage />),
               fleetRoute("/operations/:id", "operations.read", <OperationDetailPage />),
               { path: "/settings", element: <Lazy><SettingsPage /></Lazy> },

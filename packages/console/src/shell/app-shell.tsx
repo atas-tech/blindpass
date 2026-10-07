@@ -65,10 +65,10 @@ function ApprovalPill() {
 
 function Navigation({ onNavigate }: { onNavigate?: () => void }) {
   const { t } = useTranslation();
-  const { can, hasFleet } = useSession();
+  const { can, hasFleet, hasFulfillments } = useSession();
   return (
     <nav className="nav" aria-label={t("nav.label")}>
-      {visibleGroups(can, hasFleet).map((group) => (
+      {visibleGroups(can, hasFleet, hasFulfillments).map((group) => (
         <div className="nav-group" key={group.labelKey}>
           <p className="nav-group-label">{t(group.labelKey)}</p>
           <ul>

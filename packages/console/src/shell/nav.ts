@@ -7,6 +7,8 @@ export interface NavItem {
   icon: IconName;
   permission?: Permission;
   fleet?: boolean;
+  /** Shown only when the controller reports this optional feature. */
+  feature?: "fulfillments";
   badge?: "approvals";
   end?: boolean;
 }
@@ -32,7 +34,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/nodes", labelKey: "nav.nodes", icon: "nodes", permission: "nodes.read", fleet: true },
       { to: "/workloads", labelKey: "nav.workloads", icon: "workloads", permission: "workloads.read", fleet: true },
       { to: "/grants", labelKey: "nav.grants", icon: "grants", permission: "grants.read", fleet: true },
-      { to: "/operations", labelKey: "nav.operations", icon: "operations", permission: "operations.read", fleet: true }
+      { to: "/operations", labelKey: "nav.operations", icon: "operations", permission: "operations.read", fleet: true },
+      { to: "/fulfillments", labelKey: "nav.fulfillments", icon: "link", permission: "fulfillments.read", fleet: true, feature: "fulfillments" }
     ]
   },
   {
@@ -47,9 +50,9 @@ export const NAV_GROUPS: NavGroup[] = [
   }
 ];
 
-export function visibleGroups(can: (permission: Permission) => boolean, hasFleet: boolean): NavGroup[] {
+export function visibleGroups(can: (permission: Permission) => boolean, hasFleet: boolean, hasFulfillments = false): NavGroup[] {
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => (!item.permission || can(item.permission)) && (!item.fleet || hasFleet))
+    items: group.items.filter((item) => (!item.permission || can(item.permission)) && (!item.fleet || hasFleet) && (item.feature !== "fulfillments" || hasFulfillments))
   })).filter((group) => group.items.length > 0);
 }

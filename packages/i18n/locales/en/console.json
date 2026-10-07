@@ -540,6 +540,7 @@
     "workloads": "Workloads",
     "grants": "Grants",
     "operations": "Operations",
+    "fulfillments": "Fulfillments",
     "agents": "Agents",
     "policy": "Exchange policy",
     "fleetPolicy": "Fleet policy",
@@ -987,7 +988,41 @@
         "ttl": "Use a whole number from 1 to 3600.",
         "approvers": "Name 1–32 approvers using letters, digits and _ . @ -.",
         "invalid": "The controller refused a rule. Check each decision, lifetime and approver list.",
-        "unknown": "The controller didn't answer. Reload to see whether the policy changed."
+        "unknown": "The controller didn't answer. Reload to see whether the policy changed.",
+        "invalidCross": "The controller refused a cross-workload rule. Check each rule's ID, workloads, decision, lifetime and approvers.",
+        "invalidBoth": "The controller refused a rule. Check the exchange rules and the cross-workload rules."
+      },
+      "cross": {
+        "title": "Cross-workload rules",
+        "description": "Rules are checked in order, and the first rule that names both workloads decides. With no matching rule the fulfillment is denied. Saving a new version withdraws pending fulfillments that relied on the old rules.",
+        "none": "No rules: every cross-workload fulfillment is denied.",
+        "add": "Add cross-workload rule",
+        "ruleLabel": "Rule {{id}}",
+        "moveUp": "Move rule {{id}} up",
+        "moveDown": "Move rule {{id}} down",
+        "remove": "Remove rule {{id}}",
+        "removeShort": "Remove",
+        "revoked": "revoked workload",
+        "unknown": "no longer registered",
+        "workloadsFailed": "Workloads couldn't be loaded, so rules show IDs only and can't be extended from a list. Reload to try again.",
+        "noWorkloads": "No active workloads to choose from.",
+        "fields": {
+          "id": "Rule ID",
+          "ttl": "Longest fulfillment (seconds)",
+          "ttlHint": "1–600 seconds.",
+          "issuers": "Issuer workloads",
+          "recipients": "Recipient workloads",
+          "decisionFor": "Decision for rule {{id}}",
+          "approvers": "Cross-workload approvers",
+          "approversHint": "Operator usernames or IDs, one per line (1–32). A requester can't approve their own fulfillment."
+        },
+        "errors": {
+          "id": "Use letters, digits, _ and - (1–128 characters).",
+          "duplicate": "Another rule already uses this ID.",
+          "issuers": "Choose 1–16 issuer workloads.",
+          "recipients": "Choose 1–16 recipient workloads.",
+          "ttl": "Use a whole number from 1 to 600."
+        }
       }
     },
     "grant": {
@@ -1033,6 +1068,144 @@
       "errors": {
         "notRevocable": "This grant is no longer revocable (expired or already closed).",
         "unknown": "The controller didn't answer. Reload to see the grant's status."
+      }
+    },
+    "fulfillment": {
+      "title": "Credential fulfillments.",
+      "description": "Each fulfillment moves one credential from an issuer workload to a recipient workload after a policy rule and, where required, a named approver allow it. Metadata only; values never appear here.",
+      "empty": "No fulfillments",
+      "emptyBody": "Request a fulfillment to move a credential from one workload to another.",
+      "allStatuses": "All statuses",
+      "lookupsFailed": "Workload and node names couldn't be loaded, so IDs are shown instead.",
+      "boundary": "The console shows metadata only: credential values, keys, ciphertext and signed documents never appear here. A requester's purpose is unverified text. A recipient workload holds one live fulfillment at a time.",
+      "parties": "{{issuer}} → {{recipient}}",
+      "nodes": "Nodes: {{issuer}} → {{recipient}}",
+      "credentials": "{{issuer}} → {{recipient}}",
+      "failureCode": "Failure code:",
+      "revocationReason": "Revocation reason:",
+      "status": {
+        "awaiting_approval": "Awaiting approval",
+        "approved": "Approved",
+        "offered": "Key offered",
+        "available": "Ciphertext ready",
+        "recipient_consumed": "Stored on recipient",
+        "completed": "Completed",
+        "denied": "Denied",
+        "revoked": "Revoked",
+        "expired": "Expired",
+        "failed": "Failed",
+        "uncertain": "Uncertain"
+      },
+      "mode": {
+        "reencrypt": "Re-encryption"
+      },
+      "provider": {
+        "not_attempted": "No revocation was attempted at the provider.",
+        "unsupported": "BlindPass cannot revoke this at the provider. If the credential was stored, rotate or revoke it at the provider yourself.",
+        "confirmed": "The provider confirmed the revocation.",
+        "failed": "Revoking at the provider failed. Rotate or revoke the credential at the provider yourself."
+      },
+      "uncertain": {
+        "what": "The recipient never confirmed it stored the credential, so the controller can't tell whether it did.",
+        "slot": "It holds the recipient's slot until you revoke it."
+      },
+      "fields": {
+        "parties": "Issuer → recipient",
+        "requested": "Requested",
+        "expires": "Expires",
+        "issuerWorkload": "Issuer workload",
+        "recipientWorkload": "Recipient workload",
+        "issuerCredential": "Issuer credential name",
+        "issuerCredentialHint": "The credential's name on the issuer workload.",
+        "recipientCredential": "Recipient credential name",
+        "recipientCredentialHint": "The name the recipient workload stores it under.",
+        "purpose": "Purpose",
+        "purposeHint": "Plain text. Approvers see it marked as unverified.",
+        "workload": "Workload",
+        "node": "Node",
+        "unit": "Unit",
+        "credential": "Credential",
+        "fingerprint": "Enrolled key fingerprint",
+        "mode": "Mode",
+        "requestedBy": "Requested by",
+        "rule": "Policy rule",
+        "approvers": "Named approvers",
+        "lifetime": "Lifetime",
+        "prior": "Prior fulfillment"
+      },
+      "create": {
+        "open": "Request fulfillment",
+        "title": "Request a credential fulfillment",
+        "body": "Name the workload that issues the credential and the workload that receives it. A policy rule decides, and an approver may have to confirm, before anything moves.",
+        "submit": "Send request",
+        "select": "Select a workload",
+        "done": "Fulfillment requested"
+      },
+      "review": {
+        "short": "Review",
+        "label": "Review fulfillment for {{name}}",
+        "title": "Review fulfillment",
+        "issuer": "Issuer",
+        "recipient": "Recipient",
+        "verifiedTitle": "Verified by the controller",
+        "verifiedNote": "These facts come from the controller's records of the two enrolled nodes and the policy rule. The requester can't change them.",
+        "policyVersion": "Policy version {{version}}",
+        "purpose": "Purpose from the requester",
+        "instructionTitle": "Check both keys",
+        "instruction": "Compare each fingerprint above with the one printed when you enrolled that node. The controller refuses the approval if either enrolled key differs from the fingerprint you confirm here.",
+        "noKeys": "The enrolled keys aren't available for one or both nodes, so there is nothing to verify and approval stays off.",
+        "confirm": "I checked that both fingerprints match the nodes I enrolled.",
+        "approve": "Approve fulfillment",
+        "reject": "Reject",
+        "confirmReject": "Confirm rejection",
+        "approved": "Fulfillment approved",
+        "rejected": "Fulfillment rejected",
+        "own": "You requested this fulfillment, so you can't approve or reject it.",
+        "ownRevoke": "Use Revoke to withdraw it.",
+        "notPending": "This fulfillment no longer awaits approval, so there is nothing to decide."
+      },
+      "revoke": {
+        "short": "Revoke",
+        "label": "Revoke fulfillment for {{name}}",
+        "title": "Revoke this fulfillment?",
+        "submit": "Revoke fulfillment",
+        "ciphertext": "The stored ciphertext is deleted from the controller.",
+        "nodes": "Both nodes are told to discard their part of it the next time they poll.",
+        "recall": "Anything the recipient workload has already read can't be recalled."
+      },
+      "revoked": {
+        "title": "Fulfillment revoked",
+        "body": "The stored ciphertext was deleted and both nodes will be told to discard it. Anything the recipient already read can't be recalled."
+      },
+      "closed": {
+        "title": "Already closed",
+        "body": "This fulfillment had already closed as {{status}}, so nothing changed."
+      },
+      "errors": {
+        "workload": "Choose a workload.",
+        "sameWorkload": "Choose two different workloads.",
+        "sameNode": "The issuer and recipient must be on different nodes.",
+        "credential": "Use letters, digits, _ - and . — not starting with a dot, up to 128 characters.",
+        "purpose": "Enter 1–512 characters of plain text. Line breaks and control characters aren't allowed.",
+        "denied": "No cross-workload policy rule allows this issuer and recipient. An administrator can add one under Fleet policy.",
+        "busy": "The recipient workload already has a live fulfillment. Wait for it to finish, or revoke it first.",
+        "unavailable": "A workload or its node is unavailable, or both are on one node.",
+        "disabled": "Cross-workload fulfillment isn't enabled on this controller.",
+        "sameParty": "Choose two different workloads on different nodes.",
+        "idempotency": "This request key was already used for a different request. Close this dialog and start again.",
+        "workloadGone": "A workload you chose no longer exists. Reload and choose again.",
+        "prior": "The prior fulfillment isn't a completed fulfillment for this recipient.",
+        "invalid": "The controller refused one of the fields. Check the credential names and the purpose.",
+        "createUnknown": "The request may have been created. Check the list before sending it again.",
+        "changed": "The policy, a workload or a node key changed since this request was made, or it expired. Nothing was approved. The list was refreshed; review the request again.",
+        "self": "You can't approve your own request. Ask another named approver, or revoke it.",
+        "scope": "Your account isn't named as an approver in this policy rule.",
+        "conflict": "This request is no longer pending, or its version changed. The list was refreshed.",
+        "stale": "This review is out of date. Close the dialog and review the request again.",
+        "fingerprints": "Approval needs both fingerprints you checked. Reload and review again.",
+        "decideUnknown": "The controller didn't answer. Reload to see whether your decision was recorded.",
+        "gone": "This fulfillment no longer exists.",
+        "revokeUnknown": "The controller didn't answer. Reload to see whether the fulfillment was revoked."
       }
     },
     "operation": {

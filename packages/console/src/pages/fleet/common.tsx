@@ -2,7 +2,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import * as endpoints from "../../api/endpoints.js";
 import { useTranslation } from "react-i18next";
-import type { Enrollment, FleetNode, Grant, Operation } from "../../api/types.js";
+import type { Enrollment, FleetNode, Fulfillment, Grant, Operation } from "../../api/types.js";
 import { groupFingerprint } from "../../lib/format.js";
 import { collectAll, useResource, type ResourceOptions, type ResourceState } from "../../lib/use-resource.js";
 import { EmptyState, ErrorState, Skeleton, StatusBadge, type Tone } from "../../ui/feedback.js";
@@ -14,6 +14,19 @@ export const FLEET_POLL = { visibleMs: 10_000, hiddenMs: 60_000 };
 const NODE_TONE: Record<FleetNode["status"], Tone> = { online: "ok", stale: "warn", offline: "danger", revoked: "neutral" };
 const ENROLLMENT_TONE: Record<Enrollment["status"], Tone> = { issued: "info", submitted: "warn", approved: "ok", rejected: "danger", expired: "neutral" };
 const GRANT_TONE: Record<Grant["status"], Tone> = { issued: "info", delivered: "lime", consumed: "ok", revoked: "neutral", expired: "neutral" };
+const FULFILLMENT_TONE: Record<Fulfillment["status"], Tone> = {
+  awaiting_approval: "warn",
+  approved: "info",
+  offered: "info",
+  available: "lime",
+  recipient_consumed: "lime",
+  completed: "ok",
+  denied: "danger",
+  revoked: "neutral",
+  expired: "neutral",
+  failed: "danger",
+  uncertain: "warn"
+};
 const OPERATION_TONE: Record<Operation["status"], Tone> = {
   requested: "info",
   awaiting_approval: "warn",
@@ -48,6 +61,11 @@ export function EnrollmentBadge({ status }: { status: Enrollment["status"] }) {
 export function GrantBadge({ status }: { status: Grant["status"] }) {
   const { t } = useTranslation();
   return <StatusBadge tone={GRANT_TONE[status]}>{t(`fleet.grant.status.${status}`)}</StatusBadge>;
+}
+
+export function FulfillmentBadge({ status }: { status: Fulfillment["status"] }) {
+  const { t } = useTranslation();
+  return <StatusBadge tone={FULFILLMENT_TONE[status]}>{t(`fleet.fulfillment.status.${status}`)}</StatusBadge>;
 }
 
 export function OperationBadge({ status }: { status: Operation["status"] }) {

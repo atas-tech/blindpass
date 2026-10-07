@@ -540,6 +540,7 @@
     "workloads": "Khối lượng công việc",
     "grants": "Quyền cấp",
     "operations": "Thao tác",
+    "fulfillments": "Cấp phát",
     "agents": "Tác tử",
     "policy": "Chính sách trao đổi",
     "fleetPolicy": "Chính sách đội máy",
@@ -987,7 +988,41 @@
         "ttl": "Dùng số nguyên từ 1 đến 3600.",
         "approvers": "Chỉ định 1–32 người phê duyệt, dùng chữ, số và _ . @ -.",
         "invalid": "Bộ điều khiển từ chối một quy tắc. Kiểm tra quyết định, thời hạn và danh sách người phê duyệt.",
-        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem chính sách đã thay đổi chưa."
+        "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem chính sách đã thay đổi chưa.",
+        "invalidCross": "Bộ điều khiển từ chối một quy tắc liên khối lượng công việc. Kiểm tra mã quy tắc, khối lượng công việc, quyết định, thời hạn và người phê duyệt.",
+        "invalidBoth": "Bộ điều khiển từ chối một quy tắc. Kiểm tra các quy tắc trao đổi và các quy tắc liên khối lượng công việc."
+      },
+      "cross": {
+        "title": "Quy tắc liên khối lượng công việc",
+        "description": "Các quy tắc được xét theo thứ tự, và quy tắc đầu tiên nêu cả hai khối lượng công việc sẽ quyết định. Nếu không có quy tắc khớp, lần cấp phát bị từ chối. Lưu phiên bản mới sẽ rút lại các lần cấp phát đang chờ dựa trên quy tắc cũ.",
+        "none": "Chưa có quy tắc: mọi lần cấp phát liên khối lượng công việc đều bị từ chối.",
+        "add": "Thêm quy tắc liên khối lượng công việc",
+        "ruleLabel": "Quy tắc {{id}}",
+        "moveUp": "Chuyển quy tắc {{id}} lên",
+        "moveDown": "Chuyển quy tắc {{id}} xuống",
+        "remove": "Xóa quy tắc {{id}}",
+        "removeShort": "Xóa",
+        "revoked": "khối lượng công việc đã thu hồi",
+        "unknown": "không còn được đăng ký",
+        "workloadsFailed": "Không tải được danh sách khối lượng công việc, nên quy tắc chỉ hiện mã và không thể chọn thêm từ danh sách. Hãy tải lại để thử lại.",
+        "noWorkloads": "Không có khối lượng công việc đang hoạt động để chọn.",
+        "fields": {
+          "id": "Mã quy tắc",
+          "ttl": "Thời hạn cấp phát tối đa (giây)",
+          "ttlHint": "1–600 giây.",
+          "issuers": "Khối lượng công việc phát hành",
+          "recipients": "Khối lượng công việc nhận",
+          "decisionFor": "Quyết định cho quy tắc {{id}}",
+          "approvers": "Người phê duyệt liên khối lượng công việc",
+          "approversHint": "Tên đăng nhập hoặc mã người vận hành, mỗi dòng một (1–32). Người yêu cầu không được tự phê duyệt lần cấp phát của mình."
+        },
+        "errors": {
+          "id": "Dùng chữ, số, _ và - (1–128 ký tự).",
+          "duplicate": "Đã có quy tắc khác dùng mã này.",
+          "issuers": "Chọn 1–16 khối lượng công việc phát hành.",
+          "recipients": "Chọn 1–16 khối lượng công việc nhận.",
+          "ttl": "Dùng số nguyên từ 1 đến 600."
+        }
       }
     },
     "grant": {
@@ -1033,6 +1068,144 @@
       "errors": {
         "notRevocable": "Quyền cấp này không còn thu hồi được (đã hết hạn hoặc đã đóng).",
         "unknown": "Bộ điều khiển không phản hồi. Tải lại để xem trạng thái quyền cấp."
+      }
+    },
+    "fulfillment": {
+      "title": "Cấp phát thông tin xác thực.",
+      "description": "Mỗi lần cấp phát chuyển một thông tin xác thực từ khối lượng công việc phát hành sang khối lượng công việc nhận, sau khi quy tắc chính sách và (khi cần) người phê duyệt được chỉ định cho phép. Chỉ siêu dữ liệu; giá trị không bao giờ hiện ở đây.",
+      "empty": "Chưa có lần cấp phát nào",
+      "emptyBody": "Tạo yêu cầu cấp phát để chuyển thông tin xác thực từ khối lượng công việc này sang khối lượng công việc khác.",
+      "allStatuses": "Tất cả trạng thái",
+      "lookupsFailed": "Không tải được tên khối lượng công việc và nút, nên hiển thị mã thay thế.",
+      "boundary": "Bảng điều khiển chỉ hiện siêu dữ liệu: giá trị thông tin xác thực, khóa, bản mã và tài liệu đã ký không bao giờ xuất hiện ở đây. Mục đích do người yêu cầu nhập là văn bản chưa xác minh. Mỗi khối lượng công việc nhận chỉ giữ một lần cấp phát đang hoạt động tại một thời điểm.",
+      "parties": "{{issuer}} → {{recipient}}",
+      "nodes": "Nút: {{issuer}} → {{recipient}}",
+      "credentials": "{{issuer}} → {{recipient}}",
+      "failureCode": "Mã lỗi:",
+      "revocationReason": "Lý do thu hồi:",
+      "status": {
+        "awaiting_approval": "Chờ phê duyệt",
+        "approved": "Đã phê duyệt",
+        "offered": "Đã đề nghị khóa",
+        "available": "Bản mã sẵn sàng",
+        "recipient_consumed": "Đã lưu ở bên nhận",
+        "completed": "Hoàn tất",
+        "denied": "Bị từ chối",
+        "revoked": "Đã thu hồi",
+        "expired": "Đã hết hạn",
+        "failed": "Thất bại",
+        "uncertain": "Không chắc chắn"
+      },
+      "mode": {
+        "reencrypt": "Mã hóa lại"
+      },
+      "provider": {
+        "not_attempted": "Chưa thử thu hồi ở nhà cung cấp.",
+        "unsupported": "BlindPass không thể thu hồi việc này ở nhà cung cấp. Nếu thông tin xác thực đã được lưu, hãy tự xoay hoặc thu hồi nó ở nhà cung cấp.",
+        "confirmed": "Nhà cung cấp đã xác nhận việc thu hồi.",
+        "failed": "Thu hồi ở nhà cung cấp thất bại. Hãy tự xoay hoặc thu hồi thông tin xác thực ở nhà cung cấp."
+      },
+      "uncertain": {
+        "what": "Bên nhận chưa bao giờ xác nhận đã lưu thông tin xác thực, nên bộ điều khiển không biết nó có được lưu hay không.",
+        "slot": "Lần cấp phát này vẫn giữ chỗ của bên nhận cho tới khi bạn thu hồi."
+      },
+      "fields": {
+        "parties": "Bên phát hành → bên nhận",
+        "requested": "Yêu cầu lúc",
+        "expires": "Hết hạn",
+        "issuerWorkload": "Khối lượng công việc phát hành",
+        "recipientWorkload": "Khối lượng công việc nhận",
+        "issuerCredential": "Tên thông tin xác thực bên phát hành",
+        "issuerCredentialHint": "Tên của thông tin xác thực trên khối lượng công việc phát hành.",
+        "recipientCredential": "Tên thông tin xác thực bên nhận",
+        "recipientCredentialHint": "Tên mà khối lượng công việc nhận dùng để lưu nó.",
+        "purpose": "Mục đích",
+        "purposeHint": "Văn bản thuần. Người phê duyệt thấy nó được đánh dấu là chưa xác minh.",
+        "workload": "Khối lượng công việc",
+        "node": "Nút",
+        "unit": "Đơn vị",
+        "credential": "Thông tin xác thực",
+        "fingerprint": "Dấu vân tay khóa đã đăng ký",
+        "mode": "Chế độ",
+        "requestedBy": "Yêu cầu bởi",
+        "rule": "Quy tắc chính sách",
+        "approvers": "Người phê duyệt được chỉ định",
+        "lifetime": "Thời hạn",
+        "prior": "Lần cấp phát trước"
+      },
+      "create": {
+        "open": "Yêu cầu cấp phát",
+        "title": "Yêu cầu cấp phát thông tin xác thực",
+        "body": "Chọn khối lượng công việc phát hành thông tin xác thực và khối lượng công việc nhận. Quy tắc chính sách quyết định, và có thể cần người phê duyệt xác nhận, trước khi có gì được chuyển.",
+        "submit": "Gửi yêu cầu",
+        "select": "Chọn khối lượng công việc",
+        "done": "Đã gửi yêu cầu cấp phát"
+      },
+      "review": {
+        "short": "Xem xét",
+        "label": "Xem xét lần cấp phát cho {{name}}",
+        "title": "Xem xét lần cấp phát",
+        "issuer": "Bên phát hành",
+        "recipient": "Bên nhận",
+        "verifiedTitle": "Do bộ điều khiển xác minh",
+        "verifiedNote": "Các thông tin này lấy từ hồ sơ của bộ điều khiển về hai nút đã đăng ký và quy tắc chính sách. Người yêu cầu không thể thay đổi chúng.",
+        "policyVersion": "Chính sách phiên bản {{version}}",
+        "purpose": "Mục đích do người yêu cầu nhập",
+        "instructionTitle": "Kiểm tra cả hai khóa",
+        "instruction": "So sánh từng dấu vân tay ở trên với dấu vân tay đã in khi bạn đăng ký nút đó. Bộ điều khiển từ chối phê duyệt nếu khóa đã đăng ký của một trong hai nút khác với dấu vân tay bạn xác nhận ở đây.",
+        "noKeys": "Không có khóa đã đăng ký của một hoặc cả hai nút, nên không có gì để xác minh và không thể phê duyệt.",
+        "confirm": "Tôi đã kiểm tra rằng cả hai dấu vân tay khớp với các nút tôi đã đăng ký.",
+        "approve": "Phê duyệt cấp phát",
+        "reject": "Từ chối",
+        "confirmReject": "Xác nhận từ chối",
+        "approved": "Đã phê duyệt lần cấp phát",
+        "rejected": "Đã từ chối lần cấp phát",
+        "own": "Bạn đã yêu cầu lần cấp phát này nên không thể phê duyệt hay từ chối nó.",
+        "ownRevoke": "Hãy dùng Thu hồi để rút lại.",
+        "notPending": "Lần cấp phát này không còn chờ phê duyệt, nên không có gì để quyết định."
+      },
+      "revoke": {
+        "short": "Thu hồi",
+        "label": "Thu hồi lần cấp phát cho {{name}}",
+        "title": "Thu hồi lần cấp phát này?",
+        "submit": "Thu hồi cấp phát",
+        "ciphertext": "Bản mã đã lưu bị xóa khỏi bộ điều khiển.",
+        "nodes": "Cả hai nút được báo bỏ phần của mình ở lần truy vấn tiếp theo.",
+        "recall": "Những gì khối lượng công việc nhận đã đọc thì không thể thu lại."
+      },
+      "revoked": {
+        "title": "Đã thu hồi lần cấp phát",
+        "body": "Bản mã đã lưu đã bị xóa và cả hai nút sẽ được báo bỏ nó. Những gì bên nhận đã đọc thì không thể thu lại."
+      },
+      "closed": {
+        "title": "Đã đóng từ trước",
+        "body": "Lần cấp phát này đã đóng với trạng thái {{status}}, nên không có gì thay đổi."
+      },
+      "errors": {
+        "workload": "Hãy chọn một khối lượng công việc.",
+        "sameWorkload": "Hãy chọn hai khối lượng công việc khác nhau.",
+        "sameNode": "Bên phát hành và bên nhận phải ở hai nút khác nhau.",
+        "credential": "Dùng chữ, số, _ - và . — không bắt đầu bằng dấu chấm, tối đa 128 ký tự.",
+        "purpose": "Nhập 1–512 ký tự văn bản thuần. Không cho phép xuống dòng và ký tự điều khiển.",
+        "denied": "Không có quy tắc chính sách liên khối lượng công việc nào cho phép cặp phát hành và nhận này. Quản trị viên có thể thêm quy tắc trong Chính sách đội máy.",
+        "busy": "Khối lượng công việc nhận đang có một lần cấp phát hoạt động. Hãy đợi nó xong hoặc thu hồi nó trước.",
+        "unavailable": "Một khối lượng công việc hoặc nút của nó không khả dụng, hoặc cả hai ở cùng một nút.",
+        "disabled": "Bộ điều khiển này chưa bật cấp phát liên khối lượng công việc.",
+        "sameParty": "Hãy chọn hai khối lượng công việc khác nhau trên hai nút khác nhau.",
+        "idempotency": "Khóa yêu cầu này đã được dùng cho một yêu cầu khác. Hãy đóng hộp thoại và bắt đầu lại.",
+        "workloadGone": "Một khối lượng công việc bạn chọn không còn tồn tại. Hãy tải lại và chọn lại.",
+        "prior": "Lần cấp phát trước không phải là lần cấp phát đã hoàn tất cho bên nhận này.",
+        "invalid": "Bộ điều khiển từ chối một trường. Kiểm tra tên thông tin xác thực và mục đích.",
+        "createUnknown": "Yêu cầu có thể đã được tạo. Hãy kiểm tra danh sách trước khi gửi lại.",
+        "changed": "Chính sách, một khối lượng công việc hoặc khóa của nút đã thay đổi kể từ khi tạo yêu cầu, hoặc yêu cầu đã hết hạn. Chưa có gì được phê duyệt. Danh sách đã được làm mới; hãy xem xét lại yêu cầu.",
+        "self": "Bạn không thể tự phê duyệt yêu cầu của mình. Hãy nhờ người phê duyệt khác được chỉ định, hoặc thu hồi nó.",
+        "scope": "Tài khoản của bạn không được chỉ định là người phê duyệt trong quy tắc chính sách này.",
+        "conflict": "Yêu cầu này không còn chờ xử lý, hoặc phiên bản đã đổi. Danh sách đã được làm mới.",
+        "stale": "Lần xem xét này đã cũ. Hãy đóng hộp thoại và xem xét lại yêu cầu.",
+        "fingerprints": "Phê duyệt cần cả hai dấu vân tay bạn đã kiểm tra. Hãy tải lại và xem xét lại.",
+        "decideUnknown": "Bộ điều khiển không phản hồi. Tải lại để xem quyết định của bạn đã được ghi nhận chưa.",
+        "gone": "Lần cấp phát này không còn tồn tại.",
+        "revokeUnknown": "Bộ điều khiển không phản hồi. Tải lại để xem lần cấp phát đã được thu hồi chưa."
       }
     },
     "operation": {

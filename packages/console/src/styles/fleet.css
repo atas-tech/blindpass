@@ -139,8 +139,66 @@
   min-height: 4.25rem;
 }
 
+.cross-rule-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--bp-space-4);
+  align-items: start;
+}
+
+.cross-rule-form .field-wide {
+  grid-column: 1 / -1;
+}
+
+.fleet-rule-tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--bp-space-2);
+}
+
+.cross-selector {
+  display: grid;
+  gap: var(--bp-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.cross-selector-list {
+  display: grid;
+  gap: var(--bp-space-2);
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.cross-selector-id {
+  color: var(--bp-color-muted);
+  font-size: var(--bp-text-xs, 0.75rem);
+  overflow-wrap: anywhere;
+}
+
+.fulfillment-party {
+  display: grid;
+  gap: var(--bp-space-2);
+}
+
+.dialog-list {
+  display: grid;
+  gap: var(--bp-space-2);
+  margin: var(--bp-space-4) 0 0;
+  padding-left: var(--bp-space-5);
+  font-size: var(--bp-text-sm);
+}
+
+.reason {
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 40rem) {
-  .fleet-rule-form {
+  .fleet-rule-form,
+  .cross-rule-form {
     grid-template-columns: minmax(0, 1fr);
   }
 

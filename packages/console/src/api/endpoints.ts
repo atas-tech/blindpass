@@ -19,6 +19,11 @@ import type {
   FleetNode,
   FleetPolicy,
   FleetPolicyRule,
+  CrossWorkloadRule,
+  Fulfillment,
+  FulfillmentCreateInput,
+  FulfillmentList,
+  FulfillmentStatus,
   Grant,
   GrantList,
   GrantRevocationResult,
@@ -152,14 +157,29 @@ export const workloads = {
 
 export const fleetPolicy = {
   get: () => api.get<FleetPolicy>("/api/v3/policies"),
-  save: (rules: FleetPolicyRule[], expected_version: number) =>
-    api.put<FleetPolicy>("/api/v3/policies", { expected_version, rules }, { ifMatch: expected_version })
+  /**
+   * `crossWorkload` is sent only when given: leaving it out keeps the stored
+   * cross-workload rules, and an empty array removes them all.
+   */
+  save: (rules: FleetPolicyRule[], expected_version: number, crossWorkload?: CrossWorkloadRule[]) =>
+    api.put<FleetPolicy>("/api/v3/policies", { expected_version, rules, ...(crossWorkload ? { cross_workload: crossWorkload } : {}) }, { ifMatch: expected_version })
 };
 
 export const grants = {
   list: (query: PageQuery & { node_id?: string; status?: Grant["status"] } = {}) => api.get<GrantList>("/api/v3/grants", { query: { ...query } }),
   get: (id: string) => api.get<Grant>(`/api/v3/grants/${seg(id)}`),
   revoke: (id: string) => api.delete<GrantRevocationResult>(`/api/v3/grants/${seg(id)}`)
+};
+
+/** Cross-workload fulfillment (P10). Responses are metadata; none carries a credential. */
+export const fulfillments = {
+  list: (query: PageQuery & { status?: FulfillmentStatus } = {}) => api.get<FulfillmentList>("/api/v3/fulfillments", { query: { ...query } }),
+  get: (id: string) => api.get<Fulfillment>(`/api/v3/fulfillments/${seg(id)}`),
+  create: (body: FulfillmentCreateInput, idempotencyKey: string) => api.post<Fulfillment>("/api/v3/fulfillments", body, { idempotencyKey }),
+  approve: (id: string, version: number, issuerFingerprint: string, recipientFingerprint: string) =>
+    api.post<Fulfillment>(`/api/v3/fulfillments/${seg(id)}/approve`, { expected_version: version, issuer_fingerprint: issuerFingerprint, recipient_fingerprint: recipientFingerprint }, { ifMatch: version }),
+  reject: (id: string, version: number) => api.post<Fulfillment>(`/api/v3/fulfillments/${seg(id)}/reject`, { expected_version: version }, { ifMatch: version }),
+  revoke: (id: string) => api.delete<Fulfillment>(`/api/v3/fulfillments/${seg(id)}`)
 };
 
 export const operations = {

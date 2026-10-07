@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ApiError } from "../../api/client.js";
 import * as endpoints from "../../api/endpoints.js";
 import type { FleetPolicy, FleetPolicyRule } from "../../api/types.js";
-import { useResource } from "../../lib/use-resource.js";
+import { collectAll, useResource } from "../../lib/use-resource.js";
 import { useSession } from "../../session/session.js";
 import { Button } from "../../ui/button.js";
 import { ErrorState, Notice, Skeleton, StatusBadge, type Tone } from "../../ui/feedback.js";
@@ -11,6 +11,7 @@ import { TextAreaField, TextField } from "../../ui/field.js";
 import { PageHeader, Panel, SegmentedControl } from "../../ui/layout.js";
 import { Timestamp } from "../../ui/time.js";
 import { useToast } from "../../ui/toast.js";
+import { CrossWorkloadPanel, crossErrors, sameCrossRules, toCrossRows, toCrossRules, type CrossRow } from "./cross-workload-rules.js";
 
 /**
  * The controller allows one rule per (action, mode) and accepts only these pairs:
@@ -81,25 +82,36 @@ function rowErrors(row: Row, t: (key: string) => string): { ttl?: string; approv
 
 export default function FleetPolicyPage() {
   const { t } = useTranslation();
-  const { can } = useSession();
+  const { can, hasFulfillments } = useSession();
   const toast = useToast();
   const canWrite = can("fleetPolicy.write");
   const { state, reload, replace } = useResource("fleet-policy", () => endpoints.fleetPolicy.get());
-  const [draft, setDraft] = useState<{ base: FleetPolicy; rows: Record<Mode, Row> } | null>(null);
+  // Workloads name the selectors of the cross-workload rules; only fetched when that feature is on.
+  const workloads = useResource(hasFulfillments ? "fleet-policy-workloads" : null, () => collectAll((cursor) => endpoints.workloads.list({ limit: 100, ...(cursor ? { cursor } : {}) })), { enabled: hasFulfillments });
+  const [draft, setDraft] = useState<{ base: FleetPolicy; rows: Record<Mode, Row>; cross: CrossRow[]; matrixTouched: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const stored = state.status === "ready" ? state.data : state.status === "error" ? state.previous : null;
+  // Rows keep their keys between renders; a rebuild here would remount every field while typing.
+  const storedCross = useMemo(() => toCrossRows(stored?.cross_workload ?? []), [stored]);
 
   if (state.status === "loading") return <Skeleton lines={6} />;
   if (state.status === "error" && !state.previous) return <ErrorState error={state.error} onRetry={() => void reload()} />;
   const policy = state.status === "ready" ? state.data : state.previous!;
   const rows = draft?.rows ?? toRows(policy);
+  const crossRows = draft?.cross ?? storedCross;
   const others = (draft?.base ?? policy).rules.filter((rule) => !RULES.some((known) => known.action === rule.action && known.mode === rule.mode));
   const errors = Object.fromEntries(MODES.map((mode) => [mode, rowErrors(rows[mode], t)])) as Record<Mode, ReturnType<typeof rowErrors>>;
-  const invalid = MODES.some((mode) => Object.keys(errors[mode]).length > 0);
+  // The stored cross-workload rules are sent only when the operator changed them (omitted keeps them).
+  const crossChanged = hasFulfillments && draft !== null && !sameCrossRules(toCrossRules(draft.cross), draft.base.cross_workload ?? []);
+  const crossRowErrors = crossChanged ? crossErrors(crossRows, t) : null;
+  const invalid = MODES.some((mode) => Object.keys(errors[mode]).length > 0) || Boolean(crossRowErrors?.some((item) => Object.keys(item).length > 0));
 
-  const setRow = (mode: Mode, patch: Partial<Row>) => setDraft((current) => ({ base: current?.base ?? policy, rows: { ...(current?.rows ?? toRows(policy)), [mode]: { ...(current?.rows ?? toRows(policy))[mode], ...patch } } }));
+  const setRow = (mode: Mode, patch: Partial<Row>) =>
+    setDraft((current) => ({ base: current?.base ?? policy, rows: { ...(current?.rows ?? toRows(policy)), [mode]: { ...(current?.rows ?? toRows(policy))[mode], ...patch } }, cross: current?.cross ?? storedCross, matrixTouched: true }));
+  const setCross = (next: CrossRow[]) => setDraft((current) => ({ base: current?.base ?? policy, rows: current?.rows ?? toRows(policy), cross: next, matrixTouched: current?.matrixTouched ?? false }));
 
   const save = async () => {
     if (!draft) return;
@@ -108,7 +120,9 @@ export default function FleetPolicyPage() {
     setBusy(true);
     setError(null);
     try {
-      const saved = await endpoints.fleetPolicy.save(toRules(draft.rows, others), draft.base.version);
+      // Rules the operator did not touch go back exactly as stored.
+      const rules = draft.matrixTouched ? toRules(draft.rows, others) : draft.base.rules;
+      const saved = await endpoints.fleetPolicy.save(rules, draft.base.version, crossChanged ? toCrossRules(draft.cross) : undefined);
       replace(saved);
       setDraft(null);
       setSubmitted(false);
@@ -118,7 +132,7 @@ export default function FleetPolicyPage() {
       if (apiError?.code === "version_conflict" || apiError?.code === "policy_changed" || apiError?.status === 409) {
         setConflict(true);
         void reload();
-      } else if (apiError?.code === "invalid_policy_rule") setError(t("fleet.policy.errors.invalid"));
+      } else if (apiError?.code === "invalid_policy_rule") setError(t(crossChanged ? (draft.matrixTouched ? "fleet.policy.errors.invalidBoth" : "fleet.policy.errors.invalidCross") : "fleet.policy.errors.invalid"));
       else setError(apiError?.outcomeUnknown ? t("fleet.policy.errors.unknown") : t("fleet.errors.actionFailed", { code: apiError?.code ?? "—" }));
     } finally {
       setBusy(false);
@@ -225,6 +239,17 @@ export default function FleetPolicyPage() {
         </Panel>
       ))}
       {others.length ? <Notice tone="neutral">{t("fleet.policy.otherRules", { count: others.length })}</Notice> : null}
+      {hasFulfillments ? (
+        <CrossWorkloadPanel
+          rows={crossRows}
+          onChange={setCross}
+          workloads={workloads.state.status === "ready" ? workloads.state.data : []}
+          canWrite={canWrite}
+          errors={submitted ? crossRowErrors : null}
+          workloadsFailed={workloads.state.status === "error"}
+          loading={workloads.state.status === "loading"}
+        />
+      ) : null}
       <Notice tone="neutral" icon="info">
         {t("fleet.policy.boundary")}
       </Notice>

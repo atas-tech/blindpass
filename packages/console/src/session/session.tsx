@@ -35,6 +35,10 @@ export const PERMISSIONS = {
   "workloads.manage": ["admin"],
   "grants.read": ["admin", "operator"],
   "grants.revoke": ["admin", "operator"],
+  "fulfillments.read": ["admin", "operator"],
+  "fulfillments.create": ["admin", "operator"],
+  "fulfillments.decide": ["admin", "operator"],
+  "fulfillments.revoke": ["admin", "operator"],
   "operations.read": ["admin", "operator"],
   "operations.cancel": ["admin", "operator"],
   "operators.manage": ["admin"]
@@ -51,6 +55,8 @@ interface SessionApi {
   capabilities: Capabilities | null;
   session: AdminSession | null;
   hasFleet: boolean;
+  /** fleet.v3 and the controller's fleet_fulfillments flag; a missing flag is off. */
+  hasFulfillments: boolean;
   can: (permission: Permission) => boolean;
   reload: () => Promise<void>;
   login: (username: string, password: string) => Promise<AdminSession>;
@@ -175,6 +181,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       capabilities,
       session,
       hasFleet: Boolean(capabilities?.api.includes("fleet.v3")),
+      hasFulfillments: Boolean(capabilities?.api.includes("fleet.v3") && capabilities.features?.fleet_fulfillments === true),
       can: (permission) => roleCan(session?.operator.role, permission),
       reload,
       login,
