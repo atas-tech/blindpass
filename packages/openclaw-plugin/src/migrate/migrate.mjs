@@ -179,7 +179,7 @@ function buildResult(journal, status) {
     const unsupported = [...(state.unsupported ?? []), ...(state.rejected ?? [])];
     const residual = state.residual ?? [];
     const nextSteps = [
-        "Reload the runtime so it resolves the new references: run `openclaw secrets reload` (or this tool with --reload), then confirm with an authenticated request. Until the reload the running gateway keeps its previous values.",
+        "Make the runtime resolve the new references: a gateway that watches openclaw.json restarts itself when it sees this change; otherwise restart it or run `openclaw secrets reload` (or this tool with --reload). Secrets you later change in the store only are not live until a reload. Confirm with an authenticated request.",
     ];
     if (residual.length > 0) {
         nextSteps.push(`${residual.length} file(s) still hold plaintext copies of migrated values (${residual.join(", ")}). This tool does not delete them; remove or protect them deliberately.`);

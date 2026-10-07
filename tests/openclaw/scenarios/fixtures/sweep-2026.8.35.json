@@ -1,0 +1,28 @@
+{
+  "release": "2026.8.35",
+  "method": "openclaw secrets apply --dry-run on a minimal config per target",
+  "accepted": [
+    "agents.entries.*.memory.search.remote.apiKey",
+    "agents.entries.*.tts.personas.*.providers.*.apiKey",
+    "agents.entries.*.tts.providers.*.apiKey",
+    "channels.telegram.accounts.*.botToken",
+    "channels.telegram.accounts.*.webhookSecret",
+    "channels.telegram.botToken",
+    "channels.telegram.webhookSecret",
+    "cron.webhookToken",
+    "gateway.auth.password",
+    "gateway.auth.token",
+    "gateway.remote.password",
+    "gateway.remote.token",
+    "memory.search.remote.apiKey",
+    "plugins.entries.google.config.webSearch.apiKey",
+    "plugins.entries.google.config.webSearch.headers.*",
+    "plugins.entries.minimax.config.webSearch.apiKey",
+    "plugins.entries.xai.config.webSearch.apiKey",
+    "skills.entries.*.apiKey",
+    "talk.providers.*.apiKey",
+    "talk.realtime.providers.*.apiKey",
+    "tts.personas.*.providers.*.apiKey",
+    "tts.providers.*.apiKey"
+  ]
+}

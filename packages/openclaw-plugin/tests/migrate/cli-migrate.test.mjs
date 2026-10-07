@@ -148,3 +148,18 @@ test("P09 CLI --reload runs the native reload and reports an unverified result h
         assert.match(ok.out.stdout, /authenticated/i, "the report must say activation is verified by use, not by the reload exit");
     });
 });
+
+test("P09 CLI --reload exits non-zero when the reload fails and treats the 4001 close as unverified", opts, async () => {
+    await scenario(async (ctx) => {
+        const failed = capture();
+        assert.equal(await main(["--reload", "--config-dir", ctx.configDir, "--openclaw-bin", ctx.toolbox.openclaw], failed.streams), EXIT.FAILED);
+        assert.match(failed.out.stdout, /Reload failed/);
+        assert.match(failed.out.stdout, /currently using/);
+    }, { fake: { reload: "unauthorized" } });
+    await scenario(async (ctx) => {
+        const closed = capture();
+        assert.equal(await main(["--reload", "--config-dir", ctx.configDir, "--openclaw-bin", ctx.toolbox.openclaw], closed.streams), EXIT.OK);
+        assert.match(closed.out.stdout, /unverified/);
+        assert.match(closed.out.stdout, /authenticated request/);
+    }, { fake: { reload: "4001" } });
+});

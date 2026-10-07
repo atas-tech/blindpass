@@ -85,8 +85,10 @@ export function changedPaths(before, after, ignore = [], prefix = []) {
         }
         const a = isMap(before) && Object.hasOwn(before, key) ? before[key] : undefined;
         const b = isMap(after) && Object.hasOwn(after, key) ? after[key] : undefined;
-        if (isMap(a) && isMap(b)) {
-            out.push(...changedPaths(a, b, ignore, segments));
+        // A map that exists on one side only is compared against an empty map, so an ignored path
+        // below it (for example the provider the migration adds) does not flag its parent.
+        if ((isMap(a) || a === undefined) && (isMap(b) || b === undefined) && (isMap(a) || isMap(b))) {
+            out.push(...changedPaths(a ?? {}, b ?? {}, ignore, segments));
         } else if (!isDeepStrictEqual(a, b)) {
             out.push(segments.join("."));
         }

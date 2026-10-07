@@ -77,6 +77,7 @@ test("P09-I02 apply migrates every credential, keeps unrelated config, and leaks
         assert.ok(!(await readdir(ctx.configDir)).includes(".blindpass-migrate.lock"), "the lock is released");
 
         assert.deepEqual(result.residual.sort(), [".env", "agents/main/agent/models.json", "openclaw.json.bak"]);
+        assert.deepEqual(result.warnings, [], "the provider and meta the native write adds are expected, not reported");
         assert.ok(result.nextSteps.some((step) => /reload/i.test(step)));
 
         // Native order: schema dry run, then the resolvability dry run with --allow-exec, then the write.

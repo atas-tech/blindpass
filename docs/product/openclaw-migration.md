@@ -147,19 +147,31 @@ is not mistaken for a live owner). A journal older than 24 h produces a stalenes
 ## Residual plaintext
 
 Observed on 2026.8.35: **every config write leaves `openclaw.json.bak` (plus rotated `.bak.N`) holding the previous
-plaintext config, and `openclaw secrets audit` does not scan them.** After a successful migration those files, the
+plaintext config, and `openclaw secrets audit` does not scan them.** A running or started gateway also keeps
+`openclaw.json.last-good`, a copy of the config it last started on. After a successful migration those files, the
 original `.env` values, generated `agents/*/agent/models.json` files and the SQLite auth profiles can still hold the
-migrated secrets. The migration scans a fixed, bounded set of such files inside the config root for the exact migrated
-values and lists file names (never values) as residual plaintext in the report and the exit status. It does not delete
-them: removal is a separate operator action with storage-erasure limits.
+migrated secrets. The migration scans a fixed, bounded set of such files inside the config root (`.env`,
+`openclaw.json.*`, `agents/*/agent/models.json`) for the exact migrated values and lists file names (never values) as
+residual plaintext in the report and `--status`. It does not delete them: removal is a separate operator action with
+storage-erasure limits. The protected backup is plaintext by design and is reported separately.
 
 ## Reload semantics (observed, real gateway)
 
-The gateway resolves exec references at activation. After rotating `gateway.auth.token` in the store: **before**
-`openclaw secrets reload` the old token was still accepted and the new one rejected; **after** reload the old token was
-rejected and the new one accepted. `openclaw secrets reload` closes its own connection when the gateway auth changes and
-returns `ok:false` (`gateway closed (4001): gateway auth changed`) even though the swap succeeded, so the migration
-verifies by authenticated behaviour, not by that exit code.
+The gateway resolves exec references at activation, and it watches `openclaw.json`:
+
+- **Config edit.** Rewriting `gateway.auth.token` to a reference makes a running gateway log `config change requires
+  gateway restart (gateway.auth.token)` and restart itself within seconds; it then resolves the reference through the
+  resolver and authenticates the same token (observed: baseline accepted, migrate, accepted again after the self-restart).
+  So migrating a *running* gateway activates it without a manual reload.
+- **Store-only change.** After rotating `gateway.auth.token` in the store with no config edit: **before**
+  `openclaw secrets reload` the old token was still accepted and the new one rejected; **after** reload the old token was
+  rejected and the new one accepted. This is the "not available before the documented reload" behaviour.
+- `openclaw secrets reload` closes its own connection when the gateway auth changes and returns `ok:false`
+  (`gateway closed (4001): gateway auth changed`) even though the swap succeeded, so the migration verifies by
+  authenticated behaviour, not by that exit code. If the gateway token itself was rotated the CLI authenticates with the
+  *new* value (resolved from the store) and is rejected (`gateway token mismatch`); the operator must pass the token the
+  gateway is currently using (`--token`) or restart it. `--reload` reports 4001 as unverified (exit 0) and a rejection as
+  failed (exit 1).
 
 ## Findings that shaped the contract
 
@@ -174,6 +186,10 @@ verifies by authenticated behaviour, not by that exit code.
 | F-7 | Reload behaves as described above, including the misleading 4001 result | Verify by authenticated use |
 | F-8 | The native `apply` accepts only target types the installed runtime and its plugins know: a plan containing one unknown type is rejected as a whole (`Invalid secrets plan file`) | The inventory tries the whole plan and, only on rejection, each target alone; unaccepted targets are reported `runtime-does-not-accept-target`, left as they were and never imported |
 | F-9 | `apply` also writes `meta.lastTouchedVersion` and `meta.migrations` (observed in the real before/after fixtures) | Verification ignores `meta` and lists any other changed path as a warning |
+| F-11 | A running gateway restarts itself when `gateway.auth.token` changes in `openclaw.json` | The migration needs no manual reload for a watching gateway; a store-only change still does (see Reload semantics) |
+| F-12 | The gateway keeps `openclaw.json.last-good` (plaintext when it started on a plaintext config) | Included in the residual scan and the operator guide |
+| F-13 | `openclaw secrets apply` itself creates `state/openclaw.sqlite` and `config-journal-fingerprint.key` in the config directory | Only the dry run is "creates nothing"; the apply creates OpenClaw's own state, which the tool never opens |
+| F-14 | A synthetic config with all 112 matrix paths populated is rejected by OpenClaw as invalid; in isolation 22 targets are accepted, 73 are rejected as unknown to the installed runtime/plugins and 17 need a larger valid config | `native-config-invalid` is a clear failure; per-target partition handles unknown targets; the accepted set is pinned in `tests/openclaw/scenarios/fixtures/sweep-2026.8.35.json` |
 | F-10 | Which exec providers `--allow-exec` runs beyond the planned one is not established for 2026.8.35 (checked in slice 5) | Treated conservatively: a pre-existing provider alias that differs from ours is refused (`provider-alias-conflict`); when other exec providers exist the post-migration native audit is skipped and reported |
 
 ## Bounds
@@ -194,5 +210,5 @@ verifies by authenticated behaviour, not by that exit code.
 | 2 | Safe filesystem layer, inventory, dry run, output rules | done (hermetic: P09-I01) |
 | 3 | Key preflight, backup/import/native rewrite, journal, rollback | done (hermetic: P09-I02, every stage killed and resumed or rolled back; real-runtime interruption is slice 5) |
 | 4 | Key recovery and acknowledgement | done (hermetic: P09-I03; real sops/age check is slice 5) |
-| 5 | Reload, authenticated use on a real installation | not started |
-| 6 | Packaging, operator docs, rollback rehearsal | not started |
+| 5 | Reload, authenticated use on a real installation | done (real gateway, sops, age in a QEMU/KVM guest) |
+| 6 | Packaging, operator docs, rollback rehearsal | done (staged bundle bin, [operator guide](../guides/openclaw-migration.md), real rollback scenarios) |

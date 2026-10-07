@@ -178,8 +178,13 @@ async function execute(mode, options, io) {
             const result = await nativeReload(options.openclawBin, { configDir: options.configDir });
             const text = result.state === "ok"
                 ? "Reload accepted by the gateway. Confirm with an authenticated request: the migration is complete only when the runtime has used the new references.\n"
-                : `Reload ${result.state}${result.detail ? `: ${printable(result.detail)}` : ""}. Verify with an authenticated request; the reload exit status alone does not prove activation.\n`;
+                : result.state === "unverified"
+                    ? `Reload unverified${result.detail ? `: ${printable(result.detail)}` : ""}. Confirm with an authenticated request; the reload exit status alone does not prove activation.\n`
+                    : `Reload failed${result.detail ? `: ${printable(result.detail)}` : ""}.\nThe runtime was not reloaded. If gateway.auth.token itself changed, run \`openclaw secrets reload --token <the token the gateway is currently using>\` yourself, or restart the gateway.\n`;
             emit(result, text);
+            if (result.state === "failed") {
+                throw Object.assign(new Error("reload-failed"), { reloadFailed: true });
+            }
             return;
         }
         default:
@@ -207,6 +212,9 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
         await execute(parsed.mode, parsed.options, { stdout, stderr });
         return EXIT.OK;
     } catch (error) {
+        if (error?.reloadFailed) {
+            return EXIT.FAILED;
+        }
         if (error instanceof PreflightError && error.stage) {
             stderr.write(`failed during the ${error.stage} stage: ${printable(error.message)}\nRun --status to inspect, --apply to resume, or --rollback to restore the original.\n`);
             return EXIT.FAILED;
