@@ -75,8 +75,8 @@ The plan was written against commit `0350339`. These facts were checked in the w
 | D2 | Not a grant pair. One `fulfillment_id` is carried by purpose-built controller-signed documents (`fulfillment_authorization` for each side, `fulfillment_delivery`, `fulfillment_revocation`) and node-signed documents (`fulfillment_offer`, `fulfillment_submit`) plus `fulfillment_result` events. Every document carries the issuer epoch and the SHA-256 digest of the immutable terms |
 | D3 | Tables `cross_fulfillments` (metadata, immutable lineage) and `cross_fulfillment_payloads` (ciphertext, deleted on receipt, expiry or revocation). Only `store/fulfillments.rs` touches them; no v2 or other fleet route reads them |
 | D4 | The fleet policy document gains an optional `cross_workload` array. A fulfillment is denied unless one rule names both the issuer and the recipient workload ids explicitly (no wildcard). A rule decides `allow`, `pending_approval` (named approvers, no self-approval) or `deny`. `rules` and every existing policy hash are untouched |
-| D5 | Approval detail shows both workloads, both nodes, both fingerprints, credential names, mode and expiry as verified fields and the purpose as untrusted text. Grouped approvals are not offered |
-| D6 | Statuses `requested`, `awaiting_approval`, `approved`, `offered`, `available`, `recipient_consumed`, `completed`, `denied`, `revoked`, `expired`, `failed`, `uncertain`. Revocation deletes payload bytes only, keeps metadata and records `delivery_revoked` separately from `provider_revocation` |
+| D5 | Approval detail shows both workloads, both nodes, both fingerprints, credential names, mode and expiry as verified fields and the purpose as untrusted text. Grouped approvals are not offered. **Built:** the approver returns the two displayed node fingerprints with the decision; the controller compares them with the live enrolled keys and refuses a changed pair with `409 authorization_changed` |
+| D6 | Statuses `awaiting_approval`, `approved`, `offered`, `available`, `recipient_consumed`, `completed`, `denied`, `revoked`, `expired`, `failed`, `uncertain` (there is no stored `requested` state: a request is either denied, waiting for approval or approved when it is created). Revocation deletes payload bytes only, keeps metadata and records `delivery_revoked_at` separately from `provider_revocation`, which is always `unsupported` |
 
 ## Contract
 
@@ -114,7 +114,7 @@ decryption is not evidence of issuer authenticity.
 ### Sequence
 
 ```text
-operator ─POST /api/v3/fulfillments {issuer_workload_id, recipient_workload_id, credential, purpose}─▶ controller
+operator ─POST /api/v3/fulfillments {issuer_workload_id, recipient_workload_id, issuer_credential, recipient_credential, purpose[, prior_fulfillment_id]}─▶ controller
 controller: cross_workload rule → deny | pending_approval → operator approves (≠ requester) | allow
 controller ─fulfillment_authorization(side=recipient)─▶ recipient node → broker: verify, mint one-use key, sign offer
 recipient broker ─fulfillment_offer─▶ controller (validates against the terms)

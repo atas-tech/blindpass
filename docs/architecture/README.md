@@ -22,6 +22,18 @@ The legacy SPS hosted stack (`packages/sps-server`, `packages/dashboard`, its Re
 
 ## Rust workspace
 
+P10 cross-workload fulfillment (off by default: controller `BLINDPASS_FULFILLMENTS_ENABLED=1`, and per broker
+`--fulfillment-source` / `--fulfillment-destination`) moves one credential between two registered workloads on different
+nodes without the controller or node relays ever holding plaintext. The terms, one-use offer and signed documents are in
+[`blindpass-core::fulfillment`](../../crates/blindpass-core/src/fulfillment.rs); the controller owns the state machine,
+`cross_workload` policy rules, approval bound to both node fingerprints, sweeps and recovery invalidation
+([store](../../crates/blindpass-controller/src/store/fulfillments.rs), [routes](../../crates/blindpass-controller/src/routes/fulfillments.rs),
+tables `cross_fulfillments` and `cross_fulfillment_payloads`, schema 20); the brokers hold the one-use keys, seal and open
+([`ops/fulfill.rs`](../../crates/blindpass-broker/src/ops/fulfill.rs)); the node relays signed documents
+([relay](../../crates/blindpass-node/src/provisioning_relay.rs)); the console has a Fulfillments page. A read credential
+cannot be recalled and BlindPass records `provider_revocation` as `unsupported`. See the
+[contract](../product/cross-workload-fulfillment.md).
+
 The [fleet provisioning receiver](../../crates/blindpass-broker/src/provisioning.rs)
 adds broker-owned ephemeral signed browser offers and controller-signed one-use
 Source admission through bounded Unix control commands. Source remains volatile
