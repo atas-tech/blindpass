@@ -1,0 +1,106 @@
+#!/usr/bin/env node
+import { readFileSync as __rf } from "node:fs";
+import { dirname as __dn, join as __jn } from "node:path";
+import { fileURLToPath as __fp } from "node:url";
+const FAKE = (() => { try { return JSON.parse(__rf(__jn(__dn(__fp(import.meta.url)), "fakes.json"), "utf8")); } catch { return {}; } })();
+// Test double for the openclaw CLI, modelled on what 2026.8.35 was observed to do in the disposable
+// guest: strict JSON rewrite, SecretRef targets, exec providers needing --allow-exec, a previous-
+// plaintext openclaw.json.bak after every write, and rejection of target types the installation does
+// not know. The real CLI is exercised only in the VM (tests/openclaw).
+import { spawnSync } from "node:child_process";
+import { appendFileSync, copyFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import path from "node:path";
+
+const { loadRegistry, enumerateConfigTargets } = await import(path.join(FAKE.pluginRoot, "src", "migrate", "registry.mjs"));
+const { classifySecretInput } = await import(path.join(FAKE.pluginRoot, "src", "migrate", "classify.mjs"));
+
+const args = process.argv.slice(2);
+const log = (line) => { if (FAKE.log) appendFileSync(FAKE.log, `${line}\n`); };
+log(`openclaw env ${Object.keys(process.env).sort().join(",")}`);
+const out = (value) => process.stdout.write(`${typeof value === "string" ? value : JSON.stringify(value, null, 2)}\n`);
+const die = (message, code = 1) => { process.stderr.write(`${message}\n`); process.exit(code); };
+const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+const configPath = process.env.OPENCLAW_CONFIG_PATH;
+const rejected = new Set((FAKE.reject ?? []));
+
+function loadConfig() {
+    try { return JSON.parse(readFileSync(configPath, "utf8")); } catch { die("Secrets apply failed: Cannot apply secrets plan: config is invalid.."); }
+}
+
+function setAt(root, segments, value) {
+    let node = root;
+    for (const seg of segments.slice(0, -1)) node = (node[seg] ??= {});
+    node[segments.at(-1)] = value;
+}
+
+function resolveExec(provider, ids) {
+    const result = spawnSync(provider.command, provider.args ?? [], {
+        input: JSON.stringify({ protocolVersion: 1, provider: "blindpass", ids }),
+        env: Object.fromEntries((provider.passEnv ?? []).map((n) => [n, process.env[n]]).filter(([, v]) => v !== undefined)),
+        encoding: "utf8",
+    });
+    if (result.status !== 0) die("Secrets apply failed: exec provider failed.");
+    const response = JSON.parse(result.stdout);
+    for (const id of ids) if (typeof response.values?.[id] !== "string") die("Secrets apply failed: unresolved exec reference.");
+}
+
+if (args[0] === "--version") {
+    out(`OpenClaw ${FAKE.openclawVersion ?? "2026.8.35"} (fake)`);
+} else if (args[0] === "config" && args[1] === "file") {
+    out(configPath);
+} else if (args[0] === "secrets" && args[1] === "apply") {
+    const dryRun = args.includes("--dry-run");
+    const allowExec = args.includes("--allow-exec");
+    log(`openclaw apply dry-run=${dryRun ? 1 : 0} allow-exec=${allowExec ? 1 : 0}`);
+    let plan;
+    try { plan = JSON.parse(readFileSync(flag("--from"), "utf8")); } catch { die("Secrets apply failed: Invalid secrets plan file."); }
+    const registry = loadRegistry("2026.8.35");
+    const known = new Set(registry.configTargets.map((t) => t.id));
+    if (plan.version !== 1 || plan.protocolVersion !== 1 || !Array.isArray(plan.targets)) die("Secrets apply failed: Invalid secrets plan file.");
+    for (const target of plan.targets) {
+        if (!known.has(target.type) || rejected.has(target.type) || typeof target.path !== "string" || !target.ref) die("Secrets apply failed: Invalid secrets plan file.");
+    }
+    const config = loadConfig();
+    const hasExec = Object.keys(plan.providerUpserts ?? {}).length > 0 || plan.targets.some((t) => t.ref.source === "exec");
+    if (hasExec && !dryRun && !allowExec) die("Secrets apply failed: plan contains exec providers; re-run with --allow-exec.");
+    const providers = { ...(config.secrets?.providers ?? {}), ...(plan.providerUpserts ?? {}) };
+    let checked = 0;
+    if (allowExec && hasExec) {
+        for (const alias of new Set(plan.targets.filter((t) => t.ref.source === "exec").map((t) => t.ref.provider))) {
+            const ids = plan.targets.filter((t) => t.ref.provider === alias).map((t) => t.ref.id);
+            if (!providers[alias]) die("Secrets apply failed: provider is not configured.");
+            resolveExec(providers[alias], ids);
+            checked += ids.length;
+        }
+    }
+    const summary = { changed: true, changedFiles: [configPath], checks: { resolvability: true, resolvabilityComplete: allowExec }, refsChecked: checked, skippedExecRefs: allowExec ? 0 : plan.targets.length, warningCount: 0, warnings: [] };
+    if (dryRun) { out({ mode: "dry-run", ...summary }); process.exit(0); }
+
+    if (FAKE.failWrite === "echo") die(`Secrets apply failed: cannot store ${config.gateway?.auth?.token} in its field.`, 1);
+    if (FAKE.failWrite) die("Secrets apply failed: simulated write failure.", 1);
+    const next = structuredClone(config);
+    for (const target of plan.targets) setAt(next, target.pathSegments ?? target.path.split("."), target.ref);
+    next.secrets = { ...(next.secrets ?? {}), providers };
+    const original = readFileSync(configPath, "utf8");
+    const temp = `${configPath}.${process.pid}.tmp`;
+    writeFileSync(temp, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
+    if (FAKE.crash === "before-rename") process.kill(process.pid, "SIGKILL");
+    if (existsSync(`${configPath}.bak`)) copyFileSync(`${configPath}.bak`, `${configPath}.bak.1`);
+    writeFileSync(`${configPath}.bak`, original, { mode: 0o600 });
+    renameSync(temp, configPath);
+    if (FAKE.crash === "after-rename") process.kill(process.pid, "SIGKILL");
+    out({ mode: "write", ...summary });
+} else if (args[0] === "secrets" && args[1] === "audit") {
+    log("openclaw audit");
+    const config = loadConfig();
+    const { targets } = enumerateConfigTargets(config, loadRegistry("2026.8.35"));
+    const findings = targets.filter((t) => classifySecretInput(t.value).kind === "plaintext")
+        .map((t) => ({ code: "PLAINTEXT_FOUND", severity: "warn", file: configPath, jsonPath: t.path, message: `${t.path} is stored as plaintext.` }));
+    out({ version: 1, status: findings.length ? "findings" : "clean", resolution: { refsChecked: 0, skippedExecRefs: 0, resolvabilityComplete: true }, filesScanned: [configPath],
+        summary: { plaintextCount: findings.length, unresolvedRefCount: 0, shadowedRefCount: 0, storeResidueCount: 0, legacyResidueCount: 0 }, findings });
+} else if (args[0] === "secrets" && args[1] === "reload") {
+    log("openclaw reload");
+    out({ ok: true, warningCount: 0 });
+} else {
+    die(`fake openclaw: unsupported invocation ${args.slice(0, 2).join(" ")}`);
+}

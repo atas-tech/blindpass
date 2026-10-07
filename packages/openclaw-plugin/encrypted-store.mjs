@@ -733,6 +733,106 @@ export async function acknowledgeManagedStoreBackup(options = {}) {
     ));
 }
 
+const IMPORT_NAME_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
+
+// Explicit store setup for tools that must not create keys as a side effect of a write: generates
+// the age identity, .sops.yaml and an empty store only when they are missing.
+export async function bootstrapManagedStore(options = {}) {
+    const {
+        storePath,
+        env = process.env,
+        execFileFn = spawn,
+        now = new Date(),
+        stderr = process.stderr,
+        lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+        lockRetryMs = DEFAULT_LOCK_RETRY_MS,
+        pidCheckFn = defaultPidStatus,
+    } = options;
+    if (typeof storePath !== "string" || storePath.trim() === "") {
+        throw new Error("A store path is required to bootstrap the managed store.");
+    }
+    const selectedPath = path.resolve(storePath);
+    return enqueueStoreWrite(selectedPath, async () => withStoreWriteLock(
+        selectedPath,
+        { timeoutMs: lockTimeoutMs, retryMs: lockRetryMs, pidCheckFn },
+        async () => {
+            await ensureSopsAvailable(execFileFn);
+            return ensureSopsBootstrap({ storePath: selectedPath, execFileFn, env, now, stderr });
+        },
+    ));
+}
+
+// Batch import into an existing store in one decrypt/encrypt cycle: all entries or none. Never
+// bootstraps, and never replaces an existing entry that holds a different value.
+export async function importManagedSecrets(options = {}) {
+    const {
+        entries,
+        storePath,
+        env = process.env,
+        execFileFn = spawn,
+        now = new Date(),
+        lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+        lockRetryMs = DEFAULT_LOCK_RETRY_MS,
+        pidCheckFn = defaultPidStatus,
+    } = options;
+    if (!Array.isArray(entries) || entries.length === 0) {
+        throw new Error("At least one entry is required for a managed-store import.");
+    }
+    for (const entry of entries) {
+        if (typeof entry?.name !== "string" || !IMPORT_NAME_PATTERN.test(entry.name) || typeof entry.value !== "string") {
+            throw Object.assign(new Error("invalid import entry"), { code: "INVALID_STORE_NAME" });
+        }
+    }
+    const selectedPath = path.resolve(storePath);
+    return enqueueStoreWrite(selectedPath, async () => withStoreWriteLock(
+        selectedPath,
+        { timeoutMs: lockTimeoutMs, retryMs: lockRetryMs, pidCheckFn },
+        async () => {
+            await ensureSopsAvailable(execFileFn);
+            if (!(await fileExists(selectedPath))) {
+                throw Object.assign(new Error("The managed store does not exist."), { code: "STORE_MISSING" });
+            }
+            const document = await readEncryptedStoreWithEnv(selectedPath, execFileFn, env);
+            const written = [];
+            const unchanged = [];
+            const conflicts = [];
+            for (const entry of entries) {
+                const existing = document.secrets[entry.name];
+                if (existing && typeof existing === "object") {
+                    (existing.value === entry.value ? unchanged : conflicts).push(entry.name);
+                } else {
+                    written.push(entry.name);
+                }
+            }
+            if (conflicts.length > 0) {
+                throw Object.assign(new Error("Managed-store entries already hold different values."), {
+                    code: "STORE_NAME_CONFLICT",
+                    names: conflicts.sort(),
+                });
+            }
+            for (const entry of entries) {
+                if (written.includes(entry.name)) {
+                    document.secrets[entry.name] = {
+                        value: entry.value,
+                        updated_at: now.toISOString(),
+                        ...(entry.metadata ?? {}),
+                    };
+                }
+            }
+            if (written.length > 0) {
+                document.metadata.updated_at = now.toISOString();
+                await writeEncryptedStoreWithEnv(selectedPath, document, execFileFn, env);
+            }
+            return {
+                written: written.sort(),
+                unchanged: unchanged.sort(),
+                storePath: selectedPath,
+                bootstrapBackupPending: document.metadata.bootstrap_backup_pending === true,
+            };
+        },
+    ));
+}
+
 export async function emitManagedStoreBootstrapReminder(options = {}) {
     const {
         env = process.env,

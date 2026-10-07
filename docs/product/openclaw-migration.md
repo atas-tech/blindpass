@@ -107,15 +107,31 @@ key fails preflight before any file changes; there is no plaintext fallback.
 ## Journal, backups and rollback (P09-D4)
 
 `.blindpass-migrate.journal.json` (`0600`, config directory) records the migration ID and, for each stage in
-`inventory → backup → import → rewrite → commit`, a durable *intent* before effects and a *completion* after. Content
-hashes live only in the journal. A rerun reconciles the actual file and store state before resuming; a journal older
-than 24 h produces a staleness warning. Originals are copied to `.blindpass-backup/<UTC timestamp>-<id>/` (`0700`, files
-`0600`, hash-verified). **These backups contain plaintext by design.** They are inventoried in the journal and the report
-states the residual exposure; no automatic deletion happens and erasure of historical copies is never claimed.
+`inventory → backup → import → rewrite → commit`, a durable *intent* before effects and a *completion* after. It holds
+paths, store names and the whole-file hash of `openclaw.json`; never a value or a per-value hash. A mutating run holds
+`.blindpass-migrate.lock` (pid plus process start time, so a stale lock from a dead process is detected and a recycled pid
+is not mistaken for a live owner). A journal older than 24 h produces a staleness warning.
 
-`--rollback <id>` restores only this migration's changes. If a file still has the exact post-migration content it is
-restored byte-for-byte from the backup; otherwise each migrated path is restored only where it still holds this
-migration's reference, so later unrelated edits to config or store survive. Encrypted store entries are kept.
+- **Backup.** Originals are copied to `.blindpass-backup/<migration id>/` (`0700`, files `0600`, hash-verified, with a
+  `MANIFEST.json`). **These backups contain plaintext by design.** They are inventoried in the journal and the report
+  states the residual exposure; no automatic deletion happens and erasure of historical copies is never claimed. The backup
+  is the source of truth for every later stage: import reads the values from it, rewrite verifies the config still holds
+  them, rollback restores from it.
+- **Resume.** A rerun of `--apply` continues the unfinished migration (same settings required, otherwise
+  `journal-mismatch`). Each stage re-derives its state from the files and the store, not from the journal: import skips
+  entries that already hold the identical value, rewrite skips the native write when the config already holds every
+  reference and the planned provider.
+- **Config changed since the backup.** If a migrated field no longer holds the backed-up plaintext (the operator rotated
+  it) the rewrite stops with `config-changed` and the credential is never overwritten. Unrelated edits are carried through
+  by the native write.
+- **Rollback.** `--rollback [--migration-id <id>]` is valid from any state, including a crashed run and a crashed
+  rollback. If the config still has the exact bytes the native write produced **and** the rewrite started from the
+  backed-up bytes, the original is restored byte for byte. Otherwise each migrated path is restored only where it still
+  holds this migration's reference, the provider is removed only if this migration added it and nothing references it
+  any more, and the file keeps its indentation; later unrelated edits survive. Encrypted store entries and the backup are
+  kept. If a secret was rotated in the store after the migration, rollback restores the value from before the migration.
+- **Several migrations.** A committed or rolled-back journal is archived as `.blindpass-migrate.journal.<id>.json` when a
+  later migration starts, so an earlier migration stays available to `--rollback --migration-id`.
 
 ## Residual plaintext
 
@@ -145,6 +161,9 @@ verifies by authenticated behaviour, not by that exit code.
 | F-5 | `apply` preserved key order, wrote strict JSON, inserted `secrets.providers.<alias>`, left `.env` untouched with `scrubEnv:false` | Plans always disable both scrubs |
 | F-6 | `secrets audit` flags only known provider env names in `.env` | Our own bounded `.env` inventory is required |
 | F-7 | Reload behaves as described above, including the misleading 4001 result | Verify by authenticated use |
+| F-8 | The native `apply` accepts only target types the installed runtime and its plugins know: a plan containing one unknown type is rejected as a whole (`Invalid secrets plan file`) | The inventory tries the whole plan and, only on rejection, each target alone; unaccepted targets are reported `runtime-does-not-accept-target`, left as they were and never imported |
+| F-9 | `apply` also writes `meta.lastTouchedVersion` and `meta.migrations` (observed in the real before/after fixtures) | Verification ignores `meta` and lists any other changed path as a warning |
+| F-10 | Which exec providers `--allow-exec` runs beyond the planned one is not established for 2026.8.35 (checked in slice 5) | Treated conservatively: a pre-existing provider alias that differs from ours is refused (`provider-alias-conflict`); when other exec providers exist the post-migration native audit is skipped and reported |
 
 ## Bounds
 
@@ -161,8 +180,8 @@ verifies by authenticated behaviour, not by that exit code.
 |---|---|---|
 | 0 | Real-sops store fix | done (`506b2d8`) |
 | 1 | This contract, vendored matrix, fixtures, registry/classifier/dotenv | done |
-| 2 | Safe filesystem layer, inventory, dry run, output rules | not started |
-| 3 | Key preflight, backup/import/native rewrite, journal, rollback | not started |
+| 2 | Safe filesystem layer, inventory, dry run, output rules | done (hermetic: P09-I01) |
+| 3 | Key preflight, backup/import/native rewrite, journal, rollback | done (hermetic: P09-I02, every stage killed and resumed or rolled back; real-runtime interruption is slice 5) |
 | 4 | Key recovery and acknowledgement | not started |
 | 5 | Reload, authenticated use on a real installation | not started |
 | 6 | Packaging, operator docs, rollback rehearsal | not started |

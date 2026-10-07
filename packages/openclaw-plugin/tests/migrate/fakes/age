@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+import { readFileSync as __rf } from "node:fs";
+import { dirname as __dn, join as __jn } from "node:path";
+import { fileURLToPath as __fp } from "node:url";
+const FAKE = (() => { try { return JSON.parse(__rf(__jn(__dn(__fp(import.meta.url)), "fakes.json"), "utf8")); } catch { return {}; } })();
+// Test double for age: encrypt to a recipient (-r) from stdin, decrypt with an identity file (-i).
+import { appendFileSync, readFileSync } from "node:fs";
+
+const args = process.argv.slice(2);
+if (FAKE.log) {
+    appendFileSync(FAKE.log, `age ${args.join(" ").replace(/age1\S+/g, "<recipient>")}\n`);
+}
+const flag = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
+if (args[0] === "--version") {
+    process.stdout.write("v1.3.2 (fake)\n");
+} else if (args.includes("-d")) {
+    const identity = flag("-i");
+    let pub;
+    try { pub = /^# public key: (age1\S+)/m.exec(readFileSync(identity, "utf8"))?.[1]; } catch { /* no identity */ }
+    const document = JSON.parse(readFileSync(0, "utf8"));
+    if (!pub || pub !== document.recipient) { process.stderr.write("age: error: no identity matched any of the recipients\n"); process.exit(1); }
+    process.stdout.write(Buffer.from(document.payload, "base64").toString("utf8"));
+} else {
+    const recipient = flag("-r");
+    if (!recipient) { process.stderr.write("age: missing recipient\n"); process.exit(1); }
+    process.stdout.write(JSON.stringify({ fake_age: 1, recipient, payload: readFileSync(0).toString("base64") }));
+}
