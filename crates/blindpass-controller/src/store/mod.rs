@@ -25,6 +25,7 @@ pub(crate) mod backup;
 mod exchanges;
 mod fleet;
 mod fleet_lifecycle;
+mod fulfillments;
 mod grants;
 mod login_limits;
 use login_limits::account_row_keys;
@@ -58,6 +59,11 @@ pub use fleet::{
     NodeKeyRotationDraft, NodeRecord,
 };
 pub use fleet_lifecycle::{FleetExpirySummary, FleetFencePurge, FleetPruneSummary};
+pub use fulfillments::{
+    ACTIVE_STATUSES as FULFILLMENT_ACTIVE_STATUSES, CrossDecision, FulfillmentCreate,
+    FulfillmentCreateOutcome, FulfillmentDecideOutcome, FulfillmentDecision, FulfillmentRecord,
+    FulfillmentRevokeOutcome, FulfillmentSweep, evaluate_cross_policy,
+};
 pub use grants::{GrantIssueDraft, GrantIssueOutcome, GrantRecord, GrantRevocationOutcome};
 pub use node_channel::{
     InboxDocument, NodeEventInsert, NodeEventRecord, NodeSessionContext, NodeSessionDraft,
@@ -85,7 +91,8 @@ const POSTGRES_NOW_MS: &str = "(CASE WHEN FLOOR(EXTRACT(EPOCH FROM clock_timesta
 /// 17 adds durable recovery fences and quarantined reconciliation queues.
 /// 18 binds recovery to authenticated archive time and manifest digest.
 /// 19 retains reverified protected report intents as quarantine metadata.
-pub const SCHEMA_VERSION: i64 = 19;
+/// 20 adds cross-workload fulfillment metadata and one-use ciphertext.
+pub const SCHEMA_VERSION: i64 = 20;
 /// Recovery transactions read one snapshot after taking the `controller_meta`
 /// row lock; PostgreSQL's default READ COMMITTED would re-read per statement.
 pub(crate) const PG_RECOVERY_ISOLATION: &str = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ";
@@ -158,6 +165,7 @@ const SCHEMA_TABLES: &[(i64, &[&str])] = &[
         19,
         &["controller_recovery_reports", "controller_recovery_intents"],
     ),
+    (20, &["cross_fulfillments", "cross_fulfillment_payloads"]),
 ];
 /// Columns that versioned state tables must carry. `CREATE TABLE IF NOT EXISTS`
 /// leaves an existing table untouched, so a pre-existing table of the wrong
@@ -317,6 +325,50 @@ const STATE_COLUMNS: &[(i64, &str, &[&str])] = &[
             "snapshot_version",
             "snapshot_status",
             "state",
+        ],
+    ),
+    (
+        20,
+        "cross_fulfillments",
+        &[
+            "id",
+            "tenant_id",
+            "issuer_workload_id",
+            "recipient_workload_id",
+            "issuer_node_id",
+            "recipient_node_id",
+            "issuer_credential",
+            "recipient_credential",
+            "mode",
+            "requested_by",
+            "purpose",
+            "policy_version",
+            "rule_id",
+            "decision",
+            "approver_ids_json",
+            "approval_status",
+            "ttl_seconds",
+            "terms_json",
+            "terms_digest",
+            "offer_json",
+            "status",
+            "idempotency_key",
+            "request_hash",
+            "provider_revocation",
+            "created_at",
+            "expires_at",
+            "version",
+        ],
+    ),
+    (
+        20,
+        "cross_fulfillment_payloads",
+        &[
+            "fulfillment_id",
+            "tenant_id",
+            "submit_json",
+            "ciphertext_digest",
+            "created_at",
         ],
     ),
 ];
@@ -3526,6 +3578,12 @@ impl Database {
                 .execute(pool)
                 .await
                 .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/sqlite/0020_cross_fulfillments.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
                 Ok(())
             }
             Self::Postgres(pool) => {
@@ -3627,6 +3685,12 @@ impl Database {
                 .map_err(StoreError::Database)?;
                 sqlx::raw_sql(include_str!(
                     "migrations/postgres/0019_recovery_application.sql"
+                ))
+                .execute(pool)
+                .await
+                .map_err(StoreError::Database)?;
+                sqlx::raw_sql(include_str!(
+                    "migrations/postgres/0020_cross_fulfillments.sql"
                 ))
                 .execute(pool)
                 .await

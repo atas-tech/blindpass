@@ -46,6 +46,8 @@ pub struct RecoveryInvalidationSummary {
     pub idempotency_rows: u64,
     pub provisioning_links: u64,
     pub provisioning_offers: u64,
+    #[serde(default)]
+    pub fulfillments: u64,
     pub grants: u64,
     pub operations: u64,
     pub nodes: u64,
@@ -388,6 +390,13 @@ impl Store {
                 if invalid_tombstones!=0 {return Err(StoreError::InvalidInput("recovery grant retention"));}
                 summary.grants=sqlx::query(&$convert("INSERT INTO grant_tombstones (grant_id,node_id,reason,created_at,retain_until) SELECT id,node_id,'controller_recovery',?,9007199254740991 FROM grants WHERE tenant_id=? ON CONFLICT(grant_id) DO UPDATE SET retain_until=9007199254740991"))
                     .bind(now).bind(&tenant).execute(&mut *tx).await.map_err(StoreError::Database)?.rows_affected();
+                // P10: ciphertext payloads are deleted and live fulfillments end. No
+                // revocation documents are queued; node inboxes were just cleared and
+                // brokers drop fulfillment state when the issuer epoch changes.
+                sqlx::query(&$convert("DELETE FROM cross_fulfillment_payloads WHERE tenant_id=?"))
+                    .bind(&tenant).execute(&mut *tx).await.map_err(StoreError::Database)?;
+                summary.fulfillments=sqlx::query(&$convert("UPDATE cross_fulfillments SET status='revoked',revocation_reason='recovery',delivery_revoked_at=CASE WHEN terms_digest IS NULL THEN NULL ELSE ? END,closed_at=?,version=version+1 WHERE tenant_id=? AND status IN ('awaiting_approval','approved','offered','available','recipient_consumed','uncertain')"))
+                    .bind(now).bind(now).bind(&tenant).execute(&mut *tx).await.map_err(StoreError::Database)?.rows_affected();
                 sqlx::query(&$convert("UPDATE grants SET status=CASE WHEN status='consumed' THEN 'consumed' ELSE 'revoked' END,revoked_at=COALESCE(revoked_at,?) WHERE tenant_id=?"))
                     .bind(now).bind(&tenant).execute(&mut *tx).await.map_err(StoreError::Database)?;
                 sqlx::query(&$convert("UPDATE operations SET status='uncertain',result_json='{\"status\":\"uncertain\",\"reason\":\"controller_recovery\"}',completed_at=NULL,version=version+1 WHERE tenant_id=?"))
