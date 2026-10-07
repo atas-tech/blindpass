@@ -162,7 +162,19 @@ async fn fixture_table_count(fixture: &StoreFixture, table: &str) -> i64 {
 
 async fn remove_fleet_schema(fixture: &mut StoreFixture, schema_version: i64) {
     fixture.store.take();
+    // Tables from later migrations come first: they hold foreign keys to the fleet tables
+    // below, which PostgreSQL refuses to drop while they exist. Every later migration is
+    // `IF NOT EXISTS`, so the migration under test recreates them.
     let tables = [
+        "cross_fulfillment_payloads",
+        "cross_fulfillments",
+        "controller_recovery_intents",
+        "controller_recovery_reports",
+        "controller_recovery_snapshots",
+        "controller_recovery_reviews",
+        "controller_recovery_operations",
+        "controller_recovery_nodes",
+        "controller_recoveries",
         "fleet_provisioning_receipts",
         "fleet_provisioning_links",
         "fleet_provisioning_offers",
