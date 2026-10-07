@@ -210,5 +210,5 @@ The gateway resolves exec references at activation, and it watches `openclaw.jso
 | 2 | Safe filesystem layer, inventory, dry run, output rules | done (hermetic: P09-I01) |
 | 3 | Key preflight, backup/import/native rewrite, journal, rollback | done (hermetic: P09-I02, every stage killed and resumed or rolled back; real-runtime interruption is slice 5) |
 | 4 | Key recovery and acknowledgement | done (hermetic: P09-I03; real sops/age check is slice 5) |
-| 5 | Reload, authenticated use on a real installation | done (real gateway, sops, age in a QEMU/KVM guest) |
+| 5 | Reload, authenticated use on a real installation | done (real gateway, sops, age in a QEMU/KVM guest; [execution record](../testing/evidence/p09-openclaw-migration-2026-10-07.md)) |
 | 6 | Packaging, operator docs, rollback rehearsal | done (staged bundle bin, [operator guide](../guides/openclaw-migration.md), real rollback scenarios) |

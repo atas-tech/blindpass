@@ -27,7 +27,7 @@ The Rust controller implements the P02 API locally on SQLite and PostgreSQL but 
 | [Exchange policy](guides/policy.md) | Implemented controller policy format, API and RBAC |
 | [API reference](api/README.md) | The Rust controller contract (OpenAPI), its scope and auth behavior; the SPS snapshot is archived under legacy |
 | [OpenClaw integration](plugins/openclaw-capability-extension.md) | Existing transport, storage and resolver contracts; MCP limitations |
-| [OpenClaw credential migration](guides/openclaw-migration.md) | Operator guide for `blindpass-openclaw-migrate`: dry run, store/key setup, apply, activation, residual plaintext, resume and rollback; [contract](product/openclaw-migration.md) |
+| [OpenClaw credential migration](guides/openclaw-migration.md) | Operator guide for `blindpass-openclaw-migrate`: dry run, store/key setup, apply, activation, residual plaintext, resume and rollback; [contract](product/openclaw-migration.md) and [P09 execution record](testing/evidence/p09-openclaw-migration-2026-10-07.md) |
 | [Controller on Unraid](deploy/unraid.md) | The two controller templates, their assumptions and the Compose sequence mapped onto them (not run on an Unraid host) |
 | [Legacy SPS documents](legacy/README.md) | Archived quick start, self-hosting guide, five legacy Unraid templates, manual demos and OpenAPI snapshot of the SPS hosted stack removed 2026-10-07; history only, not maintained or supported |
 | Dashboard redesign proposal | Maintained in the Obsidian vault; implemented by `packages/console` (P04). The old `packages/dashboard` was removed 2026-10-07 |

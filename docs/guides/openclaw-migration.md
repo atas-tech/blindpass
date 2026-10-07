@@ -3,7 +3,8 @@
 `blindpass-openclaw-migrate` moves the plaintext credentials in an OpenClaw `openclaw.json` into the BlindPass
 SOPS/age encrypted store and replaces each one with an exec-provider reference that OpenClaw resolves through
 `blindpass-resolver`. It is reversible, journaled and restartable. The contract, findings and limits are in
-[openclaw-migration.md](../product/openclaw-migration.md).
+[openclaw-migration.md](../product/openclaw-migration.md); the evidence is in the
+[P09 execution record](../testing/evidence/p09-openclaw-migration-2026-10-07.md).
 
 It is **not** a mandatory part of the fleet product, and it supports exactly one OpenClaw release today: **2026.8.35**.
 Another release is refused (`native-version`), not guessed at.
