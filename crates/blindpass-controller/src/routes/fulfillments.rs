@@ -526,12 +526,12 @@ async fn decide(
         })
         .await;
     match outcome {
-        Ok(FulfillmentDecideOutcome::Applied(record) | FulfillmentDecideOutcome::Replayed(record)) => {
-            match body(store, &record).await {
-                Ok(value) => Json(value).into_response(),
-                Err(response) => response,
-            }
-        }
+        Ok(
+            FulfillmentDecideOutcome::Applied(record) | FulfillmentDecideOutcome::Replayed(record),
+        ) => match body(store, &record).await {
+            Ok(value) => Json(value).into_response(),
+            Err(response) => response,
+        },
         Ok(FulfillmentDecideOutcome::NotFound) => not_found(),
         Ok(FulfillmentDecideOutcome::ScopeDenied) => api_error(
             StatusCode::FORBIDDEN,
@@ -573,12 +573,13 @@ async fn revoke(
         return unavailable();
     };
     match store.revoke_fulfillment(&id, &operator.operator.id).await {
-        Ok(FulfillmentRevokeOutcome::Revoked(record) | FulfillmentRevokeOutcome::AlreadyClosed(record)) => {
-            match body(store, &record).await {
-                Ok(value) => Json(value).into_response(),
-                Err(response) => response,
-            }
-        }
+        Ok(
+            FulfillmentRevokeOutcome::Revoked(record)
+            | FulfillmentRevokeOutcome::AlreadyClosed(record),
+        ) => match body(store, &record).await {
+            Ok(value) => Json(value).into_response(),
+            Err(response) => response,
+        },
         Ok(FulfillmentRevokeOutcome::NotFound) => not_found(),
         Err(_) => unavailable(),
     }

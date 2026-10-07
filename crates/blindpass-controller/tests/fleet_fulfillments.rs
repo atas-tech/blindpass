@@ -31,7 +31,13 @@ fn plain(value: &CanonValue) -> Value {
     serde_json::from_slice(&canonicalize_value(value).unwrap()).unwrap()
 }
 
-fn cross_rule(id: &str, decision: &str, approvers: &[&str], issuer: &Value, recipient: &Value) -> Value {
+fn cross_rule(
+    id: &str,
+    decision: &str,
+    approvers: &[&str],
+    issuer: &Value,
+    recipient: &Value,
+) -> Value {
     let mut rule = json!({
         "id": id,
         "issuer_workload_ids": [issuer["id"]],
@@ -73,7 +79,13 @@ impl World {
         let requester = h.create_operator("fulfill-requester", "operator").await;
         let approver = h.create_operator("fulfill-approver", "operator").await;
         let issuer = h
-            .create_workload(&issuer_node.id, "issuer-app", "issuer-app.service", "issuer", "file")
+            .create_workload(
+                &issuer_node.id,
+                "issuer-app",
+                "issuer-app.service",
+                "issuer",
+                "file",
+            )
             .await;
         assert_eq!(issuer.status, 201, "{}", issuer.body);
         let recipient = h
@@ -115,7 +127,13 @@ impl World {
 
     async fn with_allow() -> Self {
         let world = Self::start(ENABLED).await;
-        let rule = cross_rule("cross-allow", "allow", &[], &world.issuer_wl, &world.recipient_wl);
+        let rule = cross_rule(
+            "cross-allow",
+            "allow",
+            &[],
+            &world.issuer_wl,
+            &world.recipient_wl,
+        );
         let set = world.set_cross(json!([rule])).await;
         assert_eq!(set.status, 200, "{}", set.body);
         world
@@ -169,8 +187,12 @@ impl World {
     }
 
     async fn create(&self, key: &str) -> HttpResponse {
-        self.create_with(&self.requester, key, &self.body_for("rotate the dummy api token"))
-            .await
+        self.create_with(
+            &self.requester,
+            key,
+            &self.body_for("rotate the dummy api token"),
+        )
+        .await
     }
 
     async fn show(&self, id: &str) -> Value {
@@ -195,7 +217,10 @@ impl World {
             detail["version"].as_i64().unwrap(),
             Some((
                 detail["issuer"]["fingerprint"].as_str().unwrap().to_owned(),
-                detail["recipient"]["fingerprint"].as_str().unwrap().to_owned(),
+                detail["recipient"]["fingerprint"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
             )),
         )
         .await
@@ -357,8 +382,13 @@ impl World {
             code: code.map(str::to_owned),
             observed_at_ms: self.now().await,
         };
-        self.post(node, key, "fulfillment_result", plain(&result.to_value().unwrap()))
-            .await
+        self.post(
+            node,
+            key,
+            "fulfillment_result",
+            plain(&result.to_value().unwrap()),
+        )
+        .await
     }
 
     /// Bring an approved fulfillment to `available`: offer, issuer
@@ -379,9 +409,12 @@ impl World {
     }
 
     fn signing_store(&self) -> Store {
-        self.h.store.clone().with_fleet_signer(FleetSigner::new(Arc::new(
-            Ed25519KeyPair::from_seed(&[ISSUER_SEED; 32]).unwrap(),
-        )))
+        self.h
+            .store
+            .clone()
+            .with_fleet_signer(FleetSigner::new(Arc::new(
+                Ed25519KeyPair::from_seed(&[ISSUER_SEED; 32]).unwrap(),
+            )))
     }
 
     async fn expire_now(&self, id: &str) {
@@ -441,23 +474,36 @@ async fn p10_i01_unknown_pair_is_denied_and_nothing_is_queued() {
     }
     assert_eq!(
         world
-            .count(
-                "SELECT COUNT(*) FROM audit_events WHERE action = 'fleet.fulfillment_requested'"
-            )
+            .count("SELECT COUNT(*) FROM audit_events WHERE action = 'fleet.fulfillment_requested'")
             .await,
         1
     );
     // The replayed request answers the same refusal and writes no second row.
     let replay = world.create("idem-denied-0001-aaaa").await;
     assert_eq!(replay.status, 403);
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillments").await, 1);
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM cross_fulfillments").await,
+        1
+    );
 }
 
 #[tokio::test]
 async fn p10_i01_rules_are_ordered_and_a_deny_rule_wins_when_first() {
     let world = World::start(ENABLED).await;
-    let deny = cross_rule("cross-deny", "deny", &[], &world.issuer_wl, &world.recipient_wl);
-    let allow = cross_rule("cross-allow", "allow", &[], &world.issuer_wl, &world.recipient_wl);
+    let deny = cross_rule(
+        "cross-deny",
+        "deny",
+        &[],
+        &world.issuer_wl,
+        &world.recipient_wl,
+    );
+    let allow = cross_rule(
+        "cross-allow",
+        "allow",
+        &[],
+        &world.issuer_wl,
+        &world.recipient_wl,
+    );
     let set = world.set_cross(json!([deny.clone(), allow.clone()])).await;
     assert_eq!(set.status, 200, "{}", set.body);
     let first_deny = world.create("idem-order-00001-aaaa").await;
@@ -482,7 +528,13 @@ async fn p10_i01_rules_are_ordered_and_a_deny_rule_wins_when_first() {
 #[tokio::test]
 async fn p10_i01_policy_selectors_are_explicit_ids_and_omitted_rules_are_kept() {
     let world = World::start(ENABLED).await;
-    let good = cross_rule("cross-allow", "allow", &[], &world.issuer_wl, &world.recipient_wl);
+    let good = cross_rule(
+        "cross-allow",
+        "allow",
+        &[],
+        &world.issuer_wl,
+        &world.recipient_wl,
+    );
     let mut wildcard = good.clone();
     wildcard["issuer_workload_ids"] = json!(["*"]);
     let mut empty = good.clone();
@@ -570,38 +622,63 @@ async fn p10_i01_untrusted_fields_cannot_broaden_authority() {
     ] {
         let mut body = base.clone();
         body[name] = value;
-        rejected.push((name, world.create_with(&world.requester, "idem-fields-0001-aaaa", &body).await));
+        rejected.push((
+            name,
+            world
+                .create_with(&world.requester, "idem-fields-0001-aaaa", &body)
+                .await,
+        ));
     }
     for (name, response) in rejected {
-        assert!(matches!(response.status, 400 | 422), "{name}: {}", response.body);
+        assert!(
+            matches!(response.status, 400 | 422),
+            "{name}: {}",
+            response.body
+        );
     }
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillments").await, 0);
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM cross_fulfillments").await,
+        0
+    );
 
     for (label, change) in [
-        ("path traversal", ("issuer_credential", json!("../etc/passwd"))),
+        (
+            "path traversal",
+            ("issuer_credential", json!("../etc/passwd")),
+        ),
         ("hidden name", ("recipient_credential", json!(".hidden"))),
         ("space", ("issuer_credential", json!("api token"))),
         ("long name", ("issuer_credential", json!("a".repeat(129)))),
         ("empty purpose", ("purpose", json!("   "))),
-        ("control character", ("purpose", json!("rotate\u{1b}[31m token"))),
+        (
+            "control character",
+            ("purpose", json!("rotate\u{1b}[31m token")),
+        ),
         ("long purpose", ("purpose", json!("p".repeat(513)))),
         ("bad workload id", ("issuer_workload_id", json!("wl*"))),
         ("bad prior id", ("prior_fulfillment_id", json!("../x"))),
     ] {
         let mut body = base.clone();
         body[change.0] = change.1;
-        let response = world.create_with(&world.requester, "idem-fields-0002-aaaa", &body).await;
+        let response = world
+            .create_with(&world.requester, "idem-fields-0002-aaaa", &body)
+            .await;
         assert_eq!(response.status, 400, "{label}: {}", response.body);
     }
     let mut same = base.clone();
     same["recipient_workload_id"] = base["issuer_workload_id"].clone();
     assert_eq!(
-        world.create_with(&world.requester, "idem-fields-0003-aaaa", &same).await.body["error"],
+        world
+            .create_with(&world.requester, "idem-fields-0003-aaaa", &same)
+            .await
+            .body["error"],
         "same_party"
     );
     let mut unknown = base.clone();
     unknown["recipient_workload_id"] = json!("wl_does_not_exist");
-    let missing = world.create_with(&world.requester, "idem-fields-0004-aaaa", &unknown).await;
+    let missing = world
+        .create_with(&world.requester, "idem-fields-0004-aaaa", &unknown)
+        .await;
     assert_eq!(missing.status, 404, "{}", missing.body);
     // Two workloads on one node are not a cross-node pair.
     let sibling = world
@@ -617,7 +694,9 @@ async fn p10_i01_untrusted_fields_cannot_broaden_authority() {
     assert_eq!(sibling.status, 201, "{}", sibling.body);
     let mut same_node = base.clone();
     same_node["recipient_workload_id"] = sibling.body["id"].clone();
-    let refused = world.create_with(&world.requester, "idem-fields-0005-aaaa", &same_node).await;
+    let refused = world
+        .create_with(&world.requester, "idem-fields-0005-aaaa", &same_node)
+        .await;
     assert_eq!(refused.status, 409, "{}", refused.body);
     assert_eq!(refused.body["error"], "party_unavailable");
     // The purpose is stored and returned as text only; it names nobody.
@@ -631,7 +710,10 @@ async fn p10_i01_untrusted_fields_cannot_broaden_authority() {
     assert_eq!(created.status, 201, "{}", created.body);
     assert_eq!(created.body["untrusted_fields"], json!(["purpose"]));
     assert_eq!(created.body["issuer"]["workload_id"], world.issuer_wl["id"]);
-    assert_eq!(created.body["recipient"]["workload_id"], world.recipient_wl["id"]);
+    assert_eq!(
+        created.body["recipient"]["workload_id"],
+        world.recipient_wl["id"]
+    );
     assert_eq!(created.body["mode"], "reencrypt");
     // A revoked workload cannot be a party.
     let revoke = world
@@ -639,13 +721,18 @@ async fn p10_i01_untrusted_fields_cannot_broaden_authority() {
         .call(
             &world.h.admin,
             "DELETE",
-            &format!("/api/v3/workloads/{}", world.recipient_wl["id"].as_str().unwrap()),
+            &format!(
+                "/api/v3/workloads/{}",
+                world.recipient_wl["id"].as_str().unwrap()
+            ),
             &[],
             None,
         )
         .await;
     assert!(revoke.status < 300, "{}", revoke.body);
-    world.revoke_if_live(created.body["id"].as_str().unwrap()).await;
+    world
+        .revoke_if_live(created.body["id"].as_str().unwrap())
+        .await;
     let unavailable = world.create("idem-fields-0007-aaaa").await;
     assert_eq!(unavailable.status, 409, "{}", unavailable.body);
 }
@@ -672,7 +759,10 @@ async fn p10_i01_named_approver_self_approval_and_fingerprint_binding() {
     let rule = cross_rule(
         "cross-approve",
         "pending_approval",
-        &[world.approver.username.as_str(), world.requester.username.as_str()],
+        &[
+            world.approver.username.as_str(),
+            world.requester.username.as_str(),
+        ],
         &world.issuer_wl,
         &world.recipient_wl,
     );
@@ -699,16 +789,30 @@ async fn p10_i01_named_approver_self_approval_and_fingerprint_binding() {
     ));
 
     let own = world
-        .decide_with(&world.requester, &id, "approve", version, fingerprints.clone())
+        .decide_with(
+            &world.requester,
+            &id,
+            "approve",
+            version,
+            fingerprints.clone(),
+        )
         .await;
     assert_eq!(own.status, 403, "{}", own.body);
     assert_eq!(own.body["error"], "self_approval_denied");
     let unnamed = world
-        .decide_with(&world.h.admin, &id, "approve", version, fingerprints.clone())
+        .decide_with(
+            &world.h.admin,
+            &id,
+            "approve",
+            version,
+            fingerprints.clone(),
+        )
         .await;
     assert_eq!(unnamed.status, 403, "{}", unnamed.body);
     assert_eq!(unnamed.body["error"], "approval_scope_denied");
-    let missing = world.decide_with(&world.approver, &id, "approve", version, None).await;
+    let missing = world
+        .decide_with(&world.approver, &id, "approve", version, None)
+        .await;
     assert_eq!(missing.status, 400, "{}", missing.body);
     assert_eq!(missing.body["error"], "fingerprints_required");
     let wrong = world
@@ -717,13 +821,22 @@ async fn p10_i01_named_approver_self_approval_and_fingerprint_binding() {
             &id,
             "approve",
             version,
-            Some((world.recipient_node.keys.fingerprint(), world.issuer_node.keys.fingerprint())),
+            Some((
+                world.recipient_node.keys.fingerprint(),
+                world.issuer_node.keys.fingerprint(),
+            )),
         )
         .await;
     assert_eq!(wrong.status, 409, "{}", wrong.body);
     assert_eq!(wrong.body["error"], "authorization_changed");
     let stale = world
-        .decide_with(&world.approver, &id, "approve", version + 5, fingerprints.clone())
+        .decide_with(
+            &world.approver,
+            &id,
+            "approve",
+            version + 5,
+            fingerprints.clone(),
+        )
         .await;
     assert!(stale.status >= 400, "{}", stale.body);
     assert_eq!(world.status(&id).await, "awaiting_approval");
@@ -735,7 +848,13 @@ async fn p10_i01_named_approver_self_approval_and_fingerprint_binding() {
     );
 
     let approved = world
-        .decide_with(&world.approver, &id, "approve", version, fingerprints.clone())
+        .decide_with(
+            &world.approver,
+            &id,
+            "approve",
+            version,
+            fingerprints.clone(),
+        )
         .await;
     assert_eq!(approved.status, 200, "{}", approved.body);
     assert_eq!(approved.body["status"], "approved");
@@ -747,17 +866,34 @@ async fn p10_i01_named_approver_self_approval_and_fingerprint_binding() {
     assert_eq!(documents.len(), 1);
     let authorization = FulfillmentAuthorization::from_value(documents[0].body()).unwrap();
     assert_eq!(authorization.side, FulfillmentSide::Recipient);
-    assert_eq!(authorization.terms.digest_hex().unwrap(), approved.body["terms_digest"].as_str().unwrap());
-    assert_eq!(authorization.terms.issuer.fingerprint, world.issuer_node.keys.fingerprint());
-    assert_eq!(authorization.terms.recipient.fingerprint, world.recipient_node.keys.fingerprint());
+    assert_eq!(
+        authorization.terms.digest_hex().unwrap(),
+        approved.body["terms_digest"].as_str().unwrap()
+    );
+    assert_eq!(
+        authorization.terms.issuer.fingerprint,
+        world.issuer_node.keys.fingerprint()
+    );
+    assert_eq!(
+        authorization.terms.recipient.fingerprint,
+        world.recipient_node.keys.fingerprint()
+    );
     assert_eq!(authorization.terms.issuer.node_id, world.issuer_node.id);
-    assert_eq!(authorization.terms.recipient.node_id, world.recipient_node.id);
-    assert_eq!(authorization.terms.recipient.workload_id, world.recipient_wl["id"].as_str().unwrap());
+    assert_eq!(
+        authorization.terms.recipient.node_id,
+        world.recipient_node.id
+    );
+    assert_eq!(
+        authorization.terms.recipient.workload_id,
+        world.recipient_wl["id"].as_str().unwrap()
+    );
     assert!(authorization.terms.approval_reference.is_some());
     assert_eq!(authorization.terms.issuer_epoch, 1);
     assert!(authorization.terms.expires_at_ms - authorization.terms.issued_at_ms <= 300_000);
     // Neither the purpose nor the credential bytes are part of the signed terms.
-    assert!(!String::from_utf8_lossy(&documents[0].to_json().unwrap()).contains("rotate the dummy"));
+    assert!(
+        !String::from_utf8_lossy(&documents[0].to_json().unwrap()).contains("rotate the dummy")
+    );
     // The issuer gets nothing until the recipient's offer arrives.
     assert!(
         world
@@ -768,7 +904,13 @@ async fn p10_i01_named_approver_self_approval_and_fingerprint_binding() {
     // A replayed decision does not queue a second document, and a new
     // decision on a decided fulfillment conflicts.
     let replay = world
-        .decide_with(&world.approver, &id, "approve", version, fingerprints.clone())
+        .decide_with(
+            &world.approver,
+            &id,
+            "approve",
+            version,
+            fingerprints.clone(),
+        )
         .await;
     assert_eq!(replay.status, 200, "{}", replay.body);
     assert_eq!(
@@ -784,9 +926,7 @@ async fn p10_i01_named_approver_self_approval_and_fingerprint_binding() {
     assert_eq!(late.status, 409, "{}", late.body);
     assert!(
         world
-            .count(
-                "SELECT COUNT(*) FROM audit_events WHERE action = 'fleet.fulfillment_decided'"
-            )
+            .count("SELECT COUNT(*) FROM audit_events WHERE action = 'fleet.fulfillment_decided'")
             .await
             >= 3,
         "applied and denied decisions are audited"
@@ -834,7 +974,10 @@ async fn p10_i01_fulfillment_state_is_unreachable_from_other_modules() {
         }
     }
     let mut hits = Vec::new();
-    walk(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut hits);
+    walk(
+        &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+        &mut hits,
+    );
     hits.sort();
     let relative = hits
         .iter()
@@ -868,10 +1011,16 @@ async fn p10_i02_round_trip_has_exactly_one_legal_completion() {
         .documents(&world.issuer_node, "fulfillment_authorization")
         .await;
     assert_eq!(issuer_documents.len(), 1);
-    let issuer_authorization = FulfillmentAuthorization::from_value(issuer_documents[0].body()).unwrap();
+    let issuer_authorization =
+        FulfillmentAuthorization::from_value(issuer_documents[0].body()).unwrap();
     assert_eq!(issuer_authorization.side, FulfillmentSide::Issuer);
     assert_eq!(
-        issuer_authorization.offer.as_ref().unwrap().to_json().unwrap(),
+        issuer_authorization
+            .offer
+            .as_ref()
+            .unwrap()
+            .to_json()
+            .unwrap(),
         flow.offer.as_ref().unwrap().1.to_json().unwrap(),
         "the issuer is given the recipient broker's own signed offer"
     );
@@ -879,7 +1028,12 @@ async fn p10_i02_round_trip_has_exactly_one_legal_completion() {
     let submitted = world.send_submit(&flow, "submit-trip-0001-aaaa").await;
     assert_eq!(submitted.body["accepted"], 1, "{}", submitted.body);
     assert_eq!(world.status(&id).await, "available");
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await, 1);
+    assert_eq!(
+        world
+            .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+            .await,
+        1
+    );
     let deliveries = world
         .documents(&world.recipient_node, "fulfillment_delivery")
         .await;
@@ -913,7 +1067,10 @@ async fn p10_i02_round_trip_has_exactly_one_legal_completion() {
 
     // A second submission, even a valid fresh seal, cannot add another delivery.
     let second = world.send_submit(&flow, "submit-trip-0002-aaaa").await;
-    assert_eq!(discarded_codes(&second), vec!["invalid_node_event".to_owned()]);
+    assert_eq!(
+        discarded_codes(&second),
+        vec!["invalid_node_event".to_owned()]
+    );
     assert_eq!(
         world
             .documents(&world.recipient_node, "fulfillment_delivery")
@@ -923,20 +1080,37 @@ async fn p10_i02_round_trip_has_exactly_one_legal_completion() {
     );
     // The same key with different bytes is a conflict, not a replacement.
     let conflict = world.send_submit(&flow, "submit-trip-0001-aaaa").await;
-    assert_eq!(discarded_codes(&conflict), vec!["event_idempotency_conflict".to_owned()]);
+    assert_eq!(
+        discarded_codes(&conflict),
+        vec!["event_idempotency_conflict".to_owned()]
+    );
 
     let stored = world
-        .send_result(&flow, "result-trip-0001-aaaa", FulfillmentSide::Recipient, ResultState::Stored, None)
+        .send_result(
+            &flow,
+            "result-trip-0001-aaaa",
+            FulfillmentSide::Recipient,
+            ResultState::Stored,
+            None,
+        )
         .await;
     assert_eq!(stored.body["accepted"], 1, "{}", stored.body);
     assert_eq!(world.status(&id).await, "recipient_consumed");
     assert_eq!(
-        world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await,
+        world
+            .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+            .await,
         0,
         "ciphertext is deleted once the recipient holds the credential"
     );
     let consumed = world
-        .send_result(&flow, "result-trip-0002-aaaa", FulfillmentSide::Recipient, ResultState::Consumed, None)
+        .send_result(
+            &flow,
+            "result-trip-0002-aaaa",
+            FulfillmentSide::Recipient,
+            ResultState::Consumed,
+            None,
+        )
         .await;
     assert_eq!(consumed.body["accepted"], 1, "{}", consumed.body);
     let done = world.show(&id).await;
@@ -967,7 +1141,8 @@ impl World {
     async fn send_offer_again(&self, flow: &Flow, key: &str) -> HttpResponse {
         let body: Value =
             serde_json::from_slice(&flow.offer.as_ref().unwrap().1.to_json().unwrap()).unwrap();
-        self.post(&self.recipient_node, key, "fulfillment_offer", body).await
+        self.post(&self.recipient_node, key, "fulfillment_offer", body)
+            .await
     }
 }
 
@@ -1057,7 +1232,12 @@ async fn p10_i02_offer_substitution_is_discarded_and_nothing_advances() {
     ];
     for (index, (label, node, envelope)) in attempts.into_iter().enumerate() {
         let response = world
-            .post(node, &format!("offer-bad-{index:04}-aaaa"), "fulfillment_offer", as_body(envelope))
+            .post(
+                node,
+                &format!("offer-bad-{index:04}-aaaa"),
+                "fulfillment_offer",
+                as_body(envelope),
+            )
             .await;
         assert_eq!(
             discarded_codes(&response),
@@ -1075,16 +1255,29 @@ async fn p10_i02_offer_substitution_is_discarded_and_nothing_advances() {
     );
     // The genuine offer still works afterwards.
     let ok = world
-        .post(&world.recipient_node, "offer-good-0001-aaaa", "fulfillment_offer", as_body(&valid))
+        .post(
+            &world.recipient_node,
+            "offer-good-0001-aaaa",
+            "fulfillment_offer",
+            as_body(&valid),
+        )
         .await;
     assert_eq!(ok.body["accepted"], 1, "{}", ok.body);
     // A second offer for the same fulfillment cannot replace the first.
     flow.offer_id = "fo_p10controller99999999".to_owned();
     let (_, second) = world.offer_for(&mut flow, now + 1);
     let replaced = world
-        .post(&world.recipient_node, "offer-good-0002-aaaa", "fulfillment_offer", as_body(&second))
+        .post(
+            &world.recipient_node,
+            "offer-good-0002-aaaa",
+            "fulfillment_offer",
+            as_body(&second),
+        )
         .await;
-    assert_eq!(discarded_codes(&replaced), vec!["invalid_node_event".to_owned()]);
+    assert_eq!(
+        discarded_codes(&replaced),
+        vec!["invalid_node_event".to_owned()]
+    );
     assert_eq!(
         world
             .documents(&world.issuer_node, "fulfillment_authorization")
@@ -1128,24 +1321,61 @@ async fn p10_i02_submit_substitution_is_discarded_and_no_delivery_is_queued() {
     let issuer_key = &world.issuer_node.keys.signing;
     let attempts = vec![
         // Right body, signed by the recipient node's key.
-        ("wrong signer", &world.issuer_node, resigned("offer_id", json!(flow.offer_id), &world.recipient_node.keys.signing)),
+        (
+            "wrong signer",
+            &world.issuer_node,
+            resigned(
+                "offer_id",
+                json!(flow.offer_id),
+                &world.recipient_node.keys.signing,
+            ),
+        ),
         // Another offer id (a different recipient key) under a valid signature.
-        ("other offer", &world.issuer_node, resigned("offer_id", json!("fo_p10controller77777777"), issuer_key)),
+        (
+            "other offer",
+            &world.issuer_node,
+            resigned("offer_id", json!("fo_p10controller77777777"), issuer_key),
+        ),
         // Another terms digest.
-        ("other digest", &world.issuer_node, resigned("terms_digest", json!("1".repeat(64)), issuer_key)),
+        (
+            "other digest",
+            &world.issuer_node,
+            resigned("terms_digest", json!("1".repeat(64)), issuer_key),
+        ),
         // Digest that does not match the ciphertext, and a flipped ciphertext:
         // neither can even be re-signed, so the bytes are altered after signing.
-        ("ciphertext digest", &world.issuer_node, altered("ciphertext_digest", json!("2".repeat(64)))),
-        ("ciphertext", &world.issuer_node, altered("ciphertext", json!("AAAA"))),
+        (
+            "ciphertext digest",
+            &world.issuer_node,
+            altered("ciphertext_digest", json!("2".repeat(64))),
+        ),
+        (
+            "ciphertext",
+            &world.issuer_node,
+            altered("ciphertext", json!("AAAA")),
+        ),
         ("enc", &world.issuer_node, altered("enc", json!("AAAA"))),
         // Another fulfillment's id.
-        ("other fulfillment", &world.issuer_node, resigned("fulfillment_id", json!("fu_other_0123456789abcdef"), issuer_key)),
+        (
+            "other fulfillment",
+            &world.issuer_node,
+            resigned(
+                "fulfillment_id",
+                json!("fu_other_0123456789abcdef"),
+                issuer_key,
+            ),
+        ),
         // A valid submission posted by the recipient node's session.
         ("wrong session", &world.recipient_node, body_of(&valid)),
     ];
     for (index, (label, node, body)) in attempts.into_iter().enumerate() {
         let response = world
-            .post(node, &format!("submit-bad-{index:03}-aaaa"), "fulfillment_submit", body)
+            .post(
+                node,
+                &format!("submit-bad-{index:03}-aaaa"),
+                "fulfillment_submit",
+                body,
+            )
             .await;
         assert_eq!(
             discarded_codes(&response),
@@ -1155,7 +1385,9 @@ async fn p10_i02_submit_substitution_is_discarded_and_no_delivery_is_queued() {
         );
         assert_eq!(world.status(&id).await, "offered", "{label}");
         assert_eq!(
-            world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await,
+            world
+                .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+                .await,
             0,
             "{label}"
         );
@@ -1168,7 +1400,12 @@ async fn p10_i02_submit_substitution_is_discarded_and_no_delivery_is_queued() {
     );
     // The genuine submission is accepted exactly once afterwards.
     let ok = world
-        .post(&world.issuer_node, "submit-good-001-aaaa", "fulfillment_submit", body_of(&valid))
+        .post(
+            &world.issuer_node,
+            "submit-good-001-aaaa",
+            "fulfillment_submit",
+            body_of(&valid),
+        )
         .await;
     assert_eq!(ok.body["accepted"], 1, "{}", ok.body);
     assert_eq!(world.status(&id).await, "available");
@@ -1179,7 +1416,13 @@ async fn p10_i02_recipient_key_rotation_mid_flow_fails_closed() {
     let world = World::with_approval().await;
     let id = world.approved().await;
     let mut flow = world.flow(&id).await;
-    assert_eq!(world.send_offer(&mut flow, "offer-rot-00001-aaaa").await.body["accepted"], 1);
+    assert_eq!(
+        world
+            .send_offer(&mut flow, "offer-rot-00001-aaaa")
+            .await
+            .body["accepted"],
+        1
+    );
     world
         .h
         .execute(
@@ -1187,7 +1430,11 @@ async fn p10_i02_recipient_key_rotation_mid_flow_fails_closed() {
             vec![world.recipient_node.id.clone().into()],
         )
         .await;
-    let summary = world.signing_store().expire_fulfillments(true).await.unwrap();
+    let summary = world
+        .signing_store()
+        .expire_fulfillments(true)
+        .await
+        .unwrap();
     assert_eq!(summary.failed, 1);
     let closed = world.show(&id).await;
     assert_eq!(closed["status"], "failed");
@@ -1202,8 +1449,16 @@ async fn p10_i02_recipient_key_rotation_mid_flow_fails_closed() {
     }
     // The failed one no longer holds the slot, and no new submit lands.
     let late = world.send_submit(&flow, "submit-rot-00001-aaaa").await;
-    assert_eq!(discarded_codes(&late), vec!["invalid_node_event".to_owned()]);
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await, 0);
+    assert_eq!(
+        discarded_codes(&late),
+        vec!["invalid_node_event".to_owned()]
+    );
+    assert_eq!(
+        world
+            .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+            .await,
+        0
+    );
 }
 
 #[tokio::test]
@@ -1212,7 +1467,11 @@ async fn p10_i02_policy_workload_and_node_changes_fail_closed() {
     let world = World::with_approval().await;
     let id = world.approved().await;
     assert_eq!(world.set_cross(json!([])).await.status, 200);
-    world.signing_store().expire_fulfillments(true).await.unwrap();
+    world
+        .signing_store()
+        .expire_fulfillments(true)
+        .await
+        .unwrap();
     let closed = world.show(&id).await;
     assert_eq!(closed["status"], "failed");
     assert_eq!(closed["failure_code"], "policy_changed");
@@ -1225,13 +1484,20 @@ async fn p10_i02_policy_workload_and_node_changes_fail_closed() {
         .call(
             &world.h.admin,
             "DELETE",
-            &format!("/api/v3/workloads/{}", world.recipient_wl["id"].as_str().unwrap()),
+            &format!(
+                "/api/v3/workloads/{}",
+                world.recipient_wl["id"].as_str().unwrap()
+            ),
             &[],
             None,
         )
         .await;
     assert!(revoke.status < 300, "{}", revoke.body);
-    world.signing_store().expire_fulfillments(true).await.unwrap();
+    world
+        .signing_store()
+        .expire_fulfillments(true)
+        .await
+        .unwrap();
     assert_eq!(world.show(&id).await["failure_code"], "workload_changed");
 
     // Issuer node revoked after approval.
@@ -1244,7 +1510,11 @@ async fn p10_i02_policy_workload_and_node_changes_fail_closed() {
             vec![world.issuer_node.id.clone().into()],
         )
         .await;
-    world.signing_store().expire_fulfillments(true).await.unwrap();
+    world
+        .signing_store()
+        .expire_fulfillments(true)
+        .await
+        .unwrap();
     assert_eq!(world.show(&id).await["failure_code"], "node_revoked");
 }
 
@@ -1266,7 +1536,12 @@ async fn p10_i02_approval_after_policy_change_or_rotation_is_stale() {
     let stale = world.approve_as(&world.approver, &id).await;
     assert_eq!(stale.status, 409, "{}", stale.body);
     assert_eq!(stale.body["error"], "authorization_changed");
-    assert!(world.documents(&world.recipient_node, "fulfillment_authorization").await.is_empty());
+    assert!(
+        world
+            .documents(&world.recipient_node, "fulfillment_authorization")
+            .await
+            .is_empty()
+    );
     assert_eq!(before["status"], "awaiting_approval");
 }
 
@@ -1293,7 +1568,10 @@ async fn p10_i04_idempotency_single_slot_and_revocation_before_approval() {
     let busy = world.create("idem-slot-000002-aaaa").await;
     assert_eq!(busy.status, 409, "{}", busy.body);
     assert_eq!(busy.body["error"], "recipient_busy");
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillments").await, 1);
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM cross_fulfillments").await,
+        1
+    );
 
     // Revoking before approval issues no authority and queues no revocation.
     let revoked = world
@@ -1313,7 +1591,13 @@ async fn p10_i04_idempotency_single_slot_and_revocation_before_approval() {
     // A second revoke is idempotent and the approve now conflicts.
     let again = world
         .h
-        .call(&world.requester, "DELETE", &format!("/api/v3/fulfillments/{id}"), &[], None)
+        .call(
+            &world.requester,
+            "DELETE",
+            &format!("/api/v3/fulfillments/{id}"),
+            &[],
+            None,
+        )
         .await;
     assert_eq!(again.status, 200);
     let fingerprints = Some((
@@ -1329,7 +1613,13 @@ async fn p10_i04_idempotency_single_slot_and_revocation_before_approval() {
     assert_eq!(world.create("idem-slot-000003-aaaa").await.status, 201);
     let unknown = world
         .h
-        .call(&world.requester, "DELETE", "/api/v3/fulfillments/fu_unknown_0001", &[], None)
+        .call(
+            &world.requester,
+            "DELETE",
+            "/api/v3/fulfillments/fu_unknown_0001",
+            &[],
+            None,
+        )
         .await;
     assert_eq!(unknown.status, 404);
 }
@@ -1339,25 +1629,50 @@ async fn p10_i04_revoking_issued_authority_deletes_payload_and_tells_both_nodes(
     let world = World::with_approval().await;
     let id = world.approved().await;
     let flow = world.to_available(&id).await;
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await, 1);
+    assert_eq!(
+        world
+            .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+            .await,
+        1
+    );
     let revoked = world
         .h
-        .call(&world.requester, "DELETE", &format!("/api/v3/fulfillments/{id}"), &[], None)
+        .call(
+            &world.requester,
+            "DELETE",
+            &format!("/api/v3/fulfillments/{id}"),
+            &[],
+            None,
+        )
         .await;
     assert_eq!(revoked.status, 200, "{}", revoked.body);
     assert_eq!(revoked.body["status"], "revoked");
     assert_eq!(revoked.body["revocation_reason"], "operator");
     assert!(revoked.body["delivery_revoked_at"].is_i64());
     assert_eq!(revoked.body["provider_revocation"], "unsupported");
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await, 0);
+    assert_eq!(
+        world
+            .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+            .await,
+        0
+    );
     for node in [&world.issuer_node, &world.recipient_node] {
         let revocations = world.revocations(node).await;
         assert_eq!(revocations.len(), 1, "{}", node.id);
-        assert_eq!(revocations[0].terms_digest, flow.terms.digest_hex().unwrap());
+        assert_eq!(
+            revocations[0].terms_digest,
+            flow.terms.digest_hex().unwrap()
+        );
     }
     // A reported result after revocation cannot resurrect it.
     let late = world
-        .send_result(&flow, "result-rev-0001-aaaa", FulfillmentSide::Recipient, ResultState::Stored, None)
+        .send_result(
+            &flow,
+            "result-rev-0001-aaaa",
+            FulfillmentSide::Recipient,
+            ResultState::Stored,
+            None,
+        )
         .await;
     assert_eq!(late.body["accepted"], 1, "{}", late.body);
     assert_eq!(world.status(&id).await, "revoked");
@@ -1377,7 +1692,9 @@ async fn p10_i04_unreported_delivery_becomes_uncertain_and_holds_the_slot() {
     assert_eq!(closed["status"], "uncertain");
     assert_eq!(closed["failure_code"], "no_recipient_result");
     assert_eq!(
-        world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await,
+        world
+            .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+            .await,
         0,
         "ciphertext is never re-served after expiry"
     );
@@ -1393,7 +1710,13 @@ async fn p10_i04_unreported_delivery_becomes_uncertain_and_holds_the_slot() {
     assert_eq!(world.revocations(&world.recipient_node).await.len(), 1);
     // The recipient's late "consumed" report proves the unit read it in time.
     let consumed = world
-        .send_result(&flow, "result-unc-0002-aaaa", FulfillmentSide::Recipient, ResultState::Consumed, None)
+        .send_result(
+            &flow,
+            "result-unc-0002-aaaa",
+            FulfillmentSide::Recipient,
+            ResultState::Consumed,
+            None,
+        )
         .await;
     assert_eq!(consumed.body["accepted"], 1, "{}", consumed.body);
     assert_eq!(world.status(&id).await, "completed");
@@ -1408,7 +1731,13 @@ async fn p10_i04_late_stored_report_closes_an_uncertain_fulfillment_as_expired()
     world.expire_now(&id).await;
     assert_eq!(world.status(&id).await, "uncertain");
     let stored = world
-        .send_result(&flow, "result-unc-0001-aaaa", FulfillmentSide::Recipient, ResultState::Stored, None)
+        .send_result(
+            &flow,
+            "result-unc-0001-aaaa",
+            FulfillmentSide::Recipient,
+            ResultState::Stored,
+            None,
+        )
         .await;
     assert_eq!(stored.body["accepted"], 1, "{}", stored.body);
     let closed = world.show(&id).await;
@@ -1428,7 +1757,13 @@ async fn p10_i04_operator_can_close_an_uncertain_fulfillment() {
     assert_eq!(world.status(&id).await, "uncertain");
     let revoked = world
         .h
-        .call(&world.requester, "DELETE", &format!("/api/v3/fulfillments/{id}"), &[], None)
+        .call(
+            &world.requester,
+            "DELETE",
+            &format!("/api/v3/fulfillments/{id}"),
+            &[],
+            None,
+        )
         .await;
     assert_eq!(revoked.status, 200, "{}", revoked.body);
     assert_eq!(revoked.body["status"], "revoked");
@@ -1447,7 +1782,10 @@ async fn p10_i04_approved_but_never_offered_expires_with_revocation() {
     // A late offer for an expired fulfillment is discarded.
     let mut flow = world.flow(&id).await;
     let late = world.send_offer(&mut flow, "offer-exp-00001-aaaa").await;
-    assert_eq!(discarded_codes(&late), vec!["invalid_node_event".to_owned()]);
+    assert_eq!(
+        discarded_codes(&late),
+        vec!["invalid_node_event".to_owned()]
+    );
     // An unapproved request that nobody decides also expires and frees the slot.
     let created = world.create("idem-expire-0001-aaaa").await;
     let pending = created.body["id"].as_str().unwrap().to_owned();
@@ -1461,7 +1799,13 @@ async fn p10_i04_a_failed_result_closes_the_fulfillment_for_both_sides() {
     let world = World::with_approval().await;
     let id = world.approved().await;
     let mut flow = world.flow(&id).await;
-    assert_eq!(world.send_offer(&mut flow, "offer-fail-0001-aaaa").await.body["accepted"], 1);
+    assert_eq!(
+        world
+            .send_offer(&mut flow, "offer-fail-0001-aaaa")
+            .await
+            .body["accepted"],
+        1
+    );
     let failed = world
         .send_result(
             &flow,
@@ -1482,9 +1826,18 @@ async fn p10_i04_a_failed_result_closes_the_fulfillment_for_both_sides() {
     let mut other = world.flow(&id).await;
     other.terms.expires_at_ms += 1;
     let mismatch = world
-        .send_result(&other, "result-fail-002-aaaa", FulfillmentSide::Issuer, ResultState::Failed, Some("x"))
+        .send_result(
+            &other,
+            "result-fail-002-aaaa",
+            FulfillmentSide::Issuer,
+            ResultState::Failed,
+            Some("x"),
+        )
         .await;
-    assert_eq!(discarded_codes(&mismatch), vec!["invalid_node_event".to_owned()]);
+    assert_eq!(
+        discarded_codes(&mismatch),
+        vec!["invalid_node_event".to_owned()]
+    );
 }
 
 // ------------------------------------------------------------------ P10-E02
@@ -1499,23 +1852,43 @@ async fn p10_e02_disabled_feature_stops_issuance_and_revokes_outstanding_authori
         // for the live one and check the sweep result on it.
         id.clone()
     };
-    let summary = world.signing_store().expire_fulfillments(false).await.unwrap();
+    let summary = world
+        .signing_store()
+        .expire_fulfillments(false)
+        .await
+        .unwrap();
     assert_eq!(summary.revoked, 1);
     let closed = world.show(&pending_created).await;
     assert_eq!(closed["status"], "revoked");
     assert_eq!(closed["revocation_reason"], "feature_disabled");
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillment_payloads").await, 0);
+    assert_eq!(
+        world
+            .count("SELECT COUNT(*) FROM cross_fulfillment_payloads")
+            .await,
+        0
+    );
     for node in [&world.issuer_node, &world.recipient_node] {
         assert_eq!(world.revocations(node).await.len(), 1);
     }
     // Idempotent: a second pass closes nothing.
-    assert_eq!(world.signing_store().expire_fulfillments(false).await.unwrap().revoked, 0);
+    assert_eq!(
+        world
+            .signing_store()
+            .expire_fulfillments(false)
+            .await
+            .unwrap()
+            .revoked,
+        0
+    );
 }
 
 #[tokio::test]
 async fn p10_e02_a_controller_without_the_flag_refuses_everything_and_hides_the_capability() {
     let world = World::start(&[]).await;
-    let capabilities = world.h.request("GET", "/api/v3/capabilities", &[], None).await;
+    let capabilities = world
+        .h
+        .request("GET", "/api/v3/capabilities", &[], None)
+        .await;
     assert_eq!(capabilities.body["features"]["fleet_fulfillments"], false);
     let refused = world.create("idem-off-0000001-aaaa").await;
     assert_eq!(refused.status, 404, "{}", refused.body);
@@ -1527,15 +1900,26 @@ async fn p10_e02_a_controller_without_the_flag_refuses_everything_and_hides_the_
         "side": "recipient", "state": "stored", "observed_at_ms": 1
     });
     let response = world
-        .post(&world.recipient_node, "result-off-0001-aaaa", "fulfillment_result", flow_body)
+        .post(
+            &world.recipient_node,
+            "result-off-0001-aaaa",
+            "fulfillment_result",
+            flow_body,
+        )
         .await;
-    assert_eq!(discarded_codes(&response), vec!["invalid_node_event".to_owned()]);
+    assert_eq!(
+        discarded_codes(&response),
+        vec!["invalid_node_event".to_owned()]
+    );
     // Reading still works, so lineage stays inspectable.
     let listed = world.h.get(&world.h.admin, "/api/v3/fulfillments").await;
     assert_eq!(listed.status, 200, "{}", listed.body);
 
     let enabled = World::start(ENABLED).await;
-    let capabilities = enabled.h.request("GET", "/api/v3/capabilities", &[], None).await;
+    let capabilities = enabled
+        .h
+        .request("GET", "/api/v3/capabilities", &[], None)
+        .await;
     assert_eq!(capabilities.body["features"]["fleet_fulfillments"], true);
 }
 
@@ -1543,7 +1927,10 @@ async fn p10_e02_a_controller_without_the_flag_refuses_everything_and_hides_the_
 async fn p10_e02_roles_and_sessions_gate_every_route() {
     let world = World::with_approval().await;
     let viewer = world.h.create_operator("fulfill-viewer", "viewer").await;
-    let anonymous = world.h.request("GET", "/api/v3/fulfillments", &[], None).await;
+    let anonymous = world
+        .h
+        .request("GET", "/api/v3/fulfillments", &[], None)
+        .await;
     assert_eq!(anonymous.status, 401);
     let denied = world.h.get(&viewer, "/api/v3/fulfillments").await;
     assert_eq!(denied.status, 403, "{}", denied.body);
@@ -1581,7 +1968,13 @@ async fn p10_i04_terminal_lineage_ages_out_with_audit_retention_and_live_rows_st
     let id = world.approved().await;
     let revoked = world
         .h
-        .call(&world.requester, "DELETE", &format!("/api/v3/fulfillments/{id}"), &[], None)
+        .call(
+            &world.requester,
+            "DELETE",
+            &format!("/api/v3/fulfillments/{id}"),
+            &[],
+            None,
+        )
         .await;
     assert_eq!(revoked.status, 200, "{}", revoked.body);
     let live = world.create("idem-prune-000001-aaaa").await;
@@ -1597,11 +1990,11 @@ async fn p10_i04_terminal_lineage_ages_out_with_audit_retention_and_live_rows_st
         )
         .await;
     assert_eq!(world.h.store.prune_fulfillments(1).await.unwrap(), 1);
-    assert_eq!(world.count("SELECT COUNT(*) FROM cross_fulfillments").await, 1);
-    let remaining = world
-        .h
-        .get(&world.h.admin, "/api/v3/fulfillments")
-        .await;
+    assert_eq!(
+        world.count("SELECT COUNT(*) FROM cross_fulfillments").await,
+        1
+    );
+    let remaining = world.h.get(&world.h.admin, "/api/v3/fulfillments").await;
     assert_eq!(remaining.body["items"].as_array().unwrap().len(), 1);
     assert_eq!(remaining.body["items"][0]["status"], "awaiting_approval");
     assert!(world.h.store.prune_fulfillments(0).await.is_err());

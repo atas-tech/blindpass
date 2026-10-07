@@ -319,10 +319,7 @@ pub fn evaluate_cross_policy(document_json: &str, issuer: &str, recipient: &str)
     let Ok(document) = serde_json::from_str::<JsonValue>(document_json) else {
         return denied;
     };
-    let Some(rules) = document
-        .get("cross_workload")
-        .and_then(JsonValue::as_array)
-    else {
+    let Some(rules) = document.get("cross_workload").and_then(JsonValue::as_array) else {
         return denied;
     };
     let contains = |rule: &JsonValue, key: &str, id: &str| {
@@ -549,8 +546,11 @@ macro_rules! authorize {
             if policy_version.unwrap_or(1) != record.policy_version {
                 break 'authorize Err("policy_changed");
             }
-            let issuer_party =
-                party_terms(&issuer, &record.issuer_workload_id, &record.issuer_credential)?;
+            let issuer_party = party_terms(
+                &issuer,
+                &record.issuer_workload_id,
+                &record.issuer_credential,
+            )?;
             let recipient_party = party_terms(
                 &recipient,
                 &record.recipient_workload_id,
@@ -728,7 +728,10 @@ macro_rules! close {
 
 enum ParsedEvent {
     Offer(SignedEnvelope, FulfillmentOffer),
-    Submit(SignedEnvelope, blindpass_core::fulfillment::FulfillmentSubmit),
+    Submit(
+        SignedEnvelope,
+        blindpass_core::fulfillment::FulfillmentSubmit,
+    ),
     Result(FulfillmentResult),
 }
 
@@ -782,9 +785,8 @@ impl Store {
     ) -> Result<Option<FulfillmentRecord>, StoreError> {
         self.run_owned(async {
             self.checkpoint_clock().await?;
-            let sql = format!(
-                "SELECT {COLUMNS} FROM cross_fulfillments WHERE id = ? AND tenant_id = ?"
-            );
+            let sql =
+                format!("SELECT {COLUMNS} FROM cross_fulfillments WHERE id = ? AND tenant_id = ?");
             match &self.database {
                 Database::Sqlite(pool) => {
                     let row = sqlx::query(&sql)
@@ -962,7 +964,8 @@ impl Store {
                 .map_err(StoreError::Database)?;
                 let (policy_version, document_json) = match policy {
                     Some(row) => (
-                        row.try_get::<i64, _>("version").map_err(StoreError::Database)?,
+                        row.try_get::<i64, _>("version")
+                            .map_err(StoreError::Database)?,
                         row.try_get::<String, _>("document_json")
                             .map_err(StoreError::Database)?,
                     ),
@@ -1059,7 +1062,10 @@ impl Store {
                     .with_detail("rule_id", decided.rule_id.clone().into())
                     .with_detail("status", created.status.clone().into())
                     .with_detail("issuer_node_id", created.issuer_node_id.clone().into())
-                    .with_detail("recipient_node_id", created.recipient_node_id.clone().into());
+                    .with_detail(
+                        "recipient_node_id",
+                        created.recipient_node_id.clone().into(),
+                    );
                 audit(&mut tx, &self.tenant_id, &audit_draft).await?;
                 let _ = lock;
                 tx.commit().await.map_err(StoreError::Database)?;
@@ -1748,13 +1754,14 @@ impl Store {
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
-                    let removed = sqlx::query(&format!("DELETE FROM cross_fulfillments WHERE {stale}"))
-                        .bind(&self.tenant_id)
-                        .bind(retention_ms)
-                        .execute(&mut *tx)
-                        .await
-                        .map_err(StoreError::Database)?
-                        .rows_affected();
+                    let removed =
+                        sqlx::query(&format!("DELETE FROM cross_fulfillments WHERE {stale}"))
+                            .bind(&self.tenant_id)
+                            .bind(retention_ms)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(StoreError::Database)?
+                            .rows_affected();
                     tx.commit().await.map_err(StoreError::Database)?;
                     Ok(removed)
                 }
@@ -1773,13 +1780,14 @@ impl Store {
                     .execute(&mut *tx)
                     .await
                     .map_err(StoreError::Database)?;
-                    let removed = sqlx::query(&format!("DELETE FROM cross_fulfillments WHERE {stale}"))
-                        .bind(&self.tenant_id)
-                        .bind(retention_ms)
-                        .execute(&mut *tx)
-                        .await
-                        .map_err(StoreError::Database)?
-                        .rows_affected();
+                    let removed =
+                        sqlx::query(&format!("DELETE FROM cross_fulfillments WHERE {stale}"))
+                            .bind(&self.tenant_id)
+                            .bind(retention_ms)
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(StoreError::Database)?
+                            .rows_affected();
                     tx.commit().await.map_err(StoreError::Database)?;
                     Ok(removed)
                 }
@@ -1809,7 +1817,10 @@ impl Store {
                         .map_err(StoreError::Database)?;
                     let mut ids = Vec::with_capacity(rows.len());
                     for row in &rows {
-                        ids.push(row.try_get::<String, _>("id").map_err(StoreError::Database)?);
+                        ids.push(
+                            row.try_get::<String, _>("id")
+                                .map_err(StoreError::Database)?,
+                        );
                     }
                     Ok(ids)
                 }};
@@ -1901,7 +1912,11 @@ impl Store {
             return Ok(None);
         }
         Ok(Some((
-            party_terms(&issuer, &record.issuer_workload_id, &record.issuer_credential)?,
+            party_terms(
+                &issuer,
+                &record.issuer_workload_id,
+                &record.issuer_credential,
+            )?,
             party_terms(
                 &recipient,
                 &record.recipient_workload_id,
